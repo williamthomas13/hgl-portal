@@ -29,9 +29,8 @@ export async function POST(request: Request) {
         },
       ],
       mode: 'payment',
-      success_url: `http://localhost:3000/success`, 
-      cancel_url: `http://localhost:3000/register/${classId}`, 
-    });
+      success_url: 'https://hgl-portal.vercel.app/success', 
+      cancel_url: 'https://hgl-portal.vercel.app/',
 
     // 3. Send the secure Stripe URL back to the frontend
     return NextResponse.json({ url: session.url });
