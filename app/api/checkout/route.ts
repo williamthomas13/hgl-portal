@@ -31,6 +31,7 @@ export async function POST(request: Request) {
       mode: 'payment',
       success_url: 'https://hgl-portal.vercel.app/success', 
       cancel_url: 'https://hgl-portal.vercel.app/',
+    }); // <-- THIS WAS MISSING!
 
     // 3. Send the secure Stripe URL back to the frontend
     return NextResponse.json({ url: session.url });
