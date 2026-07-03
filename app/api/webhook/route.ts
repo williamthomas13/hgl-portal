@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import {
+  confirmationEmail,
+  loadEnrollmentContext,
+  recipients,
+  sendOnce,
+} from '../../utils/email';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
@@ -63,6 +69,28 @@ export async function POST(req: Request) {
       );
     } else {
       console.log(`Marked enrollment ${data[0].id} paid (session ${sessionId}).`);
+
+      // Registration confirmation to parent (+ student when we have an email).
+      // sendOnce dedupes, so Stripe webhook retries can't double-send; a
+      // failure here must not fail the webhook (Stripe would keep retrying
+      // an already-recorded payment).
+      const paidEnrollmentId = data[0].id;
+      try {
+        const ctx = await loadEnrollmentContext(paidEnrollmentId);
+        if (ctx) {
+          const { subject, html } = confirmationEmail(ctx);
+          await sendOnce({
+            dedupeKey: `confirmation:${paidEnrollmentId}`,
+            emailType: 'confirmation',
+            enrollmentId: paidEnrollmentId,
+            to: recipients(ctx),
+            subject,
+            html,
+          });
+        }
+      } catch (emailErr) {
+        console.error('Confirmation email failed:', emailErr);
+      }
     }
   }
 

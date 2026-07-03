@@ -142,3 +142,20 @@ Quick summary of what the foundation refactor did, in case you want to retrace m
 - Counselor and instructor dashboards.
 - QuickBooks integration.
 - A "course template" concept so creating a new cohort is one-click.
+
+---
+
+## 5. Phase 2: automated emails (Resend)
+
+Three new env vars (add locally in `.env.local` and in Vercel → Settings → Environment Variables, ticking "Sensitive" for the secrets):
+
+```
+RESEND_API_KEY=<from resend.com → API Keys>
+EMAIL_FROM=Higher Ground Learning <you@yourdomain.com>   # optional; defaults to onboarding@resend.dev
+CRON_SECRET=<any long random string>                     # protects /api/cron/reminders
+```
+
+Notes:
+- Until you verify a sending domain in Resend (Domains → Add → highergroundlearning.com, add their DNS records), Resend only delivers to your own account email, from `onboarding@resend.dev`. Verify the domain before real parents register.
+- Emails sent automatically: registration confirmation (on Stripe payment), "class starts in 3 days," and "session tomorrow" reminders. The last two run from a daily Vercel Cron (8am Mexico City, see `vercel.json`). Every send is recorded in the `email_log` table, which also guarantees nobody is ever emailed twice for the same thing.
+- Emails go to the parent and, when provided, the student's email.
