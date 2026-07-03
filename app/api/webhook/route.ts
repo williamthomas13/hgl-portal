@@ -2,59 +2,67 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-// 1. Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: '2024-04-10',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
-// 2. Initialize Supabase (Bypassing the frontend to talk directly to the database)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL as string,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 );
 
+// The App Router requires this flag so the raw body reaches stripe.webhooks.constructEvent.
+export const runtime = 'nodejs';
+
 export async function POST(req: Request) {
   const payload = await req.text();
-  const sig = req.headers.get('Stripe-Signature') as string;
+  const sig = req.headers.get('stripe-signature') as string;
 
-  let event;
+  let event: Stripe.Event;
 
   try {
-    // 3. Verify the message is genuinely from Stripe using our secret password
     event = stripe.webhooks.constructEvent(
-      payload, 
-      sig, 
+      payload,
+      sig,
       process.env.STRIPE_WEBHOOK_SECRET as string
     );
-  } catch (err: any) {
-    console.error('Webhook signature verification failed.', err.message);
-    return NextResponse.json({ error: 'Webhook Error' }, { status: 400 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown webhook error';
+    console.error('Webhook signature verification failed:', message);
+    return NextResponse.json({ error: 'Webhook signature error' }, { status: 400 });
   }
 
-  // 4. If the payment was successful, update the database!
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
-    const email = session.customer_details?.email;
+    const enrollmentId = session.metadata?.enrollment_id;
+    const sessionId = session.id;
+    const paymentIntentId =
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id ?? null;
 
-    if (email) {
-        // Step A: Find the parent's Billing Account
-        const { data: family } = await supabase.from('families').select('id').eq('parent_email', email).single();
-        
-        if (family) {
-            // Step B: Find their Student
-            const { data: student } = await supabase.from('students').select('id').eq('family_id', family.id).single();
-            
-            if (student) {
-                // Step C: Change 'Pending Checkout' to 'Paid'
-                const { error } = await supabase
-                  .from('enrollments')
-                  .update({ payment_status: 'Paid' })
-                  .eq('student_id', student.id)
-                  .eq('payment_status', 'Pending Checkout');
-                  
-                if (!error) console.log(`✅ Successfully marked enrollment as Paid for ${email}`);
-            }
-        }
+    // Primary match: the enrollment id we set in metadata.
+    // Fallback: the stripe session id we stamped on the enrollment before redirect.
+    const enrollmentQuery = supabase
+      .from('enrollments')
+      .update({
+        payment_status: 'Paid',
+        stripe_session_id: sessionId,
+        stripe_payment_intent_id: paymentIntentId,
+        paid_at: new Date().toISOString(),
+      });
+
+    const { data, error } = enrollmentId
+      ? await enrollmentQuery.eq('id', enrollmentId).select('id')
+      : await enrollmentQuery.eq('stripe_session_id', sessionId).select('id');
+
+    if (error) {
+      console.error('Failed to mark enrollment paid:', error.message);
+    } else if (!data || data.length === 0) {
+      console.warn(
+        `Webhook completed for session ${sessionId} but no enrollment matched. ` +
+          `enrollment_id=${enrollmentId ?? 'none'}`
+      );
+    } else {
+      console.log(`Marked enrollment ${data[0].id} paid (session ${sessionId}).`);
     }
   }
 

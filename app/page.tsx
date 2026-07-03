@@ -3,21 +3,38 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './utils/supabase'
 import Link from 'next/link'
+
+type ClassCard = {
+  id: string
+  class_type: string
+  instructor_name: string
+  price: number
+  capacity: number
+  start_date: string
+  default_location: string | null
+  school_nickname: string | null
+  schools: { name: string; nickname: string } | null
+  sessions: { session_date: string }[] | null
+}
+
 export default function ParentPortal() {
-  const [classes, setClasses] = useState<any[]>([])
+  const [classes, setClasses] = useState<ClassCard[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // This function automatically runs when the page loads to fetch your data
     async function fetchClasses() {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('classes')
-        .select('*')
-        .order('created_at', { ascending: false }) // Shows newest classes first
+        .select(
+          `
+          *,
+          schools ( name, nickname ),
+          sessions ( session_date )
+        `
+        )
+        .order('created_at', { ascending: false })
 
-      if (data) {
-        setClasses(data)
-      }
+      if (data) setClasses(data as unknown as ClassCard[])
       setLoading(false)
     }
 
@@ -28,7 +45,7 @@ export default function ParentPortal() {
     <div className="min-h-screen bg-gray-50 p-10">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold text-blue-900 mb-2">Higher Ground Learning</h1>
-        <h2 className="text-xl font-semibold text-gray-700 mb-8">Available Classes & Registration</h2>
+        <h2 className="text-xl font-semibold text-gray-700 mb-8">Available classes &amp; registration</h2>
 
         {loading ? (
           <p className="text-gray-500 animate-pulse">Loading live classes...</p>
@@ -37,34 +54,57 @@ export default function ParentPortal() {
             {classes.length === 0 ? (
               <p className="text-gray-500">No classes are currently enrolling.</p>
             ) : (
-              classes.map((c) => (
-                <div key={c.id} className="bg-white rounded-lg shadow-md border border-gray-200 p-6 flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded-full mb-2">
-                          {c.school_nickname}
-                        </span>
-                        <h3 className="text-xl font-bold text-gray-900">{c.class_type}</h3>
+              classes.map((c) => {
+                const schoolLabel = c.schools?.nickname ?? c.school_nickname ?? '—'
+                const sessionCount = c.sessions?.length ?? 0
+                return (
+                  <div
+                    key={c.id}
+                    className="bg-white rounded-lg shadow-md border border-gray-200 p-6 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded-full mb-2">
+                            {schoolLabel}
+                          </span>
+                          <h3 className="text-xl font-bold text-gray-900">{c.class_type}</h3>
+                        </div>
+                        <span className="text-lg font-bold text-green-600">${c.price}</span>
                       </div>
-                      <span className="text-lg font-bold text-green-600">${c.price}</span>
+
+                      <div className="space-y-1 text-sm text-gray-600 mb-6">
+                        <p>
+                          <strong>Instructor:</strong> {c.instructor_name}
+                        </p>
+                        <p>
+                          <strong>Starts:</strong>{' '}
+                          {new Date(c.start_date).toLocaleDateString()}
+                        </p>
+                        {c.default_location && (
+                          <p>
+                            <strong>Location:</strong> {c.default_location}
+                          </p>
+                        )}
+                        <p>
+                          <strong>Sessions:</strong>{' '}
+                          {sessionCount > 0 ? `${sessionCount} scheduled` : 'TBD'}
+                        </p>
+                        <p>
+                          <strong>Capacity:</strong> {c.capacity} students max
+                        </p>
+                      </div>
                     </div>
-                    
-                    <div className="space-y-2 text-sm text-gray-600 mb-6">
-                      <p><strong>Instructor:</strong> {c.instructor_name}</p>
-                      <p><strong>Starts:</strong> {new Date(c.start_date).toLocaleDateString()}</p>
-                      <p><strong>Capacity:</strong> {c.capacity} students max</p>
-                    </div>
+
+                    <Link
+                      href={`/register/${c.id}`}
+                      className="block text-center w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition"
+                    >
+                      Register Now
+                    </Link>
                   </div>
-                  
-                  <Link 
-  href={`/register/${c.id}`} 
-  className="block text-center w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition"
->
-  Register Now
-</Link>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         )}
