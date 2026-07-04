@@ -10,6 +10,12 @@ import { createClient } from '@supabase/supabase-js'
 
 const FROM = process.env.EMAIL_FROM ?? 'Higher Ground Learning <onboarding@resend.dev>'
 
+// Personal sender for the relationship-building emails (review request,
+// tutoring offer). Everything else — sequences, reminders, admin alerts —
+// uses the default sender above.
+const PERSONAL_FROM =
+  process.env.EMAIL_FROM_PERSONAL ?? 'Higher Ground Learning <billy@highergroundlearning.com>'
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL as string,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
@@ -109,7 +115,7 @@ export function recipients(ctx: EnrollmentEmailContext) {
   return ctx.studentEmail ? [ctx.parentEmail, ctx.studentEmail] : [ctx.parentEmail]
 }
 
-type Rendered = { subject: string; html: string }
+type Rendered = { subject: string; html: string; from?: string }
 
 // ---------------------------------------------------------------------------
 // Payment reminders (Pending enrollments) — PLACEHOLDER COPY
@@ -221,6 +227,7 @@ export function secondDiagnosticEmail(ctx: EnrollmentEmailContext): Rendered {
 
 export function reviewRequestEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
+    from: PERSONAL_FROM,
     subject: `How was ${ctx.className}?`,
     html: wrap(`
       <h2 style="color:#334155">We'd love your feedback</h2>
@@ -233,6 +240,7 @@ export function reviewRequestEmail(ctx: EnrollmentEmailContext): Rendered {
 
 export function tutoringOfferEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
+    from: PERSONAL_FROM,
     subject: `A tutoring offer for ${ctx.studentFirstName}`,
     html: wrap(`
       <h2 style="color:#334155">Keep the momentum going</h2>
@@ -336,6 +344,7 @@ export async function sendOnce(opts: {
   sessionId?: string
   to: string[]
   cc?: string[]
+  from?: string
   subject: string
   html: string
   payload?: Record<string, unknown>
@@ -364,7 +373,7 @@ export async function sendOnce(opts: {
 
   const resend = new Resend(process.env.RESEND_API_KEY)
   const { error: sendError } = await resend.emails.send({
-    from: FROM,
+    from: opts.from ?? FROM,
     to: opts.to,
     cc: opts.cc,
     subject: opts.subject,

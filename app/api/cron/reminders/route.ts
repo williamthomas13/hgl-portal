@@ -49,7 +49,10 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 )
 
-const TEMPLATES: Record<string, (ctx: EnrollmentEmailContext) => { subject: string; html: string }> = {
+const TEMPLATES: Record<
+  string,
+  (ctx: EnrollmentEmailContext) => { subject: string; html: string; from?: string }
+> = {
   synap_access: synapAccessEmail,
   faq: faqEmail,
   class_details: classDetailsEmail,
@@ -133,12 +136,13 @@ async function sweepSequence(bundle: ClassBundle, c: Counters) {
 
     for (const e of paid) {
       const ctx = emailContext(bundle, e)
-      const { subject, html } = TEMPLATES[step.type](ctx)
+      const { subject, html, from } = TEMPLATES[step.type](ctx)
       const status = await sendOnce({
         dedupeKey: `${step.type}:${e.id}`,
         emailType: step.type,
         enrollmentId: e.id,
         to: recipients(ctx),
+        from,
         subject,
         html,
         payload: step.type === 'class_details' ? classDetailsSnapshot(bundle) : undefined,
