@@ -28,6 +28,7 @@ function takenCount(slots: EnrollmentSlot[]) {
     (e) =>
       e.payment_status === 'Pending' ||
       e.payment_status === 'Paid' ||
+      e.payment_status === 'Completed' ||
       (e.payment_status === 'Waitlisted' &&
         e.waitlist_offer_expires_at != null &&
         new Date(e.waitlist_offer_expires_at).getTime() > now)

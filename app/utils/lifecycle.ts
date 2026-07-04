@@ -22,7 +22,7 @@ const supabase = createClient(
 
 export type EnrollmentRow = {
   id: string
-  payment_status: 'Pending' | 'Paid' | 'Expired' | 'Waitlisted'
+  payment_status: 'Pending' | 'Paid' | 'Completed' | 'Expired' | 'Waitlisted'
   enrolled_at: string
   waitlist_offer_sent_at: string | null
   waitlist_offer_expires_at: string | null

@@ -55,6 +55,7 @@ type ClassRow = {
 
 const STATUS_STYLES: Record<string, string> = {
   Paid: 'bg-green-100 text-green-700',
+  Completed: 'bg-indigo-100 text-indigo-700',
   Pending: 'bg-yellow-100 text-yellow-800',
   Waitlisted: 'bg-blue-100 text-blue-700',
   Expired: 'bg-gray-200 text-gray-500',
@@ -401,8 +402,8 @@ export default function AdminDashboard() {
               ) : (
                 rosters.map((c) => {
                   const enrolledCount =
-                    c.enrollments?.filter(
-                      (en) => en.payment_status === 'Paid' || en.payment_status === 'Pending'
+                    c.enrollments?.filter((en) =>
+                      ['Paid', 'Pending', 'Completed'].includes(en.payment_status)
                     ).length ?? 0
                   const waitlistCount =
                     c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0

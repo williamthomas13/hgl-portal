@@ -107,11 +107,34 @@ async function sweepPaymentReminders(bundle: ClassBundle, c: Counters) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Post-payment sequence
+// 2. Completion: Paid -> Completed the day after the last session
+// ---------------------------------------------------------------------------
+
+async function sweepCompletion(bundle: ClassBundle, c: Counters) {
+  if (localDate(bundle.timezone) <= bundle.lastSession) return
+  for (const e of bundle.enrollments) {
+    if (e.payment_status !== 'Paid') continue
+    const { error } = await supabase
+      .from('enrollments')
+      .update({ payment_status: 'Completed' })
+      .eq('id', e.id)
+      .eq('payment_status', 'Paid')
+    if (!error) {
+      e.payment_status = 'Completed'
+      bump(c, 'completed')
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3. Post-payment sequence
 // ---------------------------------------------------------------------------
 
 async function sweepSequence(bundle: ClassBundle, c: Counters) {
-  const paid = bundle.enrollments.filter((e) => e.payment_status === 'Paid')
+  // Completed students still get the post-class emails (review, tutoring).
+  const paid = bundle.enrollments.filter(
+    (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+  )
   if (paid.length === 0) return
 
   for (const step of SEQUENCE) {
@@ -153,7 +176,7 @@ async function sweepSequence(bundle: ClassBundle, c: Counters) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Schedule-update detection (after email #4 went out)
+// 4. Schedule-update detection (after email #4 went out)
 // ---------------------------------------------------------------------------
 
 async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
@@ -210,10 +233,12 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Waitlist: expire lapsed offers, then extend new ones (FCFS)
+// 5. Waitlist: expire lapsed offers, then extend new ones (FCFS)
 // ---------------------------------------------------------------------------
 
 async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
+  // No new offers once the class is over; lapsed offers still get rolled.
+  const classOver = localDate(bundle.timezone) > bundle.lastSession
   const now = Date.now()
   const waitlisted = bundle.enrollments
     .filter((e) => e.payment_status === 'Waitlisted')
@@ -245,6 +270,7 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
   }
 
   // Extend offers for however many spots are open, in join order.
+  if (classOver) return
   let open = bundle.capacity - spotsTaken(bundle)
   for (const e of waitlisted) {
     if (open <= 0) break
@@ -276,7 +302,7 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Admin checkpoints + weekly digest
+// 6. Admin checkpoints + weekly digest
 // ---------------------------------------------------------------------------
 
 async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
@@ -362,6 +388,7 @@ export async function GET(req: Request) {
     if (localDate(bundle.timezone) > addDaysISO(bundle.lastSession, 30)) continue
 
     await sweepPaymentReminders(bundle, counters)
+    await sweepCompletion(bundle, counters)
     await sweepSequence(bundle, counters)
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)
