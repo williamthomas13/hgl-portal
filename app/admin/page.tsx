@@ -45,9 +45,19 @@ type ClassRow = {
   default_location: string | null
   synap_group: string | null
   school_id: string | null
+  delivery_mode: string
+  min_enrollment: number | null
+  enrollment_deadline: string | null
   schools: { name: string; nickname: string } | null
   enrollments: Enrollment[] | null
   sessions: Session[] | null
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  Paid: 'bg-green-100 text-green-700',
+  Pending: 'bg-yellow-100 text-yellow-800',
+  Waitlisted: 'bg-blue-100 text-blue-700',
+  Expired: 'bg-gray-200 text-gray-500',
 }
 
 export default function AdminDashboard() {
@@ -57,6 +67,8 @@ export default function AdminDashboard() {
   const [schools, setSchools] = useState<School[]>([])
   const [rosters, setRosters] = useState<ClassRow[]>([])
   const [fetchingRosters, setFetchingRosters] = useState(true)
+  const [deliveryMode, setDeliveryMode] = useState<'in_person' | 'online'>('in_person')
+  const [minEnrollment, setMinEnrollment] = useState('8')
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
@@ -145,6 +157,9 @@ export default function AdminDashboard() {
       start_date: formData.get('start_date'),
       default_location: formData.get('default_location') || null,
       synap_group: formData.get('synap_group') || null,
+      delivery_mode: deliveryMode,
+      min_enrollment: Number(minEnrollment) || (deliveryMode === 'online' ? 3 : 8),
+      enrollment_deadline: formData.get('enrollment_deadline') || null,
     }
 
     const { error } = await supabase.from('classes').insert([newClass])
@@ -302,6 +317,45 @@ export default function AdminDashboard() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Delivery Mode</label>
+                <select
+                  name="delivery_mode"
+                  value={deliveryMode}
+                  onChange={(e) => {
+                    const mode = e.target.value as 'in_person' | 'online'
+                    setDeliveryMode(mode)
+                    setMinEnrollment(mode === 'online' ? '3' : '8')
+                  }}
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition bg-white"
+                >
+                  <option value="in_person">In person</option>
+                  <option value="online">Online</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Minimum Enrollment</label>
+                <input
+                  type="number"
+                  name="min_enrollment"
+                  value={minEnrollment}
+                  onChange={(e) => setMinEnrollment(e.target.value)}
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
+                />
+                <p className="text-xs text-gray-500 mt-1">Default 8 in person / 3 online — editable.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Enrollment Deadline</label>
+                <input
+                  type="date"
+                  name="enrollment_deadline"
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
+                />
+                <p className="text-xs text-gray-500 mt-1">Optional — min-enrollment check runs here (else 7 days before start).</p>
+              </div>
+
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700">Synap Group</label>
                 <input
@@ -346,7 +400,12 @@ export default function AdminDashboard() {
                 <p className="text-gray-500">No classes exist yet.</p>
               ) : (
                 rosters.map((c) => {
-                  const enrolledCount = c.enrollments?.length ?? 0
+                  const enrolledCount =
+                    c.enrollments?.filter(
+                      (en) => en.payment_status === 'Paid' || en.payment_status === 'Pending'
+                    ).length ?? 0
+                  const waitlistCount =
+                    c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
                   const schoolLabel = c.schools?.nickname ?? c.school_nickname ?? '—'
                   const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
                     a.session_date.localeCompare(b.session_date)
@@ -370,9 +429,21 @@ export default function AdminDashboard() {
                             <p className="text-sm text-gray-600">Synap group: {c.synap_group}</p>
                           )}
                         </div>
-                        <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
-                          {enrolledCount} / {c.capacity} enrolled
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
+                            {enrolledCount} / {c.capacity} enrolled
+                          </span>
+                          {waitlistCount > 0 && (
+                            <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full whitespace-nowrap">
+                              {waitlistCount} waitlisted
+                            </span>
+                          )}
+                          {c.min_enrollment != null && (
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              min {c.min_enrollment} · {c.delivery_mode === 'online' ? 'online' : 'in person'}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* SESSIONS */}
@@ -496,9 +567,7 @@ export default function AdminDashboard() {
                                   <td className="px-4 py-3 whitespace-nowrap text-sm">
                                     <span
                                       className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                                        en.payment_status === 'Paid'
-                                          ? 'bg-green-100 text-green-700'
-                                          : 'bg-yellow-100 text-yellow-800'
+                                        STATUS_STYLES[en.payment_status] ?? 'bg-yellow-100 text-yellow-800'
                                       }`}
                                     >
                                       {en.payment_status}

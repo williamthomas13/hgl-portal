@@ -159,3 +159,27 @@ Notes:
 - Until you verify a sending domain in Resend (Domains → Add → highergroundlearning.com, add their DNS records), Resend only delivers to your own account email, from `onboarding@resend.dev`. Verify the domain before real parents register.
 - Emails sent automatically: registration confirmation (on Stripe payment), "class starts in 3 days," and "session tomorrow" reminders. The last two run from a daily Vercel Cron (8am Mexico City, see `vercel.json`). Every send is recorded in the `email_log` table, which also guarantees nobody is ever emailed twice for the same thing.
 - Emails go to the parent and, when provided, the student's email.
+
+---
+
+## 6. Phase 2 full lifecycle (payment reminders, sequences, waitlist)
+
+New env vars — add to Vercel (Settings → Environment Variables, "Sensitive" for secrets). All are already in `.env.local`:
+
+```
+CRON_SECRET=<already generated in .env.local — copy the same value>
+ADMIN_EMAIL=williamraymondthomas@gmail.com   # where admin alerts + digests go
+EMAIL_FROM="Higher Ground Learning <info@highergroundlearning.com>"
+```
+
+How it runs: Supabase `pg_cron` calls `/api/cron/reminders` on the live site **hourly** (job `hgl-hourly-sweep`, minute :05); the Vercel daily cron remains as backup. The sweep derives everything from current data, so **rescheduling a class automatically recomputes its pending emails**, and every send is deduped in `email_log` (nothing ever sends twice).
+
+What it does automatically:
+- **Payment reminders** for unpaid registrations at ~2h/24h/3d/6d, then the enrollment expires at 7 days and frees its spot.
+- **Post-payment sequence** (8:00 AM school-local; each school has a `timezone` column): Synap/diagnostic −10d, FAQs −7d, class details −4d (**held + admin alert if instructor/location blank**), location reminder −1d at 11 AM, 2nd diagnostic +7d, review request +1d after last session, tutoring offer +4d.
+- **Late signups** get one combined welcome instead of stale pre-start emails.
+- **Changes** to start date/room/instructor after the details email went out trigger an automatic schedule-update email.
+- **Waitlist**: full classes show "Join Waitlist" (no payment); spot opens → first in line gets a signed 48h claim/pay link (admin CC'd); unclaimed offers roll to the next family with an admin alert.
+- **Admin alerts**: webhook failures, held details emails, blank instructor/room at −6d, min-enrollment checkpoint at the deadline (or −7d), waitlist rollovers, plus a Monday-morning digest of the week's registrations.
+
+Email copy is placeholder — final copy drops into `app/utils/email.ts` template by template.

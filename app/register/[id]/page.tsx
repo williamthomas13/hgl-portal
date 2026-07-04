@@ -16,26 +16,52 @@ type ClassDetails = {
   school_id: string | null
 }
 
+type EnrollmentSlot = {
+  payment_status: string
+  waitlist_offer_expires_at: string | null
+}
+
+/** Mirrors the server's spot accounting: Pending + Paid + active waitlist offers. */
+function takenCount(slots: EnrollmentSlot[]) {
+  const now = Date.now()
+  return slots.filter(
+    (e) =>
+      e.payment_status === 'Pending' ||
+      e.payment_status === 'Paid' ||
+      (e.payment_status === 'Waitlisted' &&
+        e.waitlist_offer_expires_at != null &&
+        new Date(e.waitlist_offer_expires_at).getTime() > now)
+  ).length
+}
+
 export default function RegistrationPage() {
   const params = useParams()
   const classId = params.id as string
 
   const [classDetails, setClassDetails] = useState<ClassDetails | null>(null)
+  const [isFull, setIsFull] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null)
 
   useEffect(() => {
     async function fetchClass() {
       const { data } = await supabase
         .from('classes')
-        .select('*')
+        .select('*, enrollments(payment_status, waitlist_offer_expires_at)')
         .eq('id', classId)
         .single()
-      if (data) setClassDetails(data as ClassDetails)
+      if (data) {
+        setClassDetails(data as ClassDetails)
+        setIsFull(takenCount(data.enrollments ?? []) >= data.capacity)
+      }
     }
     if (classId) fetchClass()
   }, [classId])
 
+  // -------------------------------------------------------------------------
+  // Normal registration → Stripe checkout
+  // -------------------------------------------------------------------------
   async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
@@ -90,14 +116,14 @@ export default function RegistrationPage() {
       return
     }
 
-    // 3. Create the Enrollment in "Pending Checkout" state
+    // 3. Create the Enrollment in "Pending" state (holds a capacity spot)
     const { data: enrollmentData, error: enrollmentError } = await supabase
       .from('enrollments')
       .insert([
         {
           student_id: studentData.id,
           class_id: classId,
-          payment_status: 'Pending Checkout',
+          payment_status: 'Pending',
         },
       ])
       .select()
@@ -139,17 +165,77 @@ export default function RegistrationPage() {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Waitlist join (class is full — no payment)
+  // -------------------------------------------------------------------------
+  async function handleWaitlist(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setLoading(true)
+    setMessage('Joining the waitlist...')
+    const formData = new FormData(e.currentTarget)
+
+    try {
+      const response = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          classId,
+          parentFirst: formData.get('parentFirst'),
+          parentLast: formData.get('parentLast'),
+          parentEmail: formData.get('parentEmail'),
+          studentFirst: formData.get('studentFirst'),
+          studentLast: formData.get('studentLast'),
+          studentEmail: formData.get('studentEmail'),
+          studentGrade: formData.get('studentGrade'),
+        }),
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setWaitlistPosition(data.position)
+        setMessage('')
+      } else {
+        setMessage('Error: ' + data.error)
+      }
+    } catch {
+      setMessage('Error: failed to join the waitlist.')
+    }
+    setLoading(false)
+  }
+
   if (!classDetails) return <div className="p-10 text-center">Loading class details...</div>
+
+  if (waitlistPosition !== null) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-10">
+        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
+          <h1 className="text-2xl font-bold text-hgl-slate mb-4">You&apos;re on the waitlist</h1>
+          <p className="text-gray-700">
+            You&apos;re <strong>#{waitlistPosition}</strong> in line for{' '}
+            {classDetails.school_nickname} — {classDetails.class_type}. We&apos;ve emailed you a
+            confirmation. If a spot opens, you&apos;ll get a payment link with 48 hours to claim it.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-10">
       <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
-        <h1 className="text-2xl font-bold text-hgl-slate mb-2">Registration</h1>
-        <h2 className="text-lg text-gray-600 font-semibold mb-6">
+        <h1 className="text-2xl font-bold text-hgl-slate mb-2">
+          {isFull ? 'Join the Waitlist' : 'Registration'}
+        </h1>
+        <h2 className="text-lg text-gray-600 font-semibold mb-2">
           {classDetails.school_nickname} — {classDetails.class_type}
         </h2>
+        {isFull && (
+          <p className="mb-6 text-sm bg-yellow-50 text-yellow-800 rounded p-3">
+            This class is currently full. Join the waitlist (no payment now) and we&apos;ll email
+            you a payment link if a spot opens — first come, first served.
+          </p>
+        )}
 
-        <form onSubmit={handleRegister} className="space-y-6">
+        <form onSubmit={isFull ? handleWaitlist : handleRegister} className="space-y-6">
           {/* Parent / Guardian */}
           <div className="bg-gray-50 p-4 rounded-md border">
             <h3 className="font-semibold text-hgl-slate mb-3">Parent / Guardian Information</h3>
@@ -201,7 +287,13 @@ export default function RegistrationPage() {
             disabled={loading}
             className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition duration-200 disabled:opacity-60"
           >
-            {loading ? 'Preparing secure checkout...' : `Proceed to payment ($${classDetails.price})`}
+            {loading
+              ? isFull
+                ? 'Joining waitlist...'
+                : 'Preparing secure checkout...'
+              : isFull
+                ? 'Join Waitlist (no payment now)'
+                : `Proceed to payment ($${classDetails.price})`}
           </button>
         </form>
 

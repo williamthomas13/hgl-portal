@@ -15,6 +15,21 @@ type ClassCard = {
   school_nickname: string | null
   schools: { name: string; nickname: string } | null
   sessions: { session_date: string }[] | null
+  enrollments: { payment_status: string; waitlist_offer_expires_at: string | null }[] | null
+}
+
+/** Mirrors the server's spot accounting: Pending + Paid + active waitlist offers. */
+function isFull(c: ClassCard) {
+  const now = Date.now()
+  const taken = (c.enrollments ?? []).filter(
+    (e) =>
+      e.payment_status === 'Pending' ||
+      e.payment_status === 'Paid' ||
+      (e.payment_status === 'Waitlisted' &&
+        e.waitlist_offer_expires_at != null &&
+        new Date(e.waitlist_offer_expires_at).getTime() > now)
+  ).length
+  return taken >= c.capacity
 }
 
 export default function ParentPortal() {
@@ -29,7 +44,8 @@ export default function ParentPortal() {
           `
           *,
           schools ( name, nickname ),
-          sessions ( session_date )
+          sessions ( session_date ),
+          enrollments ( payment_status, waitlist_offer_expires_at )
         `
         )
         .order('created_at', { ascending: false })
@@ -98,9 +114,13 @@ export default function ParentPortal() {
 
                     <Link
                       href={`/register/${c.id}`}
-                      className="block text-center w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition"
+                      className={`block text-center w-full font-bold py-2 px-4 rounded transition text-white ${
+                        isFull(c)
+                          ? 'bg-amber-500 hover:bg-amber-600'
+                          : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
                     >
-                      Register Now
+                      {isFull(c) ? 'Class Full — Join Waitlist' : 'Register Now'}
                     </Link>
                   </div>
                 )

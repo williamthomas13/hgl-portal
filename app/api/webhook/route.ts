@@ -2,11 +2,20 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import {
-  confirmationEmail,
-  loadEnrollmentContext,
+  combinedWelcomeEmail,
   recipients,
+  sendAdminAlert,
   sendOnce,
+  thankYouEmail,
 } from '../../utils/email';
+import {
+  ADMIN_EMAIL,
+  SEQUENCE,
+  emailContext,
+  isDue,
+  loadClassBundles,
+  stepTargetDate,
+} from '../../utils/lifecycle';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
@@ -57,40 +66,82 @@ export async function POST(req: Request) {
       });
 
     const { data, error } = enrollmentId
-      ? await enrollmentQuery.eq('id', enrollmentId).select('id')
-      : await enrollmentQuery.eq('stripe_session_id', sessionId).select('id');
+      ? await enrollmentQuery.eq('id', enrollmentId).select('id, class_id')
+      : await enrollmentQuery.eq('stripe_session_id', sessionId).select('id, class_id');
 
-    if (error) {
-      console.error('Failed to mark enrollment paid:', error.message);
-    } else if (!data || data.length === 0) {
-      console.warn(
-        `Webhook completed for session ${sessionId} but no enrollment matched. ` +
-          `enrollment_id=${enrollmentId ?? 'none'}`
-      );
-    } else {
-      console.log(`Marked enrollment ${data[0].id} paid (session ${sessionId}).`);
+    if (error || !data || data.length === 0) {
+      // Payment came in but we couldn't record it — the one failure the
+      // admin must hear about immediately.
+      const problem = error
+        ? `Database error: ${error.message}`
+        : `No enrollment matched (enrollment_id=${enrollmentId ?? 'none'}).`;
+      console.error(`Webhook failed for session ${sessionId}: ${problem}`);
+      await sendAdminAlert({
+        dedupeKey: `webhook_failure:${sessionId}`,
+        adminEmail: ADMIN_EMAIL,
+        subject: 'Stripe payment could not be matched to an enrollment',
+        body: `<p>Stripe checkout session <code>${sessionId}</code> completed, but the
+          enrollment could not be updated.</p><p>${problem}</p>
+          <p>Check the Stripe dashboard and the enrollments table.</p>`,
+      }).catch((e) => console.error('Admin alert failed:', e));
+      return NextResponse.json({ received: true });
+    }
 
-      // Registration confirmation to parent (+ student when we have an email).
-      // sendOnce dedupes, so Stripe webhook retries can't double-send; a
-      // failure here must not fail the webhook (Stripe would keep retrying
-      // an already-recorded payment).
-      const paidEnrollmentId = data[0].id;
-      try {
-        const ctx = await loadEnrollmentContext(paidEnrollmentId);
-        if (ctx) {
-          const { subject, html } = confirmationEmail(ctx);
+    const paidEnrollmentId = data[0].id;
+    const classId = data[0].class_id;
+    console.log(`Marked enrollment ${paidEnrollmentId} paid (session ${sessionId}).`);
+
+    // Welcome email: normally the thank-you; if the signup happened after
+    // pre-start emails would already have fired, send one combined welcome
+    // (thank-you + Synap + FAQ) instead and claim those steps' dedupe keys
+    // so the sweep never re-sends them individually.
+    // A failure here must not fail the webhook (Stripe would keep retrying
+    // an already-recorded payment).
+    try {
+      const [bundle] = await loadClassBundles(classId);
+      const enrollment = bundle?.enrollments.find((e) => e.id === paidEnrollmentId);
+      if (bundle && enrollment) {
+        const ctx = emailContext(bundle, enrollment);
+        const supersededSteps = SEQUENCE.filter(
+          (s) =>
+            (s.type === 'synap_access' || s.type === 'faq') &&
+            isDue(bundle.timezone, stepTargetDate(s, bundle), s.hour)
+        );
+
+        if (supersededSteps.length > 0) {
+          const { subject, html } = combinedWelcomeEmail(ctx);
+          const status = await sendOnce({
+            dedupeKey: `thank_you:${paidEnrollmentId}`,
+            emailType: 'combined_welcome',
+            enrollmentId: paidEnrollmentId,
+            to: recipients(ctx),
+            subject,
+            html,
+          });
+          if (status === 'sent') {
+            await supabase.from('email_log').insert(
+              supersededSteps.map((s) => ({
+                dedupe_key: `${s.type}:${paidEnrollmentId}`,
+                email_type: 'superseded_by_welcome',
+                enrollment_id: paidEnrollmentId,
+                recipients: recipients(ctx),
+              }))
+            );
+          }
+        } else {
+          const { subject, html } = thankYouEmail(ctx);
           await sendOnce({
-            dedupeKey: `confirmation:${paidEnrollmentId}`,
-            emailType: 'confirmation',
+            dedupeKey: `thank_you:${paidEnrollmentId}`,
+            emailType: 'thank_you',
             enrollmentId: paidEnrollmentId,
             to: recipients(ctx),
             subject,
             html,
           });
         }
-      } catch (emailErr) {
-        console.error('Confirmation email failed:', emailErr);
       }
+    } catch (emailErr) {
+      console.error('Welcome email failed:', emailErr);
     }
   }
 
