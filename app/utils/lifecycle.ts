@@ -26,6 +26,8 @@ export type EnrollmentRow = {
   enrolled_at: string
   waitlist_offer_sent_at: string | null
   waitlist_offer_expires_at: string | null
+  familyId: string
+  marketingOptOut: boolean
   parentFirstName: string
   parentEmail: string
   studentFirstName: string
@@ -146,7 +148,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       waitlist_offer_sent_at, waitlist_offer_expires_at,
       students (
         first_name, last_name, student_email,
-        families ( parent_first_name, parent_email )
+        families ( id, parent_first_name, parent_email, marketing_opt_out )
       )
     )
   `
@@ -175,6 +177,8 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           enrolled_at: e.enrolled_at,
           waitlist_offer_sent_at: e.waitlist_offer_sent_at,
           waitlist_offer_expires_at: e.waitlist_offer_expires_at,
+          familyId: family.id,
+          marketingOptOut: family.marketing_opt_out ?? false,
           parentFirstName: family.parent_first_name,
           parentEmail: family.parent_email,
           studentFirstName: student.first_name,
@@ -212,6 +216,8 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
 export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentEmailContext {
   return {
     enrollmentId: e.id,
+    marketingOptOut: e.marketingOptOut,
+    unsubscribeUrl: unsubscribeUrlFor(e.familyId),
     parentFirstName: e.parentFirstName,
     parentEmail: e.parentEmail,
     studentFirstName: e.studentFirstName,
@@ -259,6 +265,26 @@ export function claimUrlFor(enrollmentId: string) {
 
 export function verifyClaimToken(enrollmentId: string, token: string) {
   const expected = Buffer.from(claimToken(enrollmentId))
+  const given = Buffer.from(token)
+  return expected.length === given.length && timingSafeEqual(expected, given)
+}
+
+// Unsubscribe links (relationship emails only). Distinct HMAC input prefix so
+// claim tokens and unsubscribe tokens can never be swapped for each other.
+function unsubToken(familyId: string) {
+  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`unsub:${familyId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function unsubscribeUrlFor(familyId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/api/unsubscribe?f=${familyId}&t=${unsubToken(familyId)}`
+}
+
+export function verifyUnsubToken(familyId: string, token: string) {
+  const expected = Buffer.from(unsubToken(familyId))
   const given = Buffer.from(token)
   return expected.length === given.length && timingSafeEqual(expected, given)
 }

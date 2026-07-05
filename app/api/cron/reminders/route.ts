@@ -49,6 +49,10 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 )
 
+// Relationship (non-essential) emails — suppressed for opted-out families.
+// Everything else is transactional and always sends.
+const RELATIONSHIP_TYPES = new Set(['second_diagnostic', 'review_request', 'tutoring_offer'])
+
 const TEMPLATES: Record<
   string,
   (ctx: EnrollmentEmailContext) => { subject: string; html: string; from?: string }
@@ -158,6 +162,7 @@ async function sweepSequence(bundle: ClassBundle, c: Counters) {
     }
 
     for (const e of paid) {
+      if (RELATIONSHIP_TYPES.has(step.type) && e.marketingOptOut) continue
       const ctx = emailContext(bundle, e)
       const { subject, html, from } = TEMPLATES[step.type](ctx)
       const status = await sendOnce({

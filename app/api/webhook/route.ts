@@ -109,12 +109,15 @@ export async function POST(req: Request) {
         );
 
         if (supersededSteps.length > 0) {
-          const { subject, html } = combinedWelcomeEmail(ctx);
+          // Combined welcome always sends — it carries transactional
+          // Synap/FAQ content — even for opted-out families.
+          const { subject, html, from } = combinedWelcomeEmail(ctx);
           const status = await sendOnce({
             dedupeKey: `thank_you:${paidEnrollmentId}`,
             emailType: 'combined_welcome',
             enrollmentId: paidEnrollmentId,
             to: recipients(ctx),
+            from,
             subject,
             html,
           });
@@ -128,13 +131,15 @@ export async function POST(req: Request) {
               }))
             );
           }
-        } else {
-          const { subject, html } = thankYouEmail(ctx);
+        } else if (!enrollment.marketingOptOut) {
+          // Thank-you is a relationship email — suppressed on opt-out.
+          const { subject, html, from } = thankYouEmail(ctx);
           await sendOnce({
             dedupeKey: `thank_you:${paidEnrollmentId}`,
             emailType: 'thank_you',
             enrollmentId: paidEnrollmentId,
             to: recipients(ctx),
+            from,
             subject,
             html,
           });

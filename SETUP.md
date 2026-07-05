@@ -183,3 +183,8 @@ What it does automatically:
 - **Admin alerts**: webhook failures, held details emails, blank instructor/room at −6d, min-enrollment checkpoint at the deadline (or −7d), waitlist rollovers, plus a Monday-morning digest of the week's registrations.
 
 Email copy is placeholder — final copy drops into `app/utils/email.ts` template by template.
+
+### Senders & unsubscribe policy
+
+- `billy@highergroundlearning.com` sends the personal emails: thank-you (#1), review request (#7), tutoring offer (#8), and the combined late-registration welcome. Everything else — sequences, payment reminders, waitlist, admin alerts — sends from the default `EMAIL_FROM` (info@). Override the personal address with `EMAIL_FROM_PERSONAL`.
+- Relationship emails (#1 thank-you, #6 2nd diagnostic, #7 review, #8 tutoring) carry an "Unsubscribe from non-essential updates" link; clicking it sets `marketing_opt_out` on the family and suppresses only that category. Transactional emails (Synap access, FAQs, class details, location reminder, schedule updates, payment reminders, waitlist) never carry the link and always send. The combined welcome always sends (it carries transactional content) but includes the link.

@@ -31,6 +31,8 @@ export type SessionInfo = {
 
 export type EnrollmentEmailContext = {
   enrollmentId: string
+  marketingOptOut: boolean
+  unsubscribeUrl: string
   parentFirstName: string
   parentEmail: string
   studentFirstName: string
@@ -99,13 +101,16 @@ function faqSection() {
     make-up sessions, contact info.]</p>`
 }
 
-function wrap(body: string) {
+function wrap(body: string, unsubscribeUrl?: string) {
+  const unsub = unsubscribeUrl
+    ? ` · <a href="${unsubscribeUrl}" style="color:#64748b">Unsubscribe from non-essential updates</a>`
+    : ''
   return `
   <div style="font-family:Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1e293b">
     <div style="border-top:4px solid #00AEEE;padding:24px 8px">
       ${body}
       <p style="margin-top:32px;font-size:13px;color:#64748b">
-        Higher Ground Learning · questions? Just reply to this email.
+        Higher Ground Learning · questions? Just reply to this email.${unsub}
       </p>
     </div>
   </div>`
@@ -146,14 +151,18 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
 
 export function thankYouEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
+    from: PERSONAL_FROM,
     subject: `You're registered: ${ctx.className}`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Thank you — registration confirmed</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder thank-you] <strong>${ctx.studentFirstName}</strong> is registered and paid for
       <strong>${ctx.className}</strong>, starting ${formatDate(ctx.firstSession)}.</p>
       ${scheduleHtml(ctx)}
-    `),
+    `,
+      ctx.unsubscribeUrl
+    ),
   }
 }
 
@@ -215,13 +224,16 @@ export function locationReminderEmail(ctx: EnrollmentEmailContext): Rendered {
 export function secondDiagnosticEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
     subject: `${ctx.className} — second diagnostic reminder`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Second diagnostic</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder] One week into <strong>${ctx.className}</strong> — time for
       ${ctx.studentFirstName}'s second diagnostic test.</p>
       ${synapSection(ctx)}
-    `),
+    `,
+      ctx.unsubscribeUrl
+    ),
   }
 }
 
@@ -229,12 +241,15 @@ export function reviewRequestEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
     from: PERSONAL_FROM,
     subject: `How was ${ctx.className}?`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">We'd love your feedback</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder review request] ${ctx.studentFirstName} just finished
       <strong>${ctx.className}</strong> — would you leave us a quick review?</p>
-    `),
+    `,
+      ctx.unsubscribeUrl
+    ),
   }
 }
 
@@ -242,20 +257,29 @@ export function tutoringOfferEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
     from: PERSONAL_FROM,
     subject: `A tutoring offer for ${ctx.studentFirstName}`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Keep the momentum going</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder discounted tutoring offer] As a ${ctx.className} family,
       you qualify for a discount on 1-on-1 tutoring.</p>
-    `),
+    `,
+      ctx.unsubscribeUrl
+    ),
   }
 }
 
-/** Late registration: thank-you + Synap + FAQ merged into one welcome. */
+/**
+ * Late registration: thank-you + Synap + FAQ merged into one welcome.
+ * Sends from the personal address (it carries the thank-you), but always
+ * sends regardless of opt-out — the Synap/FAQ content is transactional.
+ */
 export function combinedWelcomeEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
+    from: PERSONAL_FROM,
     subject: `Welcome to ${ctx.className} — everything you need`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Thank you — registration confirmed</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder combined welcome] <strong>${ctx.studentFirstName}</strong> is registered and
@@ -264,7 +288,9 @@ export function combinedWelcomeEmail(ctx: EnrollmentEmailContext): Rendered {
       ${scheduleHtml(ctx)}
       ${synapSection(ctx)}
       ${faqSection()}
-    `),
+    `,
+      ctx.unsubscribeUrl
+    ),
   }
 }
 
