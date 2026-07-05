@@ -188,3 +188,10 @@ Email copy is placeholder — final copy drops into `app/utils/email.ts` templat
 
 - `billy@highergroundlearning.com` sends the personal emails: thank-you (#1), review request (#7), tutoring offer (#8), and the combined late-registration welcome. Everything else — sequences, payment reminders, waitlist, admin alerts — sends from the default `EMAIL_FROM` (info@). Override the personal address with `EMAIL_FROM_PERSONAL`.
 - Relationship emails (#1 thank-you, #6 2nd diagnostic, #7 review, #8 tutoring) carry an "Unsubscribe from non-essential updates" link; clicking it sets `marketing_opt_out` on the family and suppresses only that category. Transactional emails (Synap access, FAQs, class details, location reminder, schedule updates, payment reminders, waitlist) never carry the link and always send. The combined welcome always sends (it carries transactional content) but includes the link.
+
+### Course calendars & preheaders
+
+- Every class has a calendar page at `/classes/{id}/calendar`: Add to Google Calendar (subscription), Add to Apple Calendar (webcal), Download .ics, Download PDF schedule. The "Download the course calendar" button in emails links here. The ICS feed is generated live from the sessions table (school-local timezone, per-session location/meeting link), so subscribed calendars pick up reschedules automatically.
+- Email #0 (student confirmation, transactional, sent to the student's email on payment) exists with placeholder copy — final copy in the content pack. The parent thank-you (#1) is now parent-only.
+- All templates support preheaders (hidden inbox preview text) — placeholder strings marked like the body copy.
+- The diagnostic due date shown in emails is always computed as first session − 1 day (never stored).

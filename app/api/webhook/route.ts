@@ -6,6 +6,7 @@ import {
   recipients,
   sendAdminAlert,
   sendOnce,
+  studentConfirmationEmail,
   thankYouEmail,
 } from '../../utils/email';
 import {
@@ -102,6 +103,21 @@ export async function POST(req: Request) {
       const enrollment = bundle?.enrollments.find((e) => e.id === paidEnrollmentId);
       if (bundle && enrollment) {
         const ctx = emailContext(bundle, enrollment);
+
+        // Email #0: student-facing confirmation. Transactional — always
+        // sends when we have a student email, regardless of opt-out.
+        if (ctx.studentEmail) {
+          const student = studentConfirmationEmail(ctx);
+          await sendOnce({
+            dedupeKey: `student_confirmation:${paidEnrollmentId}`,
+            emailType: 'student_confirmation',
+            enrollmentId: paidEnrollmentId,
+            to: [ctx.studentEmail],
+            from: student.from,
+            subject: student.subject,
+            html: student.html,
+          });
+        }
         const supersededSteps = SEQUENCE.filter(
           (s) =>
             (s.type === 'synap_access' || s.type === 'faq') &&
@@ -132,13 +148,14 @@ export async function POST(req: Request) {
             );
           }
         } else if (!enrollment.marketingOptOut) {
-          // Thank-you is a relationship email — suppressed on opt-out.
+          // Thank-you is a relationship email — suppressed on opt-out, and
+          // parent-only now that the student gets their own #0 confirmation.
           const { subject, html, from } = thankYouEmail(ctx);
           await sendOnce({
             dedupeKey: `thank_you:${paidEnrollmentId}`,
             emailType: 'thank_you',
             enrollmentId: paidEnrollmentId,
-            to: recipients(ctx),
+            to: [ctx.parentEmail],
             from,
             subject,
             html,

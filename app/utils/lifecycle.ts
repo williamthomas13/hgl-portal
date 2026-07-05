@@ -213,9 +213,18 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+export function calendarPageUrlFor(classId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/classes/${classId}/calendar`
+}
+
 export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentEmailContext {
   return {
     enrollmentId: e.id,
+    classId: bundle.id,
+    calendarPageUrl: calendarPageUrlFor(bundle.id),
+    // Always first session minus one day — computed, never stored.
+    diagnosticDueDate: addDaysISO(bundle.firstSession, -1),
     marketingOptOut: e.marketingOptOut,
     unsubscribeUrl: unsubscribeUrlFor(e.familyId),
     parentFirstName: e.parentFirstName,

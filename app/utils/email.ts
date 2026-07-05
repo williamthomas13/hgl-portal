@@ -31,6 +31,10 @@ export type SessionInfo = {
 
 export type EnrollmentEmailContext = {
   enrollmentId: string
+  classId: string
+  calendarPageUrl: string
+  /** Always first session date − 1 day. Computed, never stored. */
+  diagnosticDueDate: string
   marketingOptOut: boolean
   unsubscribeUrl: string
   parentFirstName: string
@@ -101,11 +105,26 @@ function faqSection() {
     make-up sessions, contact info.]</p>`
 }
 
-function wrap(body: string, unsubscribeUrl?: string) {
-  const unsub = unsubscribeUrl
-    ? ` · <a href="${unsubscribeUrl}" style="color:#64748b">Unsubscribe from non-essential updates</a>`
+type WrapOpts = {
+  /** Hidden preview-text line shown next to the subject in inbox lists. */
+  preheader?: string
+  unsubscribeUrl?: string
+}
+
+function wrap(body: string, opts: WrapOpts = {}) {
+  const unsub = opts.unsubscribeUrl
+    ? ` · <a href="${opts.unsubscribeUrl}" style="color:#64748b">Unsubscribe from non-essential updates</a>`
+    : ''
+  // Hidden preheader + whitespace padding so clients don't pull body text
+  // into the preview line instead. Same technique React Email's <Preview>
+  // renders to.
+  const preheader = opts.preheader
+    ? `<div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;mso-hide:all">
+        ${opts.preheader}${'&#8199;&#65279; '.repeat(30)}
+      </div>`
     : ''
   return `
+  ${preheader}
   <div style="font-family:Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1e293b">
     <div style="border-top:4px solid #00AEEE;padding:24px 8px">
       ${body}
@@ -114,6 +133,15 @@ function wrap(body: string, unsubscribeUrl?: string) {
       </p>
     </div>
   </div>`
+}
+
+function calendarButton(ctx: EnrollmentEmailContext) {
+  return `
+    <p style="margin-top:20px">
+      <a href="${ctx.calendarPageUrl}" style="display:inline-block;background:#00AEEE;color:#fff;
+      font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none">
+      Download the course calendar</a>
+    </p>`
 }
 
 export function recipients(ctx: EnrollmentEmailContext) {
@@ -135,13 +163,40 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
   ][n - 1]
   return {
     subject: `Complete ${ctx.studentFirstName}'s registration for ${ctx.className}`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Payment reminder ${n} of 4</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder] ${ctx.studentFirstName}'s registration for
       <strong>${ctx.className}</strong> ($${ctx.price}) hasn't been paid yet — ${urgency}.
       Use the link from your registration, or register again to get a fresh payment link.</p>
-    `),
+    `,
+      { preheader: `[Placeholder preheader] ${ctx.studentFirstName}'s spot isn't confirmed yet` }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Email #0: student-facing confirmation — TRANSACTIONAL (always sends, no
+// unsubscribe). Distinct copy from the parent thank-you; final copy ships in
+// the content pack.
+// ---------------------------------------------------------------------------
+
+export function studentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
+  return {
+    subject: `You're in: ${ctx.className}`,
+    html: wrap(
+      `
+      <h2 style="color:#334155">You're enrolled</h2>
+      <p>Hi ${ctx.studentFirstName},</p>
+      <p>[Placeholder student confirmation — distinct copy in content pack]
+      You're all set for <strong>${ctx.className}</strong>, starting
+      ${formatDate(ctx.firstSession)}.</p>
+      ${scheduleHtml(ctx)}
+      ${calendarButton(ctx)}
+    `,
+      { preheader: `[Placeholder preheader] Your ${ctx.className} details inside` }
+    ),
   }
 }
 
@@ -160,8 +215,12 @@ export function thankYouEmail(ctx: EnrollmentEmailContext): Rendered {
       <p>[Placeholder thank-you] <strong>${ctx.studentFirstName}</strong> is registered and paid for
       <strong>${ctx.className}</strong>, starting ${formatDate(ctx.firstSession)}.</p>
       ${scheduleHtml(ctx)}
+      ${calendarButton(ctx)}
     `,
-      ctx.unsubscribeUrl
+      {
+        preheader: `[Placeholder preheader] ${ctx.studentFirstName} is confirmed for ${ctx.className}`,
+        unsubscribeUrl: ctx.unsubscribeUrl,
+      }
     ),
   }
 }
@@ -169,32 +228,40 @@ export function thankYouEmail(ctx: EnrollmentEmailContext): Rendered {
 export function synapAccessEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
     subject: `Diagnostic test access for ${ctx.className}`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Your diagnostic test</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder] ${ctx.studentFirstName}'s class starts ${formatDate(ctx.firstSession)} —
-      time to take the diagnostic.</p>
+      the diagnostic is due by <strong>${formatDate(ctx.diagnosticDueDate)}</strong>.</p>
       ${synapSection(ctx)}
-    `),
+    `,
+      { preheader: `[Placeholder preheader] Diagnostic due ${formatDate(ctx.diagnosticDueDate)}` }
+    ),
   }
 }
 
 export function faqEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
     subject: `${ctx.className} — what to know before we start`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Before class starts</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       ${faqSection()}
       ${scheduleHtml(ctx)}
-    `),
+      ${calendarButton(ctx)}
+    `,
+      { preheader: `[Placeholder preheader] Everything to know before ${ctx.className} begins` }
+    ),
   }
 }
 
 export function classDetailsEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
     subject: `${ctx.className} starts ${formatDate(ctx.firstSession)} — details inside`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Class details</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder] Everything ${ctx.studentFirstName} needs for day one:</p>
@@ -204,20 +271,26 @@ export function classDetailsEmail(ctx: EnrollmentEmailContext): Rendered {
         <li><strong>First session:</strong> ${formatDate(ctx.firstSession)}</li>
       </ul>
       ${scheduleHtml(ctx)}
-    `),
+      ${calendarButton(ctx)}
+    `,
+      { preheader: `[Placeholder preheader] Instructor, location, and start info for ${ctx.className}` }
+    ),
   }
 }
 
 export function locationReminderEmail(ctx: EnrollmentEmailContext): Rendered {
   return {
     subject: `Tomorrow: ${ctx.className}`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">See you tomorrow</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder] ${ctx.studentFirstName}'s first session of <strong>${ctx.className}</strong>
       is tomorrow${ctx.defaultLocation ? ` at <strong>${ctx.defaultLocation}</strong>` : ''}.</p>
       ${ctx.sessions[0] ? `<p><strong>${sessionLine(ctx.sessions[0], ctx.defaultLocation)}</strong></p>` : ''}
-    `),
+    `,
+      { preheader: `[Placeholder preheader] ${ctx.className} starts tomorrow` }
+    ),
   }
 }
 
@@ -232,7 +305,10 @@ export function secondDiagnosticEmail(ctx: EnrollmentEmailContext): Rendered {
       ${ctx.studentFirstName}'s second diagnostic test.</p>
       ${synapSection(ctx)}
     `,
-      ctx.unsubscribeUrl
+      {
+        preheader: `[Placeholder preheader] Time for the second diagnostic`,
+        unsubscribeUrl: ctx.unsubscribeUrl,
+      }
     ),
   }
 }
@@ -248,7 +324,10 @@ export function reviewRequestEmail(ctx: EnrollmentEmailContext): Rendered {
       <p>[Placeholder review request] ${ctx.studentFirstName} just finished
       <strong>${ctx.className}</strong> — would you leave us a quick review?</p>
     `,
-      ctx.unsubscribeUrl
+      {
+        preheader: `[Placeholder preheader] How was ${ctx.className}? Two minutes, big help`,
+        unsubscribeUrl: ctx.unsubscribeUrl,
+      }
     ),
   }
 }
@@ -264,7 +343,10 @@ export function tutoringOfferEmail(ctx: EnrollmentEmailContext): Rendered {
       <p>[Placeholder discounted tutoring offer] As a ${ctx.className} family,
       you qualify for a discount on 1-on-1 tutoring.</p>
     `,
-      ctx.unsubscribeUrl
+      {
+        preheader: `[Placeholder preheader] A tutoring discount for ${ctx.className} families`,
+        unsubscribeUrl: ctx.unsubscribeUrl,
+      }
     ),
   }
 }
@@ -288,8 +370,12 @@ export function combinedWelcomeEmail(ctx: EnrollmentEmailContext): Rendered {
       ${scheduleHtml(ctx)}
       ${synapSection(ctx)}
       ${faqSection()}
+      ${calendarButton(ctx)}
     `,
-      ctx.unsubscribeUrl
+      {
+        preheader: `[Placeholder preheader] Schedule, diagnostic, and FAQs for ${ctx.className}`,
+        unsubscribeUrl: ctx.unsubscribeUrl,
+      }
     ),
   }
 }
@@ -308,7 +394,10 @@ export function scheduleUpdateEmail(ctx: EnrollmentEmailContext): Rendered {
         <li><strong>First session:</strong> ${formatDate(ctx.firstSession)}</li>
       </ul>
       ${scheduleHtml(ctx)}
-    `),
+      ${calendarButton(ctx)}
+    `,
+      { preheader: `[Placeholder preheader] Updated details for ${ctx.className}` }
+    ),
   }
 }
 
@@ -319,13 +408,16 @@ export function scheduleUpdateEmail(ctx: EnrollmentEmailContext): Rendered {
 export function waitlistConfirmationEmail(ctx: EnrollmentEmailContext, position: number): Rendered {
   return {
     subject: `You're #${position} on the waitlist for ${ctx.className}`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">You're on the waitlist</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder] ${ctx.studentFirstName} is <strong>#${position}</strong> in line for
       <strong>${ctx.className}</strong>. If a spot opens, we'll email you a payment link —
       you'll have 48 hours to claim it.</p>
-    `),
+    `,
+      { preheader: `[Placeholder preheader] You're #${position} in line for ${ctx.className}` }
+    ),
   }
 }
 
@@ -339,7 +431,8 @@ export function waitlistOfferEmail(
   })
   return {
     subject: `A spot opened in ${ctx.className} — 48 hours to claim it`,
-    html: wrap(`
+    html: wrap(
+      `
       <h2 style="color:#334155">Your spot is ready</h2>
       <p>Hi ${ctx.parentFirstName},</p>
       <p>[Placeholder] A spot just opened for ${ctx.studentFirstName} in
@@ -349,7 +442,9 @@ export function waitlistOfferEmail(
       Claim the spot &amp; pay</a></p>
       <p>This offer expires <strong>${deadline}</strong>, after which it passes to the
       next family in line.</p>
-    `),
+    `,
+      { preheader: `[Placeholder preheader] Claim ${ctx.studentFirstName}'s spot within 48 hours` }
+    ),
   }
 }
 

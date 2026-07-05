@@ -53,6 +53,8 @@ type ClassRow = {
   sessions: Session[] | null
 }
 
+const CLASS_TYPE_SUGGESTIONS = ['SAT Prep', 'ACT Prep']
+
 const STATUS_STYLES: Record<string, string> = {
   Paid: 'bg-green-100 text-green-700',
   Completed: 'bg-indigo-100 text-indigo-700',
@@ -250,9 +252,16 @@ export default function AdminDashboard() {
                   type="text"
                   name="class_type"
                   required
+                  list="class-types-list"
                   placeholder="e.g. SAT Prep"
                   className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
                 />
+                <datalist id="class-types-list">
+                  {CLASS_TYPE_SUGGESTIONS.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-gray-500 mt-1">Pick a suggestion or type anything.</p>
               </div>
 
               <div>
