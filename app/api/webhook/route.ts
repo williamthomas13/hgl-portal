@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import {
   lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
@@ -18,11 +18,6 @@ import {
 } from '../../utils/lifecycle';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-);
 
 // The App Router requires this flag so the raw body reaches stripe.webhooks.constructEvent.
 export const runtime = 'nodejs';

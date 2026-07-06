@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { createHmac, timingSafeEqual } from 'crypto'
 
 // Resend delivery-event webhook. Configure in the Resend dashboard →
@@ -12,11 +12,6 @@ import { createHmac, timingSafeEqual } from 'crypto'
 // svix-signature headers. Verified manually here — no extra dependency.
 
 export const runtime = 'nodejs'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 const TOLERANCE_SECONDS = 5 * 60
 

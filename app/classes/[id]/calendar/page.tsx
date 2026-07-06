@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { supabase } from '../../../utils/supabase'
 
 // Per-class calendar landing page — the target of every "Download the course
 // calendar" email button. Offers Google subscription, Apple/ICS, and PDF.
@@ -50,12 +49,13 @@ export default function ClassCalendarPage() {
 
   useEffect(() => {
     async function fetchClass() {
-      const { data } = await supabase
-        .from('classes')
-        .select('id, class_type, school_nickname, instructor_name, default_location, schools(nickname), sessions(id, session_date, start_time, end_time, location)')
-        .eq('id', classId)
-        .single()
-      if (data) setInfo(data as unknown as ClassInfo)
+      // Sanitized server payload — the browser has no DB access (Phase 3 RLS).
+      try {
+        const response = await fetch(`/api/class-info/${classId}`)
+        if (response.ok) setInfo((await response.json()) as ClassInfo)
+      } catch {
+        // fall through to "Class not found"
+      }
       setLoading(false)
     }
     if (classId) fetchClass()

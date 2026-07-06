@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { createHash } from 'crypto'
 import {
   classDetailsEmail,
@@ -59,11 +59,6 @@ import {
 // recipient — parent send (dedupe `<type>_p:`) and student send (`<type>_s:`,
 // only when a student email exists). Blank student email → parent-only,
 // silently.
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 // Relationship (non-essential) emails — suppressed for opted-out families.
 // Everything else is transactional and always sends. (#3 VFAQs is

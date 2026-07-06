@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { loadClassBundles, localDate, verifyAddonToken } from '../../../utils/lifecycle'
 
 // Buy button on the per-enrollment addon page (email #9). Creates an
@@ -10,11 +10,6 @@ import { loadClassBundles, localDate, verifyAddonToken } from '../../../utils/li
 // closes at the class's first session.
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string)
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 export async function GET(request: Request) {
   const url = new URL(request.url)

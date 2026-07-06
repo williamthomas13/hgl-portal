@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@stripe/stripe-js": "^9.1.0",
+    "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.102.1",
     "next": "16.2.2",
     "pdf-lib": "^1.17.1",

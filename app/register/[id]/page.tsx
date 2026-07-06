@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { supabase } from '../../utils/supabase'
 
 type SessionRow = {
   session_date: string
@@ -11,6 +10,8 @@ type SessionRow = {
   location: string | null
 }
 
+// Payload of GET /api/class-info/{idOrSlug} — the browser no longer talks to
+// the database directly (Phase 3: anon has no RLS policies).
 type ClassDetails = {
   id: string
   slug: string | null
@@ -18,16 +19,14 @@ type ClassDetails = {
   class_type: string
   instructor_name: string
   price: number
-  capacity: number
   start_date: string
   default_location: string | null
-  school_id: string | null
   registration_close_date: string | null
   schools: { name: string; nickname: string } | null
   sessions: SessionRow[] | null
+  isFull: boolean
+  packages: TutoringPackage[]
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const MAIN_SITE = 'https://www.highergroundlearning.com'
 
@@ -57,11 +56,6 @@ function classTimeOf(sessions: SessionRow[]) {
   return f.end_time ? `${fmtTime(f.start_time)} to ${fmtTime(f.end_time)}` : fmtTime(f.start_time)
 }
 
-type EnrollmentSlot = {
-  payment_status: string
-  waitlist_offer_expires_at: string | null
-}
-
 type TutoringPackage = {
   id: string
   name: string
@@ -81,20 +75,6 @@ function hoursWord(n: number) {
   return words[n] ?? String(n)
 }
 
-/** Mirrors the server's spot accounting: Pending + Paid + active waitlist offers. */
-function takenCount(slots: EnrollmentSlot[]) {
-  const now = Date.now()
-  return slots.filter(
-    (e) =>
-      e.payment_status === 'Pending' ||
-      e.payment_status === 'Paid' ||
-      e.payment_status === 'Completed' ||
-      (e.payment_status === 'Waitlisted' &&
-        e.waitlist_offer_expires_at != null &&
-        new Date(e.waitlist_offer_expires_at).getTime() > now)
-  ).length
-}
-
 export default function RegistrationPage() {
   const params = useParams()
   // The URL segment is a human-readable slug (Squarespace buttons, print) —
@@ -111,38 +91,25 @@ export default function RegistrationPage() {
   const [packages, setPackages] = useState<TutoringPackage[]>([])
   const [pendingCheckout, setPendingCheckout] = useState<{
     enrollmentId: string
-    parentEmail: string
   } | null>(null)
 
   useEffect(() => {
     async function fetchClass() {
-      const { data } = await supabase
-        .from('classes')
-        .select(
-          '*, schools(name, nickname), sessions(session_date, start_time, end_time, location), enrollments(payment_status, waitlist_offer_expires_at)'
-        )
-        .eq(UUID_RE.test(idOrSlug) ? 'id' : 'slug', idOrSlug)
-        .single()
-      if (data) {
-        setClassDetails(data as ClassDetails)
-        setIsFull(takenCount(data.enrollments ?? []) >= data.capacity)
-      } else {
+      try {
+        const response = await fetch(`/api/class-info/${idOrSlug}`)
+        if (!response.ok) {
+          setNotFound(true)
+          return
+        }
+        const data: ClassDetails = await response.json()
+        setClassDetails(data)
+        setIsFull(data.isFull)
+        setPackages(data.packages ?? [])
+      } catch {
         setNotFound(true)
       }
     }
-    async function fetchPackages() {
-      const { data } = await supabase
-        .from('tutoring_packages')
-        .select('id, name, hours, hourly_rate, package_price, regular_hourly_rate')
-        .eq('phase', 'pre_class')
-        .eq('active', true)
-        .order('hours')
-      if (data) setPackages(data as TutoringPackage[])
-    }
-    if (idOrSlug) {
-      fetchClass()
-      fetchPackages()
-    }
+    if (idOrSlug) fetchClass()
   }, [idOrSlug])
 
   // -------------------------------------------------------------------------
@@ -154,108 +121,68 @@ export default function RegistrationPage() {
     setMessage('Saving family details...')
     const formData = new FormData(e.currentTarget)
 
-    const parentEmail = (formData.get('parentEmail') as string).trim().toLowerCase()
-    const studentEmailRaw = formData.get('studentEmail') as string | null
-    const studentEmail = studentEmailRaw ? studentEmailRaw.trim().toLowerCase() : null
-
-    // 1. Upsert the Family (billing account, one row per parent email)
-    const { data: familyData, error: familyError } = await supabase
-      .from('families')
-      .upsert(
-        [
-          {
-            parent_first_name: formData.get('parentFirst'),
-            parent_last_name: formData.get('parentLast'),
-            parent_email: parentEmail,
-          },
-        ],
-        { onConflict: 'parent_email' }
-      )
-      .select()
-      .single()
-
-    if (familyError || !familyData) {
-      setMessage('Error saving account: ' + (familyError?.message ?? 'unknown'))
+    // Family + student + Pending enrollment are created server-side —
+    // the browser has no database access (Phase 3 RLS).
+    let enrollmentId: string
+    try {
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          classId: classDetails!.id,
+          parentFirst: formData.get('parentFirst'),
+          parentLast: formData.get('parentLast'),
+          parentEmail: formData.get('parentEmail'),
+          studentFirst: formData.get('studentFirst'),
+          studentLast: formData.get('studentLast'),
+          studentEmail: formData.get('studentEmail'),
+          graduatingYear: formData.get('graduatingYear'),
+          accommodations: formData.get('accommodations'),
+          previousScores: formData.get('previousScores'),
+          notes: formData.get('notes'),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        if (data.full) {
+          // Someone took the last spot while the form was open.
+          setIsFull(true)
+          setMessage('Error: this class just filled up — you can join the waitlist below.')
+        } else {
+          setMessage('Error: ' + (data.error ?? 'registration failed'))
+        }
+        setLoading(false)
+        return
+      }
+      enrollmentId = data.enrollmentId
+    } catch {
+      setMessage('Error: failed to save your registration.')
       setLoading(false)
       return
     }
 
-    // 2. Create the Student, link to Family, and capture student_email + school_id
-    const { data: studentData, error: studentError } = await supabase
-      .from('students')
-      .insert([
-        {
-          family_id: familyData.id,
-          first_name: formData.get('studentFirst'),
-          last_name: formData.get('studentLast'),
-          student_email: studentEmail,
-          school_id: classDetails?.school_id ?? null,
-          graduating_year: formData.get('graduatingYear') || null,
-        },
-      ])
-      .select()
-      .single()
-
-    if (studentError || !studentData) {
-      setMessage('Error saving student: ' + (studentError?.message ?? 'unknown'))
-      setLoading(false)
-      return
-    }
-
-    // 3. Create the Enrollment in "Pending" state (holds a capacity spot)
-    const { data: enrollmentData, error: enrollmentError } = await supabase
-      .from('enrollments')
-      .insert([
-        {
-          student_id: studentData.id,
-          class_id: classDetails!.id,
-          payment_status: 'Pending',
-          accommodations: formData.get('accommodations') || null,
-          previous_scores: formData.get('previousScores') || null,
-          notes: formData.get('notes') || null,
-        },
-      ])
-      .select()
-      .single()
-
-    if (enrollmentError || !enrollmentData) {
-      setMessage('Error enrolling: ' + (enrollmentError?.message ?? 'unknown'))
-      setLoading(false)
-      return
-    }
-
-    // 4. Add-on step: offer pre-class tutoring packages before checkout
+    // Add-on step: offer pre-class tutoring packages before checkout
     // (only available at registration). If none exist, go straight to Stripe.
     if (packages.length > 0) {
-      setPendingCheckout({ enrollmentId: enrollmentData.id, parentEmail })
+      setPendingCheckout({ enrollmentId })
       setMessage('')
       setLoading(false)
     } else {
-      await proceedToCheckout(enrollmentData.id, parentEmail, null)
+      await proceedToCheckout(enrollmentId, null)
     }
   }
 
   // Stripe handoff — pass enrollment id so the webhook can mark exactly this
   // row paid; packageId adds the tutoring add-on as a second line item.
-  async function proceedToCheckout(
-    enrollmentId: string,
-    parentEmail: string,
-    packageId: string | null
-  ) {
+  // Price, product name, and billing email all come from the DB server-side.
+  async function proceedToCheckout(enrollmentId: string, packageId: string | null) {
     setLoading(true)
     setMessage('Redirecting to secure checkout...')
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          className: `${classDetails?.school_nickname ?? 'HGL'} — ${classDetails?.class_type}`,
-          price: classDetails?.price,
-          customerEmail: parentEmail,
-          classId: classDetails?.id,
-          enrollmentId,
-          packageId,
-        }),
+        body: JSON.stringify({ enrollmentId, packageId }),
       })
 
       const data = await response.json()
@@ -465,9 +392,7 @@ export default function RegistrationPage() {
               <button
                 key={p.id}
                 disabled={loading}
-                onClick={() =>
-                  proceedToCheckout(pendingCheckout.enrollmentId, pendingCheckout.parentEmail, p.id)
-                }
+                onClick={() => proceedToCheckout(pendingCheckout.enrollmentId, p.id)}
                 className="w-full text-center border-2 border-hgl-blue text-hgl-blue font-bold rounded-lg p-4 hover:bg-hgl-blue hover:text-white transition disabled:opacity-60"
               >
                 {hoursWord(p.hours)} 1-on-1 Hours @ ${p.hourly_rate}/hour (regularly $
@@ -477,9 +402,7 @@ export default function RegistrationPage() {
           </div>
           <button
             disabled={loading}
-            onClick={() =>
-              proceedToCheckout(pendingCheckout.enrollmentId, pendingCheckout.parentEmail, null)
-            }
+            onClick={() => proceedToCheckout(pendingCheckout.enrollmentId, null)}
             className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
           >
             {loading ? 'Preparing secure checkout...' : 'No thanks, just the class'}

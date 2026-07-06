@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { sendOnce, waitlistConfirmationEmail } from '../../utils/email'
 import {
   emailContext,
@@ -12,11 +12,6 @@ import {
 // Join the waitlist for a full class: creates the family/student/enrollment
 // (status Waitlisted, no payment) and sends an instant confirmation with the
 // family's position in line. FCFS ordering comes from enrolled_at.
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 export async function POST(request: Request) {
   try {

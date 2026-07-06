@@ -1,32 +1,25 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 
 // Stripe client. We don't pin apiVersion here — the installed SDK
 // version ships with a default that matches its TypeScript types.
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
-// Backend Supabase client so we can stamp the session id onto the enrollment.
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-);
+// PostgREST returns to-one embeds as object or single-element array
+// depending on the relationship metadata — normalize.
+function one<T>(v: T | T[] | null | undefined): T | null {
+  if (v == null) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+}
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
-      className,
-      price,
-      customerEmail,
-      classId,
       enrollmentId,
       packageId,
     }: {
-      className: string;
-      price: number;
-      customerEmail: string;
-      classId: string;
       enrollmentId: string;
       packageId?: string | null;
     } = body;
@@ -37,6 +30,35 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    // Everything the checkout session needs comes from the DB, never the
+    // client: price, product name, and billing email (Phase 3 hardening).
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const { data: enr } = await supabase
+      .from('enrollments')
+      .select(
+        `id, payment_status, class_id,
+         classes ( id, price, class_type, school_nickname, schools ( nickname ) ),
+         students ( families ( parent_email ) )`
+      )
+      .eq('id', enrollmentId)
+      .single();
+
+    const cls = one<any>(enr?.classes);
+    const family = one<any>(one<any>(enr?.students)?.families);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    if (!enr || !cls || !family) {
+      return NextResponse.json({ error: 'Registration not found.' }, { status: 404 });
+    }
+    if (enr.payment_status === 'Paid' || enr.payment_status === 'Completed') {
+      return NextResponse.json({ error: 'This registration is already paid.' }, { status: 400 });
+    }
+
+    const classId: string = cls.id;
+    const price = Number(cls.price);
+    const customerEmail: string = family.parent_email;
+    const schoolLabel = one<{ nickname?: string }>(cls.schools)?.nickname ?? cls.school_nickname ?? 'HGL';
+    const className = `${schoolLabel} — ${cls.class_type}`;
 
     // Base URL for redirects. Set NEXT_PUBLIC_APP_URL in env
     // (local: http://localhost:3000, production: https://hgl-portal.vercel.app

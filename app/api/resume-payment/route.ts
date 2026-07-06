@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { loadClassBundles, verifyResumeToken } from '../../utils/lifecycle'
 
 // "Finalize Registration" button in payment reminders PR1–4. Creates a fresh
@@ -8,11 +8,6 @@ import { loadClassBundles, verifyResumeToken } from '../../utils/lifecycle'
 // straight into payment. Signed per-enrollment token, price from the DB.
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string)
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 export async function GET(request: Request) {
   const url = new URL(request.url)

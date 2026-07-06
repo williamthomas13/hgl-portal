@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { verifyUnsubToken } from '../../utils/lifecycle'
 
 // One-click opt-out link in the footer of relationship emails (thank-you,
@@ -6,11 +6,6 @@ import { verifyUnsubToken } from '../../utils/lifecycle'
 // transactional emails (class details, reminders, payment, waitlist) always
 // send. Token is an HMAC of the family id, so links can't be forged or
 // swapped between families.
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 function page(title: string, body: string, status = 200) {
   return new Response(

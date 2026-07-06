@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "./supabase-admin"
 import { createHmac, timingSafeEqual } from 'crypto'
 import type { EnrollmentEmailContext, SessionInfo } from './email'
 
@@ -10,11 +10,6 @@ import type { EnrollmentEmailContext, SessionInfo } from './email'
 
 export const DEFAULT_TIMEZONE = process.env.CLASS_TIMEZONE ?? 'America/Mexico_City'
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmail.com'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 // ---------------------------------------------------------------------------
 // Types

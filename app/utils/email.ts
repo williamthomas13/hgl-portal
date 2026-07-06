@@ -1,5 +1,5 @@
 import { Resend } from 'resend'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin as supabase } from "./supabase-admin"
 import { packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 
 // Server-side only. Every send goes through sendOnce(), which claims a row in
@@ -23,11 +23,6 @@ const FAQ_LINKS = `<a href="https://highergroundlearning.com/faqs#general">Gener
 const COMPASS_URL = 'http://hgl.co/college-prep-compass'
 const REVIEW_URL = 'https://g.page/highergroundlearning/review?gm'
 const DISCOUNT_URL = 'https://highergroundprep.com/discount'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-)
 
 export type Audience = 'parent' | 'student'
 

@@ -312,7 +312,18 @@ export default function AdminDashboard() {
 
         {/* CREATE CLASS */}
         <div className="bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-slate">
-          <h1 className="text-2xl font-bold text-hgl-slate mb-6">Admin Command Center</h1>
+          <div className="flex items-start justify-between mb-6">
+            <h1 className="text-2xl font-bold text-hgl-slate">Admin Command Center</h1>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut()
+                window.location.assign('/login')
+              }}
+              className="text-sm text-gray-500 hover:text-hgl-slate underline"
+            >
+              Sign out
+            </button>
+          </div>
           <h2 className="text-lg font-semibold text-gray-700 mb-4">Create a new group class</h2>
 
           <form onSubmit={handleCreateClass} className="space-y-4">
