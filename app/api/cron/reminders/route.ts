@@ -41,6 +41,7 @@ import {
   loadTutoringPackages,
   localDate,
   localHour,
+  registrationCloseFor,
   spotsTaken,
   stepTargetDate,
   type ClassBundle,
@@ -370,8 +371,10 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
 // ---------------------------------------------------------------------------
 
 async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
-  // No new offers once the class is over; lapsed offers still get rolled.
-  const classOver = localDate(bundle.timezone) > bundle.lastSession
+  // No new offers once registration has closed (first session by default,
+  // registration_close_date overrides); lapsed offers still get rolled, and
+  // already-extended offers keep their full 48h claim window.
+  const registrationClosed = localDate(bundle.timezone) > registrationCloseFor(bundle)
   const now = Date.now()
   const waitlisted = bundle.enrollments
     .filter((e) => e.payment_status === 'Waitlisted')
@@ -403,7 +406,7 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
   }
 
   // Extend offers for however many spots are open, in join order.
-  if (classOver) return
+  if (registrationClosed) return
   let open = bundle.capacity - spotsTaken(bundle)
   for (const e of waitlisted) {
     if (open <= 0) break

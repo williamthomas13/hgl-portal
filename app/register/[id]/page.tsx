@@ -21,6 +21,7 @@ type ClassDetails = {
   start_date: string
   default_location: string | null
   school_id: string | null
+  registration_close_date: string | null
   schools: { name: string; nickname: string } | null
   sessions: SessionRow[] | null
 }
@@ -336,14 +337,16 @@ export default function RegistrationPage() {
     a.session_date.localeCompare(b.session_date)
   )
   const firstSession = sessions[0]?.session_date ?? classDetails.start_date
-  const lastSession = sessions[sessions.length - 1]?.session_date ?? classDetails.start_date
   const classTime = classTimeOf(sessions)
   const schoolLabel = classDetails.schools?.nickname ?? classDetails.school_nickname ?? 'HGL'
   const classLabel = `${schoolLabel} ${classDetails.class_type}`
   const today = new Date().toLocaleDateString('en-CA')
 
-  // Registration closes once the class's final session has passed.
-  if (today > lastSession) {
+  // Registration closes after the first session by default;
+  // registration_close_date overrides per class (e.g. allow joining
+  // through session 3).
+  const registrationClose = classDetails.registration_close_date ?? firstSession
+  if (today > registrationClose) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
         <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
@@ -351,7 +354,8 @@ export default function RegistrationPage() {
             Registration for this class has closed
           </h1>
           <p className="text-gray-600 mb-6">
-            The {classLabel} class has finished. Upcoming classes are listed on our main site.
+            Registration for the {classLabel} class is no longer open. Upcoming classes are listed
+            on our main site.
           </p>
           <a
             href={MAIN_SITE}

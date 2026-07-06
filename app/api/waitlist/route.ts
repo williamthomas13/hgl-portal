@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendOnce, waitlistConfirmationEmail } from '../../utils/email'
-import { emailContext, loadClassBundles, spotsTaken } from '../../utils/lifecycle'
+import {
+  emailContext,
+  loadClassBundles,
+  localDate,
+  registrationCloseFor,
+  spotsTaken,
+} from '../../utils/lifecycle'
 
 // Join the waitlist for a full class: creates the family/student/enrollment
 // (status Waitlisted, no payment) and sends an instant confirmation with the
@@ -36,6 +42,9 @@ export async function POST(request: Request) {
     const [bundle] = await loadClassBundles(classId)
     if (!bundle) {
       return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
+    }
+    if (localDate(bundle.timezone) > registrationCloseFor(bundle)) {
+      return NextResponse.json({ error: 'Registration for this class has closed.' }, { status: 410 })
     }
     if (spotsTaken(bundle) < bundle.capacity) {
       return NextResponse.json(

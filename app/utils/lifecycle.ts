@@ -74,6 +74,7 @@ export type ClassBundle = {
   minEnrollment: number
   deliveryMode: string
   enrollmentDeadline: string | null
+  registrationCloseDate: string | null
   startDate: string
   sessions: SessionInfo[]
   firstSession: string // falls back to start_date when no sessions exist
@@ -164,7 +165,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     `
     id, class_type, school_nickname, school_id, instructor_name, instructor_email,
     default_location, synap_group, price, capacity, min_enrollment,
-    delivery_mode, enrollment_deadline, start_date,
+    delivery_mode, enrollment_deadline, registration_close_date, start_date,
     schools ( name, nickname, timezone ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
@@ -241,6 +242,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       minEnrollment: c.min_enrollment ?? (c.delivery_mode === 'online' ? 3 : 8),
       deliveryMode: c.delivery_mode,
       enrollmentDeadline: c.enrollment_deadline,
+      registrationCloseDate: c.registration_close_date ?? null,
       startDate: c.start_date,
       sessions,
       firstSession: sessions[0]?.session_date ?? c.start_date,
@@ -295,6 +297,15 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     price: bundle.price,
     sessions: bundle.sessions,
   }
+}
+
+/**
+ * Registration (and new waitlist offers) close after this date. Default is
+ * the first session; registration_close_date overrides per class (e.g. the
+ * third session's date to allow joining after missing one or two).
+ */
+export function registrationCloseFor(bundle: ClassBundle): string {
+  return bundle.registrationCloseDate ?? bundle.firstSession
 }
 
 /** Spots taken = Pending + Paid + waitlisted holders of an unexpired offer. */

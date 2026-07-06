@@ -36,6 +36,7 @@ type Enrollment = {
 type ClassRow = {
   id: string
   slug: string | null
+  registration_close_date: string | null
   school_nickname: string | null
   class_type: string
   instructor_name: string
@@ -179,6 +180,7 @@ export default function AdminDashboard() {
       delivery_mode: deliveryMode,
       min_enrollment: Number(minEnrollment) || (deliveryMode === 'online' ? 3 : 8),
       enrollment_deadline: formData.get('enrollment_deadline') || null,
+      registration_close_date: formData.get('registration_close_date') || null,
       // Human-readable registration URL segment: nickname-classtype-term.
       slug: slugify(
         `${schoolNickname}-${formData.get('class_type')}-${termFor(formData.get('start_date') as string)}`
@@ -241,6 +243,28 @@ export default function AdminDashboard() {
     await navigator.clipboard.writeText(registrationUrl(c))
     setCopiedClassId(c.id)
     setTimeout(() => setCopiedClassId(null), 2000)
+  }
+
+  async function handleEditRegistrationClose(c: ClassRow) {
+    const next = prompt(
+      'Registration close date (YYYY-MM-DD). Blank = default (first session):',
+      c.registration_close_date ?? ''
+    )
+    if (next == null) return
+    const trimmed = next.trim()
+    if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      alert('Use YYYY-MM-DD format, or leave blank for the default.')
+      return
+    }
+    const { error } = await supabase
+      .from('classes')
+      .update({ registration_close_date: trimmed || null })
+      .eq('id', c.id)
+    if (error) {
+      alert('Error updating close date: ' + error.message)
+      return
+    }
+    fetchRosters()
   }
 
   async function handleEditSlug(c: ClassRow) {
@@ -433,6 +457,16 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-500 mt-1">Optional — min-enrollment check runs here (else 7 days before start).</p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Registration Closes</label>
+                <input
+                  type="date"
+                  name="registration_close_date"
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
+                />
+                <p className="text-xs text-gray-500 mt-1">Blank = first session. Set later to allow mid-class joins.</p>
+              </div>
+
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700">Synap Group</label>
                 <input
@@ -521,6 +555,18 @@ export default function AdminDashboard() {
                               className="text-xs text-gray-500 underline hover:text-hgl-blue"
                             >
                               edit slug
+                            </button>
+                          </p>
+                          <p className="text-sm text-gray-600 flex items-center gap-2">
+                            <span className="font-semibold">Registration closes:</span>
+                            {c.registration_close_date
+                              ? new Date(c.registration_close_date + 'T00:00:00').toLocaleDateString()
+                              : 'first session (default)'}
+                            <button
+                              onClick={() => handleEditRegistrationClose(c)}
+                              className="text-xs text-gray-500 underline hover:text-hgl-blue"
+                            >
+                              edit
                             </button>
                           </p>
                         </div>
