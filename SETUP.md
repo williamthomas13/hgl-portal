@@ -195,3 +195,10 @@ Email copy is placeholder — final copy drops into `app/utils/email.ts` templat
 - Email #0 (student confirmation, transactional, sent to the student's email on payment) exists with placeholder copy — final copy in the content pack. The parent thank-you (#1) is now parent-only.
 - All templates support preheaders (hidden inbox preview text) — placeholder strings marked like the body copy.
 - The diagnostic due date shown in emails is always computed as first session − 1 day (never stored).
+
+### Tutoring packages & upsell
+
+- Pricing lives in the `tutoring_packages` table (pre_class: 5h/$600, 10h/$1,050, 15h/$1,425 vs regular $130/hr; post_class: $125/hr under 10h, $115/hr at 10h+). Edit rows there to change every price and computed saving across checkout, the addon page, and emails #8/#9 — nothing is hardcoded.
+- Registration now has an add-on step ("only available at registration") offering pre_class packages; the selection joins the class as a second line item in the same Stripe checkout, and the purchase is recorded in `enrollment_addons` (hours stored durably for the future TutorBird-replacement phase). Add-ons appear in the #0 student confirmation recap.
+- Email #9 (tutoring upsell, parent-only, from billy@, subject/preheader final) sends ~24h after payment only when the enrollment has no add-on and the class hasn't started. It links to a per-enrollment page (`/addons/{id}?t=…`) that honors pre_class pricing until the first session, then automatically stops offering.
+- #8 (post-class) and #9 coexist by design: #9 = best rates for upfront commitment, #8 = smaller continuation discount (highergroundprep.com/discount, password BESTSCORE, SAT & ACT).

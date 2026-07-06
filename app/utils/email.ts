@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
+import { packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 
 // Server-side only. Every send goes through sendOnce(), which claims a row in
 // email_log first — Stripe webhook retries and cron re-runs never double-send.
@@ -35,6 +36,8 @@ export type EnrollmentEmailContext = {
   calendarPageUrl: string
   /** Always first session date − 1 day. Computed, never stored. */
   diagnosticDueDate: string
+  /** Tutoring add-ons purchased with this enrollment. */
+  addons: AddonRow[]
   marketingOptOut: boolean
   unsubscribeUrl: string
   parentFirstName: string
@@ -183,6 +186,13 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
 // ---------------------------------------------------------------------------
 
 export function studentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
+  const addonRecap =
+    ctx.addons.length > 0
+      ? `<h3 style="color:#334155">Also included</h3>
+         <ul style="padding-left:20px">${ctx.addons
+           .map((a) => `<li>${a.name} — ${a.hours} hours of 1-on-1 tutoring ($${a.pricePaid})</li>`)
+           .join('')}</ul>`
+      : ''
   return {
     subject: `You're in: ${ctx.className}`,
     html: wrap(
@@ -193,6 +203,7 @@ export function studentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered 
       You're all set for <strong>${ctx.className}</strong>, starting
       ${formatDate(ctx.firstSession)}.</p>
       ${scheduleHtml(ctx)}
+      ${addonRecap}
       ${calendarButton(ctx)}
     `,
       { preheader: `[Placeholder preheader] Your ${ctx.className} details inside` }
@@ -332,7 +343,21 @@ export function reviewRequestEmail(ctx: EnrollmentEmailContext): Rendered {
   }
 }
 
-export function tutoringOfferEmail(ctx: EnrollmentEmailContext): Rendered {
+/**
+ * Email #8 — post-class continuation offer. Uses post_class pricing from the
+ * packages table. Coexists with #9 by design: #9 is the best-rate upfront
+ * pre-class commitment; #8 is the smaller continuation discount after class.
+ */
+export function tutoringOfferEmail(
+  ctx: EnrollmentEmailContext,
+  postPackages: TutoringPackage[] = []
+): Rendered {
+  const rates =
+    postPackages.length > 0
+      ? `<ul style="padding-left:20px">${postPackages
+          .map((p) => `<li><strong>${p.name}:</strong> $${p.hourlyRate}/hr (regular $${p.regularHourlyRate}/hr)</li>`)
+          .join('')}</ul>`
+      : ''
   return {
     from: PERSONAL_FROM,
     subject: `A tutoring offer for ${ctx.studentFirstName}`,
@@ -340,11 +365,64 @@ export function tutoringOfferEmail(ctx: EnrollmentEmailContext): Rendered {
       `
       <h2 style="color:#334155">Keep the momentum going</h2>
       <p>Hi ${ctx.parentFirstName},</p>
-      <p>[Placeholder discounted tutoring offer] As a ${ctx.className} family,
-      you qualify for a discount on 1-on-1 tutoring.</p>
+      <p>[Placeholder discounted tutoring offer] Whether it's SAT or ACT,
+      ${ctx.studentFirstName} can keep working 1-on-1 at discounted
+      ${ctx.className} family rates:</p>
+      ${rates}
+      <p style="margin-top:20px">
+        <a href="https://highergroundprep.com/discount" style="display:inline-block;background:#00AEEE;color:#fff;
+        font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none">
+        Claim the discount</a>
+      </p>
+      <p style="font-size:13px;color:#64748b">Page password: <strong>BESTSCORE</strong></p>
     `,
       {
         preheader: `[Placeholder preheader] A tutoring discount for ${ctx.className} families`,
+        unsubscribeUrl: ctx.unsubscribeUrl,
+      }
+    ),
+  }
+}
+
+/**
+ * Email #9 — pre-class tutoring upsell. Parent-only, from billy@. Sends ~24h
+ * after payment ONLY when the enrollment has no tutoring add-on, and only
+ * while the pre-class offer window (before first session) is open. Subject
+ * and preheader are FINAL copy; savings are computed from the packages
+ * table, never hardcoded.
+ */
+export function tutoringUpsellEmail(
+  ctx: EnrollmentEmailContext,
+  prePackages: TutoringPackage[],
+  addonUrl: string
+): Rendered {
+  const buttons = prePackages
+    .map(
+      (p) => `
+      <p style="margin:8px 0">
+        <a href="${addonUrl}" style="display:inline-block;background:#00AEEE;color:#fff;
+        font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:280px;text-align:center">
+        ${p.name} — $${p.packagePrice} (save $${packageSavings(p)})</a>
+      </p>`
+    )
+    .join('')
+  return {
+    from: PERSONAL_FROM,
+    subject: `We didn't want you to miss this`,
+    html: wrap(
+      `
+      <h2 style="color:#334155">One thing worth a second look</h2>
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>[Placeholder body] When you registered ${ctx.studentFirstName} for
+      <strong>${ctx.className}</strong>, you may not have noticed the discounted
+      1-on-1 tutoring packages — the best rates we offer, only available before
+      class starts on ${formatDate(ctx.firstSession)}:</p>
+      ${buttons}
+      <p style="font-size:13px;color:#64748b">Regular rate: $${prePackages[0]?.regularHourlyRate ?? 130}/hr.
+      Pre-class pricing ends ${formatDate(ctx.firstSession)}.</p>
+    `,
+      {
+        preheader: `A lot of people don't notice it`,
         unsubscribeUrl: ctx.unsubscribeUrl,
       }
     ),

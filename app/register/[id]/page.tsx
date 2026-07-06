@@ -21,6 +21,15 @@ type EnrollmentSlot = {
   waitlist_offer_expires_at: string | null
 }
 
+type TutoringPackage = {
+  id: string
+  name: string
+  hours: number
+  hourly_rate: number
+  package_price: number
+  regular_hourly_rate: number
+}
+
 /** Mirrors the server's spot accounting: Pending + Paid + active waitlist offers. */
 function takenCount(slots: EnrollmentSlot[]) {
   const now = Date.now()
@@ -44,6 +53,12 @@ export default function RegistrationPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null)
+  // Add-on step: shown between the form and Stripe checkout.
+  const [packages, setPackages] = useState<TutoringPackage[]>([])
+  const [pendingCheckout, setPendingCheckout] = useState<{
+    enrollmentId: string
+    parentEmail: string
+  } | null>(null)
 
   useEffect(() => {
     async function fetchClass() {
@@ -57,7 +72,19 @@ export default function RegistrationPage() {
         setIsFull(takenCount(data.enrollments ?? []) >= data.capacity)
       }
     }
-    if (classId) fetchClass()
+    async function fetchPackages() {
+      const { data } = await supabase
+        .from('tutoring_packages')
+        .select('id, name, hours, hourly_rate, package_price, regular_hourly_rate')
+        .eq('phase', 'pre_class')
+        .eq('active', true)
+        .order('hours')
+      if (data) setPackages(data as TutoringPackage[])
+    }
+    if (classId) {
+      fetchClass()
+      fetchPackages()
+    }
   }, [classId])
 
   // -------------------------------------------------------------------------
@@ -136,9 +163,26 @@ export default function RegistrationPage() {
       return
     }
 
-    setMessage('Redirecting to secure checkout...')
+    // 4. Add-on step: offer pre-class tutoring packages before checkout
+    // (only available at registration). If none exist, go straight to Stripe.
+    if (packages.length > 0) {
+      setPendingCheckout({ enrollmentId: enrollmentData.id, parentEmail })
+      setMessage('')
+      setLoading(false)
+    } else {
+      await proceedToCheckout(enrollmentData.id, parentEmail, null)
+    }
+  }
 
-    // 4. Stripe handoff — pass enrollment id so the webhook can mark exactly this row paid
+  // Stripe handoff — pass enrollment id so the webhook can mark exactly this
+  // row paid; packageId adds the tutoring add-on as a second line item.
+  async function proceedToCheckout(
+    enrollmentId: string,
+    parentEmail: string,
+    packageId: string | null
+  ) {
+    setLoading(true)
+    setMessage('Redirecting to secure checkout...')
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
@@ -148,14 +192,15 @@ export default function RegistrationPage() {
           price: classDetails?.price,
           customerEmail: parentEmail,
           classId,
-          enrollmentId: enrollmentData.id,
+          enrollmentId,
+          packageId,
         }),
       })
 
       const data = await response.json()
 
       if (data.url) {
-        window.location.href = data.url
+        window.location.assign(data.url)
       } else {
         setMessage('Checkout error: ' + data.error)
         setLoading(false)
@@ -204,6 +249,63 @@ export default function RegistrationPage() {
   }
 
   if (!classDetails) return <div className="p-10 text-center">Loading class details...</div>
+
+  // Add-on step between the registration form and Stripe checkout.
+  if (pendingCheckout) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-10">
+        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
+          <h1 className="text-2xl font-bold text-hgl-slate mb-2">Add 1-on-1 tutoring?</h1>
+          <p className="text-sm bg-yellow-50 text-yellow-800 rounded p-3 mb-6">
+            These discounted packages are <strong>only available at registration</strong> — the
+            best tutoring rates we offer.
+          </p>
+          <div className="space-y-3 mb-6">
+            {packages.map((p) => {
+              const savings = p.hours * p.regular_hourly_rate - p.package_price
+              return (
+                <button
+                  key={p.id}
+                  disabled={loading}
+                  onClick={() =>
+                    proceedToCheckout(pendingCheckout.enrollmentId, pendingCheckout.parentEmail, p.id)
+                  }
+                  className="w-full text-left border-2 border-gray-200 rounded-lg p-4 hover:border-hgl-blue transition disabled:opacity-60"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-hgl-slate">{p.name}</p>
+                      <p className="text-sm text-gray-600">
+                        {p.hours} hours at ${p.hourly_rate}/hr (regular ${p.regular_hourly_rate}/hr)
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-hgl-slate">${p.package_price}</p>
+                      <p className="text-sm font-semibold text-green-600">Save ${savings}</p>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          <button
+            disabled={loading}
+            onClick={() =>
+              proceedToCheckout(pendingCheckout.enrollmentId, pendingCheckout.parentEmail, null)
+            }
+            className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
+          >
+            {loading ? 'Preparing secure checkout...' : `No thanks — continue to payment ($${classDetails.price})`}
+          </button>
+          {message && (
+            <div className="mt-6 p-4 rounded-md text-center font-bold bg-blue-50 text-hgl-blue">
+              {message}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   if (waitlistPosition !== null) {
     return (

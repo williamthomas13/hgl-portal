@@ -28,6 +28,33 @@ const supabase = createClient(
 // The App Router requires this flag so the raw body reaches stripe.webhooks.constructEvent.
 export const runtime = 'nodejs';
 
+// Durably record a purchased tutoring add-on (hours become schedulable
+// sessions in the future TutorBird-replacement phase). Idempotent: the
+// (enrollment_id, package_id) unique constraint absorbs webhook retries.
+async function recordAddon(enrollmentId: string, packageId: string, stripeSessionId: string) {
+  const { data: pkg } = await supabase
+    .from('tutoring_packages')
+    .select('hours, package_price')
+    .eq('id', packageId)
+    .single();
+  if (!pkg) {
+    console.error(`Addon package ${packageId} not found for enrollment ${enrollmentId}`);
+    return;
+  }
+  const { error } = await supabase.from('enrollment_addons').insert([
+    {
+      enrollment_id: enrollmentId,
+      package_id: packageId,
+      hours: pkg.hours,
+      price_paid: pkg.package_price,
+      stripe_session_id: stripeSessionId,
+    },
+  ]);
+  if (error && error.code !== '23505') {
+    console.error(`Failed to record addon for enrollment ${enrollmentId}:`, error.message);
+  }
+}
+
 export async function POST(req: Request) {
   const payload = await req.text();
   const sig = req.headers.get('stripe-signature') as string;
@@ -49,7 +76,18 @@ export async function POST(req: Request) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     const enrollmentId = session.metadata?.enrollment_id;
+    const packageId = session.metadata?.package_id;
     const sessionId = session.id;
+
+    // Addon-only purchase (from the #9 upsell page): the enrollment was
+    // already paid — record the addon and leave the payment fields alone.
+    if (session.metadata?.addon_only === '1') {
+      if (enrollmentId && packageId) {
+        await recordAddon(enrollmentId, packageId, sessionId);
+        console.log(`Recorded addon-only purchase for enrollment ${enrollmentId}.`);
+      }
+      return NextResponse.json({ received: true });
+    }
     const paymentIntentId =
       typeof session.payment_intent === 'string'
         ? session.payment_intent
@@ -91,6 +129,12 @@ export async function POST(req: Request) {
     const paidEnrollmentId = data[0].id;
     const classId = data[0].class_id;
     console.log(`Marked enrollment ${paidEnrollmentId} paid (session ${sessionId}).`);
+
+    // Record the in-checkout tutoring add-on before loading the bundle so
+    // the #0 confirmation recap includes it.
+    if (packageId) {
+      await recordAddon(paidEnrollmentId, packageId, sessionId);
+    }
 
     // Welcome email: normally the thank-you; if the signup happened after
     // pre-start emails would already have fired, send one combined welcome

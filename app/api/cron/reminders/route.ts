@@ -14,6 +14,7 @@ import {
   sendOnce,
   synapAccessEmail,
   tutoringOfferEmail,
+  tutoringUpsellEmail,
   waitlistOfferEmail,
   type EnrollmentEmailContext,
 } from '../../../utils/email'
@@ -25,8 +26,10 @@ import {
   SEQUENCE,
   WAITLIST_CLAIM_HOURS,
   addDaysISO,
+  addonPageUrlFor,
   claimUrlFor,
   classDetailsSnapshot,
+  loadTutoringPackages,
   emailContext,
   hoursSince,
   isDue,
@@ -36,6 +39,7 @@ import {
   spotsTaken,
   stepTargetDate,
   type ClassBundle,
+  type TutoringPackage,
 } from '../../../utils/lifecycle'
 
 // The lifecycle sweep. Runs hourly (Supabase pg_cron; Vercel daily cron as
@@ -134,7 +138,11 @@ async function sweepCompletion(bundle: ClassBundle, c: Counters) {
 // 3. Post-payment sequence
 // ---------------------------------------------------------------------------
 
-async function sweepSequence(bundle: ClassBundle, c: Counters) {
+async function sweepSequence(
+  bundle: ClassBundle,
+  c: Counters,
+  postPackages: TutoringPackage[]
+) {
   // Completed students still get the post-class emails (review, tutoring).
   const paid = bundle.enrollments.filter(
     (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
@@ -164,7 +172,11 @@ async function sweepSequence(bundle: ClassBundle, c: Counters) {
     for (const e of paid) {
       if (RELATIONSHIP_TYPES.has(step.type) && e.marketingOptOut) continue
       const ctx = emailContext(bundle, e)
-      const { subject, html, from } = TEMPLATES[step.type](ctx)
+      // #8 pulls post-class rates from the packages table.
+      const { subject, html, from } =
+        step.type === 'tutoring_offer'
+          ? tutoringOfferEmail(ctx, postPackages)
+          : TEMPLATES[step.type](ctx)
       const status = await sendOnce({
         dedupeKey: `${step.type}:${e.id}`,
         emailType: step.type,
@@ -177,6 +189,37 @@ async function sweepSequence(bundle: ClassBundle, c: Counters) {
       })
       if (status === 'sent') bump(c, step.type)
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Email #9 — pre-class tutoring upsell. Parent-only, from billy@,
+// ~24h after payment, ONLY when the enrollment has no tutoring add-on and
+// the pre-class window (before first session) is still open.
+// ---------------------------------------------------------------------------
+
+async function sweepUpsell(bundle: ClassBundle, c: Counters, prePackages: TutoringPackage[]) {
+  if (prePackages.length === 0) return
+  if (localDate(bundle.timezone) >= bundle.firstSession) return // window closed
+
+  for (const e of bundle.enrollments) {
+    if (e.payment_status !== 'Paid') continue
+    if (e.marketingOptOut) continue // relationship email
+    if (!e.paid_at || hoursSince(e.paid_at) < 24) continue
+    if (e.addons.length > 0) continue // they already bought tutoring
+
+    const ctx = emailContext(bundle, e)
+    const { subject, html, from } = tutoringUpsellEmail(ctx, prePackages, addonPageUrlFor(e.id))
+    const status = await sendOnce({
+      dedupeKey: `tutoring_upsell:${e.id}`,
+      emailType: 'tutoring_upsell',
+      enrollmentId: e.id,
+      to: [ctx.parentEmail],
+      from,
+      subject,
+      html,
+    })
+    if (status === 'sent') bump(c, 'tutoring_upsell')
   }
 }
 
@@ -385,6 +428,7 @@ export async function GET(req: Request) {
   }
 
   const bundles = await loadClassBundles()
+  const packages = await loadTutoringPackages()
   const counters: Counters = {}
 
   for (const bundle of bundles) {
@@ -394,7 +438,8 @@ export async function GET(req: Request) {
 
     await sweepPaymentReminders(bundle, counters)
     await sweepCompletion(bundle, counters)
-    await sweepSequence(bundle, counters)
+    await sweepSequence(bundle, counters, packages.post)
+    await sweepUpsell(bundle, counters, packages.pre)
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)
     await sweepAdminCheckpoints(bundle, counters)

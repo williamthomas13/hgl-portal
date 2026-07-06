@@ -20,10 +20,28 @@ const supabase = createClient(
 // Types
 // ---------------------------------------------------------------------------
 
+export type AddonRow = {
+  name: string
+  hours: number
+  pricePaid: number
+}
+
+export type TutoringPackage = {
+  id: string
+  name: string
+  hours: number
+  hourlyRate: number
+  packagePrice: number
+  regularHourlyRate: number
+  phase: 'pre_class' | 'post_class'
+}
+
 export type EnrollmentRow = {
   id: string
   payment_status: 'Pending' | 'Paid' | 'Completed' | 'Expired' | 'Waitlisted'
   enrolled_at: string
+  paid_at: string | null
+  addons: AddonRow[]
   waitlist_offer_sent_at: string | null
   waitlist_offer_expires_at: string | null
   familyId: string
@@ -144,8 +162,9 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     schools ( nickname, timezone ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
-      id, payment_status, enrolled_at,
+      id, payment_status, enrolled_at, paid_at,
       waitlist_offer_sent_at, waitlist_offer_expires_at,
+      enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
       students (
         first_name, last_name, student_email,
         families ( id, parent_first_name, parent_email, marketing_opt_out )
@@ -175,6 +194,12 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           id: e.id,
           payment_status: e.payment_status,
           enrolled_at: e.enrolled_at,
+          paid_at: e.paid_at ?? null,
+          addons: (e.enrollment_addons ?? []).map((a: any) => ({
+            name: one<any>(a.tutoring_packages)?.name ?? 'Tutoring package',
+            hours: Number(a.hours),
+            pricePaid: Number(a.price_paid),
+          })),
           waitlist_offer_sent_at: e.waitlist_offer_sent_at,
           waitlist_offer_expires_at: e.waitlist_offer_expires_at,
           familyId: family.id,
@@ -225,6 +250,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     calendarPageUrl: calendarPageUrlFor(bundle.id),
     // Always first session minus one day — computed, never stored.
     diagnosticDueDate: addDaysISO(bundle.firstSession, -1),
+    addons: e.addons,
     marketingOptOut: e.marketingOptOut,
     unsubscribeUrl: unsubscribeUrlFor(e.familyId),
     parentFirstName: e.parentFirstName,
@@ -274,6 +300,59 @@ export function claimUrlFor(enrollmentId: string) {
 
 export function verifyClaimToken(enrollmentId: string, token: string) {
   const expected = Buffer.from(claimToken(enrollmentId))
+  const given = Buffer.from(token)
+  return expected.length === given.length && timingSafeEqual(expected, given)
+}
+
+/** Active tutoring packages, split by phase. All pricing comes from here. */
+export async function loadTutoringPackages(): Promise<{
+  pre: TutoringPackage[]
+  post: TutoringPackage[]
+}> {
+  const { data, error } = await supabase
+    .from('tutoring_packages')
+    .select('id, name, hours, hourly_rate, package_price, regular_hourly_rate, phase')
+    .eq('active', true)
+    .order('hours')
+  if (error || !data) {
+    console.error('loadTutoringPackages failed:', error?.message)
+    return { pre: [], post: [] }
+  }
+  const all: TutoringPackage[] = data.map((p) => ({
+    id: p.id,
+    name: p.name,
+    hours: Number(p.hours),
+    hourlyRate: Number(p.hourly_rate),
+    packagePrice: Number(p.package_price),
+    regularHourlyRate: Number(p.regular_hourly_rate),
+    phase: p.phase,
+  }))
+  return {
+    pre: all.filter((p) => p.phase === 'pre_class'),
+    post: all.filter((p) => p.phase === 'post_class'),
+  }
+}
+
+export function packageSavings(p: TutoringPackage) {
+  return p.hours * p.regularHourlyRate - p.packagePrice
+}
+
+// Per-enrollment add-on page links (email #9). Distinct HMAC prefix, as with
+// claim and unsubscribe tokens.
+function addonToken(enrollmentId: string) {
+  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`addon:${enrollmentId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function addonPageUrlFor(enrollmentId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/addons/${enrollmentId}?t=${addonToken(enrollmentId)}`
+}
+
+export function verifyAddonToken(enrollmentId: string, token: string) {
+  const expected = Buffer.from(addonToken(enrollmentId))
   const given = Buffer.from(token)
   return expected.length === given.length && timingSafeEqual(expected, given)
 }

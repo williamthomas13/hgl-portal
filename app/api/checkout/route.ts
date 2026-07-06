@@ -21,12 +21,14 @@ export async function POST(request: Request) {
       customerEmail,
       classId,
       enrollmentId,
+      packageId,
     }: {
       className: string;
       price: number;
       customerEmail: string;
       classId: string;
       enrollmentId: string;
+      packageId?: string | null;
     } = body;
 
     if (!enrollmentId) {
@@ -43,19 +45,45 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_APP_URL ??
       'http://localhost:3000';
 
+    const lineItems: { price_data: { currency: string; product_data: { name: string }; unit_amount: number }; quantity: number }[] = [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: { name: className },
+          unit_amount: Math.round(Number(price) * 100),
+        },
+        quantity: 1,
+      },
+    ];
+
+    // Optional pre-class tutoring add-on: joins the class as a second line
+    // item in the same checkout session. Price always comes from the
+    // packages table — never from the client.
+    if (packageId) {
+      const { data: pkg, error: pkgError } = await supabase
+        .from('tutoring_packages')
+        .select('id, name, package_price, phase, active')
+        .eq('id', packageId)
+        .eq('phase', 'pre_class')
+        .eq('active', true)
+        .single();
+      if (pkgError || !pkg) {
+        return NextResponse.json({ error: 'Tutoring package not found.' }, { status: 400 });
+      }
+      lineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: { name: `${pkg.name} — 1-on-1 Tutoring` },
+          unit_amount: Math.round(Number(pkg.package_price) * 100),
+        },
+        quantity: 1,
+      });
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       customer_email: customerEmail,
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: { name: className },
-            unit_amount: Math.round(Number(price) * 100),
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       mode: 'payment',
       success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/register/${classId}?canceled=1`,
@@ -64,6 +92,7 @@ export async function POST(request: Request) {
       metadata: {
         enrollment_id: enrollmentId,
         class_id: classId,
+        ...(packageId ? { package_id: packageId } : {}),
       },
     });
 
