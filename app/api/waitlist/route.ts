@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { recipients, sendOnce, waitlistConfirmationEmail } from '../../utils/email'
+import { sendOnce, waitlistConfirmationEmail } from '../../utils/email'
 import { emailContext, loadClassBundles, spotsTaken } from '../../utils/lifecycle'
 
 // Join the waitlist for a full class: creates the family/student/enrollment
@@ -23,7 +23,10 @@ export async function POST(request: Request) {
       studentFirst,
       studentLast,
       studentEmail,
-      studentGrade,
+      graduatingYear,
+      accommodations,
+      previousScores,
+      notes,
     } = body as Record<string, string | null>
 
     if (!classId || !parentFirst || !parentLast || !parentEmail || !studentFirst || !studentLast) {
@@ -64,7 +67,7 @@ export async function POST(request: Request) {
           last_name: studentLast,
           student_email: studentEmail ? studentEmail.trim().toLowerCase() : null,
           school_id: bundle.schoolId,
-          grade_level: studentGrade || null,
+          graduating_year: graduatingYear || null,
         },
       ])
       .select()
@@ -75,7 +78,16 @@ export async function POST(request: Request) {
 
     const { data: enrollment, error: enrErr } = await supabase
       .from('enrollments')
-      .insert([{ student_id: student.id, class_id: classId, payment_status: 'Waitlisted' }])
+      .insert([
+        {
+          student_id: student.id,
+          class_id: classId,
+          payment_status: 'Waitlisted',
+          accommodations: accommodations || null,
+          previous_scores: previousScores || null,
+          notes: notes || null,
+        },
+      ])
       .select()
       .single()
     if (enrErr || !enrollment) {
@@ -100,7 +112,7 @@ export async function POST(request: Request) {
         dedupeKey: `waitlist_confirmation:${enrollment.id}`,
         emailType: 'waitlist_confirmation',
         enrollmentId: enrollment.id,
-        to: recipients(ctx),
+        to: [ctx.parentEmail], // W1 is parent-only per the deck
         subject,
         html,
       })

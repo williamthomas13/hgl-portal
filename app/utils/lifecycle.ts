@@ -41,6 +41,11 @@ export type EnrollmentRow = {
   payment_status: 'Pending' | 'Paid' | 'Completed' | 'Expired' | 'Waitlisted'
   enrolled_at: string
   paid_at: string | null
+  amountPaid: number | null
+  accommodations: string | null
+  previousScores: string | null
+  notes: string | null
+  graduatingYear: string | null
   addons: AddonRow[]
   waitlist_offer_sent_at: string | null
   waitlist_offer_expires_at: string | null
@@ -57,6 +62,7 @@ export type ClassBundle = {
   id: string
   classType: string
   schoolId: string | null
+  schoolName: string
   schoolLabel: string
   timezone: string
   instructorName: string | null
@@ -159,14 +165,15 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     id, class_type, school_nickname, school_id, instructor_name, instructor_email,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, start_date,
-    schools ( nickname, timezone ),
+    schools ( name, nickname, timezone ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
-      id, payment_status, enrolled_at, paid_at,
+      id, payment_status, enrolled_at, paid_at, amount_paid,
+      accommodations, previous_scores, notes,
       waitlist_offer_sent_at, waitlist_offer_expires_at,
       enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
       students (
-        first_name, last_name, student_email,
+        first_name, last_name, student_email, graduating_year,
         families ( id, parent_first_name, parent_email, marketing_opt_out )
       )
     )
@@ -195,6 +202,11 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           payment_status: e.payment_status,
           enrolled_at: e.enrolled_at,
           paid_at: e.paid_at ?? null,
+          amountPaid: e.amount_paid != null ? Number(e.amount_paid) : null,
+          accommodations: e.accommodations ?? null,
+          previousScores: e.previous_scores ?? null,
+          notes: e.notes ?? null,
+          graduatingYear: student.graduating_year ?? null,
           addons: (e.enrollment_addons ?? []).map((a: any) => ({
             name: one<any>(a.tutoring_packages)?.name ?? 'Tutoring package',
             hours: Number(a.hours),
@@ -217,6 +229,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       id: c.id,
       classType: c.class_type,
       schoolId: c.school_id ?? null,
+      schoolName: school?.name ?? school?.nickname ?? c.school_nickname ?? 'Higher Ground Learning',
       schoolLabel: school?.nickname ?? c.school_nickname ?? 'HGL',
       timezone: school?.timezone ?? DEFAULT_TIMEZONE,
       instructorName: c.instructor_name || null,
@@ -248,6 +261,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     enrollmentId: e.id,
     classId: bundle.id,
     calendarPageUrl: calendarPageUrlFor(bundle.id),
+    resumePaymentUrl: resumePaymentUrlFor(e.id),
     // Always first session minus one day — computed, never stored.
     diagnosticDueDate: addDaysISO(bundle.firstSession, -1),
     addons: e.addons,
@@ -256,10 +270,24 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     parentFirstName: e.parentFirstName,
     parentEmail: e.parentEmail,
     studentFirstName: e.studentFirstName,
+    studentLastName: e.studentLastName,
     studentEmail: e.studentEmail,
-    className: `${bundle.schoolLabel} — ${bundle.classType}`,
+    graduatingYear: e.graduatingYear,
+    accommodations: e.accommodations,
+    previousScores: e.previousScores,
+    notes: e.notes,
+    amountPaid: e.amountPaid,
+    paidAt: e.paid_at,
+    enrolledAt: e.enrolled_at,
+    schoolName: bundle.schoolName,
+    schoolNickname: bundle.schoolLabel,
+    classType: bundle.classType,
+    className: `${bundle.schoolLabel} ${bundle.classType}`,
+    classTime: classTimeFor(bundle.sessions),
+    examInfo: examInfoFor(bundle.classType),
     instructorName: bundle.instructorName,
     defaultLocation: bundle.defaultLocation,
+    deliveryMode: bundle.deliveryMode,
     synapGroup: bundle.synapGroup,
     startDate: bundle.startDate,
     firstSession: bundle.firstSession,
@@ -335,6 +363,58 @@ export async function loadTutoringPackages(): Promise<{
 
 export function packageSavings(p: TutoringPackage) {
   return p.hours * p.regularHourlyRate - p.packagePrice
+}
+
+/**
+ * {classTime}: if every session shares one time range, render it;
+ * otherwise the copy says "see the class calendar".
+ */
+export function classTimeFor(sessions: SessionInfo[]): string | null {
+  const withTimes = sessions.filter((s) => s.start_time)
+  if (withTimes.length === 0 || withTimes.length !== sessions.length) return null
+  const key = (s: SessionInfo) => `${s.start_time}|${s.end_time ?? ''}`
+  if (!withTimes.every((s) => key(s) === key(withTimes[0]))) return null
+  const fmt = (t: string) => {
+    const [h, m] = t.split(':').map(Number)
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    const hour = h % 12 === 0 ? 12 : h % 12
+    return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
+  }
+  const first = withTimes[0]
+  return first.end_time
+    ? `${fmt(first.start_time as string)} to ${fmt(first.end_time)}`
+    : fmt(first.start_time as string)
+}
+
+/** Exam family from class_type: drives the exam-registration FAQ answer. */
+export function examInfoFor(classType: string): { examName: string; regLabel: string; regUrl: string } | null {
+  if (/sat/i.test(classType)) {
+    return { examName: 'SAT', regLabel: 'College Board Website', regUrl: 'https://www.collegeboard.org' }
+  }
+  if (/act/i.test(classType)) {
+    return { examName: 'ACT', regLabel: 'ACT Website', regUrl: 'https://www.act.org' }
+  }
+  return null
+}
+
+// Resume-payment links for the PR1-4 "Finalize Registration" buttons.
+// Distinct HMAC prefix, as with claim/unsubscribe/addon tokens.
+function resumeToken(enrollmentId: string) {
+  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`resume:${enrollmentId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function resumePaymentUrlFor(enrollmentId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/api/resume-payment?e=${enrollmentId}&t=${resumeToken(enrollmentId)}`
+}
+
+export function verifyResumeToken(enrollmentId: string, token: string) {
+  const expected = Buffer.from(resumeToken(enrollmentId))
+  const given = Buffer.from(token)
+  return expected.length === given.length && timingSafeEqual(expected, given)
 }
 
 // Per-enrollment add-on page links (email #9). Distinct HMAC prefix, as with

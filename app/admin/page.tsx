@@ -371,7 +371,7 @@ export default function AdminDashboard() {
                 <input
                   type="text"
                   name="synap_group"
-                  placeholder="e.g. nido-sat-spring-2026"
+                  placeholder="https://…  (full Synap group link — used as the button URL in emails)"
                   className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
                 />
                 <p className="text-xs text-gray-500 mt-1">Optional — link to a Synap group for test access.</p>

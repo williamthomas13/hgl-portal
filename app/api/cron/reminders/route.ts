@@ -4,19 +4,24 @@ import { createHash } from 'crypto'
 import {
   classDetailsEmail,
   faqEmail,
+  formatDate,
   locationReminderEmail,
   paymentReminderEmail,
-  recipients,
   reviewRequestEmail,
   scheduleUpdateEmail,
   secondDiagnosticEmail,
   sendAdminAlert,
   sendOnce,
-  synapAccessEmail,
+  synapAccessParentEmail,
+  synapAccessStudentEmail,
+  thankYouEmail,
   tutoringOfferEmail,
   tutoringUpsellEmail,
   waitlistOfferEmail,
+  type Audience,
   type EnrollmentEmailContext,
+  type Rendered,
+  type ScheduleChange,
 } from '../../../utils/email'
 import {
   ADMIN_EMAIL,
@@ -29,16 +34,17 @@ import {
   addonPageUrlFor,
   claimUrlFor,
   classDetailsSnapshot,
-  loadTutoringPackages,
   emailContext,
   hoursSince,
   isDue,
   loadClassBundles,
+  loadTutoringPackages,
   localDate,
   localHour,
   spotsTaken,
   stepTargetDate,
   type ClassBundle,
+  type EnrollmentRow,
   type TutoringPackage,
 } from '../../../utils/lifecycle'
 
@@ -47,6 +53,11 @@ import {
 // is deduped through email_log, so the sweep is fully idempotent:
 // rescheduling a class automatically recomputes all pending sends, and
 // re-running never double-sends.
+//
+// Audience model (docs/EMAIL_COPY.md): sequence emails render separately per
+// recipient — parent send (dedupe `<type>_p:`) and student send (`<type>_s:`,
+// only when a student email exists). Blank student email → parent-only,
+// silently.
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL as string,
@@ -54,25 +65,71 @@ const supabase = createClient(
 )
 
 // Relationship (non-essential) emails — suppressed for opted-out families.
-// Everything else is transactional and always sends.
-const RELATIONSHIP_TYPES = new Set(['second_diagnostic', 'review_request', 'tutoring_offer'])
+// Everything else is transactional and always sends. (#3 VFAQs is
+// relationship per the deck; #1/#9 are handled in their own steps.)
+const RELATIONSHIP_TYPES = new Set(['faq', 'second_diagnostic', 'review_request', 'tutoring_offer'])
 
-const TEMPLATES: Record<
-  string,
-  (ctx: EnrollmentEmailContext) => { subject: string; html: string; from?: string }
-> = {
-  synap_access: synapAccessEmail,
-  faq: faqEmail,
-  class_details: classDetailsEmail,
-  location_reminder: locationReminderEmail,
-  second_diagnostic: secondDiagnosticEmail,
-  review_request: reviewRequestEmail,
-  tutoring_offer: tutoringOfferEmail,
+type StepRenderers = Partial<Record<Audience, (ctx: EnrollmentEmailContext) => Rendered>>
+
+function renderersFor(step: string, postPackages: TutoringPackage[]): StepRenderers {
+  switch (step) {
+    case 'synap_access':
+      return { parent: synapAccessParentEmail, student: synapAccessStudentEmail }
+    case 'faq':
+      return { parent: (c) => faqEmail(c, 'parent'), student: (c) => faqEmail(c, 'student') }
+    case 'class_details':
+      return { parent: (c) => classDetailsEmail(c, 'parent'), student: (c) => classDetailsEmail(c, 'student') }
+    case 'location_reminder':
+      return { parent: (c) => locationReminderEmail(c, 'parent'), student: (c) => locationReminderEmail(c, 'student') }
+    case 'second_diagnostic':
+      return { parent: (c) => secondDiagnosticEmail(c, 'parent'), student: (c) => secondDiagnosticEmail(c, 'student') }
+    case 'review_request':
+      return { parent: reviewRequestEmail } // parent-only
+    case 'tutoring_offer':
+      return {
+        parent: (c) => tutoringOfferEmail(c, postPackages, 'parent'),
+        student: (c) => tutoringOfferEmail(c, postPackages, 'student'),
+      }
+    default:
+      return {}
+  }
 }
 
 type Counters = Record<string, number>
 function bump(c: Counters, key: string) {
   c[key] = (c[key] ?? 0) + 1
+}
+
+/** Send one step to one enrollment's audiences, deduped per audience. */
+async function sendToAudiences(opts: {
+  type: string
+  renderers: StepRenderers
+  ctx: EnrollmentEmailContext
+  counters: Counters
+  payload?: Record<string, unknown>
+  dedupeSuffix?: string
+}) {
+  const { type, renderers, ctx, counters } = opts
+  const suffix = opts.dedupeSuffix ? `:${opts.dedupeSuffix}` : ''
+  const targets: { audience: Audience; to: string; tag: string }[] = []
+  if (renderers.parent) targets.push({ audience: 'parent', to: ctx.parentEmail, tag: 'p' })
+  if (renderers.student && ctx.studentEmail)
+    targets.push({ audience: 'student', to: ctx.studentEmail, tag: 's' })
+
+  for (const t of targets) {
+    const { subject, html, from } = renderers[t.audience]!(ctx)
+    const status = await sendOnce({
+      dedupeKey: `${type}_${t.tag}:${ctx.enrollmentId}${suffix}`,
+      emailType: type,
+      enrollmentId: ctx.enrollmentId,
+      to: [t.to],
+      from,
+      subject,
+      html,
+      payload: opts.payload,
+    })
+    if (status === 'sent') bump(counters, type)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -135,60 +192,29 @@ async function sweepCompletion(bundle: ClassBundle, c: Counters) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Post-payment sequence
+// 3. Email #1 — parent thank-you, ~3h after payment (deck timing). The
+// late-registration combined welcome claims the same dedupe key at payment
+// time, so late registrants never get both.
 // ---------------------------------------------------------------------------
 
-async function sweepSequence(
-  bundle: ClassBundle,
-  c: Counters,
-  postPackages: TutoringPackage[]
-) {
-  // Completed students still get the post-class emails (review, tutoring).
-  const paid = bundle.enrollments.filter(
-    (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
-  )
-  if (paid.length === 0) return
+async function sweepThankYou(bundle: ClassBundle, c: Counters) {
+  for (const e of bundle.enrollments) {
+    if (e.payment_status !== 'Paid' && e.payment_status !== 'Completed') continue
+    if (e.marketingOptOut) continue // relationship email
+    if (!e.paid_at || hoursSince(e.paid_at) < 3) continue
 
-  for (const step of SEQUENCE) {
-    const target = stepTargetDate(step, bundle)
-    if (!isDue(bundle.timezone, target, step.hour)) continue
-
-    // Email #4 hold rule: never send class details with gaps.
-    if (step.holdOnBlankDetails && (!bundle.instructorName || !bundle.defaultLocation)) {
-      await sendAdminAlert({
-        dedupeKey: `hold_alert:${bundle.id}:${localDate(bundle.timezone)}`,
-        adminEmail: ADMIN_EMAIL,
-        subject: `HOLD: class details email not sent for ${bundle.schoolLabel} — ${bundle.classType}`,
-        body: `<p>The "class details" email is due but is being held because
-          ${!bundle.instructorName ? '<strong>instructor</strong> ' : ''}
-          ${!bundle.instructorName && !bundle.defaultLocation ? 'and ' : ''}
-          ${!bundle.defaultLocation ? '<strong>location</strong> ' : ''}
-          is blank. Fill it in on the admin page — the email goes out on the next hourly sweep.</p>`,
-      })
-      bump(c, 'held')
-      continue
-    }
-
-    for (const e of paid) {
-      if (RELATIONSHIP_TYPES.has(step.type) && e.marketingOptOut) continue
-      const ctx = emailContext(bundle, e)
-      // #8 pulls post-class rates from the packages table.
-      const { subject, html, from } =
-        step.type === 'tutoring_offer'
-          ? tutoringOfferEmail(ctx, postPackages)
-          : TEMPLATES[step.type](ctx)
-      const status = await sendOnce({
-        dedupeKey: `${step.type}:${e.id}`,
-        emailType: step.type,
-        enrollmentId: e.id,
-        to: recipients(ctx),
-        from,
-        subject,
-        html,
-        payload: step.type === 'class_details' ? classDetailsSnapshot(bundle) : undefined,
-      })
-      if (status === 'sent') bump(c, step.type)
-    }
+    const ctx = emailContext(bundle, e)
+    const { subject, html, from } = thankYouEmail(ctx)
+    const status = await sendOnce({
+      dedupeKey: `thank_you:${e.id}`,
+      emailType: 'thank_you',
+      enrollmentId: e.id,
+      to: [ctx.parentEmail],
+      from,
+      subject,
+      html,
+    })
+    if (status === 'sent') bump(c, 'thank_you')
   }
 }
 
@@ -224,8 +250,69 @@ async function sweepUpsell(bundle: ClassBundle, c: Counters, prePackages: Tutori
 }
 
 // ---------------------------------------------------------------------------
-// 4. Schedule-update detection (after email #4 went out)
+// 4. Post-payment sequence (#2–#8), audience-aware
 // ---------------------------------------------------------------------------
+
+async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: TutoringPackage[]) {
+  // Completed students still get the post-class emails (review, tutoring).
+  const paid = bundle.enrollments.filter(
+    (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+  )
+  if (paid.length === 0) return
+
+  for (const step of SEQUENCE) {
+    const target = stepTargetDate(step, bundle)
+    if (!isDue(bundle.timezone, target, step.hour)) continue
+
+    // Email #4 hold rule: never send class details with gaps.
+    if (step.holdOnBlankDetails && (!bundle.instructorName || !bundle.defaultLocation)) {
+      await sendAdminAlert({
+        dedupeKey: `hold_alert:${bundle.id}:${localDate(bundle.timezone)}`,
+        adminEmail: ADMIN_EMAIL,
+        subject: `HOLD: class details email not sent for ${bundle.schoolLabel} ${bundle.classType}`,
+        body: `<p>The "class details" email is due but is being held because
+          ${!bundle.instructorName ? '<strong>instructor</strong> ' : ''}
+          ${!bundle.instructorName && !bundle.defaultLocation ? 'and ' : ''}
+          ${!bundle.defaultLocation ? '<strong>location</strong> ' : ''}
+          is blank. Fill it in on the admin page — the email goes out on the next hourly sweep.</p>`,
+      })
+      bump(c, 'held')
+      continue
+    }
+
+    const renderers = renderersFor(step.type, postPackages)
+    for (const e of paid) {
+      if (RELATIONSHIP_TYPES.has(step.type) && e.marketingOptOut) continue
+      await sendToAudiences({
+        type: step.type,
+        renderers,
+        ctx: emailContext(bundle, e),
+        counters: c,
+        payload: step.type === 'class_details' ? classDetailsSnapshot(bundle) : undefined,
+      })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Schedule-update detection (after email #4 went out) — {changesBlock}
+// renders only the fields that actually changed.
+// ---------------------------------------------------------------------------
+
+function computeChanges(
+  snapshot: Partial<ReturnType<typeof classDetailsSnapshot>>,
+  bundle: ClassBundle
+): ScheduleChange[] {
+  const current = classDetailsSnapshot(bundle)
+  const changes: ScheduleChange[] = []
+  if (snapshot.first_session !== current.first_session)
+    changes.push({ label: 'First day of class', value: formatDate(current.first_session) })
+  if ((snapshot.location ?? null) !== (current.location ?? null))
+    changes.push({ label: 'Location', value: current.location ?? 'TBD' })
+  if ((snapshot.instructor ?? null) !== (current.instructor ?? null))
+    changes.push({ label: 'Instructor', value: current.instructor ?? 'TBD' })
+  return changes
+}
 
 async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
   const enrollmentIds = bundle.enrollments.map((e) => e.id)
@@ -243,33 +330,31 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
   const stableKey = `${current.first_session}|${current.location ?? ''}|${current.instructor ?? ''}`
   const hash = createHash('md5').update(stableKey).digest('hex').slice(0, 8)
 
-  const stale = sentDetails.filter((row) => {
-    const p = row.payload as Partial<typeof current> | null
-    if (!p) return false
-    return (
-      p.first_session !== current.first_session ||
-      (p.location ?? null) !== (current.location ?? null) ||
-      (p.instructor ?? null) !== (current.instructor ?? null)
-    )
-  })
-  if (stale.length === 0) return
+  const staleByEnrollment = new Map<string, ScheduleChange[]>()
+  for (const row of sentDetails) {
+    if (!row.payload || !row.enrollment_id || staleByEnrollment.has(row.enrollment_id)) continue
+    const changes = computeChanges(row.payload as Partial<typeof current>, bundle)
+    if (changes.length > 0) staleByEnrollment.set(row.enrollment_id, changes)
+  }
+  if (staleByEnrollment.size === 0) return
 
-  for (const row of stale) {
+  for (const [enrollmentId, changes] of staleByEnrollment) {
     const e = bundle.enrollments.find(
-      (en) => en.id === row.enrollment_id && en.payment_status === 'Paid'
+      (en) =>
+        en.id === enrollmentId &&
+        (en.payment_status === 'Paid' || en.payment_status === 'Completed')
     )
     if (!e) continue
-    const ctx = emailContext(bundle, e)
-    const { subject, html } = scheduleUpdateEmail(ctx)
-    const status = await sendOnce({
-      dedupeKey: `schedule_update:${e.id}:${hash}`,
-      emailType: 'schedule_update',
-      enrollmentId: e.id,
-      to: recipients(ctx),
-      subject,
-      html,
+    await sendToAudiences({
+      type: 'schedule_update',
+      renderers: {
+        parent: (ctx) => scheduleUpdateEmail(ctx, 'parent', changes),
+        student: (ctx) => scheduleUpdateEmail(ctx, 'student', changes),
+      },
+      ctx: emailContext(bundle, e),
+      counters: c,
+      dedupeSuffix: hash,
     })
-    if (status === 'sent') bump(c, 'schedule_update')
   }
 
   // Refresh the snapshots so the *next* change triggers again.
@@ -277,11 +362,11 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
     .from('email_log')
     .update({ payload: current })
     .eq('email_type', 'class_details')
-    .in('enrollment_id', stale.map((r) => r.enrollment_id))
+    .in('enrollment_id', [...staleByEnrollment.keys()])
 }
 
 // ---------------------------------------------------------------------------
-// 5. Waitlist: expire lapsed offers, then extend new ones (FCFS)
+// 6. Waitlist: expire lapsed offers, then extend new ones (FCFS)
 // ---------------------------------------------------------------------------
 
 async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
@@ -307,7 +392,7 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
         await sendAdminAlert({
           dedupeKey: `offer_rollover:${e.id}`,
           adminEmail: ADMIN_EMAIL,
-          subject: `Waitlist offer expired unclaimed — ${bundle.schoolLabel} — ${bundle.classType}`,
+          subject: `Waitlist offer expired unclaimed — ${bundle.schoolLabel} ${bundle.classType}`,
           body: `<p>${e.parentFirstName} (${e.parentEmail}, student ${e.studentFirstName}
             ${e.studentLastName}) did not claim their spot within ${WAITLIST_CLAIM_HOURS} hours.
             The offer rolls to the next family automatically.</p>`,
@@ -350,13 +435,13 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Admin checkpoints + weekly digest
+// 7. Admin checkpoints + weekly digest
 // ---------------------------------------------------------------------------
 
 async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
   const today = localDate(bundle.timezone)
 
-  // (d) Instructor/classroom still blank 6 days before start — daily nag.
+  // Instructor/classroom still blank 6 days before start — daily nag.
   const sixDaysOut = addDaysISO(bundle.firstSession, -6)
   if (
     today >= sixDaysOut &&
@@ -366,7 +451,7 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     const status = await sendAdminAlert({
       dedupeKey: `blank_details:${bundle.id}:${today}`,
       adminEmail: ADMIN_EMAIL,
-      subject: `Missing details — ${bundle.schoolLabel} — ${bundle.classType} starts ${bundle.firstSession}`,
+      subject: `Missing details — ${bundle.schoolLabel} ${bundle.classType} starts ${bundle.firstSession}`,
       body: `<p>${!bundle.instructorName ? 'Instructor is blank. ' : ''}
         ${!bundle.defaultLocation ? 'Location is blank. ' : ''}
         Class starts ${bundle.firstSession}.</p>`,
@@ -374,14 +459,14 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     if (status === 'sent') bump(c, 'admin_alert')
   }
 
-  // (e) Min-enrollment checkpoint at the deadline (or 7 days before start).
+  // Min-enrollment checkpoint at the deadline (or 7 days before start).
   const checkpoint = bundle.enrollmentDeadline ?? addDaysISO(bundle.firstSession, -7)
   if (isDue(bundle.timezone, checkpoint, 8) && today <= bundle.firstSession) {
     const paidCount = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
     const status = await sendAdminAlert({
       dedupeKey: `min_enrollment:${bundle.id}`,
       adminEmail: ADMIN_EMAIL,
-      subject: `Enrollment checkpoint — ${bundle.schoolLabel} — ${bundle.classType}: ${paidCount} paid / ${bundle.minEnrollment} minimum`,
+      subject: `Enrollment checkpoint — ${bundle.schoolLabel} ${bundle.classType}: ${paidCount} paid / ${bundle.minEnrollment} minimum`,
       body: `<p><strong>${paidCount}</strong> paid enrollments against a minimum of
         <strong>${bundle.minEnrollment}</strong> (${bundle.deliveryMode}, capacity ${bundle.capacity}).
         Class starts ${bundle.firstSession}.
@@ -400,12 +485,12 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
   const weekAgo = Date.now() - 7 * 24 * 3_600_000
   const rows: string[] = []
   for (const b of bundles) {
-    const recent = b.enrollments.filter((e) => new Date(e.enrolled_at).getTime() >= weekAgo)
+    const recent = b.enrollments.filter((e: EnrollmentRow) => new Date(e.enrolled_at).getTime() >= weekAgo)
     if (recent.length === 0) continue
     const names = recent
       .map((e) => `${e.studentFirstName} ${e.studentLastName} (${e.payment_status})`)
       .join(', ')
-    rows.push(`<li><strong>${b.schoolLabel} — ${b.classType}</strong>: ${recent.length} — ${names}</li>`)
+    rows.push(`<li><strong>${b.schoolLabel} ${b.classType}</strong>: ${recent.length} — ${names}</li>`)
   }
   if (rows.length === 0) return
 
@@ -438,8 +523,9 @@ export async function GET(req: Request) {
 
     await sweepPaymentReminders(bundle, counters)
     await sweepCompletion(bundle, counters)
-    await sweepSequence(bundle, counters, packages.post)
+    await sweepThankYou(bundle, counters)
     await sweepUpsell(bundle, counters, packages.pre)
+    await sweepSequence(bundle, counters, packages.post)
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)
     await sweepAdminCheckpoints(bundle, counters)

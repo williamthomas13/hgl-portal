@@ -3,11 +3,10 @@ import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import {
   combinedWelcomeEmail,
-  recipients,
+  parentConfirmationEmail,
   sendAdminAlert,
   sendOnce,
   studentConfirmationEmail,
-  thankYouEmail,
 } from '../../utils/email';
 import {
   ADMIN_EMAIL,
@@ -102,6 +101,8 @@ export async function POST(req: Request) {
         stripe_session_id: sessionId,
         stripe_payment_intent_id: paymentIntentId,
         paid_at: new Date().toISOString(),
+        // Real charged total (class + any add-on) for the #0-P order summary.
+        amount_paid: session.amount_total != null ? session.amount_total / 100 : null,
       });
 
     const { data, error } = enrollmentId
@@ -148,8 +149,19 @@ export async function POST(req: Request) {
       if (bundle && enrollment) {
         const ctx = emailContext(bundle, enrollment);
 
-        // Email #0: student-facing confirmation. Transactional — always
-        // sends when we have a student email, regardless of opt-out.
+        // #0-P: parent order confirmation. Transactional — always sends.
+        const parent = parentConfirmationEmail(ctx);
+        await sendOnce({
+          dedupeKey: `parent_confirmation:${paidEnrollmentId}`,
+          emailType: 'parent_confirmation',
+          enrollmentId: paidEnrollmentId,
+          to: [ctx.parentEmail],
+          subject: parent.subject,
+          html: parent.html,
+        });
+
+        // #0-S: student confirmation. Transactional — always sends when we
+        // have a student email. Blank student email → parent-only, silently.
         if (ctx.studentEmail) {
           const student = studentConfirmationEmail(ctx);
           await sendOnce({
@@ -157,11 +169,15 @@ export async function POST(req: Request) {
             emailType: 'student_confirmation',
             enrollmentId: paidEnrollmentId,
             to: [ctx.studentEmail],
-            from: student.from,
             subject: student.subject,
             html: student.html,
           });
         }
+
+        // #1 (thank-you, ~3h) is sent by the sweep. Late registration: if the
+        // pre-start emails (#2/#3) would already have fired, send one combined
+        // welcome now instead, and claim their dedupe keys (both audiences)
+        // plus the thank-you key so nothing re-sends individually.
         const supersededSteps = SEQUENCE.filter(
           (s) =>
             (s.type === 'synap_access' || s.type === 'faq') &&
@@ -172,42 +188,32 @@ export async function POST(req: Request) {
           // Combined welcome always sends — it carries transactional
           // Synap/FAQ content — even for opted-out families.
           const { subject, html, from } = combinedWelcomeEmail(ctx);
+          const to = ctx.studentEmail ? [ctx.parentEmail, ctx.studentEmail] : [ctx.parentEmail];
           const status = await sendOnce({
             dedupeKey: `thank_you:${paidEnrollmentId}`,
             emailType: 'combined_welcome',
             enrollmentId: paidEnrollmentId,
-            to: recipients(ctx),
+            to,
             from,
             subject,
             html,
           });
           if (status === 'sent') {
             await supabase.from('email_log').insert(
-              supersededSteps.map((s) => ({
-                dedupe_key: `${s.type}:${paidEnrollmentId}`,
-                email_type: 'superseded_by_welcome',
-                enrollment_id: paidEnrollmentId,
-                recipients: recipients(ctx),
-              }))
+              supersededSteps.flatMap((s) => (
+                ['p', 's'].map((tag) => ({
+                  dedupe_key: `${s.type}_${tag}:${paidEnrollmentId}`,
+                  email_type: 'superseded_by_welcome',
+                  enrollment_id: paidEnrollmentId,
+                  recipients: to,
+                }))
+              ))
             );
           }
-        } else if (!enrollment.marketingOptOut) {
-          // Thank-you is a relationship email — suppressed on opt-out, and
-          // parent-only now that the student gets their own #0 confirmation.
-          const { subject, html, from } = thankYouEmail(ctx);
-          await sendOnce({
-            dedupeKey: `thank_you:${paidEnrollmentId}`,
-            emailType: 'thank_you',
-            enrollmentId: paidEnrollmentId,
-            to: [ctx.parentEmail],
-            from,
-            subject,
-            html,
-          });
         }
       }
     } catch (emailErr) {
-      console.error('Welcome email failed:', emailErr);
+      console.error('Confirmation email failed:', emailErr);
     }
   }
 

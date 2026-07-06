@@ -132,7 +132,7 @@ export default function RegistrationPage() {
           last_name: formData.get('studentLast'),
           student_email: studentEmail,
           school_id: classDetails?.school_id ?? null,
-          grade_level: formData.get('studentGrade') || null,
+          graduating_year: formData.get('graduatingYear') || null,
         },
       ])
       .select()
@@ -152,6 +152,9 @@ export default function RegistrationPage() {
           student_id: studentData.id,
           class_id: classId,
           payment_status: 'Pending',
+          accommodations: formData.get('accommodations') || null,
+          previous_scores: formData.get('previousScores') || null,
+          notes: formData.get('notes') || null,
         },
       ])
       .select()
@@ -232,7 +235,10 @@ export default function RegistrationPage() {
           studentFirst: formData.get('studentFirst'),
           studentLast: formData.get('studentLast'),
           studentEmail: formData.get('studentEmail'),
-          studentGrade: formData.get('studentGrade'),
+          graduatingYear: formData.get('graduatingYear'),
+          accommodations: formData.get('accommodations'),
+          previousScores: formData.get('previousScores'),
+          notes: formData.get('notes'),
         }),
       })
       const data = await response.json()
@@ -378,9 +384,27 @@ export default function RegistrationPage() {
               </div>
               <div className="col-span-2">
                 <label className="block text-sm text-gray-600">
-                  Grade Level <span className="text-gray-400">(optional)</span>
+                  Graduating Year <span className="text-gray-400">(optional)</span>
                 </label>
-                <input type="text" name="studentGrade" placeholder="e.g. 11th" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                <input type="text" name="graduatingYear" placeholder="e.g. 2027" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-600">
+                  Testing accommodations <span className="text-gray-400">(optional)</span>
+                </label>
+                <input type="text" name="accommodations" placeholder="e.g. extended time" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-600">
+                  Previous test scores <span className="text-gray-400">(optional)</span>
+                </label>
+                <input type="text" name="previousScores" placeholder="e.g. PSAT 1150" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-600">
+                  Anything else we should know? <span className="text-gray-400">(optional)</span>
+                </label>
+                <textarea name="notes" rows={2} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
               </div>
             </div>
           </div>
