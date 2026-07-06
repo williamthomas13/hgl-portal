@@ -202,3 +202,7 @@ Email copy is placeholder — final copy drops into `app/utils/email.ts` templat
 - Registration now has an add-on step ("only available at registration") offering pre_class packages; the selection joins the class as a second line item in the same Stripe checkout, and the purchase is recorded in `enrollment_addons` (hours stored durably for the future TutorBird-replacement phase). Add-ons appear in the #0 student confirmation recap.
 - Email #9 (tutoring upsell, parent-only, from billy@, subject/preheader final) sends ~24h after payment only when the enrollment has no add-on and the class hasn't started. It links to a per-enrollment page (`/addons/{id}?t=…`) that honors pre_class pricing until the first session, then automatically stops offering.
 - #8 (post-class) and #9 coexist by design: #9 = best rates for upfront commitment, #8 = smaller continuation discount (highergroundprep.com/discount, password BESTSCORE, SAT & ACT).
+
+### Email health tracking (bounces & complaints)
+
+In the Resend dashboard → **Webhooks** → Add endpoint: `https://hgl-portal.vercel.app/api/webhooks/resend`, subscribed to **email.bounced** and **email.complained**. Copy the signing secret (whsec_…) into `RESEND_WEBHOOK_SECRET` in Vercel (Sensitive) and `.env.local` (replace the placeholder), then redeploy. The Monday digest then reports hard bounces on student emails (bad addresses to fix in the students table) and any spam complaints. Until the secret is set, the endpoint refuses events (503) rather than accepting unauthenticated ones.

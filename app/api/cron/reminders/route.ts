@@ -483,6 +483,9 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
   if (!isMonday || localHour(DEFAULT_TIMEZONE) < 8) return
 
   const weekAgo = Date.now() - 7 * 24 * 3_600_000
+  const sections: string[] = []
+
+  // New registrations.
   const rows: string[] = []
   for (const b of bundles) {
     const recent = b.enrollments.filter((e: EnrollmentRow) => new Date(e.enrolled_at).getTime() >= weekAgo)
@@ -492,13 +495,51 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
       .join(', ')
     rows.push(`<li><strong>${b.schoolLabel} ${b.classType}</strong>: ${recent.length} — ${names}</li>`)
   }
-  if (rows.length === 0) return
+  if (rows.length > 0) {
+    sections.push(`<p>Registrations in the last 7 days:</p><ul>${rows.join('')}</ul>`)
+  }
+
+  // Delivery problems from the Resend webhook: hard bounces on student
+  // emails (bad addresses collected at registration) and spam complaints.
+  const { data: events } = await supabase
+    .from('email_events')
+    .select('event_type, email_address, subject, bounce_type, created_at')
+    .gte('created_at', new Date(weekAgo).toISOString())
+  if (events && events.length > 0) {
+    const studentEmails = new Set(
+      bundles.flatMap((b) => b.enrollments.map((e) => e.studentEmail?.toLowerCase()).filter(Boolean))
+    )
+    const hardBounces = events.filter(
+      (ev) =>
+        ev.event_type === 'email.bounced' &&
+        ev.bounce_type !== 'Transient' &&
+        studentEmails.has(ev.email_address)
+    )
+    if (hardBounces.length > 0) {
+      const items = hardBounces
+        .map((ev) => `<li><strong>${ev.email_address}</strong>${ev.subject ? ` — "${ev.subject}"` : ''}</li>`)
+        .join('')
+      sections.push(
+        `<p><strong>Student email hard bounces</strong> — these addresses are bad; fix them in the
+         students table or the student misses every class email:</p><ul>${items}</ul>`
+      )
+    }
+    const complaints = events.filter((ev) => ev.event_type === 'email.complained')
+    if (complaints.length > 0) {
+      const items = complaints
+        .map((ev) => `<li><strong>${ev.email_address}</strong>${ev.subject ? ` — "${ev.subject}"` : ''}</li>`)
+        .join('')
+      sections.push(`<p><strong>Spam complaints</strong> — consider opting these families out:</p><ul>${items}</ul>`)
+    }
+  }
+
+  if (sections.length === 0) return
 
   const status = await sendAdminAlert({
     dedupeKey: `weekly_digest:${today}`,
     adminEmail: ADMIN_EMAIL,
-    subject: `Weekly digest — new registrations`,
-    body: `<p>Registrations in the last 7 days:</p><ul>${rows.join('')}</ul>`,
+    subject: `Weekly digest — registrations & email health`,
+    body: sections.join(''),
   })
   if (status === 'sent') bump(c, 'weekly_digest')
 }
