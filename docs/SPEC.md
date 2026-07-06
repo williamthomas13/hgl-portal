@@ -1,6 +1,6 @@
 # HGL Portal — Master Spec
 
-**Last updated:** July 5, 2026 (v2.1 — enum + opt-out location aligned with implementation)
+**Last updated:** July 5, 2026 (v2.3 — per-class registration entry points, visual calendar, checkout copy)
 **Status:** Foundation complete and verified in production. Phase 2 (email automation + enrollment lifecycle + waitlist + tutoring add-ons) fully specified; content pack complete (15/15); build in progress with Claude Code.
 **Stack:** Next.js + Supabase + Stripe on Vercel · Resend for transactional email
 **Live:** https://hgl-portal.vercel.app · Repo: github.com/williamthomas13/hgl-portal
@@ -123,11 +123,25 @@ After the registration form, before payment: add-on step offering active pre_cla
 
 ICS endpoint per class (`/api/classes/{id}/calendar.ics`): every session an event, school-local timezone, location or meeting link. One-time download and live subscription URL (auto-updates on date changes). Per-class landing page: Add to Google Calendar · Add to Apple Calendar · Download PDF schedule. All email calendar buttons link here.
 
-## 12. Operational notes & open items
+## 12. Per-class registration entry points
+
+Architecture: Squarespace remains the marketing/sales site; each class's "Register" button links (via hgl.co short link) to a class-specific portal registration page. The portal is never browsed as a catalog by the public.
+
+- **Slugs:** classes get a `slug` column (auto-generated from school nickname + class type + term, e.g. `aisct-sat-prep-fall26`; editable in admin). Registration URL: `/register/{slug}`.
+- **Short links:** marketing continues using hgl.co redirects (e.g. hgl.co/sls → `/register/{slug}`) — short, memorable, print-friendly. Scarlett maintains the hgl.co mapping when creating a class.
+- **The registration page shows only that class:** class name, school, price, and a **visual session calendar** rendered from the sessions table (dates, times, location; school-local timezone) — this replaces the current manual process of pasting calendar screenshots from Google Sheets into Squarespace. Include "Add to calendar / subscribe" via the calendar landing page (§11). Then: registration form → tutoring add-on step → Stripe checkout.
+- **Page states:** class full → Join Waitlist variant; enrollment closed → "Registration has closed" + link to main site; bad slug → friendly 404 → main site.
+- **Root URL** (`/`): no public class list — redirect to https://www.highergroundlearning.com. Global class list remains in the admin area only. (Phase 4: counselors see their own school's open classes, scoped by auth.)
+- **Admin:** class view displays the full registration URL with a copy button. New-class workflow becomes: create class + sessions in admin → copy link → point the hgl.co short link / Squarespace button at it → done. No per-class Squarespace pages, no calendar screenshots.
+- **Checkout add-on step:** uses the proven Squarespace shop copy verbatim, prices computed from tutoring_packages, with an explicit "No thanks, just the class" skip option.
+- **Success page:** confirmation + "Back to Higher Ground Learning" → https://www.highergroundlearning.com. No dashboard links, no upsell (the add-on step and email #9 cover it).
+
+## 13. Operational notes & open items
 
 - Resend domain verification: DNS records pending green check → real delivery test → commit → push.
 - Squarespace: discount page password BESTSCORE (done/in progress), copy references both tests; keep SAT1600 during transition.
 - Stripe dashboard: receipt emails OFF (sandbox + live).
-- Housekeeping: rotate STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET (re-add as Sensitive); revoke old WilliamRThom `gho_` OAuth token.
+- **Stripe account:** portal migrated (July 6, 2026) from the Squarespace-managed Stripe account to a dedicated "HGL Portal" account — fresh test keys + recreated webhook endpoint (`checkout.session.completed`, API version 2026-06-24.dahlia). This supersedes the earlier key-rotation task. Squarespace's Stripe account left untouched (still serves live shop orders, receipts stay ON there).
+- **Stripe launch checklist (live-mode switch):** (1) activate account — business details, bank, tax; (2) re-create the webhook endpoint **in live mode** (test/live endpoints are separate) and swap live `sk_live_`/`whsec_` into Vercel; (3) set statement descriptor (e.g. HIGHERGROUND); (4) branding — logo + color on hosted checkout; (5) turn off "Successful payments" receipts in live mode; (6) review payout schedule (QuickBooks/Phase 6 tidiness) and international payment methods (SEPA/iDEAL for EU school families); (7) add Billy as team member if dashboard access needed.
 - `info@` and `billy@` exist in Google Workspace ✓.
 - Spec home: commit as `docs/SPEC.md` (repo = source of truth); refresh copy in claude.ai project knowledge at phase boundaries.
