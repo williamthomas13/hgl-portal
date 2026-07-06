@@ -1,5 +1,3 @@
-import Link from 'next/link';
-
 export default function SuccessPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-10">
@@ -9,12 +7,14 @@ export default function SuccessPage() {
         <p className="text-gray-600 mb-8">
           Your registration is officially confirmed. We have sent a receipt to your email, and your student has been added to the class roster.
         </p>
-        <Link 
-          href="/" 
+        {/* Parents are never routed toward admin/dashboard. Revisit this
+            destination when the Phase 4 parent portal exists. */}
+        <a
+          href="https://www.highergroundlearning.com"
           className="bg-hgl-blue text-white font-bold py-3 px-6 rounded hover:bg-hgl-blue-hover transition"
         >
-          Return to Dashboard
-        </Link>
+          Back to Higher Ground Learning
+        </a>
       </div>
     </div>
   );

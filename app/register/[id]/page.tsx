@@ -30,6 +30,16 @@ type TutoringPackage = {
   regular_hourly_rate: number
 }
 
+/** "5" → "Five" for the add-on button labels; numerals beyond the map. */
+function hoursWord(n: number) {
+  const words: Record<number, string> = {
+    1: 'One', 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five',
+    6: 'Six', 7: 'Seven', 8: 'Eight', 9: 'Nine', 10: 'Ten',
+    11: 'Eleven', 12: 'Twelve', 15: 'Fifteen', 20: 'Twenty',
+  }
+  return words[n] ?? String(n)
+}
+
 /** Mirrors the server's spot accounting: Pending + Paid + active waitlist offers. */
 function takenCount(slots: EnrollmentSlot[]) {
   const now = Date.now()
@@ -261,38 +271,39 @@ export default function RegistrationPage() {
     return (
       <div className="min-h-screen bg-gray-50 p-10">
         <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
-          <h1 className="text-2xl font-bold text-hgl-slate mb-2">Add 1-on-1 tutoring?</h1>
-          <p className="text-sm bg-yellow-50 text-yellow-800 rounded p-3 mb-6">
-            These discounted packages are <strong>only available at registration</strong> — the
-            best tutoring rates we offer.
-          </p>
+          <h1 className="text-2xl font-bold text-hgl-slate mb-4">Add 1-on-1 tutoring?</h1>
+          <div className="text-gray-700 space-y-4 mb-6">
+            <p>
+              After the group class, the biggest point gains come from regular, individualized
+              attention over several weeks. Our 1-on-1 tutoring sessions are tailored to each
+              student and designed to overcome their specific weaknesses, exploit their strengths,
+              and refine student-specific strategies. These sessions work in tandem with the group
+              course, and are perfect for students who are taking the test multiple times, reaching
+              for exceptionally high scores, or facing unique challenges. Students receiving 1-on-1
+              tutoring also receive unlimited access to online practice materials and extra
+              diagnostic tests with score reports.
+            </p>
+            <p>
+              1-on-1 tutoring hours are only discounted when purchased alongside a group class.
+              Choose your amount of 1-on-1 hours and we&apos;ll contact you to schedule them
+              anytime based on your needs and availability. Hours are transferable and never
+              expire.
+            </p>
+          </div>
           <div className="space-y-3 mb-6">
-            {packages.map((p) => {
-              const savings = p.hours * p.regular_hourly_rate - p.package_price
-              return (
-                <button
-                  key={p.id}
-                  disabled={loading}
-                  onClick={() =>
-                    proceedToCheckout(pendingCheckout.enrollmentId, pendingCheckout.parentEmail, p.id)
-                  }
-                  className="w-full text-left border-2 border-gray-200 rounded-lg p-4 hover:border-hgl-blue transition disabled:opacity-60"
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-bold text-hgl-slate">{p.name}</p>
-                      <p className="text-sm text-gray-600">
-                        {p.hours} hours at ${p.hourly_rate}/hr (regular ${p.regular_hourly_rate}/hr)
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-hgl-slate">${p.package_price}</p>
-                      <p className="text-sm font-semibold text-green-600">Save ${savings}</p>
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
+            {packages.map((p) => (
+              <button
+                key={p.id}
+                disabled={loading}
+                onClick={() =>
+                  proceedToCheckout(pendingCheckout.enrollmentId, pendingCheckout.parentEmail, p.id)
+                }
+                className="w-full text-center border-2 border-hgl-blue text-hgl-blue font-bold rounded-lg p-4 hover:bg-hgl-blue hover:text-white transition disabled:opacity-60"
+              >
+                {hoursWord(p.hours)} 1-on-1 Hours @ ${p.hourly_rate}/hour (regularly $
+                {p.regular_hourly_rate}/hour) — ${p.package_price.toLocaleString()}
+              </button>
+            ))}
           </div>
           <button
             disabled={loading}
@@ -301,7 +312,7 @@ export default function RegistrationPage() {
             }
             className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
           >
-            {loading ? 'Preparing secure checkout...' : `No thanks — continue to payment ($${classDetails.price})`}
+            {loading ? 'Preparing secure checkout...' : 'No thanks, just the class'}
           </button>
           {message && (
             <div className="mt-6 p-4 rounded-md text-center font-bold bg-blue-50 text-hgl-blue">
