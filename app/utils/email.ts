@@ -147,14 +147,6 @@ export function calendarButton(ctx: EnrollmentEmailContext) {
   return button('Download the course calendar', ctx.calendarPageUrl)
 }
 
-function scheduleHtml(ctx: EnrollmentEmailContext) {
-  if (ctx.sessions.length === 0) return ''
-  const items = ctx.sessions
-    .map((s) => `<li style="margin-bottom:4px">${sessionLine(s, ctx.defaultLocation)}</li>`)
-    .join('')
-  return `<h3 style="color:#334155">Class schedule</h3><ul style="padding-left:20px">${items}</ul>`
-}
-
 // Footer types per the deck. T = transactional: address block + footer text,
 // no unsubscribe. R = relationship: address block + opt-out link.
 function footerT(customText?: string) {
@@ -876,47 +868,76 @@ export function scheduleUpdateEmail(
 }
 
 // ---------------------------------------------------------------------------
-// Combined welcome (late registration): #1 + #2 + #3 blocks merged.
-// From billy@ (carries the thank-you) but always sends — the Synap/FAQ
-// content is transactional.
+// LR — Late Registration Welcome · instant on payment when signup postdates
+// pre-start emails · both (pronouns) · info@ · T. Replaces the missed
+// #1/#2/#3 sends; the parent version also carries the #0-style order summary
+// block (this email replaces the normal confirmation flow's spacing).
 // ---------------------------------------------------------------------------
 
-export function combinedWelcomeEmail(ctx: EnrollmentEmailContext): Rendered {
+export function lateRegistrationWelcomeEmail(
+  ctx: EnrollmentEmailContext,
+  audience: Audience
+): Rendered {
+  const isStudent = audience === 'student'
   const s = ctx.studentFirstName
   const synap = synapUrl(ctx)
+
+  const classDetailsBlock =
+    ctx.instructorName && ctx.defaultLocation
+      ? `The instructor will be ${ctx.instructorName}, and classes take place at ${classroomHtml(ctx)}.`
+      : `We'll send classroom and instructor details as soon as they're confirmed.`
+
+  const addonLines = ctx.addons
+    .map((a) => `<br/>${a.name} — 1-on-1 Tutoring — $${a.pricePaid}`)
+    .join('')
+  const detail = (label: string, value: string | null) =>
+    `<br/><strong>${label}:</strong> ${value && value.trim() ? value : '—'}`
+  const orderSummary = isStudent
+    ? ''
+    : `
+      <h3 style="color:#334155">Order Summary</h3>
+      <p>${ctx.className} — $${ctx.price}${addonLines}
+      <br/><strong>Amount paid:</strong> ${ctx.amountPaid != null ? `$${ctx.amountPaid}` : `$${ctx.price}`}
+      · ${ctx.paidAt ? formatDate(ctx.paidAt.slice(0, 10)) : ''}</p>
+      <h3 style="color:#334155">Registration Details</h3>
+      <p><strong>Student:</strong> ${ctx.studentFirstName} ${ctx.studentLastName}
+      ${detail('Student email', ctx.studentEmail)}
+      ${detail('School', ctx.schoolName)}
+      ${detail('Graduating year', ctx.graduatingYear)}
+      ${detail('Testing accommodations', ctx.accommodations)}
+      ${detail('Previous test scores', ctx.previousScores)}
+      ${detail('Notes', ctx.notes)}</p>`
+
   return {
-    from: PERSONAL_FROM,
-    subject: `Welcome to ${ctx.className} — everything you need`,
+    subject: `You're in — and here's everything you need for ${ctx.className}`,
     html: wrap(
       `
-      <p>Hi ${ctx.parentFirstName},</p>
-      <p>You registered ${s} for the ${ctx.className} class and I just wanted to take a moment to
-      say thank you. There are a lot of ways that you can choose to invest in ${s}'s future, and
-      we're really honored that you've chosen Higher Ground Learning as one of them.</p>
-      <p>Since class is coming up soon, here's everything you need in one email.</p>
-      <h3 style="color:#334155">The diagnostic test</h3>
-      <p>The first full length remote diagnostic test for ${s} is now available, in two parts —
-      Reading &amp; Writing, then Math — best done back-to-back in one sitting. The instructor uses
-      students' results to tailor the course, so ${s} should complete it by
-      ${formatDate(ctx.diagnosticDueDate)}, the day before the first class. To get started, click
-      the button below, hit "register," and provide some basic info.</p>
-      ${synap ? button('Access the first diagnostic test', synap) : ''}
-      <h3 style="color:#334155">Key details</h3>
-      <p><strong>What time are classes scheduled?</strong><br/>
-      All classes are held from ${classTimeHtml(ctx)}. You can download the full calendar of class
-      dates <a href="${ctx.calendarPageUrl}">here</a>.</p>
-      <p><strong>Does enrolling in this course also register ${s} for the official exam?</strong><br/>
-      No — official exams are registered separately${ctx.examInfo ? ` through the <a href="${ctx.examInfo.regUrl}">${ctx.examInfo.regLabel}</a>` : ''}.</p>
-      <p><strong>More questions?</strong> ${FAQ_LINKS}</p>
-      ${scheduleHtml(ctx)}
-      ${calendarButton(ctx)}
-      <p>See you soon!</p>
-      <p>To ${s}'s success,</p>
-      <p>William Thomas<br/>President, Higher Ground Learning</p>
+      <p>Hi ${recipientFirstName(ctx, audience)},</p>
+      <p>${isStudent ? "You're" : `${s} is`} registered for the ${ctx.className} class — and since
+      the class starts <strong>${formatDate(ctx.firstSession)}</strong>, here's everything you need
+      in one email.</p>
+      <p><strong>1. The diagnostic test — this one's time-sensitive.</strong><br/>
+      ${isStudent ? 'Your' : `${s}'s`} first diagnostic test is ready now. It's in two parts
+      (Reading &amp; Writing, then Math), best done back-to-back in one sitting. The instructor
+      uses the results to shape the course, so please complete it <strong>before the first
+      class</strong> if at all possible.</p>
+      <p>To get in: click below, hit "register," and provide some quick basic info.</p>
+      ${synap ? button('Take the diagnostic test', synap) : ''}
+      <p><strong>2. When and where.</strong><br/>
+      Classes run ${classTimeHtml(ctx)}. ${classDetailsBlock}</p>
+      <p>Full schedule:</p>
+      ${button('View the class calendar', ctx.calendarPageUrl)}
+      <p><strong>3. Good things to know.</strong><br/>
+      Quick answers to the most common questions — class times, what to do if
+      ${isStudent ? 'you miss' : `${s} misses`} a session, the free 30-minute strategy session —
+      are in our <a href="https://highergroundlearning.com/faqs#general">FAQs</a>.</p>
+      <p>Any other questions, just reply to this email. See you in class — soon!</p>
+      <p>Higher Ground Learning</p>
+      ${orderSummary}
     `,
       {
-        preheader: `Schedule, diagnostic test, and key details for ${ctx.className}`,
-        footer: footerR(ctx.unsubscribeUrl),
+        preheader: `Class starts ${formatDate(ctx.firstSession)}. One thing to do first.`,
+        footer: footerT(),
       }
     ),
   }

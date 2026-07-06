@@ -526,10 +526,42 @@ Higher Ground Learning
 
 ---
 
+## LR — Late Registration Welcome
+
+**Audience:** both (pronoun rendering) · **Trigger:** instant on payment, ONLY when signup postdates one or more pre-start emails — replaces the missed #1/#2/#3 sends; recipient then joins the remaining schedule · **From:** info@ · **Footer:** T
+**Implementation note:** the parent version also carries the #0-style order summary block at the bottom (amount paid + registration recap), since this email replaces the normal confirmation flow's spacing.
+**Subject:** You're in — and here's everything you need for {schoolNickname} {classType}
+**Preheader:** Class starts {firstSessionDate}. One thing to do first.
+
+Hi {recipientFirstName},
+
+{isStudent ? "You're" : studentFirstName + " is"} registered for the {schoolNickname} {classType} class — and since the class starts **{firstSessionDate}**, here's everything you need in one email.
+
+**1. The diagnostic test — this one's time-sensitive.**
+{isStudent ? "Your" : studentFirstName + "'s"} first diagnostic test is ready now. It's in two parts (Reading & Writing, then Math), best done back-to-back in one sitting. The instructor uses the results to shape the course, so please complete it **before the first class** if at all possible.
+
+To get in: click below, hit "register," and provide some quick basic info.
+
+**[Take the diagnostic test]** → {synapGroupLink}
+
+**2. When and where.**
+Classes run {classTime}. {classDetailsBlock}
+*(renders: "The instructor will be {instructorName}, and classes take place at {classroom}." when known; otherwise: "We'll send classroom and instructor details as soon as they're confirmed." — for online classes, the meeting link.)*
+
+Full schedule: **[View the class calendar]** → {calendarLink}
+
+**3. Good things to know.**
+Quick answers to the most common questions — class times, what to do if {isStudent ? "you miss" : studentFirstName + " misses"} a session, the free 30-minute strategy session — are in our [FAQs](https://highergroundlearning.com/faqs#general).
+
+Any other questions, just reply to this email. See you in class — soon!
+
+Higher Ground Learning
+
+---
+
 ## ⚠️ Open items in this deck
 
 1. **#3 strategy-session answer** — original said "perfect SAT mindset"; generalized here to "perfect test-day mindset" for ACT compatibility. Revert if preferred.
-2. **Late-registration combined welcome email** — behavior specified (thank-you + Synap + FAQ content merged) but body not yet drafted. Draft when Code implements the trigger, or assemble from #1 + #2 + #3 blocks.
-3. **Internal admin emails** (hold-and-alert, weekly digest, min-enrollment, waitlist rollover) — plain-text functional copy, fine for Code to draft; no brand voice needed.
+2. **Internal admin emails** (hold-and-alert, weekly digest, min-enrollment, waitlist rollover) — plain-text functional copy, drafted by Code; Scarlett to skim for actionable context (class, school, what's missing, link).
 
-*(Resolved July 5: both collapsed FAQ answers inserted; all four FAQ URLs inserted; #0-P subject/preheader confirmed; exam-registration FAQ made conditional on class_type.)*
+*(Resolved July 5: both collapsed FAQ answers inserted; all four FAQ URLs inserted; #0-P subject/preheader confirmed; exam-registration FAQ made conditional on class_type; LR late-registration welcome drafted and approved — see LR section above.)*

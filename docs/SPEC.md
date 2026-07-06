@@ -1,6 +1,6 @@
 # HGL Portal — Master Spec
 
-**Last updated:** July 5, 2026 (v2 — Phase 2 planning complete)
+**Last updated:** July 5, 2026 (v2.1 — enum + opt-out location aligned with implementation)
 **Status:** Foundation complete and verified in production. Phase 2 (email automation + enrollment lifecycle + waitlist + tutoring add-ons) fully specified; content pack complete (15/15); build in progress with Claude Code.
 **Stack:** Next.js + Supabase + Stripe on Vercel · Resend for transactional email
 **Live:** https://hgl-portal.vercel.app · Repo: github.com/williamthomas13/hgl-portal
@@ -25,7 +25,8 @@ Replace the stitched-together group-classes workflow (Squarespace + Arlo + Tutor
 
 - **schools:** `nickname` (text — email display name, e.g. "ASF", "SLS"), `timezone` (IANA, e.g. `America/Mexico_City`, `Europe/Rome`)
 - **classes:** `class_type` (text; admin suggests "SAT Prep"/"ACT Prep", free entry allowed), `delivery_mode` (online | in_person), `capacity` (int; default 20 online), `min_enrollment` (int; default 3 online / 8 in-person, editable), `enrollment_deadline` (date, optional — decision checkpoint, not hard close). Class pricing stays per-class per-student (existing field).
-- **enrollments:** status enum `Pending | Paid | Expired | Waitlisted`; `accommodations`, `previous_scores`, `notes` (optional text, on registration form); `marketing_opt_out` (boolean — suppresses relationship emails only); waitlist ordering by joined-at timestamp (FCFS).
+- **enrollments:** status enum `Pending | Paid | Completed | Expired | Waitlisted`; `accommodations`, `previous_scores`, `notes` (optional text, on registration form); waitlist ordering by joined-at timestamp (FCFS).
+- **families:** `marketing_opt_out` (boolean — suppresses relationship emails only; family-level so one opt-out covers all of a family's enrollments).
 - **tutoring_packages:** name, hours, hourly_rate, package_price, phase (`pre_class` | `post_class`), active. Seed pre_class: 5h/$120/$600 · 10h/$105/$1,050 · 15h/$95/$1,425 (regular $130/hr). Seed post_class: 1–9h @ $125/hr · 10h+ @ $115/hr.
 - **enrollment_addons:** enrollment_id, package_id, price paid. Purchased hours stored durably — future TutorBird-replacement phase turns them into schedulable sessions.
 
@@ -72,7 +73,7 @@ Every template declares parent / student / both. Blank student_email → send pa
 
 **Late registration:** if signup postdates pre-start emails, send one combined welcome (thank-you + Synap + FAQ content) immediately, then join remaining schedule.
 **Date changes:** recompute all pending sends automatically; sent emails never re-send except the SU trigger above.
-**Unsubscribe policy:** transactional (#0, #2, #4, #5, PR, W1, W2, SU) — footer text, no unsubscribe link. Relationship (#1, #3*, #6, #7, #8, #9) — opt-out of non-essential updates via `marketing_opt_out`. (*#3 footer per original MailerLite voice.)
+**Unsubscribe policy:** transactional (#0, #2, #4, #5, PR, W1, W2, SU) — footer text, no unsubscribe link. Relationship (#1, #3*, #6, #7, #8, #9) — opt-out of non-essential updates via family-level `marketing_opt_out`. (*#3 footer per original MailerLite voice.)
 
 ## 7. Content pack — 15/15 complete
 
@@ -104,7 +105,7 @@ Full approved body copy for every template lives in the conversation record ("HG
 
 ## 8. Enrollment lifecycle & waitlist
 
-- `Pending` → PR1–4 → `Expired` (frees capacity spot).
+- `Pending` → PR1–4 → `Expired` (frees capacity spot). `Paid` → `Completed` after the class's final session (per implementation — governs post-class emails #7/#8 eligibility).
 - Paid count = capacity → public page flips Register → Join Waitlist (no payment) → W1.
 - Spot opens (expiry/refund/capacity raise) → W2 to first in line (FCFS), 48h claim window; on expiry rolls to next; admin alerted per rollover, CC'd per offer.
 - Min enrollment: never auto-refund. Alert at deadline (or N days before start): "ASF SAT Prep: 5 paid / 8 minimum". Refund vs. convert-to-1-on-1 is a human decision. Enrollment usually stays open past deadline until full.

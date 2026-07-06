@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import {
-  combinedWelcomeEmail,
+  lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
   sendAdminAlert,
   sendOnce,
@@ -149,35 +149,10 @@ export async function POST(req: Request) {
       if (bundle && enrollment) {
         const ctx = emailContext(bundle, enrollment);
 
-        // #0-P: parent order confirmation. Transactional — always sends.
-        const parent = parentConfirmationEmail(ctx);
-        await sendOnce({
-          dedupeKey: `parent_confirmation:${paidEnrollmentId}`,
-          emailType: 'parent_confirmation',
-          enrollmentId: paidEnrollmentId,
-          to: [ctx.parentEmail],
-          subject: parent.subject,
-          html: parent.html,
-        });
-
-        // #0-S: student confirmation. Transactional — always sends when we
-        // have a student email. Blank student email → parent-only, silently.
-        if (ctx.studentEmail) {
-          const student = studentConfirmationEmail(ctx);
-          await sendOnce({
-            dedupeKey: `student_confirmation:${paidEnrollmentId}`,
-            emailType: 'student_confirmation',
-            enrollmentId: paidEnrollmentId,
-            to: [ctx.studentEmail],
-            subject: student.subject,
-            html: student.html,
-          });
-        }
-
-        // #1 (thank-you, ~3h) is sent by the sweep. Late registration: if the
-        // pre-start emails (#2/#3) would already have fired, send one combined
-        // welcome now instead, and claim their dedupe keys (both audiences)
-        // plus the thank-you key so nothing re-sends individually.
+        // Late registration test: would the pre-start emails (#2/#3) already
+        // have fired? If so, the LR welcome replaces the whole confirmation
+        // flow (#0-P/#0-S spacing, #1, #2, #3) in one email per audience —
+        // the parent variant carries the #0-style order summary.
         const supersededSteps = SEQUENCE.filter(
           (s) =>
             (s.type === 'synap_access' || s.type === 'faq') &&
@@ -185,30 +160,74 @@ export async function POST(req: Request) {
         );
 
         if (supersededSteps.length > 0) {
-          // Combined welcome always sends — it carries transactional
-          // Synap/FAQ content — even for opted-out families.
-          const { subject, html, from } = combinedWelcomeEmail(ctx);
-          const to = ctx.studentEmail ? [ctx.parentEmail, ctx.studentEmail] : [ctx.parentEmail];
-          const status = await sendOnce({
-            dedupeKey: `thank_you:${paidEnrollmentId}`,
-            emailType: 'combined_welcome',
-            enrollmentId: paidEnrollmentId,
-            to,
-            from,
-            subject,
-            html,
-          });
-          if (status === 'sent') {
-            await supabase.from('email_log').insert(
-              supersededSteps.flatMap((s) => (
-                ['p', 's'].map((tag) => ({
-                  dedupe_key: `${s.type}_${tag}:${paidEnrollmentId}`,
+          // LR is transactional — always sends, even for opted-out families.
+          // Reuses the confirmation dedupe keys so #0 and LR can never both
+          // send for the same enrollment.
+          const targets: { audience: 'parent' | 'student'; to: string; key: string }[] = [
+            { audience: 'parent', to: ctx.parentEmail, key: `parent_confirmation:${paidEnrollmentId}` },
+          ];
+          if (ctx.studentEmail) {
+            targets.push({ audience: 'student', to: ctx.studentEmail, key: `student_confirmation:${paidEnrollmentId}` });
+          }
+          let anySent = false;
+          for (const t of targets) {
+            const { subject, html } = lateRegistrationWelcomeEmail(ctx, t.audience);
+            const status = await sendOnce({
+              dedupeKey: t.key,
+              emailType: 'late_welcome',
+              enrollmentId: paidEnrollmentId,
+              to: [t.to],
+              subject,
+              html,
+            });
+            if (status === 'sent') anySent = true;
+          }
+          if (anySent) {
+            // Claim the replaced sends: thank-you (#1) + both audiences of
+            // the superseded pre-start steps. One by one so a duplicate
+            // (webhook retry) can't abort the remaining claims.
+            const claimKeys = [
+              `thank_you:${paidEnrollmentId}`,
+              ...supersededSteps.flatMap((s) =>
+                ['p', 's'].map((tag) => `${s.type}_${tag}:${paidEnrollmentId}`)
+              ),
+            ];
+            for (const dedupe_key of claimKeys) {
+              const { error: claimErr } = await supabase.from('email_log').insert([
+                {
+                  dedupe_key,
                   email_type: 'superseded_by_welcome',
                   enrollment_id: paidEnrollmentId,
-                  recipients: to,
-                }))
-              ))
-            );
+                  recipients: targets.map((t) => t.to),
+                },
+              ]);
+              if (claimErr && claimErr.code !== '23505') {
+                console.error(`Failed to claim ${dedupe_key}:`, claimErr.message);
+              }
+            }
+          }
+        } else {
+          // Normal flow: #0-P + #0-S now; #1 follows from the sweep at ~3h.
+          const parent = parentConfirmationEmail(ctx);
+          await sendOnce({
+            dedupeKey: `parent_confirmation:${paidEnrollmentId}`,
+            emailType: 'parent_confirmation',
+            enrollmentId: paidEnrollmentId,
+            to: [ctx.parentEmail],
+            subject: parent.subject,
+            html: parent.html,
+          });
+
+          if (ctx.studentEmail) {
+            const student = studentConfirmationEmail(ctx);
+            await sendOnce({
+              dedupeKey: `student_confirmation:${paidEnrollmentId}`,
+              emailType: 'student_confirmation',
+              enrollmentId: paidEnrollmentId,
+              to: [ctx.studentEmail],
+              subject: student.subject,
+              html: student.html,
+            });
           }
         }
       }
