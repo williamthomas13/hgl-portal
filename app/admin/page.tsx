@@ -35,6 +35,7 @@ type Enrollment = {
 
 type ClassRow = {
   id: string
+  slug: string | null
   school_nickname: string | null
   class_type: string
   instructor_name: string
@@ -54,6 +55,21 @@ type ClassRow = {
 }
 
 const CLASS_TYPE_SUGGESTIONS = ['SAT Prep', 'ACT Prep']
+
+function slugify(s: string) {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/** Season+year term from the start date, e.g. "fall26". */
+function termFor(startDate: string) {
+  const d = new Date(startDate + 'T00:00:00')
+  const m = d.getMonth() + 1
+  const season = m <= 4 ? 'spring' : m <= 7 ? 'summer' : m <= 10 ? 'fall' : 'winter'
+  return `${season}${String(d.getFullYear()).slice(-2)}`
+}
 
 const STATUS_STYLES: Record<string, string> = {
   Paid: 'bg-green-100 text-green-700',
@@ -163,9 +179,19 @@ export default function AdminDashboard() {
       delivery_mode: deliveryMode,
       min_enrollment: Number(minEnrollment) || (deliveryMode === 'online' ? 3 : 8),
       enrollment_deadline: formData.get('enrollment_deadline') || null,
+      // Human-readable registration URL segment: nickname-classtype-term.
+      slug: slugify(
+        `${schoolNickname}-${formData.get('class_type')}-${termFor(formData.get('start_date') as string)}`
+      ),
     }
 
-    const { error } = await supabase.from('classes').insert([newClass])
+    let { error } = await supabase.from('classes').insert([newClass])
+    // Slug collision (same school/type/term): suffix until unique.
+    for (let n = 2; error?.code === '23505' && n <= 5; n++) {
+      ;({ error } = await supabase
+        .from('classes')
+        .insert([{ ...newClass, slug: `${newClass.slug}-${n}` }]))
+    }
 
     if (error) {
       setMessage('Error: ' + error.message)
@@ -199,6 +225,47 @@ export default function AdminDashboard() {
       return
     }
     form.reset()
+    fetchRosters()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Registration links (pasted into Squarespace "Register" buttons)
+  // ---------------------------------------------------------------------------
+  const [copiedClassId, setCopiedClassId] = useState<string | null>(null)
+
+  function registrationUrl(c: ClassRow) {
+    return `${window.location.origin}/register/${c.slug ?? c.id}`
+  }
+
+  async function handleCopyLink(c: ClassRow) {
+    await navigator.clipboard.writeText(registrationUrl(c))
+    setCopiedClassId(c.id)
+    setTimeout(() => setCopiedClassId(null), 2000)
+  }
+
+  async function handleEditSlug(c: ClassRow) {
+    const next = prompt(
+      'Registration URL slug (lowercase letters, numbers, dashes):',
+      c.slug ?? ''
+    )
+    if (next == null) return
+    const cleaned = next
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    if (!cleaned) {
+      alert('Slug cannot be empty.')
+      return
+    }
+    const { error } = await supabase.from('classes').update({ slug: cleaned }).eq('id', c.id)
+    if (error) {
+      alert(
+        error.code === '23505'
+          ? 'That slug is already used by another class.'
+          : 'Error updating slug: ' + error.message
+      )
+      return
+    }
     fetchRosters()
   }
 
@@ -438,6 +505,24 @@ export default function AdminDashboard() {
                           {c.synap_group && (
                             <p className="text-sm text-gray-600">Synap group: {c.synap_group}</p>
                           )}
+                          <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold">Registration link:</span>
+                            <code className="bg-gray-100 rounded px-2 py-0.5 text-xs">
+                              {registrationUrl(c)}
+                            </code>
+                            <button
+                              onClick={() => handleCopyLink(c)}
+                              className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
+                            >
+                              {copiedClassId === c.id ? 'Copied!' : 'Copy'}
+                            </button>
+                            <button
+                              onClick={() => handleEditSlug(c)}
+                              className="text-xs text-gray-500 underline hover:text-hgl-blue"
+                            >
+                              edit slug
+                            </button>
+                          </p>
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">

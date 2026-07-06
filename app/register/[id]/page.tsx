@@ -4,8 +4,15 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '../../utils/supabase'
 
+type SessionRow = {
+  session_date: string
+  start_time: string | null
+  end_time: string | null
+}
+
 type ClassDetails = {
   id: string
+  slug: string | null
   school_nickname: string | null
   class_type: string
   instructor_name: string
@@ -14,6 +21,38 @@ type ClassDetails = {
   start_date: string
   default_location: string | null
   school_id: string | null
+  schools: { name: string; nickname: string } | null
+  sessions: SessionRow[] | null
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const MAIN_SITE = 'https://www.highergroundlearning.com'
+
+function fmtTime(t: string | null) {
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 === 0 ? 12 : h % 12
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+/** Mirrors the server's {classTime}: uniform session time range or null. */
+function classTimeOf(sessions: SessionRow[]) {
+  const withTimes = sessions.filter((s) => s.start_time)
+  if (withTimes.length === 0 || withTimes.length !== sessions.length) return null
+  const key = (s: SessionRow) => `${s.start_time}|${s.end_time ?? ''}`
+  if (!withTimes.every((s) => key(s) === key(withTimes[0]))) return null
+  const f = withTimes[0]
+  return f.end_time ? `${fmtTime(f.start_time)} to ${fmtTime(f.end_time)}` : fmtTime(f.start_time)
 }
 
 type EnrollmentSlot = {
@@ -56,8 +95,11 @@ function takenCount(slots: EnrollmentSlot[]) {
 
 export default function RegistrationPage() {
   const params = useParams()
-  const classId = params.id as string
+  // The URL segment is a human-readable slug (Squarespace buttons, print) —
+  // raw UUIDs still work for legacy links and Stripe cancel URLs.
+  const idOrSlug = params.id as string
 
+  const [notFound, setNotFound] = useState(false)
   const [classDetails, setClassDetails] = useState<ClassDetails | null>(null)
   const [isFull, setIsFull] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -74,12 +116,16 @@ export default function RegistrationPage() {
     async function fetchClass() {
       const { data } = await supabase
         .from('classes')
-        .select('*, enrollments(payment_status, waitlist_offer_expires_at)')
-        .eq('id', classId)
+        .select(
+          '*, schools(name, nickname), sessions(session_date, start_time, end_time), enrollments(payment_status, waitlist_offer_expires_at)'
+        )
+        .eq(UUID_RE.test(idOrSlug) ? 'id' : 'slug', idOrSlug)
         .single()
       if (data) {
         setClassDetails(data as ClassDetails)
         setIsFull(takenCount(data.enrollments ?? []) >= data.capacity)
+      } else {
+        setNotFound(true)
       }
     }
     async function fetchPackages() {
@@ -91,11 +137,11 @@ export default function RegistrationPage() {
         .order('hours')
       if (data) setPackages(data as TutoringPackage[])
     }
-    if (classId) {
+    if (idOrSlug) {
       fetchClass()
       fetchPackages()
     }
-  }, [classId])
+  }, [idOrSlug])
 
   // -------------------------------------------------------------------------
   // Normal registration → Stripe checkout
@@ -160,7 +206,7 @@ export default function RegistrationPage() {
       .insert([
         {
           student_id: studentData.id,
-          class_id: classId,
+          class_id: classDetails!.id,
           payment_status: 'Pending',
           accommodations: formData.get('accommodations') || null,
           previous_scores: formData.get('previousScores') || null,
@@ -204,7 +250,7 @@ export default function RegistrationPage() {
           className: `${classDetails?.school_nickname ?? 'HGL'} — ${classDetails?.class_type}`,
           price: classDetails?.price,
           customerEmail: parentEmail,
-          classId,
+          classId: classDetails?.id,
           enrollmentId,
           packageId,
         }),
@@ -238,7 +284,7 @@ export default function RegistrationPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          classId,
+          classId: classDetails?.id,
           parentFirst: formData.get('parentFirst'),
           parentLast: formData.get('parentLast'),
           parentEmail: formData.get('parentEmail'),
@@ -264,7 +310,80 @@ export default function RegistrationPage() {
     setLoading(false)
   }
 
+  if (notFound) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
+        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
+          <h1 className="text-2xl font-bold text-hgl-slate mb-4">Class not found</h1>
+          <p className="text-gray-600 mb-6">
+            We couldn&apos;t find that class — the link may be out of date. Current classes and
+            registration links are on our main site.
+          </p>
+          <a
+            href={MAIN_SITE}
+            className="inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
+          >
+            Back to Higher Ground Learning
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   if (!classDetails) return <div className="p-10 text-center">Loading class details...</div>
+
+  const sessions = [...(classDetails.sessions ?? [])].sort((a, b) =>
+    a.session_date.localeCompare(b.session_date)
+  )
+  const firstSession = sessions[0]?.session_date ?? classDetails.start_date
+  const lastSession = sessions[sessions.length - 1]?.session_date ?? classDetails.start_date
+  const classTime = classTimeOf(sessions)
+  const schoolLabel = classDetails.schools?.nickname ?? classDetails.school_nickname ?? 'HGL'
+  const classLabel = `${schoolLabel} ${classDetails.class_type}`
+  const today = new Date().toLocaleDateString('en-CA')
+
+  // Registration closes once the class's final session has passed.
+  if (today > lastSession) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
+        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
+          <h1 className="text-2xl font-bold text-hgl-slate mb-4">
+            Registration for this class has closed
+          </h1>
+          <p className="text-gray-600 mb-6">
+            The {classLabel} class has finished. Upcoming classes are listed on our main site.
+          </p>
+          <a
+            href={MAIN_SITE}
+            className="inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
+          >
+            Back to Higher Ground Learning
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  const classHeader = (
+    <div className="mb-6 border-b border-gray-200 pb-4">
+      <h2 className="text-xl font-bold text-hgl-slate">{classLabel}</h2>
+      <p className="text-sm text-gray-600 mt-1">
+        {classDetails.schools?.name && classDetails.schools.name !== schoolLabel
+          ? `${classDetails.schools.name} · `
+          : ''}
+        Starts {fmtDate(firstSession)}
+        {sessions.length > 1 ? ` · ${sessions.length} sessions` : ''}
+        {classTime ? ` · ${classTime}` : ''}
+      </p>
+      <p className="text-sm text-gray-600">
+        <a href={`/classes/${classDetails.id}/calendar`} className="text-hgl-blue underline">
+          View the full class calendar
+        </a>
+        {' · '}
+        <span className="font-semibold">${classDetails.price} per student</span>
+      </p>
+    </div>
+  )
 
   // Add-on step between the registration form and Stripe checkout.
   if (pendingCheckout) {
@@ -330,8 +449,8 @@ export default function RegistrationPage() {
         <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
           <h1 className="text-2xl font-bold text-hgl-slate mb-4">You&apos;re on the waitlist</h1>
           <p className="text-gray-700">
-            You&apos;re <strong>#{waitlistPosition}</strong> in line for{' '}
-            {classDetails.school_nickname} — {classDetails.class_type}. We&apos;ve emailed you a
+            You&apos;re <strong>#{waitlistPosition}</strong> in line for {classLabel}.
+            We&apos;ve emailed you a
             confirmation. If a spot opens, you&apos;ll get a payment link with 48 hours to claim it.
           </p>
         </div>
@@ -342,12 +461,10 @@ export default function RegistrationPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-10">
       <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
-        <h1 className="text-2xl font-bold text-hgl-slate mb-2">
+        <h1 className="text-2xl font-bold text-hgl-slate mb-4">
           {isFull ? 'Join the Waitlist' : 'Registration'}
         </h1>
-        <h2 className="text-lg text-gray-600 font-semibold mb-2">
-          {classDetails.school_nickname} — {classDetails.class_type}
-        </h2>
+        {classHeader}
         {isFull && (
           <p className="mb-6 text-sm bg-yellow-50 text-yellow-800 rounded p-3">
             This class is currently full. Join the waitlist (no payment now) and we&apos;ll email
