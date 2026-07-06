@@ -8,6 +8,7 @@ type SessionRow = {
   session_date: string
   start_time: string | null
   end_time: string | null
+  location: string | null
 }
 
 type ClassDetails = {
@@ -118,7 +119,7 @@ export default function RegistrationPage() {
       const { data } = await supabase
         .from('classes')
         .select(
-          '*, schools(name, nickname), sessions(session_date, start_time, end_time), enrollments(payment_status, waitlist_offer_expires_at)'
+          '*, schools(name, nickname), sessions(session_date, start_time, end_time, location), enrollments(payment_status, waitlist_offer_expires_at)'
         )
         .eq(UUID_RE.test(idOrSlug) ? 'id' : 'slug', idOrSlug)
         .single()
@@ -368,24 +369,70 @@ export default function RegistrationPage() {
     )
   }
 
+  // Visual session calendar rendered from the sessions table — replaces the
+  // old workflow of pasting Google Sheets calendar screenshots into
+  // Squarespace pages.
+  const sessionCalendar =
+    sessions.length > 0 ? (
+      <div className="mb-4">
+        <div className="grid grid-cols-1 gap-1.5">
+          {sessions.map((s, i) => {
+            const d = new Date(s.session_date + 'T00:00:00')
+            const loc = s.location ?? classDetails.default_location
+            return (
+              <div
+                key={s.session_date + i}
+                className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-sm"
+              >
+                <div className="w-12 text-center shrink-0 bg-white border border-gray-200 rounded">
+                  <div className="text-[10px] font-bold text-hgl-blue uppercase leading-tight pt-0.5">
+                    {d.toLocaleDateString('en-US', { month: 'short' })}
+                  </div>
+                  <div className="text-base font-bold text-hgl-slate leading-tight pb-0.5">
+                    {d.getDate()}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold text-hgl-slate">
+                    {d.toLocaleDateString('en-US', { weekday: 'long' })}
+                    <span className="text-gray-500 font-normal"> · Session {i + 1}</span>
+                  </div>
+                  <div className="text-gray-600">
+                    {fmtTime(s.start_time)
+                      ? `${fmtTime(s.start_time)}${s.end_time ? ` – ${fmtTime(s.end_time)}` : ''}`
+                      : 'Time TBD'}
+                    {loc ? ` · ${loc}` : ''}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-sm mt-2">
+          <a
+            href={`/classes/${classDetails.id}/calendar`}
+            className="text-hgl-blue underline font-semibold"
+          >
+            Add to your calendar / subscribe →
+          </a>
+        </p>
+      </div>
+    ) : null
+
   const classHeader = (
     <div className="mb-6 border-b border-gray-200 pb-4">
       <h2 className="text-xl font-bold text-hgl-slate">{classLabel}</h2>
-      <p className="text-sm text-gray-600 mt-1">
+      <p className="text-sm text-gray-600 mt-1 mb-3">
         {classDetails.schools?.name && classDetails.schools.name !== schoolLabel
           ? `${classDetails.schools.name} · `
           : ''}
         Starts {fmtDate(firstSession)}
         {sessions.length > 1 ? ` · ${sessions.length} sessions` : ''}
         {classTime ? ` · ${classTime}` : ''}
-      </p>
-      <p className="text-sm text-gray-600">
-        <a href={`/classes/${classDetails.id}/calendar`} className="text-hgl-blue underline">
-          View the full class calendar
-        </a>
         {' · '}
         <span className="font-semibold">${classDetails.price} per student</span>
       </p>
+      {sessionCalendar}
     </div>
   )
 
