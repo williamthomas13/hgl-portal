@@ -34,13 +34,20 @@ export default function LoginForm({
 
   async function requestLink(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    const normalized = email.trim().toLowerCase()
+    // Catch obvious mangling (missing @, spaces) inline; TLD typos like
+    // ".con" just fail the lookup naturally and get the generic message.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      setError("That doesn't look like a valid email address — double-check it and try again.")
+      return
+    }
     setLoading(true)
     setError('')
     try {
       const res = await fetch('/api/auth/request-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), next }),
+        body: JSON.stringify({ email: normalized, next }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -112,10 +119,21 @@ export default function LoginForm({
           </form>
         ) : sent ? (
           <>
-            <div className="mb-6 p-3 rounded-md text-sm bg-blue-50 text-hgl-slate">
-              If <strong>{email}</strong> is associated with Higher Ground Learning, a sign-in
-              link is on its way. Click the link in the email — or enter the 6-digit code from
-              the same email below.
+            <div className="mb-6 p-3 rounded-md text-sm bg-blue-50 text-hgl-slate space-y-2">
+              <p>
+                If this email is associated with Higher Ground Learning, a login link and code
+                are on their way — check your inbox and spam folder.
+              </p>
+              <p className="text-gray-600">
+                Not receiving anything? Make sure you&apos;re using the exact email address you
+                used when registering for a class. Parents sometimes register with an alternate
+                or work email — the login email must match the one on the registration. Still
+                stuck? Reply to any of our emails or write{' '}
+                <a href="mailto:info@highergroundlearning.com" className="text-hgl-blue underline">
+                  info@highergroundlearning.com
+                </a>{' '}
+                and we&apos;ll sort it out.
+              </p>
             </div>
             <form onSubmit={verifyCode} className="space-y-4">
               <div>

@@ -21,7 +21,7 @@ Every legitimate user already exists in the DB (`families.parent_email`, `school
 
 **Flow:**
 1. `/login` — single email field. Lookup across the four sources.
-2. Match → Supabase Auth sends **both** a magic link and a 6-digit OTP code in the same email (OTP covers expired links and school-district link-scanners that consume one-time links). No match → generic "if this email is associated with HGL, a link is on its way" (no enumeration).
+2. Match → Supabase Auth sends **both** a magic link and a 6-digit OTP code in the same email (OTP covers expired links and school-district link-scanners that consume one-time links). No match → nothing sent; the on-screen response is identical either way (no enumeration): "If this email is associated with Higher Ground Learning, a login link and code are on their way — check your inbox and spam folder." plus a help paragraph steering parents to the exact registration email (alternate/work-email mismatches happen) and to info@highergroundlearning.com. Submitted emails are trimmed/lowercased before lookup; obviously malformed addresses (missing @) get an inline "that doesn't look like a valid email" before submission.
 3. First login lazily creates `auth.users`; a `profiles` table links roles.
 4. **Session lifetime: 30 days** (decided).
 
@@ -113,7 +113,7 @@ Replaces per-class manual Canva work.
 
 ## 11. Acceptance checklist
 
-- [ ] Parent magic-link + OTP login shows exactly their family's students/enrollments/schedules/receipts; second-family RLS verified.
+- [ ] Parent magic-link + OTP login shows exactly their family's students/enrollments/schedules/receipts; second-family RLS verified. Email trimmed/lowercased before lookup; malformed addresses get an inline validity error before submission; match and no-match show the identical "login link and code are on their way — check your inbox and spam folder" response (with the exact-registration-email / info@ help copy), and no-match sends nothing.
 - [ ] Sibling test: repeat parent email + new student attaches to existing family; both kids visible in one login.
 - [ ] Counselor sees own school only; sees scores + accommodations; cannot see parent contact, payments, or notes.
 - [ ] Counselor digest sends weekly by default; footer frequency links work without login; final-3-days push fires against a test deadline; full-class variant suppresses the push.
