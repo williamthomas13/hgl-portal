@@ -1381,8 +1381,9 @@ export function cancellationCounselorEmail(opts: {
 
 // ---------------------------------------------------------------------------
 // LOGIN — Portal sign-in link + OTP code · on request · info@ · T
-// One email carries both: the link for normal use, the 6-digit code for
-// expired links and school-district link-scanners that consume one-time URLs.
+// One email carries both: the link for normal use, the OTP code (length =
+// the project's Auth setting, see utils/otp.ts) for expired links and
+// school-district link-scanners that consume one-time URLs.
 // ---------------------------------------------------------------------------
 
 export function loginLinkEmail(confirmUrl: string, otp: string): Rendered {

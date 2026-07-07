@@ -5,7 +5,7 @@ import { safeNextPath } from '../../utils/portal-auth'
 // Passwordless login, step 2: the magic-link target. Verifies the hashed
 // token from the login email and sets the cookie session, then forwards to
 // `next` (validated: same-site paths only). Expired/consumed links bounce
-// back to /login with a hint to use the 6-digit code instead — that's the
+// back to /login with a hint to use the emailed code instead — that's the
 // whole reason the code exists (PHASE4_SPEC §2: district link-scanners).
 
 export async function GET(request: Request) {

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
+import { OTP_LENGTH } from '../utils/otp'
 
 // Client half of /login. Step 1 posts the email to /api/auth/request-login
 // (which answers identically whether or not the email is known — no
@@ -28,7 +29,7 @@ export default function LoginForm({
   const [staffMode, setStaffMode] = useState(false)
   const [password, setPassword] = useState('')
   const [error, setError] = useState(
-    linkError ? 'That sign-in link has expired or was already used — request a new one, or use the 6-digit code from the same email.' : ''
+    linkError ? `That sign-in link has expired or was already used — request a new one, or use the ${OTP_LENGTH}-digit code from the same email.` : ''
   )
   const [loading, setLoading] = useState(false)
 
@@ -137,20 +138,20 @@ export default function LoginForm({
             </div>
             <form onSubmit={verifyCode} className="space-y-4">
               <div>
-                <label className="block text-sm text-gray-600">6-digit code</label>
+                <label className="block text-sm text-gray-600">{OTP_LENGTH}-digit code</label>
                 <input
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
+                  pattern={`[0-9]{${OTP_LENGTH}}`}
+                  maxLength={OTP_LENGTH}
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   required
                   autoComplete="one-time-code"
-                  className={`${inputClass} text-center text-2xl tracking-[0.5em] font-bold`}
+                  className={`${inputClass} text-center text-2xl tracking-[0.4em] font-bold`}
                 />
               </div>
-              <button type="submit" disabled={loading || code.trim().length < 6} className={buttonClass}>
+              <button type="submit" disabled={loading || code.trim().length < OTP_LENGTH} className={buttonClass}>
                 {loading ? 'Checking...' : 'Sign in with code'}
               </button>
             </form>
@@ -185,9 +186,13 @@ export default function LoginForm({
         {!sent && (
           <button
             onClick={() => { setStaffMode(!staffMode); setError('') }}
-            className="mt-6 w-full text-xs text-gray-400 hover:text-hgl-blue transition"
+            className={
+              staffMode
+                ? 'mt-6 w-full text-sm text-hgl-blue font-semibold hover:underline'
+                : 'mt-6 w-full text-xs text-gray-400 hover:text-hgl-blue transition'
+            }
           >
-            {staffMode ? 'Sign in with an email link instead' : 'Staff sign-in with password'}
+            {staffMode ? '← Back — sign in with an email link instead' : 'Staff sign-in with password'}
           </button>
         )}
       </div>

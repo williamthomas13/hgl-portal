@@ -121,6 +121,17 @@ export default async function ParentView({
                   pricePaid: Number(a.price_paid),
                 }))
                 const classScores = scores.filter((s) => s.class_id === cls.id)
+                // "details coming soon" mirrors the #4 hold rule — it's a
+                // promise, so only make it for enrollments where details are
+                // actually coming: active status, class still ahead, not
+                // cancelled. Expired/past cards just omit the blank fields.
+                const sessionDates = sessions.map((s) => s.session_date).sort()
+                const lastSession = sessionDates[sessionDates.length - 1] ?? cls.start_date
+                const today = new Date().toLocaleDateString('en-CA')
+                const showPlaceholders =
+                  ['Pending', 'Paid', 'Waitlisted'].includes(e.payment_status) &&
+                  cls.status !== 'cancelled' &&
+                  today <= lastSession
                 return (
                   <div
                     key={e.id}
@@ -136,22 +147,26 @@ export default async function ParentView({
                           Starts {formatDate(cls.start_date)}
                           {cls.instructor_name
                             ? ` · Instructor: ${cls.instructor_name}`
-                            : ' · Instructor: details coming soon'}
+                            : showPlaceholders
+                              ? ' · Instructor: details coming soon'
+                              : ''}
                         </p>
-                        <p className="text-sm text-gray-600">
-                          {cls.delivery_mode === 'online' ? 'Meeting link' : 'Classroom'}:{' '}
-                          {cls.default_location ? (
-                            /^https?:\/\//i.test(cls.default_location) ? (
-                              <a href={cls.default_location} className="text-hgl-blue underline">
-                                {cls.default_location}
-                              </a>
+                        {(cls.default_location || showPlaceholders) && (
+                          <p className="text-sm text-gray-600">
+                            {cls.delivery_mode === 'online' ? 'Meeting link' : 'Classroom'}:{' '}
+                            {cls.default_location ? (
+                              /^https?:\/\//i.test(cls.default_location) ? (
+                                <a href={cls.default_location} className="text-hgl-blue underline">
+                                  {cls.default_location}
+                                </a>
+                              ) : (
+                                cls.default_location
+                              )
                             ) : (
-                              cls.default_location
-                            )
-                          ) : (
-                            'details coming soon'
-                          )}
-                        </p>
+                              'details coming soon'
+                            )}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <StatusBadge

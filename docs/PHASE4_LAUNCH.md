@@ -35,7 +35,7 @@ Supabase SQL editor (or approve the management-API calls in an interactive sessi
   `/api/auth/request-login` via the admin API, which bypasses the signup switch.
 - **Resend SMTP in Supabase Auth is NOT needed** (deviation from spec §10, same outcome):
   login emails are generated with `auth.admin.generateLink()` and sent through the Resend API
-  like every other portal email — one template carrying both the magic link and the 6-digit
+  like every other portal email — one template carrying both the magic link and the 8-digit
   OTP, from the verified domain. Supabase's own mailer is never used.
 
 ## 4. Deploy
@@ -43,8 +43,9 @@ Supabase SQL editor (or approve the management-API calls in an interactive sessi
 `git push` (deploy = push). Then smoke test:
 
 1. `/login` → enter a parent email that exists in `families` → email arrives with button +
-   code → button lands on `/portal` showing that family's students; the 6-digit code also
-   works (enter it on the same screen).
+   code → button lands on `/portal` showing that family's students; the 8-digit code also
+   works (enter it on the same screen — the project's Auth OTP length is 8, and
+   `app/utils/otp.ts` must be kept in sync if that setting ever changes).
 2. Unknown email → same "on its way" message, no email (no enumeration).
 3. Staff: "Staff sign-in with password" toggle still works → `/admin`; admins also get an
    "Admin →" link if they open `/portal`.

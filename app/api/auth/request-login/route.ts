@@ -7,7 +7,7 @@ import { loginLinkEmail, sendOnce } from '../../../utils/email'
 // posts here. If the email matches any of the four sources (family parent,
 // school counselor, class instructor, staff profile / ADMIN_EMAILS), we lazily
 // create the auth user and send ONE email carrying both a magic link and a
-// 6-digit OTP code — generated via the Supabase admin API but delivered
+// OTP code (length per the project Auth setting; utils/otp.ts) — generated via the Supabase admin API but delivered
 // through Resend like every other portal email (verified domain, one
 // template). No match sends nothing; the response is identical either way, so
 // the endpoint can't be used to enumerate emails.
