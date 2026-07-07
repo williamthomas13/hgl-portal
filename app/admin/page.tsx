@@ -24,9 +24,9 @@ type Enrollment = {
   id: string
   enrolled_at: string
   payment_status: string
-  amount_paid: number | null
   class_cancelled: boolean
   cancellation_outcome: string | null
+  enrollment_addons: { hours: number }[] | null
   students: {
     first_name: string
     last_name: string
@@ -144,9 +144,9 @@ export default function AdminDashboard() {
           id,
           enrolled_at,
           payment_status,
-          amount_paid,
           class_cancelled,
           cancellation_outcome,
+          enrollment_addons ( hours ),
           students (
             first_name,
             last_name,
@@ -711,7 +711,10 @@ export default function AdminDashboard() {
                                     enrollmentId: en.id,
                                     studentName: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
                                     parentName: `${en.students?.families?.parent_first_name ?? ''} ${en.students?.families?.parent_last_name ?? ''}`.trim(),
-                                    amountPaid: en.amount_paid != null ? Number(en.amount_paid) : null,
+                                    addonHours: (en.enrollment_addons ?? []).reduce(
+                                      (sum, a) => sum + Number(a.hours),
+                                      0
+                                    ),
                                   }))}
                                 pendingCount={(c.enrollments ?? []).filter((en) => en.payment_status === 'Pending').length}
                                 waitlistedCount={waitlistCount}

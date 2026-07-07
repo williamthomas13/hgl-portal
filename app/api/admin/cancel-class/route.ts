@@ -120,20 +120,24 @@ export async function POST(request: Request) {
     .eq('class_id', classId)
     .eq('status', 'pending')
 
-  // 5. CX to both audiences of every Paid enrollment (from billy@), with the
-  // per-family math — prices differ when add-ons were purchased.
+  // 5. CX to both audiences of every Paid enrollment (from billy@). The
+  // offer math uses classes.price ONLY (the cancelled product is the group
+  // class — add-on purchases survive in every outcome, including refund), so
+  // it's identical for all families; only the CX variant differs (add-on
+  // families get combined-total wording + keep-your-hours, from ctx.addons).
+  const offer: CancellationOffer | null = offerHours
+    ? {
+        hours: offerHours,
+        price: bundle.price,
+        savingsPct: Math.round(
+          ((offerHours * regularRate - bundle.price) / (offerHours * regularRate)) * 100
+        ),
+        savingsUsd: Math.round(offerHours * regularRate - bundle.price),
+      }
+    : null
   let cxSent = 0
   for (const e of paid) {
     const ctx = emailContext(bundle, e)
-    const price = e.amountPaid ?? bundle.price
-    const offer: CancellationOffer | null = offerHours
-      ? {
-          hours: offerHours,
-          price,
-          savingsPct: Math.round(((offerHours * regularRate - price) / (offerHours * regularRate)) * 100),
-          savingsUsd: Math.round(offerHours * regularRate - price),
-        }
-      : null
     const targets: { audience: Audience; to: string; tag: string }[] = [
       { audience: 'parent', to: ctx.parentEmail, tag: 'p' },
     ]

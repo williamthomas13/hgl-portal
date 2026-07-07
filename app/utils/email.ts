@@ -1201,9 +1201,15 @@ export function classroomRequestEmail(opts: {
 // straight-to-refund body. The full-refund option always appears.
 // ---------------------------------------------------------------------------
 
+// Offer math uses classes.price ONLY — the cancelled product is the group
+// class. Tutoring add-ons are a separate purchase that SURVIVES cancellation
+// in every outcome (including refund: refund = class fee only), so add-on
+// amounts never appear in the math or the refund language. Identical for
+// every family; only the CX *variant* differs (add-on families get the
+// combined-total wording + the keep-your-hours line).
 export type CancellationOffer = {
   hours: number
-  /** What this family actually paid (class fee + any add-ons). */
+  /** The class fee (classes.price) — never amount_paid. */
   price: number
   savingsPct: number
   savingsUsd: number
@@ -1218,16 +1224,28 @@ export function classCancellationEmail(
   const isStudent = audience === 'student'
   const s = ctx.studentFirstName
   const you = isStudent ? 'you' : s
+  // Add-on variant switch: hours this family already purchased.
+  const addonHours = ctx.addons.reduce((sum, a) => sum + a.hours, 0)
 
   const blocks: string[] = []
   if (offer) {
+    const totalHours = offer.hours + addonHours
+    // DRAFT WORDING (add-on variant): combined-total sentence pending the
+    // exact copy from the deck addendum — swap verbatim when it lands.
+    const receives =
+      addonHours > 0
+        ? `This means ${you} would receive ${offer.hours} hours of 1-on-1 tutoring for
+          $${offer.price.toLocaleString()} — which, together with the ${addonHours} tutoring
+          hours ${isStudent ? 'your family' : 'you'} already purchased, comes to
+          <strong>${totalHours} hours of 1-on-1 tutoring in total</strong> — enough time to`
+        : `This means ${you} would receive ${offer.hours} hours of 1-on-1 tutoring for
+          $${offer.price.toLocaleString()}, which is enough time to`
     blocks.push(
       `<strong>We can convert the course fee that you have already paid into ${offer.hours}
       1-on-1 tutoring hours — a savings of over ${offer.savingsPct}%
       (USD $${offer.savingsUsd.toLocaleString()}) from our typical fees</strong> as our apology
-      that we weren't able to offer the group course. This means ${you} would receive
-      ${offer.hours} hours of 1-on-1 tutoring for $${offer.price.toLocaleString()}, which is
-      enough time to cover a lot of material and strategy and see a meaningful improvement. We
+      that we weren't able to offer the group course. ${receives}
+      cover a lot of material and strategy and see a meaningful improvement. We
       would tailor the schedule to ${isStudent ? 'your' : "your family's"} availability and the
       lesson content to ${isStudent ? 'your' : `${s}'s`} strengths and weaknesses (according to
       the first diagnostic test score).`
@@ -1247,11 +1265,29 @@ export function classCancellationEmail(
       for. As a result, we've unfortunately had to cancel the course. I understand that this
       cancellation can be worrisome, and I sincerely apologize for the inconvenience.</p>`
 
+  // DRAFT WORDING (add-on variant): keep-your-hours reassurance pending the
+  // exact copy from the deck addendum — swap verbatim when it lands. Renders
+  // after the options list (and in the refund-only body) for add-on families:
+  // add-on hours survive every outcome, including a refund of the class fee.
+  const keepHours =
+    addonHours > 0
+      ? `<p>And whichever option you choose — including the refund — the ${addonHours} 1-on-1
+        tutoring hour${plS(addonHours)} you purchased with registration ${isAre(addonHours)}
+        yours to keep and completely unaffected.</p>`
+      : ''
+  const keepHoursRefundOnly =
+    addonHours > 0
+      ? `<p>And to be clear: the refund covers the class fee — the ${addonHours} 1-on-1
+        tutoring hour${plS(addonHours)} you purchased with registration ${isAre(addonHours)}
+        yours to keep and completely unaffected.</p>`
+      : ''
+
   let middle: string
   if (blocks.length === 0) {
     middle = `
       <p>We'll be issuing you a full refund — just reply to confirm the best way to reach you
-      if any details are needed, and please accept our apologies again.</p>`
+      if any details are needed, and please accept our apologies again.</p>
+      ${keepHoursRefundOnly}`
   } else {
     const rendered =
       blocks.length === 1
@@ -1262,7 +1298,8 @@ export function classCancellationEmail(
       ${rendered}
       <p>If you prefer, of course we can also offer you a <strong>full refund</strong> instead.
       <strong>Please let me know your preference by replying to this email — and reach out with
-      any questions at all.</strong></p>`
+      any questions at all.</strong></p>
+      ${keepHours}`
   }
 
   return {

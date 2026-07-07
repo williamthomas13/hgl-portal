@@ -4,18 +4,22 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../utils/supabase'
 
 // Class cancellation form (PHASE4_SPEC §12). Composes the CX email BEFORE
-// anything sends: tutoring-conversion offer (on by default, 8 hours), the
-// credit-to-next-course offer (optional free-text term), and a per-family
-// preview of the computed math (prices differ when add-ons were purchased).
-// Confirm posts to /api/admin/cancel-class, which flips the class status
-// first — atomically suppressing every scheduled send — then emails Paid
-// families (CX), waitlisted families (CX-W), and the school contact (CX-C).
+// anything sends: tutoring-conversion offer (on by default, 8 hours) and the
+// credit-to-next-course offer (optional free-text term). The offer math uses
+// classes.price only — identical for every family; the per-family preview
+// differs only in WHICH CX VARIANT renders (add-on families get the
+// combined-total wording + keep-your-hours line; their purchased hours
+// survive every outcome, including refund). Confirm posts to
+// /api/admin/cancel-class, which flips the class status first — atomically
+// suppressing every scheduled send — then emails Paid families (CX),
+// waitlisted families (CX-W), and the school contact (CX-C).
 
 export type PaidPreview = {
   enrollmentId: string
   studentName: string
   parentName: string
-  amountPaid: number | null
+  /** 1-on-1 hours this family purchased as an add-on (0 = standard CX). */
+  addonHours: number
 }
 
 export default function CancelClassPanel({
@@ -59,25 +63,33 @@ export default function CancelClassPanel({
 
   const h = Math.max(1, Math.round(Number(hours) || 0))
 
-  function offerMath(amountPaid: number | null) {
-    if (!regularRate) return null
-    const price = amountPaid ?? classPrice
-    const regular = h * regularRate
-    return {
-      price,
-      savingsUsd: Math.round(regular - price),
-      savingsPct: Math.round(((regular - price) / regular) * 100),
-    }
-  }
+  // One math for the whole class: hours × regular rate vs classes.price.
+  const math = regularRate
+    ? {
+        regular: h * regularRate,
+        savingsUsd: Math.round(h * regularRate - classPrice),
+        savingsPct: Math.round(((h * regularRate - classPrice) / (h * regularRate)) * 100),
+      }
+    : null
+  // Sanity flag: the offer should be worth more than the class fee.
+  const notASavings = math != null && math.regular <= classPrice
+
+  const addonFamilies = paid.filter((p) => p.addonHours > 0)
 
   async function confirm() {
     if (
       !window.confirm(
         `Cancel ${classLabel}?\n\n` +
           `• ${paid.length} paid famil${paid.length === 1 ? 'y' : 'ies'} get the cancellation email with the options below\n` +
+          (addonFamilies.length > 0
+            ? `• ${addonFamilies.length} of them get the ADD-ON variant (combined hours + keep-your-hours line): ${addonFamilies
+                .map((p) => `${p.studentName} (+${p.addonHours}h)`)
+                .join(', ')}\n`
+            : '') +
           `• ${pendingCount} pending registration${pendingCount === 1 ? '' : 's'} expire silently\n` +
           `• ${waitlistedCount} waitlisted famil${waitlistedCount === 1 ? 'y' : 'ies'} get the release note\n` +
           `• every scheduled email for this class stops\n\n` +
+          `Add-on tutoring hours survive every outcome (refund = class fee only).\n` +
           `This cannot be undone. Refunds stay manual in Stripe.`
       )
     )
@@ -162,33 +174,39 @@ export default function CancelClassPanel({
       </label>
 
       <p className="text-xs text-gray-500">
-        A full refund is always listed as an option regardless of the toggles.
+        A full refund is always listed as an option regardless of the toggles. Refund = class
+        fee only — add-on tutoring hours are a separate purchase and survive every outcome.
       </p>
+
+      {tutoringOn && math && (
+        <div className={`text-xs rounded px-2 py-1.5 border ${notASavings ? 'bg-red-100 border-red-300 text-red-700 font-bold' : 'bg-white border-gray-200 text-gray-600'}`}>
+          Offer math (same for every family): {h} hours for ${classPrice.toLocaleString()} — a
+          savings of over {math.savingsPct}% (USD ${math.savingsUsd.toLocaleString()}) vs the
+          regular ${(math.regular).toLocaleString()}.
+          {notASavings && ' ⚠ Not a savings: the offer is worth no more than the class fee — add hours.'}
+        </div>
+      )}
 
       {paid.length > 0 ? (
         <div>
           <h5 className="font-semibold text-hgl-slate mb-1">
-            Preview — {paid.length} paid famil{paid.length === 1 ? 'y' : 'ies'}:
+            Preview — {paid.length} paid famil{paid.length === 1 ? 'y' : 'ies'} (variant only —
+            the math is identical):
           </h5>
           <ul className="space-y-1">
-            {paid.map((p) => {
-              const m = offerMath(p.amountPaid)
-              return (
-                <li key={p.enrollmentId} className="bg-white border border-gray-200 rounded px-2 py-1.5">
-                  <strong>{p.studentName}</strong> ({p.parentName}) — paid $
-                  {(p.amountPaid ?? classPrice).toLocaleString()}
-                  {tutoringOn && m && (
-                    <div className="text-xs text-gray-600">
-                      → &ldquo;{h} hours for ${m.price.toLocaleString()} — a savings of over{' '}
-                      {m.savingsPct}% (USD ${m.savingsUsd.toLocaleString()})&rdquo;
-                      {m.savingsUsd <= 0 && (
-                        <span className="text-red-600 font-bold"> ⚠ not a savings at these hours</span>
-                      )}
-                    </div>
-                  )}
-                </li>
-              )
-            })}
+            {paid.map((p) => (
+              <li key={p.enrollmentId} className="bg-white border border-gray-200 rounded px-2 py-1.5">
+                <strong>{p.studentName}</strong> ({p.parentName}) —{' '}
+                {p.addonHours > 0 ? (
+                  <span className="text-hgl-blue font-semibold">
+                    add-on variant: +{p.addonHours}h purchased
+                    {tutoringOn ? ` → "${h + p.addonHours} hours in total"` : ''} + keep-your-hours line
+                  </span>
+                ) : (
+                  <span className="text-gray-600">standard CX</span>
+                )}
+              </li>
+            ))}
           </ul>
         </div>
       ) : (
