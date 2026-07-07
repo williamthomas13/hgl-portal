@@ -18,6 +18,11 @@
 -- Reminder for this project: Supabase auto-enables RLS on new tables; these
 -- tables get real policies below, so that's what we want.
 -- =============================================================================
+-- IDEMPOTENT (July 7): every create policy is preceded by drop policy if
+-- exists, so the file is safe to re-run against a database where it (or any
+-- part of it) already applied — re-running the whole migration set in order
+-- must never error.
+-- =============================================================================
 
 -- -----------------------------------------------------------------------------
 -- 1. student_scores (§6 display layer; ingestion decided separately)
@@ -40,18 +45,22 @@ create index if not exists idx_student_scores_class_id on public.student_scores(
 alter table public.student_scores enable row level security;
 
 -- staff full CRUD (admin + manager)
+drop policy if exists "staff all" on public.student_scores;
 create policy "staff all" on public.student_scores
   for all to authenticated
   using (public.is_staff()) with check (public.is_staff());
 -- parent: own kids' scores
+drop policy if exists "parent own students scores" on public.student_scores;
 create policy "parent own students scores" on public.student_scores
   for select to authenticated
   using (student_id in (select public.family_student_ids()));
 -- instructor: scores of students enrolled in own classes
+drop policy if exists "instructor roster scores" on public.student_scores;
 create policy "instructor roster scores" on public.student_scores
   for select to authenticated
   using (student_id in (select public.instructor_student_ids()));
 -- counselor: scores of students at own school (decided: counselors DO see scores)
+drop policy if exists "counselor school scores" on public.student_scores;
 create policy "counselor school scores" on public.student_scores
   for select to authenticated
   using (
@@ -76,9 +85,11 @@ create table if not exists public.instructors (
 
 alter table public.instructors enable row level security;
 
+drop policy if exists "staff all" on public.instructors;
 create policy "staff all" on public.instructors
   for all to authenticated
   using (public.is_staff()) with check (public.is_staff());
+drop policy if exists "instructor self" on public.instructors;
 create policy "instructor self" on public.instructors
   for select to authenticated
   using (lower(email) = public.jwt_email());
@@ -104,6 +115,7 @@ create table if not exists public.classroom_requests (
 
 alter table public.classroom_requests enable row level security;
 
+drop policy if exists "staff all" on public.classroom_requests;
 create policy "staff all" on public.classroom_requests
   for all to authenticated
   using (public.is_staff()) with check (public.is_staff());

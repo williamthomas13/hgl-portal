@@ -12,18 +12,25 @@ failed for everyone (verified: it failed even for the service role — not RLS, 
 allowlist). Writes don't touch the new columns, hence the confusing success-banner-but-empty
 -list symptom. The admin page now shows read errors instead of masking them as an empty list.
 
-Apply, in order:
+**All three Phase 4 migration files are now IDEMPOTENT — running the full set
+0001 → 0002 → 0003 in order is always safe, including over a database where some or all of
+them already applied.** (The July 7 SQL-editor rollback — `policy "staff all" for table
+"student_scores" already exists` — was 0001 content being re-run: that statement only exists
+in 0001, which was already live. 0001's policies now have `drop policy if exists` guards, so
+even that re-run is harmless.)
 
-1. ~~`20260708000001_phase4_portal.sql`~~ — **already applied** (student_scores /
-   instructors / classroom_requests / digest columns are live).
+Apply, in order (or just run all three):
+
+1. `20260708000001_phase4_portal.sql` — already applied in prod; now re-run-safe.
 2. `20260708000002_class_cancellation.sql` — **REWRITTEN July 7, apply this version**: the
    original could not have applied cleanly because `classes.status` already existed
-   (Gemini-era column, live value `'Enrolling'`). The rewrite normalizes legacy values to
-   `'open'`, pins the open/cancelled check, and adds the two enrollment columns.
+   (Gemini-era column, live value `'Enrolling'`). The rewrite drops any legacy check
+   constraint mentioning `status` (by pattern — the old name is unknown), normalizes legacy
+   values to `'open'`, pins the open/cancelled check, and adds the two enrollment columns.
 3. `20260708000003_class_school_contact.sql` — `classes.counselor_id` (optional per-class
    school contact).
 
-Both pending migrations are backward-compatible with the currently deployed code; apply them
+The pending migrations are backward-compatible with the currently deployed code; apply them
 before (or immediately with) the next push.
 
 ## 2. Vercel env var

@@ -8,6 +8,11 @@
 -- legacy values, so this normalizes them: 'cancelled' is the only special
 -- value, everything else becomes 'open'.
 --
+-- IDEMPOTENT: every statement here is safe to re-run (the constraint is
+-- dropped by pattern before being re-added; a 'cancelled' status set by the
+-- app is preserved by the normalizing update). Re-running the whole
+-- migration set 0001→0002→0003 in order must never error.
+--
 -- enrollments.class_cancelled: Paid enrollments keep their status when the
 -- class is cancelled (refunds stay manual in Stripe) but carry this flag.
 -- enrollments.cancellation_outcome: how the family chose to resolve it —
@@ -20,14 +25,28 @@
 -- =============================================================================
 
 -- 1. Normalize the legacy status column to the Phase 4 semantics.
+-- First drop ANY existing check constraint that mentions status, whatever the
+-- Gemini era named it — otherwise the normalizing UPDATE below could violate
+-- a legacy value list and roll the whole transaction back.
+do $$
+declare r record;
+begin
+  for r in
+    select conname from pg_constraint
+    where conrelid = 'public.classes'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%status%'
+  loop
+    execute format('alter table public.classes drop constraint %I', r.conname);
+  end loop;
+end $$;
+
 update public.classes set status = 'open'
  where status is distinct from 'cancelled';
 
 alter table public.classes alter column status set default 'open';
 alter table public.classes alter column status set not null;
 
--- Replace any prior constraint on status, then pin the two-value semantics.
-alter table public.classes drop constraint if exists classes_status_check;
 alter table public.classes add constraint classes_status_check
   check (status in ('open', 'cancelled'));
 
