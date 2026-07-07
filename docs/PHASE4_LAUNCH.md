@@ -26,8 +26,10 @@ Supabase SQL editor (or approve the management-API calls in an interactive sessi
 
 ## 3. Supabase Auth settings (dashboard)
 
-- **Session lifetime 30 days** (spec §2 decision): Authentication → Sessions — set refresh
-  token / session time-box to 30 days. JWT expiry can stay at the default.
+- **Session lifetime** — ACCEPTED DEVIATION (July 6): the spec §2 decision was 30 days, but
+  the Supabase free plan locks the session time-box at "never", so sessions don't expire on
+  a schedule. Nothing to configure; revisit if the project moves to a paid Supabase plan.
+  (Sessions still end on sign-out, and magic-link/OTP tokens themselves expire in 1 hour.)
 - **Disable public signup** + set Site URL to `https://hgl-portal.vercel.app` (still open from
   Phase 3). Signup stays disabled: portal accounts are created lazily by
   `/api/auth/request-login` via the admin API, which bypasses the signup switch.

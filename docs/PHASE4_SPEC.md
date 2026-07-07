@@ -23,7 +23,7 @@ Every legitimate user already exists in the DB (`families.parent_email`, `school
 1. `/login` — single email field. Lookup across the four sources.
 2. Match → Supabase Auth sends **both** a magic link and a 6-digit OTP code in the same email (OTP covers expired links and school-district link-scanners that consume one-time links). No match → nothing sent; the on-screen response is identical either way (no enumeration): "If this email is associated with Higher Ground Learning, a login link and code are on their way — check your inbox and spam folder." plus a help paragraph steering parents to the exact registration email (alternate/work-email mismatches happen) and to info@highergroundlearning.com. Submitted emails are trimmed/lowercased before lookup; obviously malformed addresses (missing @) get an inline "that doesn't look like a valid email" before submission.
 3. First login lazily creates `auth.users`; a `profiles` table links roles.
-4. **Session lifetime: 30 days** (decided).
+4. **Session lifetime: 30 days** (decided). *Amended July 6: the Supabase free plan locks the session time-box at "never" — accepted deviation; sessions persist until sign-out. Revisit on a paid plan.*
 
 **Roles** derived from data, not stored: parent ⇐ `families.parent_email` · counselor ⇐ `school_counselors.email` · instructor ⇐ any `classes.instructor_email` · admin ⇐ `ADMIN_EMAILS` allowlist. Multi-role emails get a **role switcher** (decided).
 
