@@ -66,6 +66,7 @@ type ClassRow = {
   registration_close_date: string | null
   school_nickname: string | null
   class_type: string
+  instructor_id: string | null
   instructor_name: string
   instructor_email: string | null
   price: number
@@ -124,6 +125,9 @@ export default function AdminDashboard() {
   const [allCounselors, setAllCounselors] = useState<Counselor[]>([])
   const [schoolNickname, setSchoolNickname] = useState('')
   const [contactChoice, setContactChoice] = useState('')
+  // Strict instructor select (addendum step 3): an instructors row id, or
+  // '__new' to reveal the inline add-new fields. No free text.
+  const [instructorChoice, setInstructorChoice] = useState('')
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
@@ -301,15 +305,49 @@ export default function AdminDashboard() {
       fetchAllCounselors()
     }
 
+    // Instructor: strict select — an existing instructors row or an inline
+    // add-new. The legacy instructor_name/instructor_email columns are still
+    // written (copied from the chosen row) until every read is switched —
+    // same transition pattern as school_nickname.
+    let instructor = instructors.find((i) => i.id === instructorChoice) ?? null
+    if (instructorChoice === '__new') {
+      const newInstructor = {
+        name: ((formData.get('new_instructor_name') as string) ?? '').trim() || null,
+        email: ((formData.get('new_instructor_email') as string) ?? '').trim().toLowerCase(),
+        default_meeting_link:
+          ((formData.get('new_instructor_link') as string) ?? '').trim() || null,
+      }
+      const { data: created, error: instrErr } = await supabase
+        .from('instructors')
+        .insert([newInstructor])
+        .select('id, email, name, default_meeting_link')
+        .single()
+      if (instrErr || !created) {
+        setMessage(
+          'Error adding instructor: ' +
+            (instrErr?.code === '23505'
+              ? 'that email is already an instructor — pick them from the list.'
+              : instrErr?.message)
+        )
+        setLoading(false)
+        return
+      }
+      instructor = created as Instructor
+      fetchInstructors()
+    }
+    if (!instructor) {
+      setMessage('Error: pick an instructor (or add a new one).')
+      setLoading(false)
+      return
+    }
+
     // Online classes with no explicit location auto-fill the instructor's
     // default meeting link (PHASE4_SPEC §5); admin can still override here or
     // later. In-person classes stay blank → the classroom-request loop asks
     // the counselor at 14 days out.
-    const instructorEmail = ((formData.get('instructor_email') as string) || '').trim().toLowerCase()
     let defaultLocation = (formData.get('default_location') as string) || null
-    if (!defaultLocation && deliveryMode === 'online' && instructorEmail) {
-      defaultLocation =
-        instructors.find((i) => i.email === instructorEmail)?.default_meeting_link ?? null
+    if (!defaultLocation && deliveryMode === 'online') {
+      defaultLocation = instructor.default_meeting_link ?? null
     }
 
     const newClass = {
@@ -317,8 +355,9 @@ export default function AdminDashboard() {
       school_id: schoolId,
       counselor_id: counselorId,
       class_type: formData.get('class_type'),
-      instructor_name: formData.get('instructor_name'),
-      instructor_email: instructorEmail || null,
+      instructor_id: instructor.id,
+      instructor_name: instructor.name ?? instructor.email, // legacy copy; to be dropped later
+      instructor_email: instructor.email,
       price: formData.get('price'),
       capacity: formData.get('capacity'),
       start_date: formData.get('start_date'),
@@ -349,6 +388,7 @@ export default function AdminDashboard() {
       ;(e.target as HTMLFormElement).reset()
       setSchoolNickname('')
       setContactChoice('')
+      setInstructorChoice('')
       fetchRosters()
     }
     setLoading(false)
@@ -560,25 +600,29 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-500 mt-1">Pick a suggestion or type anything.</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Instructor Name</label>
-                <input
-                  type="text"
-                  name="instructor_name"
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700">Instructor</label>
+                <select
+                  value={instructorChoice}
+                  onChange={(e) => setInstructorChoice(e.target.value)}
                   required
-                  placeholder="e.g. Sarah"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Instructor Email</label>
-                <input
-                  type="email"
-                  name="instructor_email"
-                  placeholder="sarah@highergroundlearning.com"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
+                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition bg-white"
+                >
+                  <option value="">Pick an instructor…</option>
+                  {instructors.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name ? `${i.name} (${i.email})` : i.email}
+                    </option>
+                  ))}
+                  <option value="__new">➕ Add a new instructor…</option>
+                </select>
+                {instructorChoice === '__new' && (
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <input type="text" name="new_instructor_name" required placeholder="Name" className="border border-gray-300 rounded-md p-2" />
+                    <input type="email" name="new_instructor_email" required placeholder="Email" className="border border-gray-300 rounded-md p-2" />
+                    <input type="url" name="new_instructor_link" placeholder="Default meeting link (optional)" className="border border-gray-300 rounded-md p-2" />
+                  </div>
+                )}
               </div>
 
               {(() => {
