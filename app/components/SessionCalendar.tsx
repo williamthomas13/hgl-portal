@@ -12,9 +12,10 @@ export type CalendarSession = {
   location: string | null
 }
 
-function fmtTime(t: string | null) {
+function fmtTime(t: string | null, hour24: boolean) {
   if (!t) return null
   const [h, m] = t.split(':').map(Number)
+  if (hour24) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
   const ampm = h >= 12 ? 'PM' : 'AM'
   const hour = h % 12 === 0 ? 12 : h % 12
   return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
@@ -24,11 +25,14 @@ export default function SessionCalendar({
   sessions,
   defaultLocation,
   calendarHref,
+  hour24 = false,
 }: {
   sessions: CalendarSession[]
   defaultLocation: string | null
   /** Link to the add-to-calendar / ICS-subscribe page; omit to hide the link. */
   calendarHref?: string
+  /** 24-hour times (admin renders 24h; public keeps AM/PM). */
+  hour24?: boolean
 }) {
   const sorted = [...sessions].sort((a, b) => a.session_date.localeCompare(b.session_date))
   if (sorted.length === 0) return null
@@ -58,8 +62,8 @@ export default function SessionCalendar({
                   <span className="text-gray-500 font-normal"> · Session {i + 1}</span>
                 </div>
                 <div className="text-gray-600">
-                  {fmtTime(s.start_time)
-                    ? `${fmtTime(s.start_time)}${s.end_time ? ` – ${fmtTime(s.end_time)}` : ''}`
+                  {fmtTime(s.start_time, hour24)
+                    ? `${fmtTime(s.start_time, hour24)}${s.end_time ? ` – ${fmtTime(s.end_time, hour24)}` : ''}`
                     : 'Time TBD'}
                   {loc ? ` · ${loc}` : ''}
                 </div>

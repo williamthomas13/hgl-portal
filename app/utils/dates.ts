@@ -54,3 +54,21 @@ export function monthYear(iso: string): { month: number; year: number } {
   const d = utcAnchor(iso)
   return { month: d.getUTCMonth() + 1, year: d.getUTCFullYear() }
 }
+
+/** Calendar-date arithmetic on YYYY-MM-DD strings (client-safe twin of
+ * lifecycle's addDaysISO, which lives in a server-only module). */
+export function addDays(iso: string, days: number): string {
+  const d = utcAnchor(iso)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+/** "02 September 2026" for a timestamptz — an instant, so rendered in the
+ * viewer's local timezone (unlike plain calendar dates above). */
+export function formatTimestampAdmin(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+}

@@ -164,8 +164,7 @@ export default function CounselorsPanel({
   const ended = affiliations.filter((a) => a.ended_at)
 
   return (
-    <div className="bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-slate">
-      <h2 className="text-2xl font-bold text-hgl-slate mb-1">School contacts</h2>
+    <div>
       <p className="text-sm text-gray-500 mb-6">
         A contact with an active school affiliation is the account — they sign in with their
         email, see that school&apos;s classes and rosters, and get its enrollment digest.

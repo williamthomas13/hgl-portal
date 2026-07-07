@@ -2,16 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
-import { formatDateAdmin, monthYear } from '../utils/dates'
+import { formatDateAdmin, formatTimestampAdmin, addDays } from '../utils/dates'
+import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
 import CancelClassPanel from './cancel-class-panel'
-
-type School = {
-  id: string
-  name: string
-  nickname: string
-}
+import ClassWizard, { type School, type ContactAtSchool } from './class-wizard'
+import { CollapsibleSection, TimeSelect, to24h } from './ui'
 
 type Session = {
   id: string
@@ -38,16 +35,6 @@ type Enrollment = {
       parent_last_name: string
     } | null
   } | null
-}
-
-// One active school affiliation flattened with its contact — `id` is the
-// CONTACT id (what classes.counselor_id stores).
-type Counselor = {
-  id: string
-  school_id: string
-  first_name: string
-  last_name: string
-  email: string
 }
 
 type RoomRequest = {
@@ -78,25 +65,9 @@ type ClassRow = {
   delivery_mode: string
   min_enrollment: number | null
   enrollment_deadline: string | null
-  schools: { name: string; nickname: string } | null
+  schools: { name: string; nickname: string; timezone: string } | null
   enrollments: Enrollment[] | null
   sessions: Session[] | null
-}
-
-const CLASS_TYPE_SUGGESTIONS = ['SAT Prep', 'ACT Prep']
-
-function slugify(s: string) {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-/** Season+year term from the start date, e.g. "fall26". */
-function termFor(startDate: string) {
-  const { month: m, year } = monthYear(startDate)
-  const season = m <= 4 ? 'spring' : m <= 7 ? 'summer' : m <= 10 ? 'fall' : 'winter'
-  return `${season}${String(year).slice(-2)}`
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -108,26 +79,104 @@ const STATUS_STYLES: Record<string, string> = {
   Refunded: 'bg-red-100 text-red-600',
 }
 
-export default function AdminDashboard() {
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
+// Per-class add-session form (roster view). 24-hour / 5-minute time picker;
+// pre-fills from the class's latest session — same times and location, date
+// advanced a week — matching the wizard's session step.
+function AddSessionForm({
+  classId,
+  defaultLocation,
+  lastSession,
+  onAdded,
+}: {
+  classId: string
+  defaultLocation: string | null
+  lastSession: Session | null
+  onAdded: () => void
+}) {
+  const [date, setDate] = useState(lastSession ? addDays(lastSession.session_date, 7) : '')
+  const [start, setStart] = useState(to24h(lastSession?.start_time))
+  const [end, setEnd] = useState(to24h(lastSession?.end_time))
+  const [location, setLocation] = useState(lastSession?.location ?? '')
+  const [saving, setSaving] = useState(false)
 
+  async function handleAdd() {
+    if (!date) return
+    setSaving(true)
+    const { error } = await supabase.from('sessions').insert([
+      {
+        class_id: classId,
+        session_date: date,
+        start_time: start || null,
+        end_time: end || null,
+        location: location.trim() || defaultLocation || null,
+      },
+    ])
+    setSaving(false)
+    if (error) {
+      alert('Error adding session: ' + error.message)
+      return
+    }
+    setDate(addDays(date, 7)) // pre-fill the next one: same values, a week on
+    onAdded()
+  }
+
+  return (
+    <div className="grid grid-cols-4 gap-2 items-end text-sm">
+      <div>
+        <label className="block text-xs text-gray-600">Date</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="mt-1 w-full border rounded p-1"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600">Start (24h)</label>
+        <div className="mt-1">
+          <TimeSelect value={start} onChange={setStart} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600">End (24h)</label>
+        <div className="mt-1">
+          <TimeSelect value={end} onChange={setEnd} />
+        </div>
+      </div>
+      <div className="col-span-4 grid grid-cols-4 gap-2 items-end">
+        <div className="col-span-3">
+          <label className="block text-xs text-gray-600">Location (blank = default)</label>
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder={defaultLocation ?? ''}
+            className="mt-1 w-full border rounded p-1"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={saving || !date}
+          className="bg-hgl-slate text-white py-1 px-3 rounded hover:opacity-90 disabled:opacity-50"
+        >
+          Add session
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function AdminDashboard() {
   const [schools, setSchools] = useState<School[]>([])
   const [rosters, setRosters] = useState<ClassRow[]>([])
   const [fetchingRosters, setFetchingRosters] = useState(true)
-  const [deliveryMode, setDeliveryMode] = useState<'in_person' | 'online'>('in_person')
-  const [minEnrollment, setMinEnrollment] = useState('8')
   const [instructors, setInstructors] = useState<Instructor[]>([])
   const [roomRequests, setRoomRequests] = useState<Record<string, RoomRequest>>({})
-  // Per-class school contact (July 7 addition): dropdown of the selected
-  // school's contacts + inline add-new. Class-specific sends target the
-  // chosen contact; blank = all school contacts.
-  const [allCounselors, setAllCounselors] = useState<Counselor[]>([])
-  const [schoolNickname, setSchoolNickname] = useState('')
-  const [contactChoice, setContactChoice] = useState('')
-  // Strict instructor select (addendum step 3): an instructors row id, or
-  // '__new' to reveal the inline add-new fields. No free text.
-  const [instructorChoice, setInstructorChoice] = useState('')
+  const [allCounselors, setAllCounselors] = useState<ContactAtSchool[]>([])
+  const [rosterError, setRosterError] = useState('')
+  // Live classes render as tabs; '' = first live class, '__past' = the rest.
+  const [activeTab, setActiveTab] = useState('')
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
@@ -169,8 +218,6 @@ export default function AdminDashboard() {
     }
   }, [])
 
-  const [rosterError, setRosterError] = useState('')
-
   const fetchRosters = useCallback(async () => {
     setFetchingRosters(true)
     const { data, error } = await supabase
@@ -178,7 +225,7 @@ export default function AdminDashboard() {
       .select(
         `
         *,
-        schools ( name, nickname ),
+        schools ( name, nickname, timezone ),
         sessions ( id, session_date, start_time, end_time, location ),
         enrollments (
           id,
@@ -215,209 +262,6 @@ export default function AdminDashboard() {
     fetchRoomRequests()
     fetchAllCounselors()
   }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests, fetchAllCounselors])
-
-  // ---------------------------------------------------------------------------
-  // Create class
-  // ---------------------------------------------------------------------------
-  async function handleCreateClass(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setLoading(true)
-    setMessage('')
-
-    const formData = new FormData(e.currentTarget)
-    const schoolNicknameValue = (formData.get('school_nickname') as string).trim()
-
-    // Find-or-create the school by nickname so new schools auto-register
-    let schoolId: string | null = null
-    if (schoolNicknameValue) {
-      const existing = schools.find(
-        (s) => s.nickname.toLowerCase() === schoolNicknameValue.toLowerCase()
-      )
-      if (existing) {
-        schoolId = existing.id
-      } else {
-        const { data: newSchool, error: schoolErr } = await supabase
-          .from('schools')
-          .insert([{ name: schoolNicknameValue, nickname: schoolNicknameValue }])
-          .select()
-          .single()
-        if (schoolErr) {
-          setMessage('Error creating school: ' + schoolErr.message)
-          setLoading(false)
-          return
-        }
-        schoolId = newSchool.id
-        setSchools((prev) => [...prev, newSchool as School])
-      }
-    }
-
-    // School contact: existing contact id, inline-created contact, or blank
-    // (= class-specific emails go to all of the school's contacts).
-    let counselorId: string | null = contactChoice || null
-    if (contactChoice === '__new') {
-      if (!schoolId) {
-        setMessage('Error: pick a school before adding a contact.')
-        setLoading(false)
-        return
-      }
-      // Find-or-create the contact by email, then open an affiliation at
-      // this school (the person may already exist from another school).
-      const contactEmail = ((formData.get('contact_email') as string) ?? '').trim().toLowerCase()
-      const { data: existingContact } = await supabase
-        .from('contacts')
-        .select('id')
-        .ilike('email', contactEmail)
-        .maybeSingle()
-      let contactId = existingContact?.id as string | undefined
-      if (!contactId) {
-        const { data: newContact, error: contactErr } = await supabase
-          .from('contacts')
-          .insert([
-            {
-              first_name: (formData.get('contact_first') as string).trim(),
-              last_name: (formData.get('contact_last') as string).trim(),
-              email: contactEmail,
-            },
-          ])
-          .select('id')
-          .single()
-        if (contactErr || !newContact) {
-          setMessage('Error adding contact: ' + (contactErr?.message ?? 'unknown'))
-          setLoading(false)
-          return
-        }
-        contactId = newContact.id
-      }
-      const alreadyAffiliated = allCounselors.some(
-        (x) => x.id === contactId && x.school_id === schoolId
-      )
-      if (!alreadyAffiliated) {
-        const { error: affErr } = await supabase
-          .from('school_affiliations')
-          .insert([{ contact_id: contactId, school_id: schoolId, role: 'counselor' }])
-        if (affErr) {
-          setMessage('Error adding affiliation: ' + affErr.message)
-          setLoading(false)
-          return
-        }
-      }
-      counselorId = contactId ?? null
-      fetchAllCounselors()
-    }
-
-    // Instructor: strict select — an existing instructors row or an inline
-    // add-new. The legacy instructor_name/instructor_email columns are still
-    // written (copied from the chosen row) until every read is switched —
-    // same transition pattern as school_nickname.
-    let instructor = instructors.find((i) => i.id === instructorChoice) ?? null
-    if (instructorChoice === '__new') {
-      const newInstructor = {
-        name: ((formData.get('new_instructor_name') as string) ?? '').trim() || null,
-        email: ((formData.get('new_instructor_email') as string) ?? '').trim().toLowerCase(),
-        default_meeting_link:
-          ((formData.get('new_instructor_link') as string) ?? '').trim() || null,
-      }
-      const { data: created, error: instrErr } = await supabase
-        .from('instructors')
-        .insert([newInstructor])
-        .select('id, email, name, default_meeting_link')
-        .single()
-      if (instrErr || !created) {
-        setMessage(
-          'Error adding instructor: ' +
-            (instrErr?.code === '23505'
-              ? 'that email is already an instructor — pick them from the list.'
-              : instrErr?.message)
-        )
-        setLoading(false)
-        return
-      }
-      instructor = created as Instructor
-      fetchInstructors()
-    }
-    if (!instructor) {
-      setMessage('Error: pick an instructor (or add a new one).')
-      setLoading(false)
-      return
-    }
-
-    // Online classes with no explicit location auto-fill the instructor's
-    // default meeting link (PHASE4_SPEC §5); admin can still override here or
-    // later. In-person classes stay blank → the classroom-request loop asks
-    // the counselor at 14 days out.
-    let defaultLocation = (formData.get('default_location') as string) || null
-    if (!defaultLocation && deliveryMode === 'online') {
-      defaultLocation = instructor.default_meeting_link ?? null
-    }
-
-    const newClass = {
-      school_nickname: schoolNicknameValue, // keep for backward compat; to be dropped later
-      school_id: schoolId,
-      counselor_id: counselorId,
-      class_type: formData.get('class_type'),
-      instructor_id: instructor.id,
-      instructor_name: instructor.name ?? instructor.email, // legacy copy; to be dropped later
-      instructor_email: instructor.email,
-      price: formData.get('price'),
-      capacity: formData.get('capacity'),
-      start_date: formData.get('start_date'),
-      default_location: defaultLocation,
-      synap_group: formData.get('synap_group') || null,
-      delivery_mode: deliveryMode,
-      min_enrollment: Number(minEnrollment) || (deliveryMode === 'online' ? 3 : 8),
-      enrollment_deadline: formData.get('enrollment_deadline') || null,
-      registration_close_date: formData.get('registration_close_date') || null,
-      // Human-readable registration URL segment: nickname-classtype-term.
-      slug: slugify(
-        `${schoolNicknameValue}-${formData.get('class_type')}-${termFor(formData.get('start_date') as string)}`
-      ),
-    }
-
-    let { error } = await supabase.from('classes').insert([newClass])
-    // Slug collision (same school/type/term): suffix until unique.
-    for (let n = 2; error?.code === '23505' && n <= 5; n++) {
-      ;({ error } = await supabase
-        .from('classes')
-        .insert([{ ...newClass, slug: `${newClass.slug}-${n}` }]))
-    }
-
-    if (error) {
-      setMessage('Error: ' + error.message)
-    } else {
-      setMessage('Success — class added. Scroll down to add session dates.')
-      ;(e.target as HTMLFormElement).reset()
-      setSchoolNickname('')
-      setContactChoice('')
-      setInstructorChoice('')
-      fetchRosters()
-    }
-    setLoading(false)
-  }
-
-  // ---------------------------------------------------------------------------
-  // Add session to a class
-  // ---------------------------------------------------------------------------
-  async function handleAddSession(
-    classId: string,
-    form: HTMLFormElement,
-    defaultLocation: string | null
-  ) {
-    const fd = new FormData(form)
-    const payload = {
-      class_id: classId,
-      session_date: fd.get('session_date'),
-      start_time: fd.get('start_time') || null,
-      end_time: fd.get('end_time') || null,
-      location: (fd.get('location') as string) || defaultLocation || null,
-    }
-    const { error } = await supabase.from('sessions').insert([payload])
-    if (error) {
-      alert('Error adding session: ' + error.message)
-      return
-    }
-    form.reset()
-    fetchRosters()
-  }
 
   // ---------------------------------------------------------------------------
   // Registration links (pasted into Squarespace "Register" buttons)
@@ -536,263 +380,340 @@ export default function AdminDashboard() {
   }
 
   // ---------------------------------------------------------------------------
+  // Live vs past: live = not cancelled and not finished (last session — or
+  // start date when session-less — is today or later). Live classes are tabs;
+  // everything else lives under "Past & cancelled".
+  // ---------------------------------------------------------------------------
+  const today = new Date().toLocaleDateString('en-CA')
+  const withEnd = rosters.map((c) => {
+    const dates = (c.sessions ?? []).map((s) => s.session_date)
+    const lastDay = dates.length > 0 ? dates.reduce((a, b) => (a > b ? a : b)) : c.start_date
+    return { ...c, lastDay }
+  })
+  const liveClasses = withEnd.filter((c) => c.status !== 'cancelled' && c.lastDay >= today)
+  const pastClasses = withEnd.filter((c) => c.status === 'cancelled' || c.lastDay < today)
+  const selectedTab =
+    activeTab === '__past' || liveClasses.some((c) => c.id === activeTab)
+      ? activeTab
+      : (liveClasses[0]?.id ?? '__past')
+
+  function classCard(c: ClassRow) {
+    const enrolledCount =
+      c.enrollments?.filter((en) =>
+        ['Paid', 'Pending', 'Completed'].includes(en.payment_status)
+      ).length ?? 0
+    const waitlistCount =
+      c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
+    const schoolLabel = c.schools?.nickname ?? c.school_nickname ?? '—'
+    const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
+      a.session_date.localeCompare(b.session_date)
+    )
+    const lastSession = sortedSessions[sortedSessions.length - 1] ?? null
+    const isCancelled = c.status === 'cancelled'
+    return (
+      <div key={c.id} className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-start gap-6">
+          <div>
+            <h3 className="text-lg font-bold text-hgl-slate">
+              {schoolLabel} — {c.class_type}
+              {isCancelled && (
+                <span className="ml-2 align-middle inline-block px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded uppercase tracking-wide">
+                  Cancelled
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-gray-600">
+              Instructor: {c.instructor_name}
+              {c.instructor_email ? ` (${c.instructor_email})` : ''} · Starts:{' '}
+              {formatDateAdmin(c.start_date)}
+            </p>
+            <p className="text-sm text-gray-600">
+              Timezone: {c.schools?.timezone ?? '—'}{' '}
+              <span className="text-xs text-gray-400">(from the school record)</span>
+            </p>
+            {c.default_location && (
+              <p className="text-sm text-gray-600">Location: {c.default_location}</p>
+            )}
+            {c.counselor_id && (() => {
+              const contact = allCounselors.find((x) => x.id === c.counselor_id)
+              return contact ? (
+                <p className="text-sm text-gray-600">
+                  School contact: {contact.first_name} {contact.last_name} ({contact.email})
+                </p>
+              ) : null
+            })()}
+            {c.delivery_mode === 'in_person' && (() => {
+              const rr = roomRequests[c.id]
+              if (!rr && c.default_location) return null
+              const badge = !rr
+                ? { text: 'room not set — counselor gets asked 14 days out', cls: 'bg-gray-100 text-gray-500' }
+                : rr.status === 'pending'
+                  ? { text: `room requested from counselor${rr.nudge_count > 0 ? ` · ${rr.nudge_count} nudge${rr.nudge_count > 1 ? 's' : ''}` : ''}`, cls: 'bg-yellow-100 text-yellow-800' }
+                  : rr.status === 'answered'
+                    ? { text: `room set by ${rr.answered_by ?? 'counselor'}: ${rr.answer}`, cls: 'bg-green-100 text-green-700' }
+                    : { text: 'room request cancelled (set directly)', cls: 'bg-gray-100 text-gray-500' }
+              return (
+                <p className="text-xs mt-1">
+                  <span className={`inline-block px-2 py-0.5 rounded font-semibold ${badge.cls}`}>
+                    {badge.text}
+                  </span>
+                </p>
+              )
+            })()}
+            {c.synap_group && (
+              <p className="text-sm text-gray-600">Synap group: {c.synap_group}</p>
+            )}
+            <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">Registration link:</span>
+              <code className="bg-gray-100 rounded px-2 py-0.5 text-xs">
+                {registrationUrl(c)}
+              </code>
+              <button
+                onClick={() => handleCopyLink(c)}
+                className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
+              >
+                {copiedClassId === c.id ? 'Copied!' : 'Copy'}
+              </button>
+              <button
+                onClick={() => handleEditSlug(c)}
+                className="text-xs text-gray-500 underline hover:text-hgl-blue"
+              >
+                edit slug
+              </button>
+            </p>
+            <p className="text-sm text-gray-600 flex items-center gap-2">
+              <span className="font-semibold">Registration closes:</span>
+              {c.registration_close_date
+                ? formatDateAdmin(c.registration_close_date)
+                : 'first session (default)'}
+              <button
+                onClick={() => handleEditRegistrationClose(c)}
+                className="text-xs text-gray-500 underline hover:text-hgl-blue"
+              >
+                edit
+              </button>
+            </p>
+            {!isCancelled && (
+              <div className="mt-2">
+                <CancelClassPanel
+                  classId={c.id}
+                  classLabel={`${schoolLabel} ${c.class_type}`}
+                  classPrice={Number(c.price)}
+                  paid={(c.enrollments ?? [])
+                    .filter((en) => en.payment_status === 'Paid')
+                    .map((en) => ({
+                      enrollmentId: en.id,
+                      studentName: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
+                      parentName: `${en.students?.families?.parent_first_name ?? ''} ${en.students?.families?.parent_last_name ?? ''}`.trim(),
+                      addonHours: (en.enrollment_addons ?? []).reduce(
+                        (sum, a) => sum + Number(a.hours),
+                        0
+                      ),
+                    }))}
+                  pendingCount={(c.enrollments ?? []).filter((en) => en.payment_status === 'Pending').length}
+                  waitlistedCount={waitlistCount}
+                  onDone={fetchRosters}
+                />
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
+              {enrolledCount} / {c.capacity} enrolled
+            </span>
+            {waitlistCount > 0 && (
+              <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full whitespace-nowrap">
+                {waitlistCount} waitlisted
+              </span>
+            )}
+            {c.min_enrollment != null && (
+              <span className="text-xs text-gray-500 whitespace-nowrap">
+                min {c.min_enrollment} · {c.delivery_mode === 'online' ? 'online' : 'in person'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* SESSIONS — same visual calendar as the public registration page */}
+        <div className="p-6 border-b border-gray-200">
+          <h4 className="font-semibold text-hgl-slate mb-3">Sessions</h4>
+          {sortedSessions.length === 0 ? (
+            <p className="text-sm text-gray-500 italic mb-3">No sessions scheduled yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-6 mb-3 items-start">
+              <SessionCalendar
+                sessions={sortedSessions}
+                defaultLocation={c.default_location}
+                hour24
+              />
+              <ul className="space-y-2">
+                {sortedSessions.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
+                  >
+                    <span>
+                      <strong>{formatDateAdmin(s.session_date)}</strong>
+                      {s.start_time && ` · ${to24h(s.start_time)}`}
+                      {s.end_time && ` – ${to24h(s.end_time)}`}
+                      {s.location && ` · ${s.location}`}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteSession(s.id)}
+                      className="text-red-600 text-xs hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <AddSessionForm
+            key={`${c.id}:${sortedSessions.length}`}
+            classId={c.id}
+            defaultLocation={c.default_location}
+            lastSession={lastSession}
+            onAdded={fetchRosters}
+          />
+        </div>
+
+        {/* ROSTER */}
+        <div className="p-0 overflow-x-auto">
+          {enrolledCount === 0 ? (
+            <p className="text-sm text-gray-500 p-6 text-center italic">
+              No students registered yet.
+            </p>
+          ) : (
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                    Student
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                    Student email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                    Billing contact
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                    Parent email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                    Registered
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {c.enrollments?.map((en) => (
+                  <tr key={en.id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {en.students?.first_name} {en.students?.last_name}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                      {en.students?.student_email ?? (
+                        <span className="italic text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      {en.students?.families?.parent_first_name}{' '}
+                      {en.students?.families?.parent_last_name}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-hgl-blue">
+                      {en.students?.families?.parent_email}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                      <span
+                        className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                          STATUS_STYLES[en.payment_status] ?? 'bg-yellow-100 text-yellow-800'
+                        }`}
+                      >
+                        {en.payment_status}
+                      </span>
+                      {(en.payment_status === 'Paid' ||
+                        en.payment_status === 'Completed') && (
+                        <button
+                          onClick={() =>
+                            handleMarkRefunded(
+                              en.id,
+                              `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()
+                            )
+                          }
+                          title="Records the refund and frees the spot — issue the actual refund in the Stripe dashboard"
+                          className="ml-2 text-xs text-red-600 underline hover:text-red-800"
+                        >
+                          mark refunded
+                        </button>
+                      )}
+                      {en.class_cancelled &&
+                        (en.payment_status === 'Paid' ||
+                          en.payment_status === 'Completed' ||
+                          en.payment_status === 'Refunded') && (
+                          <select
+                            value={en.cancellation_outcome ?? ''}
+                            onChange={(e) => handleOutcome(en.id, e.target.value)}
+                            title="How this family resolved the cancellation (bookkeeping — from the billy@ reply thread)"
+                            className="ml-2 border border-gray-300 rounded p-0.5 text-xs bg-white"
+                          >
+                            <option value="">outcome…</option>
+                            <option value="refunded">refunded</option>
+                            <option value="converted">converted to tutoring</option>
+                            <option value="credited">credited to next course</option>
+                          </select>
+                        )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      {formatTimestampAdmin(en.enrolled_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-gray-50 p-10">
-      <div className="max-w-6xl mx-auto space-y-10">
-
-        {/* CREATE CLASS */}
-        <div className="bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-slate">
-          <div className="flex items-start justify-between mb-6">
-            <h1 className="text-2xl font-bold text-hgl-slate">Admin Command Center</h1>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut()
-                window.location.assign('/login')
-              }}
-              className="text-sm text-gray-500 hover:text-hgl-slate underline"
-            >
-              Sign out
-            </button>
-          </div>
-          <h2 className="text-lg font-semibold text-gray-700 mb-4">Create a new group class</h2>
-
-          <form onSubmit={handleCreateClass} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">School</label>
-                <input
-                  type="text"
-                  name="school_nickname"
-                  required
-                  list="schools-list"
-                  placeholder="e.g. Nido"
-                  value={schoolNickname}
-                  onChange={(e) => { setSchoolNickname(e.target.value); setContactChoice('') }}
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-                <datalist id="schools-list">
-                  {schools.map((s) => (
-                    <option key={s.id} value={s.nickname}>
-                      {s.name}
-                    </option>
-                  ))}
-                </datalist>
-                <p className="text-xs text-gray-500 mt-1">Pick from existing or type a new one.</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Class Type</label>
-                <input
-                  type="text"
-                  name="class_type"
-                  required
-                  list="class-types-list"
-                  placeholder="e.g. SAT Prep"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-                <datalist id="class-types-list">
-                  {CLASS_TYPE_SUGGESTIONS.map((t) => (
-                    <option key={t} value={t} />
-                  ))}
-                </datalist>
-                <p className="text-xs text-gray-500 mt-1">Pick a suggestion or type anything.</p>
-              </div>
-
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Instructor</label>
-                <select
-                  value={instructorChoice}
-                  onChange={(e) => setInstructorChoice(e.target.value)}
-                  required
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition bg-white"
-                >
-                  <option value="">Pick an instructor…</option>
-                  {instructors.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name ? `${i.name} (${i.email})` : i.email}
-                    </option>
-                  ))}
-                  <option value="__new">➕ Add a new instructor…</option>
-                </select>
-                {instructorChoice === '__new' && (
-                  <div className="grid grid-cols-3 gap-2 mt-2">
-                    <input type="text" name="new_instructor_name" required placeholder="Name" className="border border-gray-300 rounded-md p-2" />
-                    <input type="email" name="new_instructor_email" required placeholder="Email" className="border border-gray-300 rounded-md p-2" />
-                    <input type="url" name="new_instructor_link" placeholder="Default meeting link (optional)" className="border border-gray-300 rounded-md p-2" />
-                  </div>
-                )}
-              </div>
-
-              {(() => {
-                const matchedSchool = schools.find(
-                  (s) => s.nickname.toLowerCase() === schoolNickname.trim().toLowerCase()
-                )
-                const contacts = matchedSchool
-                  ? allCounselors.filter((c) => c.school_id === matchedSchool.id)
-                  : []
-                return (
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      School contact <span className="text-gray-400">(optional)</span>
-                    </label>
-                    <select
-                      value={contactChoice}
-                      onChange={(e) => setContactChoice(e.target.value)}
-                      className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition bg-white"
-                    >
-                      <option value="">All school contacts (default)</option>
-                      {contacts.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.first_name} {c.last_name} ({c.email})
-                        </option>
-                      ))}
-                      <option value="__new">➕ Add a new contact…</option>
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Class-specific emails (room requests, final-days push, cancellation note)
-                      go to this contact; blank sends them to every contact at the school.
-                      Digests stay school-wide.
-                    </p>
-                    {contactChoice === '__new' && (
-                      <div className="grid grid-cols-3 gap-2 mt-2">
-                        <input type="text" name="contact_first" required placeholder="First name" className="border border-gray-300 rounded-md p-2" />
-                        <input type="text" name="contact_last" required placeholder="Last name" className="border border-gray-300 rounded-md p-2" />
-                        <input type="email" name="contact_email" required placeholder="Email" className="border border-gray-300 rounded-md p-2" />
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Start Date</label>
-                <input
-                  type="date"
-                  name="start_date"
-                  required
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Default Location</label>
-                <input
-                  type="text"
-                  name="default_location"
-                  placeholder="Library Room B / Zoom"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Price (USD)</label>
-                <input
-                  type="number"
-                  name="price"
-                  required
-                  placeholder="750"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Student Capacity</label>
-                <input
-                  type="number"
-                  name="capacity"
-                  required
-                  placeholder="20"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Delivery Mode</label>
-                <select
-                  name="delivery_mode"
-                  value={deliveryMode}
-                  onChange={(e) => {
-                    const mode = e.target.value as 'in_person' | 'online'
-                    setDeliveryMode(mode)
-                    setMinEnrollment(mode === 'online' ? '3' : '8')
-                  }}
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition bg-white"
-                >
-                  <option value="in_person">In person</option>
-                  <option value="online">Online</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Minimum Enrollment</label>
-                <input
-                  type="number"
-                  name="min_enrollment"
-                  value={minEnrollment}
-                  onChange={(e) => setMinEnrollment(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-                <p className="text-xs text-gray-500 mt-1">Default 8 in person / 3 online — editable.</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Enrollment Deadline</label>
-                <input
-                  type="date"
-                  name="enrollment_deadline"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-                <p className="text-xs text-gray-500 mt-1">Optional — min-enrollment check runs here (else 7 days before start).</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Registration Closes</label>
-                <input
-                  type="date"
-                  name="registration_close_date"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-                <p className="text-xs text-gray-500 mt-1">Blank = first session. Set later to allow mid-class joins.</p>
-              </div>
-
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Synap Group</label>
-                <input
-                  type="text"
-                  name="synap_group"
-                  placeholder="https://…  (full Synap group link — used as the button URL in emails)"
-                  className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                />
-                <p className="text-xs text-gray-500 mt-1">Optional — link to a Synap group for test access.</p>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-6 w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition duration-200 disabled:opacity-60"
-            >
-              {loading ? 'Saving to Database...' : 'Create Class'}
-            </button>
-          </form>
-
-          {message && (
-            <div
-              className={`mt-4 p-3 rounded text-center font-semibold ${
-                message.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-              }`}
-            >
-              {message}
-            </div>
-          )}
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex items-start justify-between">
+          <h1 className="text-2xl font-bold text-hgl-slate">HGL Admin</h1>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut()
+              window.location.assign('/login')
+            }}
+            className="text-sm text-gray-500 hover:text-hgl-slate underline"
+          >
+            Sign out
+          </button>
         </div>
 
-        {/* ROSTERS + SESSIONS */}
-        <div className="bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
-          <h2 className="text-2xl font-bold text-hgl-slate mb-6">Live class rosters</h2>
+        <CollapsibleSection title="Add a new class" accent="border-hgl-slate">
+          <ClassWizard
+            schools={schools}
+            contacts={allCounselors}
+            instructors={instructors}
+            onSchoolsChange={fetchSchools}
+            onContactsChange={fetchAllCounselors}
+            onInstructorsChange={fetchInstructors}
+            onCreated={() => {
+              fetchRosters()
+              fetchRoomRequests()
+            }}
+          />
+        </CollapsibleSection>
 
+        <CollapsibleSection title="Live class rosters" accent="border-hgl-blue" defaultOpen>
           {rosterError && (
             <div className="mb-4 p-3 rounded bg-red-100 text-red-700 font-semibold text-sm">
               {rosterError} — the classes below may be stale or missing. If this mentions a
@@ -801,321 +722,64 @@ export default function AdminDashboard() {
           )}
           {fetchingRosters ? (
             <p className="text-gray-500 animate-pulse">Loading rosters from database...</p>
+          ) : rosters.length === 0 ? (
+            <p className="text-gray-500">No classes exist yet.</p>
           ) : (
-            <div className="space-y-8">
-              {rosters.length === 0 ? (
-                <p className="text-gray-500">No classes exist yet.</p>
+            <div>
+              <div className="flex flex-wrap gap-1 border-b border-gray-200 mb-6">
+                {liveClasses.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setActiveTab(c.id)}
+                    className={`px-4 py-2 text-sm font-semibold rounded-t-md border border-b-0 transition ${
+                      selectedTab === c.id
+                        ? 'bg-white border-gray-200 text-hgl-blue -mb-px'
+                        : 'bg-gray-50 border-transparent text-gray-500 hover:text-hgl-slate'
+                    }`}
+                  >
+                    {(c.schools?.nickname ?? c.school_nickname ?? '—') + ' ' + c.class_type}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setActiveTab('__past')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-t-md border border-b-0 transition ${
+                    selectedTab === '__past'
+                      ? 'bg-white border-gray-200 text-hgl-blue -mb-px'
+                      : 'bg-gray-50 border-transparent text-gray-500 hover:text-hgl-slate'
+                  }`}
+                >
+                  Past &amp; cancelled ({pastClasses.length})
+                </button>
+              </div>
+              {selectedTab === '__past' ? (
+                pastClasses.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No past or cancelled classes.</p>
+                ) : (
+                  <div className="space-y-8">{pastClasses.map((c) => classCard(c))}</div>
+                )
               ) : (
-                rosters.map((c) => {
-                  const enrolledCount =
-                    c.enrollments?.filter((en) =>
-                      ['Paid', 'Pending', 'Completed'].includes(en.payment_status)
-                    ).length ?? 0
-                  const waitlistCount =
-                    c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
-                  const schoolLabel = c.schools?.nickname ?? c.school_nickname ?? '—'
-                  const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
-                    a.session_date.localeCompare(b.session_date)
-                  )
-                  const isCancelled = c.status === 'cancelled'
-                  return (
-                    <div key={c.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-start gap-6">
-                        <div>
-                          <h3 className="text-lg font-bold text-hgl-slate">
-                            {schoolLabel} — {c.class_type}
-                            {isCancelled && (
-                              <span className="ml-2 align-middle inline-block px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded uppercase tracking-wide">
-                                Cancelled
-                              </span>
-                            )}
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            Instructor: {c.instructor_name}
-                            {c.instructor_email ? ` (${c.instructor_email})` : ''} · Starts:{' '}
-                            {formatDateAdmin(c.start_date)}
-                          </p>
-                          {c.default_location && (
-                            <p className="text-sm text-gray-600">Location: {c.default_location}</p>
-                          )}
-                          {c.counselor_id && (() => {
-                            const contact = allCounselors.find((x) => x.id === c.counselor_id)
-                            return contact ? (
-                              <p className="text-sm text-gray-600">
-                                School contact: {contact.first_name} {contact.last_name} ({contact.email})
-                              </p>
-                            ) : null
-                          })()}
-                          {c.delivery_mode === 'in_person' && (() => {
-                            const rr = roomRequests[c.id]
-                            if (!rr && c.default_location) return null
-                            const badge = !rr
-                              ? { text: 'room not set — counselor gets asked 14 days out', cls: 'bg-gray-100 text-gray-500' }
-                              : rr.status === 'pending'
-                                ? { text: `room requested from counselor${rr.nudge_count > 0 ? ` · ${rr.nudge_count} nudge${rr.nudge_count > 1 ? 's' : ''}` : ''}`, cls: 'bg-yellow-100 text-yellow-800' }
-                                : rr.status === 'answered'
-                                  ? { text: `room set by ${rr.answered_by ?? 'counselor'}: ${rr.answer}`, cls: 'bg-green-100 text-green-700' }
-                                  : { text: 'room request cancelled (set directly)', cls: 'bg-gray-100 text-gray-500' }
-                            return (
-                              <p className="text-xs mt-1">
-                                <span className={`inline-block px-2 py-0.5 rounded font-semibold ${badge.cls}`}>
-                                  {badge.text}
-                                </span>
-                              </p>
-                            )
-                          })()}
-                          {c.synap_group && (
-                            <p className="text-sm text-gray-600">Synap group: {c.synap_group}</p>
-                          )}
-                          <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold">Registration link:</span>
-                            <code className="bg-gray-100 rounded px-2 py-0.5 text-xs">
-                              {registrationUrl(c)}
-                            </code>
-                            <button
-                              onClick={() => handleCopyLink(c)}
-                              className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
-                            >
-                              {copiedClassId === c.id ? 'Copied!' : 'Copy'}
-                            </button>
-                            <button
-                              onClick={() => handleEditSlug(c)}
-                              className="text-xs text-gray-500 underline hover:text-hgl-blue"
-                            >
-                              edit slug
-                            </button>
-                          </p>
-                          <p className="text-sm text-gray-600 flex items-center gap-2">
-                            <span className="font-semibold">Registration closes:</span>
-                            {c.registration_close_date
-                              ? formatDateAdmin(c.registration_close_date)
-                              : 'first session (default)'}
-                            <button
-                              onClick={() => handleEditRegistrationClose(c)}
-                              className="text-xs text-gray-500 underline hover:text-hgl-blue"
-                            >
-                              edit
-                            </button>
-                          </p>
-                          {!isCancelled && (
-                            <div className="mt-2">
-                              <CancelClassPanel
-                                classId={c.id}
-                                classLabel={`${schoolLabel} ${c.class_type}`}
-                                classPrice={Number(c.price)}
-                                paid={(c.enrollments ?? [])
-                                  .filter((en) => en.payment_status === 'Paid')
-                                  .map((en) => ({
-                                    enrollmentId: en.id,
-                                    studentName: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
-                                    parentName: `${en.students?.families?.parent_first_name ?? ''} ${en.students?.families?.parent_last_name ?? ''}`.trim(),
-                                    addonHours: (en.enrollment_addons ?? []).reduce(
-                                      (sum, a) => sum + Number(a.hours),
-                                      0
-                                    ),
-                                  }))}
-                                pendingCount={(c.enrollments ?? []).filter((en) => en.payment_status === 'Pending').length}
-                                waitlistedCount={waitlistCount}
-                                onDone={fetchRosters}
-                              />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
-                            {enrolledCount} / {c.capacity} enrolled
-                          </span>
-                          {waitlistCount > 0 && (
-                            <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full whitespace-nowrap">
-                              {waitlistCount} waitlisted
-                            </span>
-                          )}
-                          {c.min_enrollment != null && (
-                            <span className="text-xs text-gray-500 whitespace-nowrap">
-                              min {c.min_enrollment} · {c.delivery_mode === 'online' ? 'online' : 'in person'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* SESSIONS */}
-                      <div className="p-6 border-b border-gray-200">
-                        <h4 className="font-semibold text-hgl-slate mb-3">Sessions</h4>
-                        {sortedSessions.length === 0 ? (
-                          <p className="text-sm text-gray-500 italic mb-3">No sessions scheduled yet.</p>
-                        ) : (
-                          <ul className="space-y-2 mb-3">
-                            {sortedSessions.map((s) => (
-                              <li
-                                key={s.id}
-                                className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
-                              >
-                                <span>
-                                  <strong>{formatDateAdmin(s.session_date)}</strong>
-                                  {s.start_time && ` · ${s.start_time}`}
-                                  {s.end_time && ` – ${s.end_time}`}
-                                  {s.location && ` · ${s.location}`}
-                                </span>
-                                <button
-                                  onClick={() => handleDeleteSession(s.id)}
-                                  className="text-red-600 text-xs hover:underline"
-                                >
-                                  Remove
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault()
-                            handleAddSession(c.id, e.currentTarget, c.default_location)
-                          }}
-                          className="grid grid-cols-4 gap-2 items-end text-sm"
-                        >
-                          <div>
-                            <label className="block text-xs text-gray-600">Date</label>
-                            <input type="date" name="session_date" required className="mt-1 w-full border rounded p-1" />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-600">Start</label>
-                            <input type="time" name="start_time" className="mt-1 w-full border rounded p-1" />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-600">End</label>
-                            <input type="time" name="end_time" className="mt-1 w-full border rounded p-1" />
-                          </div>
-                          <div className="col-span-4 grid grid-cols-4 gap-2 items-end">
-                            <div className="col-span-3">
-                              <label className="block text-xs text-gray-600">
-                                Location (blank = default)
-                              </label>
-                              <input
-                                type="text"
-                                name="location"
-                                placeholder={c.default_location ?? ''}
-                                className="mt-1 w-full border rounded p-1"
-                              />
-                            </div>
-                            <button
-                              type="submit"
-                              className="bg-hgl-slate text-white py-1 px-3 rounded hover:opacity-90"
-                            >
-                              Add session
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-
-                      {/* ROSTER */}
-                      <div className="p-0 overflow-x-auto">
-                        {enrolledCount === 0 ? (
-                          <p className="text-sm text-gray-500 p-6 text-center italic">
-                            No students registered yet.
-                          </p>
-                        ) : (
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-100">
-                              <tr>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
-                                  Student
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
-                                  Student email
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
-                                  Billing contact
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
-                                  Parent email
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
-                                  Status
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
-                                  Registered
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {c.enrollments?.map((en) => (
-                                <tr key={en.id} className="hover:bg-gray-50 transition">
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    {en.students?.first_name} {en.students?.last_name}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                                    {en.students?.student_email ?? (
-                                      <span className="italic text-gray-400">—</span>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                    {en.students?.families?.parent_first_name}{' '}
-                                    {en.students?.families?.parent_last_name}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-hgl-blue">
-                                    {en.students?.families?.parent_email}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                    <span
-                                      className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                                        STATUS_STYLES[en.payment_status] ?? 'bg-yellow-100 text-yellow-800'
-                                      }`}
-                                    >
-                                      {en.payment_status}
-                                    </span>
-                                    {(en.payment_status === 'Paid' ||
-                                      en.payment_status === 'Completed') && (
-                                      <button
-                                        onClick={() =>
-                                          handleMarkRefunded(
-                                            en.id,
-                                            `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()
-                                          )
-                                        }
-                                        title="Records the refund and frees the spot — issue the actual refund in the Stripe dashboard"
-                                        className="ml-2 text-xs text-red-600 underline hover:text-red-800"
-                                      >
-                                        mark refunded
-                                      </button>
-                                    )}
-                                    {en.class_cancelled &&
-                                      (en.payment_status === 'Paid' ||
-                                        en.payment_status === 'Completed' ||
-                                        en.payment_status === 'Refunded') && (
-                                        <select
-                                          value={en.cancellation_outcome ?? ''}
-                                          onChange={(e) => handleOutcome(en.id, e.target.value)}
-                                          title="How this family resolved the cancellation (bookkeeping — from the billy@ reply thread)"
-                                          className="ml-2 border border-gray-300 rounded p-0.5 text-xs bg-white"
-                                        >
-                                          <option value="">outcome…</option>
-                                          <option value="refunded">refunded</option>
-                                          <option value="converted">converted to tutoring</option>
-                                          <option value="credited">credited to next course</option>
-                                        </select>
-                                      )}
-                                  </td>
-                                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                    {new Date(en.enrolled_at).toLocaleDateString()}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })
+                (() => {
+                  const c = liveClasses.find((x) => x.id === selectedTab)
+                  return c ? classCard(c) : <p className="text-gray-500 text-sm">No live classes.</p>
+                })()
               )}
             </div>
           )}
-        </div>
+        </CollapsibleSection>
 
-        {/* PHASE 4: COUNSELORS + INSTRUCTORS */}
-        <CounselorsPanel schools={schools} onChange={fetchAllCounselors} />
-        <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
+        <CollapsibleSection
+          title="School contacts"
+          subtitle="The person + their school affiliation — portal access and digests follow active affiliations"
+        >
+          <CounselorsPanel schools={schools} onChange={fetchAllCounselors} />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Instructors"
+          subtitle="Default meeting links auto-fill online classes; instructors sign in with their email"
+        >
+          <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
+        </CollapsibleSection>
       </div>
     </div>
   )

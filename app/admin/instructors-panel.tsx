@@ -71,8 +71,7 @@ export default function InstructorsPanel({
   }
 
   return (
-    <div className="bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-slate">
-      <h2 className="text-2xl font-bold text-hgl-slate mb-1">Instructors</h2>
+    <div>
       <p className="text-sm text-gray-500 mb-6">
         Online classes created with a blank location auto-fill the instructor&apos;s default
         meeting link. Instructors sign in at /login with their email to see their classes and
