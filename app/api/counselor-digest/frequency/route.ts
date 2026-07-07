@@ -3,6 +3,9 @@ import { verifyDigestToken } from '../../../utils/lifecycle'
 
 // One-click digest frequency switch from the counselor digest footer
 // (PHASE4_SPEC §4a) — tokenized, no login. Returns a tiny HTML confirmation.
+// The token binds a school_affiliations row: digest prefs live on the
+// AFFILIATION, so a contact with two schools manages each independently.
+// (Pre-migration links still work — migrated affiliations kept their ids.)
 
 const LABELS: Record<string, string> = {
   weekly: 'weekly',
@@ -26,11 +29,11 @@ function page(title: string, body: string, ok = true) {
 
 export async function GET(request: Request) {
   const url = new URL(request.url)
-  const counselorId = url.searchParams.get('c') ?? ''
+  const affiliationId = url.searchParams.get('c') ?? ''
   const frequency = url.searchParams.get('f') ?? ''
   const token = url.searchParams.get('t') ?? ''
 
-  if (!counselorId || !token || !verifyDigestToken(counselorId, token)) {
+  if (!affiliationId || !token || !verifyDigestToken(affiliationId, token)) {
     return page('Link not valid', 'This link is not valid — it may be incomplete. Try the link from your most recent digest email.', false)
   }
   if (!(frequency in LABELS)) {
@@ -38,20 +41,22 @@ export async function GET(request: Request) {
   }
 
   const { data, error } = await supabase
-    .from('school_counselors')
+    .from('school_affiliations')
     .update({ digest_frequency: frequency })
-    .eq('id', counselorId)
-    .select('first_name')
+    .eq('id', affiliationId)
+    .select('contacts ( first_name )')
     .single()
 
   if (error || !data) {
     return page('Something went wrong', 'We could not update your preference — please reply to the digest email and we will set it for you.', false)
   }
+  const contact = Array.isArray(data.contacts) ? data.contacts[0] : data.contacts
+  const firstName = (contact as { first_name: string } | null)?.first_name
 
   return page(
     frequency === 'paused' ? 'Digest paused' : 'Preference saved',
     frequency === 'paused'
       ? 'You will no longer receive the enrollment digest. Any link in an old digest can turn it back on.'
-      : `Got it, ${data.first_name} — you'll now receive the enrollment digest ${LABELS[frequency]}.`
+      : `Got it${firstName ? `, ${firstName}` : ''} — you'll now receive the enrollment digest ${LABELS[frequency]}.`
   )
 }

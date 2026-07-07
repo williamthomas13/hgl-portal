@@ -40,6 +40,8 @@ type Enrollment = {
   } | null
 }
 
+// One active school affiliation flattened with its contact — `id` is the
+// CONTACT id (what classes.counselor_id stores).
 type Counselor = {
   id: string
   school_id: string
@@ -130,10 +132,19 @@ export default function AdminDashboard() {
 
   const fetchAllCounselors = useCallback(async () => {
     const { data } = await supabase
-      .from('school_counselors')
-      .select('id, school_id, first_name, last_name, email')
-      .order('first_name')
-    if (data) setAllCounselors(data as Counselor[])
+      .from('school_affiliations')
+      .select('contact_id, school_id, contacts ( first_name, last_name, email )')
+      .is('ended_at', null)
+    if (data) {
+      setAllCounselors(
+        data
+          .flatMap((row) => {
+            const ct = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts
+            return ct ? [{ id: row.contact_id as string, school_id: row.school_id as string, ...ct }] : []
+          })
+          .sort((a, b) => a.first_name.localeCompare(b.first_name))
+      )
+    }
   }, [])
 
   const fetchInstructors = useCallback(async () => {
@@ -245,27 +256,48 @@ export default function AdminDashboard() {
         setLoading(false)
         return
       }
-      const { data: newContact, error: contactErr } = await supabase
-        .from('school_counselors')
-        .insert([
-          {
-            school_id: schoolId,
-            first_name: (formData.get('contact_first') as string).trim(),
-            last_name: (formData.get('contact_last') as string).trim(),
-            email: ((formData.get('contact_email') as string) ?? '').trim().toLowerCase(),
-          },
-        ])
+      // Find-or-create the contact by email, then open an affiliation at
+      // this school (the person may already exist from another school).
+      const contactEmail = ((formData.get('contact_email') as string) ?? '').trim().toLowerCase()
+      const { data: existingContact } = await supabase
+        .from('contacts')
         .select('id')
-        .single()
-      if (contactErr || !newContact) {
-        setMessage(
-          'Error adding contact: ' +
-            (contactErr?.code === '23505' ? 'that email is already a contact.' : contactErr?.message)
-        )
-        setLoading(false)
-        return
+        .ilike('email', contactEmail)
+        .maybeSingle()
+      let contactId = existingContact?.id as string | undefined
+      if (!contactId) {
+        const { data: newContact, error: contactErr } = await supabase
+          .from('contacts')
+          .insert([
+            {
+              first_name: (formData.get('contact_first') as string).trim(),
+              last_name: (formData.get('contact_last') as string).trim(),
+              email: contactEmail,
+            },
+          ])
+          .select('id')
+          .single()
+        if (contactErr || !newContact) {
+          setMessage('Error adding contact: ' + (contactErr?.message ?? 'unknown'))
+          setLoading(false)
+          return
+        }
+        contactId = newContact.id
       }
-      counselorId = newContact.id
+      const alreadyAffiliated = allCounselors.some(
+        (x) => x.id === contactId && x.school_id === schoolId
+      )
+      if (!alreadyAffiliated) {
+        const { error: affErr } = await supabase
+          .from('school_affiliations')
+          .insert([{ contact_id: contactId, school_id: schoolId, role: 'counselor' }])
+        if (affErr) {
+          setMessage('Error adding affiliation: ' + affErr.message)
+          setLoading(false)
+          return
+        }
+      }
+      counselorId = contactId ?? null
       fetchAllCounselors()
     }
 
@@ -1038,7 +1070,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* PHASE 4: COUNSELORS + INSTRUCTORS */}
-        <CounselorsPanel schools={schools} />
+        <CounselorsPanel schools={schools} onChange={fetchAllCounselors} />
         <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
       </div>
     </div>

@@ -58,7 +58,7 @@ export type ClassBundle = {
   slug: string | null
   /** open | cancelled — cancelled suppresses every scheduled send (§12). */
   status: string
-  /** Optional per-class school contact; class-specific sends target them. */
+  /** Optional per-class school contact (a contacts.id); class-specific sends target them. */
   counselorId: string | null
   classType: string
   schoolId: string | null
@@ -495,22 +495,23 @@ export function registrationUrlFor(bundle: Pick<ClassBundle, 'id' | 'slug'>) {
 }
 
 // Counselor digest frequency links (PHASE4_SPEC §4a): tokenized one-click,
-// no login. One token per counselor; the freq travels as a plain param.
-// Distinct HMAC prefix, as with the other signed-link families.
-function digestToken(counselorId: string) {
+// no login. One token per school AFFILIATION (digest prefs live there, so a
+// two-school contact manages each independently); the freq travels as a
+// plain param. Distinct HMAC prefix, as with the other signed-link families.
+function digestToken(affiliationId: string) {
   return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
-    .update(`digest:${counselorId}`)
+    .update(`digest:${affiliationId}`)
     .digest('hex')
     .slice(0, 32)
 }
 
-export function digestFrequencyUrlFor(counselorId: string, frequency: string) {
+export function digestFrequencyUrlFor(affiliationId: string, frequency: string) {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  return `${base}/api/counselor-digest/frequency?c=${counselorId}&f=${frequency}&t=${digestToken(counselorId)}`
+  return `${base}/api/counselor-digest/frequency?c=${affiliationId}&f=${frequency}&t=${digestToken(affiliationId)}`
 }
 
-export function verifyDigestToken(counselorId: string, token: string) {
-  const expected = Buffer.from(digestToken(counselorId))
+export function verifyDigestToken(affiliationId: string, token: string) {
+  const expected = Buffer.from(digestToken(affiliationId))
   const given = Buffer.from(token)
   return expected.length === given.length && timingSafeEqual(expected, given)
 }

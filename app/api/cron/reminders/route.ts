@@ -556,8 +556,12 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
 // current DB state and deduped through email_log like everything else.
 // ---------------------------------------------------------------------------
 
+// One ACTIVE school affiliation + its contact. `id` is the affiliation id
+// (digest tokens, digest_last_sent_at, and dedupe keys bind to it);
+// `contact_id` is the person (classes.counselor_id points at contacts).
 type CounselorRow = {
   id: string
+  contact_id: string
   school_id: string
   first_name: string
   email: string
@@ -567,14 +571,26 @@ type CounselorRow = {
 
 async function loadCounselorsBySchool(): Promise<Map<string, CounselorRow[]>> {
   const { data, error } = await supabase
-    .from('school_counselors')
-    .select('id, school_id, first_name, email, digest_frequency, digest_last_sent_at')
+    .from('school_affiliations')
+    .select('id, contact_id, school_id, digest_frequency, digest_last_sent_at, contacts ( first_name, email )')
+    .is('ended_at', null)
   if (error || !data) {
     console.error('loadCounselorsBySchool failed:', error?.message)
     return new Map()
   }
   const map = new Map<string, CounselorRow[]>()
-  for (const c of data as CounselorRow[]) {
+  for (const row of data) {
+    const contact = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts
+    if (!contact) continue
+    const c: CounselorRow = {
+      id: row.id,
+      contact_id: row.contact_id,
+      school_id: row.school_id,
+      first_name: contact.first_name,
+      email: contact.email,
+      digest_frequency: row.digest_frequency as CounselorRow['digest_frequency'],
+      digest_last_sent_at: row.digest_last_sent_at,
+    }
     map.set(c.school_id, [...(map.get(c.school_id) ?? []), c])
   }
   return map
@@ -592,7 +608,9 @@ function contactsForClass(
   if (!bundle.schoolId) return []
   const all = counselorsBySchool.get(bundle.schoolId) ?? []
   if (bundle.counselorId) {
-    const chosen = all.filter((c) => c.id === bundle.counselorId)
+    // counselor_id names a CONTACT; the map only holds active affiliations,
+    // so a contact whose affiliation ended falls through to everyone.
+    const chosen = all.filter((c) => c.contact_id === bundle.counselorId)
     if (chosen.length > 0) return chosen
   }
   return all
@@ -679,7 +697,7 @@ async function sweepCounselorDigests(
       })
       if (status === 'sent') {
         await supabase
-          .from('school_counselors')
+          .from('school_affiliations')
           .update({ digest_last_sent_at: new Date().toISOString() })
           .eq('id', counselor.id)
         bump(c, 'counselor_digest')

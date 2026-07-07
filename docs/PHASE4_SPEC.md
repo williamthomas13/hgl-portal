@@ -48,8 +48,10 @@ Scoped by RLS to their school.
 
 ### 4a. Counselor enrollment digest (new)
 
+*Amended July 7 (admin UX addendum): `school_counselors` is replaced by `contacts` (the person) + `school_affiliations` (contact_id, school_id, role, started_at, ended_at; null ended_at = current). Counselor auth attaches to the contact's email; RLS scopes through ACTIVE affiliations. Digest subscription + frequency hang off the affiliation, not the contact.*
+
 - **Default: weekly email** per counselor summarizing each open class at their school: paid count / capacity, new enrollments since last digest, waitlist depth, registration link.
-- **Frequency self-serve:** footer links ("weekly · every 2 weeks · monthly · pause") — tokenized one-click, no login, writes `school_counselors.digest_frequency`.
+- **Frequency self-serve:** footer links ("weekly · every 2 weeks · monthly · pause") — tokenized one-click, no login, writes `school_affiliations.digest_frequency`.
 - **Final-week push:** on each of the **last 3 days** before the class's `enrollment_deadline` (fallback: first session date), send a daily version framed for last-minute signups: spots remaining + registration link to forward. Fires regardless of digest frequency; suppressed if the class is already full (switches to a "class is full 🎉 + waitlist depth" one-off instead).
 - Infrastructure: same scheduled-send cron as Phase 2 emails.
 

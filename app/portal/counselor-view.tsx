@@ -24,13 +24,15 @@ export default async function CounselorView({
   supabase: SupabaseClient
   email: string
 }) {
-  // Filtered by own email — staff can read every counselor row under RLS.
-  const { data: counselorRows } = await supabase
-    .from('school_counselors')
-    .select('id, school_id, schools ( id, name, nickname )')
-    .ilike('email', email)
+  // Active affiliations only, filtered by own email — staff can read every
+  // affiliation under RLS, so the explicit filter keeps their view scoped.
+  const { data: affiliationRows } = await supabase
+    .from('school_affiliations')
+    .select('id, school_id, contacts!inner(email), schools ( id, name, nickname )')
+    .is('ended_at', null)
+    .ilike('contacts.email', email)
 
-  const schoolIds = (counselorRows ?? []).map((c: any) => c.school_id)
+  const schoolIds = (affiliationRows ?? []).map((c: any) => c.school_id)
   if (schoolIds.length === 0) {
     return <p className="text-gray-500 bg-white rounded-lg border p-6">No school found for your account.</p>
   }
@@ -195,7 +197,7 @@ export default async function CounselorView({
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-bold text-hgl-slate">
-        {(counselorRows ?? [])
+        {(affiliationRows ?? [])
           .map((c: any) => one<any>(c.schools)?.name)
           .filter(Boolean)
           .join(' · ')}

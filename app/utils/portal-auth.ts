@@ -5,11 +5,12 @@ import { supabaseAdmin } from './supabase-admin'
 // accounts provisioned implicitly from existing data. Every legitimate user
 // already exists in the DB — login is proving you own an email we already
 // have. Roles are DERIVED from data, not granted: parent ⇐
-// families.parent_email · counselor ⇐ school_counselors.email · instructor ⇐
-// classes.instructor_email (or an instructors row) · admin ⇐ ADMIN_EMAILS
-// allowlist or an existing admin/manager profile. RLS scopes reads by the JWT
-// email claim, so the "active role" only ever decides which view renders —
-// switching it grants nothing.
+// families.parent_email · counselor ⇐ contacts.email with an ACTIVE school
+// affiliation (ended_at null) · instructor ⇐ classes.instructor_email (or an
+// instructors row) · admin ⇐ ADMIN_EMAILS allowlist or an existing
+// admin/manager profile. RLS scopes reads by the JWT email claim, so the
+// "active role" only ever decides which view renders — switching it grants
+// nothing.
 
 export type PortalRole = 'admin' | 'manager' | 'instructor' | 'counselor' | 'parent'
 
@@ -31,10 +32,17 @@ export async function deriveRoles(emailRaw: string): Promise<PortalRole[]> {
 
   if (adminAllowlist().includes(email)) roles.add('admin')
 
-  // ilike with no wildcards = case-insensitive equality.
+  // ilike with no wildcards = case-insensitive equality. Counselor requires
+  // an ACTIVE affiliation — an ended one keeps the contact row but grants no
+  // role (turnover: access ends when the affiliation is closed).
   const [family, counselor, teaching, instructorRow, profile] = await Promise.all([
     supabaseAdmin.from('families').select('id').ilike('parent_email', email).limit(1),
-    supabaseAdmin.from('school_counselors').select('id').ilike('email', email).limit(1),
+    supabaseAdmin
+      .from('school_affiliations')
+      .select('id, contacts!inner(email)')
+      .is('ended_at', null)
+      .ilike('contacts.email', email)
+      .limit(1),
     supabaseAdmin.from('classes').select('id').ilike('instructor_email', email).limit(1),
     supabaseAdmin.from('instructors').select('id').ilike('email', email).limit(1),
     supabaseAdmin.from('profiles').select('role').ilike('email', email).limit(1),

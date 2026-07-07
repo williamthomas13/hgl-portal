@@ -178,12 +178,20 @@ export async function POST(request: Request) {
   // contact at the school (July 7 addition — matches CR/FP routing).
   let cxcSent = 0
   if (bundle.schoolId) {
-    const { data: allCounselors } = await supabase
-      .from('school_counselors')
-      .select('id, first_name, email')
+    const { data: affiliations } = await supabase
+      .from('school_affiliations')
+      .select('contact_id, contacts ( first_name, email )')
       .eq('school_id', bundle.schoolId)
+      .is('ended_at', null)
+    const allCounselors = (affiliations ?? []).flatMap((a) => {
+      const contact = Array.isArray(a.contacts) ? a.contacts[0] : a.contacts
+      return contact
+        ? [{ id: a.contact_id as string, first_name: contact.first_name, email: contact.email }]
+        : []
+    })
+    // counselor_id names a contact; an ended affiliation falls back to all.
     const chosen = bundle.counselorId
-      ? (allCounselors ?? []).filter((c) => c.id === bundle.counselorId)
+      ? allCounselors.filter((c) => c.id === bundle.counselorId)
       : []
     const counselors = chosen.length > 0 ? chosen : allCounselors
     for (const counselor of counselors ?? []) {

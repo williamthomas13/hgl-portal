@@ -41,7 +41,12 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
   // every row under RLS, so "any visible row" would misdetect roles for them.
   const [families, counselorRows, taughtClasses, profile] = await Promise.all([
     supabase.from('families').select('id').ilike('parent_email', email).limit(1),
-    supabase.from('school_counselors').select('id').ilike('email', email).limit(1),
+    supabase
+      .from('school_affiliations')
+      .select('id, contacts!inner(email)')
+      .is('ended_at', null)
+      .ilike('contacts.email', email)
+      .limit(1),
     supabase.from('classes').select('id').ilike('instructor_email', email).limit(1),
     supabase.from('profiles').select('role').eq('id', user.id).single(),
   ])

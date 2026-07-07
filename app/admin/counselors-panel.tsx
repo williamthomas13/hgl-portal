@@ -2,20 +2,25 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
+import { formatDateAdmin } from '../utils/dates'
 
-// Counselor management (PHASE4_SPEC §10): add/remove per school, set the
-// digest frequency. Counselors log into the portal by proving their email —
-// a row here IS the account, no invite step.
+// School contact management (PHASE4_SPEC §10 + admin UX addendum): a CONTACT
+// is the person; a SCHOOL_AFFILIATION is their tenure at a school (null
+// ended_at = current). Portal access and digests follow ACTIVE affiliations,
+// so turnover is "end the affiliation" — the person and their history stay.
+// Digest frequency lives on the affiliation, not the contact.
 
 type School = { id: string; name: string; nickname: string }
 
-type Counselor = {
+export type Affiliation = {
   id: string
+  contact_id: string
   school_id: string
-  first_name: string
-  last_name: string
-  email: string
+  role: string
+  started_at: string
+  ended_at: string | null
   digest_frequency: string
+  contacts: { first_name: string; last_name: string; email: string } | null
   schools: { nickname: string } | null
 }
 
@@ -26,78 +31,152 @@ const FREQUENCIES = [
   { value: 'paused', label: 'Paused' },
 ]
 
-export default function CounselorsPanel({ schools }: { schools: School[] }) {
-  const [counselors, setCounselors] = useState<Counselor[]>([])
+function one<T>(v: T | T[] | null | undefined): T | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
+}
+
+export default function CounselorsPanel({
+  schools,
+  onChange,
+}: {
+  schools: School[]
+  onChange?: () => void
+}) {
+  const [affiliations, setAffiliations] = useState<Affiliation[]>([])
+  const [showEnded, setShowEnded] = useState(false)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const fetchCounselors = useCallback(async () => {
+  const fetchAffiliations = useCallback(async () => {
     const { data } = await supabase
-      .from('school_counselors')
-      .select('id, school_id, first_name, last_name, email, digest_frequency, schools ( nickname )')
-      .order('email')
-    if (data) setCounselors(data as unknown as Counselor[])
+      .from('school_affiliations')
+      .select(
+        'id, contact_id, school_id, role, started_at, ended_at, digest_frequency, contacts ( first_name, last_name, email ), schools ( nickname )'
+      )
+      .order('started_at', { ascending: false })
+    if (data) {
+      setAffiliations(
+        (data as unknown as Affiliation[]).map((a) => ({
+          ...a,
+          contacts: one(a.contacts),
+          schools: one(a.schools),
+        }))
+      )
+    }
   }, [])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchCounselors()
-  }, [fetchCounselors])
+    fetchAffiliations()
+  }, [fetchAffiliations])
 
   async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
     setMessage('')
     const fd = new FormData(e.currentTarget)
-    const { error } = await supabase.from('school_counselors').insert([
-      {
-        school_id: fd.get('school_id'),
-        first_name: (fd.get('first_name') as string).trim(),
-        last_name: (fd.get('last_name') as string).trim(),
-        email: (fd.get('email') as string).trim().toLowerCase(),
-      },
-    ])
-    if (error) {
-      setMessage(
-        'Error: ' + (error.code === '23505' ? 'that email is already a counselor.' : error.message)
-      )
+    const email = (fd.get('email') as string).trim().toLowerCase()
+    const schoolId = fd.get('school_id') as string
+
+    // Find-or-create the contact by email — the person may already exist
+    // from another school (that's the point of splitting the tables).
+    const { data: existing } = await supabase
+      .from('contacts')
+      .select('id')
+      .ilike('email', email)
+      .maybeSingle()
+    let contactId = existing?.id as string | undefined
+    if (!contactId) {
+      const { data: created, error } = await supabase
+        .from('contacts')
+        .insert([
+          {
+            first_name: (fd.get('first_name') as string).trim(),
+            last_name: (fd.get('last_name') as string).trim(),
+            email,
+          },
+        ])
+        .select('id')
+        .single()
+      if (error || !created) {
+        setMessage('Error adding contact: ' + (error?.message ?? 'unknown'))
+        setLoading(false)
+        return
+      }
+      contactId = created.id
+    }
+
+    const dup = affiliations.find(
+      (a) => a.contact_id === contactId && a.school_id === schoolId && !a.ended_at
+    )
+    if (dup) {
+      setMessage('Error: that contact is already active at that school.')
+      setLoading(false)
+      return
+    }
+
+    const { error: affErr } = await supabase
+      .from('school_affiliations')
+      .insert([{ contact_id: contactId, school_id: schoolId, role: 'counselor' }])
+    if (affErr) {
+      setMessage('Error adding affiliation: ' + affErr.message)
     } else {
-      setMessage('Counselor added — they can sign in at /login with their email right away.')
+      setMessage('Contact added — they can sign in at /login with their email right away.')
       ;(e.target as HTMLFormElement).reset()
-      fetchCounselors()
+      fetchAffiliations()
+      onChange?.()
     }
     setLoading(false)
   }
 
   async function handleFrequency(id: string, frequency: string) {
     const { error } = await supabase
-      .from('school_counselors')
+      .from('school_affiliations')
       .update({ digest_frequency: frequency })
       .eq('id', id)
     if (error) alert('Error updating frequency: ' + error.message)
-    else fetchCounselors()
+    else fetchAffiliations()
   }
 
-  async function handleRemove(c: Counselor) {
-    if (!confirm(`Remove ${c.first_name} ${c.last_name} (${c.email})?\n\nThey lose portal access and stop receiving digests.`)) return
-    const { error } = await supabase.from('school_counselors').delete().eq('id', c.id)
-    if (error) alert('Error removing counselor: ' + error.message)
-    else fetchCounselors()
+  async function handleEnd(a: Affiliation) {
+    const name = `${a.contacts?.first_name ?? ''} ${a.contacts?.last_name ?? ''}`.trim()
+    if (
+      !confirm(
+        `End ${name}'s affiliation with ${a.schools?.nickname ?? 'this school'}?\n\n` +
+          'They lose portal access to this school and stop receiving its digests. ' +
+          'The contact and their history are kept — you can re-add them later.'
+      )
+    )
+      return
+    const { error } = await supabase
+      .from('school_affiliations')
+      .update({ ended_at: new Date().toLocaleDateString('en-CA') })
+      .eq('id', a.id)
+    if (error) alert('Error ending affiliation: ' + error.message)
+    else {
+      fetchAffiliations()
+      onChange?.()
+    }
   }
+
+  const active = affiliations.filter((a) => !a.ended_at)
+  const ended = affiliations.filter((a) => a.ended_at)
 
   return (
     <div className="bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-slate">
-      <h2 className="text-2xl font-bold text-hgl-slate mb-1">School counselors</h2>
+      <h2 className="text-2xl font-bold text-hgl-slate mb-1">School contacts</h2>
       <p className="text-sm text-gray-500 mb-6">
-        A counselor row is the account — they sign in with their email, see their school&apos;s
-        classes and rosters, and get the enrollment digest.
+        A contact with an active school affiliation is the account — they sign in with their
+        email, see that school&apos;s classes and rosters, and get its enrollment digest.
+        Turnover = end the affiliation; the person and their history stay.
       </p>
 
-      {counselors.length > 0 && (
+      {active.length > 0 && (
         <table className="min-w-full divide-y divide-gray-200 mb-6">
           <thead className="bg-gray-100">
             <tr>
-              {['School', 'Name', 'Email', 'Digest', ''].map((h) => (
+              {['School', 'Name', 'Email', 'Since', 'Digest', ''].map((h) => (
                 <th key={h} className="px-4 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -105,15 +184,18 @@ export default function CounselorsPanel({ schools }: { schools: School[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {counselors.map((c) => (
-              <tr key={c.id} className="hover:bg-gray-50 transition text-sm">
-                <td className="px-4 py-2 font-semibold text-hgl-slate">{c.schools?.nickname ?? '—'}</td>
-                <td className="px-4 py-2">{c.first_name} {c.last_name}</td>
-                <td className="px-4 py-2 text-hgl-blue">{c.email}</td>
+            {active.map((a) => (
+              <tr key={a.id} className="hover:bg-gray-50 transition text-sm">
+                <td className="px-4 py-2 font-semibold text-hgl-slate">{a.schools?.nickname ?? '—'}</td>
+                <td className="px-4 py-2">
+                  {a.contacts?.first_name} {a.contacts?.last_name}
+                </td>
+                <td className="px-4 py-2 text-hgl-blue">{a.contacts?.email}</td>
+                <td className="px-4 py-2 text-gray-500">{formatDateAdmin(a.started_at)}</td>
                 <td className="px-4 py-2">
                   <select
-                    value={c.digest_frequency}
-                    onChange={(e) => handleFrequency(c.id, e.target.value)}
+                    value={a.digest_frequency}
+                    onChange={(e) => handleFrequency(a.id, e.target.value)}
                     className="border border-gray-300 rounded p-1 text-sm bg-white"
                   >
                     {FREQUENCIES.map((f) => (
@@ -122,9 +204,35 @@ export default function CounselorsPanel({ schools }: { schools: School[] }) {
                   </select>
                 </td>
                 <td className="px-4 py-2 text-right">
-                  <button onClick={() => handleRemove(c)} className="text-red-600 text-xs hover:underline">
-                    Remove
+                  <button onClick={() => handleEnd(a)} className="text-red-600 text-xs hover:underline">
+                    End affiliation
                   </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {ended.length > 0 && (
+        <p className="text-xs text-gray-500 mb-6">
+          <button onClick={() => setShowEnded((v) => !v)} className="underline hover:text-hgl-blue">
+            {showEnded ? 'Hide' : 'Show'} past affiliations ({ended.length})
+          </button>
+        </p>
+      )}
+      {showEnded && ended.length > 0 && (
+        <table className="min-w-full divide-y divide-gray-200 mb-6 opacity-60">
+          <tbody className="divide-y divide-gray-200">
+            {ended.map((a) => (
+              <tr key={a.id} className="text-sm">
+                <td className="px-4 py-2 font-semibold text-hgl-slate">{a.schools?.nickname ?? '—'}</td>
+                <td className="px-4 py-2">
+                  {a.contacts?.first_name} {a.contacts?.last_name}
+                </td>
+                <td className="px-4 py-2">{a.contacts?.email}</td>
+                <td className="px-4 py-2 text-gray-500">
+                  {formatDateAdmin(a.started_at)} – {a.ended_at ? formatDateAdmin(a.ended_at) : ''}
                 </td>
               </tr>
             ))}
@@ -158,7 +266,7 @@ export default function CounselorsPanel({ schools }: { schools: School[] }) {
           disabled={loading || schools.length === 0}
           className="bg-hgl-slate text-white py-2 px-3 rounded hover:opacity-90 disabled:opacity-60"
         >
-          Add counselor
+          Add contact
         </button>
       </form>
 
