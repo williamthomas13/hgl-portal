@@ -63,10 +63,10 @@ The hourly sweep gains three counselor-facing sends. On the **first sweep after 
   counselor whose school has a class with open registration (default frequency: weekly). To
   hold someone back, set their digest to *Paused* in the new admin panel before Monday.
 
-**Copy review (Scarlett):** the five new templates are drafted in HGL voice but are NOT from
-the Phase 2 deck — `counselorDigestEmail`, `deadlinePushEmail`, `classFullNoticeEmail`,
-`classroomRequestEmail`, `loginLinkEmail`, all in `app/utils/email.ts`. Edit there (or send
-final copy and the agent applies it).
+**Copy status:** the school-contact templates (CR1/CR2/CR3, CD, FP, FP-alt) carry the FINAL
+approved copy from `docs/PHASE4_COUNSELOR_EMAIL_COPY.md` (v1.0, July 6). FP-alt fires instead
+of the push when the PAID count reaches capacity. Only `loginLinkEmail` (parent/staff-facing,
+not in that deck) remains agent-drafted.
 
 ## 6. Post-launch QA the agent can run next session (needs the migration applied)
 

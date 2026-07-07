@@ -942,13 +942,33 @@ export function lateRegistrationWelcomeEmail(
 }
 
 // ---------------------------------------------------------------------------
-// CD — Counselor enrollment digest · per digest_frequency · info@ · T
-// (PHASE4_SPEC §4a. Footer carries tokenized frequency links instead of an
-// unsubscribe — "pause" is the opt-out.)
+// Phase 4 school-contact emails — FINAL COPY from
+// docs/PHASE4_COUNSELOR_EMAIL_COPY.md (v1.0, July 6). All five: From info@,
+// Footer T. Recipient-facing wording says "school contact", never
+// "counselor" (contacts are sometimes principals or admin assistants);
+// code/table names keep "counselor".
+// ---------------------------------------------------------------------------
+
+// Pluralization helpers (deck implementation notes) — render from counts.
+const plS = (n: number) => (n === 1 ? '' : 's')
+const plEs = (n: number) => (n === 1 ? '' : 'es')
+const isAre = (n: number) => (n === 1 ? 'is' : 'are')
+
+/** CR footer: "school contact" wording per the deck. */
+function schoolContactFooter(schoolName: string) {
+  return footerT(
+    `You received this email because you're the school contact for this class at ${schoolName}.`
+  )
+}
+
+// ---------------------------------------------------------------------------
+// CD — Counselor Enrollment Digest · per digest_frequency · info@ · T +
+// frequency links ("pause" is the control; no unsubscribe on transactional)
 // ---------------------------------------------------------------------------
 
 export type DigestClassInfo = {
   label: string
+  classType: string
   firstSession: string
   paid: number
   capacity: number
@@ -960,47 +980,47 @@ export type DigestClassInfo = {
 export function counselorDigestEmail(opts: {
   counselorFirst: string
   schoolName: string
+  schoolNickname: string
   classes: DigestClassInfo[]
-  frequency: string
   frequencyUrls: { weekly: string; biweekly: string; monthly: string; paused: string }
 }): Rendered {
-  const rows = opts.classes
+  // {classListBlock}: one block per class; single-class schools render one.
+  const classListBlock = opts.classes
     .map(
       (c) => `
       <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0">
-        <p style="margin:0 0 4px"><strong>${c.label}</strong> · starts ${formatDate(c.firstSession)}</p>
-        <p style="margin:0;color:#475569">
-          <strong>${c.paid} / ${c.capacity}</strong> spots filled
-          ${c.newSinceLast > 0 ? ` · <strong>${c.newSinceLast} new</strong> since the last digest` : ''}
-          ${c.waitlistDepth > 0 ? ` · waitlist: ${c.waitlistDepth}` : ''}
-        </p>
+        <p style="margin:0 0 4px"><strong>${c.classType} — starts ${formatDate(c.firstSession)}</strong></p>
+        <p style="margin:0;color:#475569">Enrolled: <strong>${c.paid} of ${c.capacity}</strong>
+        (${c.newSinceLast} new since last update) · Waitlist: ${c.waitlistDepth}</p>
         <p style="margin:6px 0 0;font-size:13px">Registration link to share:
         <a href="${c.regUrl}">${c.regUrl}</a></p>
       </div>`
     )
     .join('')
+  // Subject count: the class's count for single-class schools, total otherwise.
+  const totalPaid = opts.classes.reduce((sum, c) => sum + c.paid, 0)
   const f = opts.frequencyUrls
   return {
-    subject: `${opts.schoolName} — enrollment update from Higher Ground Learning`,
+    subject: `${opts.schoolNickname} enrollment update — ${totalPaid} student${plS(totalPaid)} enrolled`,
     html: wrap(
       `
       <p>Hi ${opts.counselorFirst},</p>
       <p>Here's where enrollment stands for the upcoming Higher Ground Learning
-      ${opts.classes.length === 1 ? 'class' : 'classes'} at ${opts.schoolName}:</p>
-      ${rows}
-      <p>No action needed — this is just so you never have to email us for a headcount.
-      Questions or updates? Just reply.</p>
+      class${plEs(opts.classes.length)} at ${opts.schoolName}:</p>
+      ${classListBlock}
+      <p>Know a student who's still on the fence? Forwarding them (or their parents) the
+      registration link is the single most helpful thing you can do — everything after the
+      click is automatic.</p>
+      <p>Questions about any student or class? Just reply to this email.</p>
       <p>Higher Ground Learning</p>
     `,
       {
-        preheader: `Enrollment counts for ${opts.schoolName} — no action needed.`,
-        footer: `<p style="font-size:13px;color:#64748b">You get this digest ${
-          opts.frequency === 'biweekly' ? 'every 2 weeks' : opts.frequency
-        }. Switch to
-          <a href="${f.weekly}" style="color:#64748b">weekly</a> ·
-          <a href="${f.biweekly}" style="color:#64748b">every 2 weeks</a> ·
-          <a href="${f.monthly}" style="color:#64748b">monthly</a> ·
-          <a href="${f.paused}" style="color:#64748b">pause</a></p>
+        preheader: `Your students' class registrations, at a glance.`,
+        footer: `<p style="font-size:13px;color:#64748b">How often do you want these?
+          <a href="${f.weekly}" style="color:#64748b">Weekly</a> ·
+          <a href="${f.biweekly}" style="color:#64748b">Every 2 weeks</a> ·
+          <a href="${f.monthly}" style="color:#64748b">Monthly</a> ·
+          <a href="${f.paused}" style="color:#64748b">Pause</a></p>
           <p style="font-size:13px;color:#64748b">Higher Ground Learning · highergroundlearning.com</p>`,
       }
     ),
@@ -1008,56 +1028,79 @@ export function counselorDigestEmail(opts: {
 }
 
 // ---------------------------------------------------------------------------
-// CP — Final-days enrollment push · daily, last 3 days before deadline ·
-// info@ · T. Suppressed when full (the class-full note below goes instead).
+// FP — Final-Days Push · daily, last 3 days before enrollment deadline ·
+// info@ · T. Replaced by FP-alt when paid count reaches capacity.
 // ---------------------------------------------------------------------------
 
 export function deadlinePushEmail(opts: {
   counselorFirst: string
   label: string
   spotsLeft: number
-  deadline: string
+  daysToDeadline: number
+  paidCount: number
+  capacity: number
   regUrl: string
 }): Rendered {
+  const d = opts.daysToDeadline
+  const n = opts.spotsLeft
   return {
-    subject: `${opts.label}: ${opts.spotsLeft} spot${opts.spotsLeft === 1 ? '' : 's'} left — registration closes ${formatDate(opts.deadline)}`,
+    subject: `${d === 1 ? 'Last day' : `${d} days left`} to register for ${opts.label}`,
     html: wrap(
       `
       <p>Hi ${opts.counselorFirst},</p>
-      <p>Quick one — registration for <strong>${opts.label}</strong> closes
-      ${formatDate(opts.deadline)}, and there ${opts.spotsLeft === 1 ? 'is' : 'are'} still
-      <strong>${opts.spotsLeft} spot${opts.spotsLeft === 1 ? '' : 's'}</strong> open.</p>
-      <p>If any families are still on the fence, now's the moment. Here's the link to forward:</p>
+      <p>Quick heads-up: registration for the ${opts.label} class closes in
+      <strong>${d} day${plS(d)}</strong>, and there ${isAre(n)} still
+      <strong>${n} spot${plS(n)}</strong> open.</p>
+      <p>This is the window where a nudge from the school makes the difference — parents who've
+      been meaning to register usually just need one reminder, and one from you carries real
+      weight.</p>
+      <p>Here's the link, ready to forward:</p>
       <p><a href="${opts.regUrl}">${opts.regUrl}</a></p>
-      ${button('Registration page', opts.regUrl)}
-      <p>Thanks for helping us get the word out!</p>
+      <p>Current count: ${opts.paidCount} of ${opts.capacity} enrolled. After the deadline,
+      late registrations may still be possible while spots remain, but the class calendar and
+      materials go out on schedule — so sooner really is better.</p>
+      <p>Thanks for the assist!</p>
       <p>Higher Ground Learning</p>
     `,
       {
-        preheader: `Last call — ${opts.spotsLeft} open spot${opts.spotsLeft === 1 ? '' : 's'} before ${formatDate(opts.deadline)}.`,
+        preheader: `${n} spot${plS(n)} left — a nudge from you goes a long way.`,
         footer: footerT(),
       }
     ),
   }
 }
 
+// ---------------------------------------------------------------------------
+// FP-alt — Class Full · one-off, fires instead of the FP series when paid
+// count = capacity · info@ · T
+// ---------------------------------------------------------------------------
+
 export function classFullNoticeEmail(opts: {
   counselorFirst: string
   label: string
+  capacity: number
   waitlistDepth: number
+  regUrl: string
 }): Rendered {
   return {
     subject: `${opts.label} is full 🎉`,
     html: wrap(
       `
       <p>Hi ${opts.counselorFirst},</p>
-      <p>Good news — <strong>${opts.label}</strong> has filled every spot.
-      ${opts.waitlistDepth > 0 ? `There are currently <strong>${opts.waitlistDepth}</strong> ${opts.waitlistDepth === 1 ? 'family' : 'families'} on the waitlist, so late interest is still worth sending our way — spots do open up.` : `Families can still join the waitlist in case a spot opens up.`}</p>
-      <p>Thanks for all your help spreading the word!</p>
+      <p>Good news: the ${opts.label} class is <strong>full</strong> — all ${opts.capacity}
+      spots are taken. Thanks for helping spread the word!</p>
+      <p>If more students ask about it, the registration page now offers a
+      <strong>waitlist</strong> (${opts.waitlistDepth} on it so far). Spots do occasionally
+      open up, and waitlisted families are offered them automatically, first come, first
+      served — so it's genuinely worth joining. And if the waitlist grows large enough, we'll
+      often try to free up another instructor and open a <strong>second section</strong>
+      running alongside this one — so keep sending interested families to the link; real
+      demand is exactly what makes that happen.</p>
+      <p>Same link as always: <a href="${opts.regUrl}">${opts.regUrl}</a></p>
       <p>Higher Ground Learning</p>
     `,
       {
-        preheader: `Every spot is taken${opts.waitlistDepth > 0 ? ` — ${opts.waitlistDepth} on the waitlist` : ''}.`,
+        preheader: `Great news — and here's what to tell latecomers.`,
         footer: footerT(),
       }
     ),
@@ -1065,42 +1108,81 @@ export function classFullNoticeEmail(opts: {
 }
 
 // ---------------------------------------------------------------------------
-// CR — Classroom request · 14d before start (re-nudges 11d / 8d) · info@ · T
-// (PHASE4_SPEC §4b: single-question tokenized form, no login.)
+// CR1/CR2/CR3 — Classroom Request + re-nudges · 14d / 11d / 8d before start ·
+// info@ · T (single-question tokenized form, no login)
 // ---------------------------------------------------------------------------
 
 export function classroomRequestEmail(opts: {
   counselorFirst: string
   schoolNickname: string
+  schoolName: string
   classType: string
   firstSession: string
   formUrl: string
-  nudge: number // 0 = first ask, 1–2 = re-nudges
+  nudge: number // 0 = CR1 first ask, 1 = CR2, 2 = CR3 (final)
 }): Rendered {
-  const ask = `Where will the ${opts.schoolNickname} ${opts.classType} class be held?`
-  const opener =
-    opts.nudge === 0
-      ? `<p>The <strong>${opts.schoolNickname} ${opts.classType}</strong> class starts
-         ${formatDate(opts.firstSession)}, and we still need one thing from you: the room.</p>`
-      : `<p>Just a friendly nudge — the <strong>${opts.schoolNickname} ${opts.classType}</strong>
-         class starts ${formatDate(opts.firstSession)} and we still don't have a room for it.</p>`
+  const label = `${opts.schoolNickname} ${opts.classType}`
+  const firstDay = formatDate(opts.firstSession)
+  const cta = button('Tell us the room', opts.formUrl)
+  const footer = schoolContactFooter(opts.schoolName)
+
+  if (opts.nudge === 0) {
+    return {
+      subject: `Where will ${label} be held?`,
+      html: wrap(
+        `
+        <p>Hi ${opts.counselorFirst},</p>
+        <p>The ${label} class starts on ${firstDay}, and there's exactly one thing we still
+        need before we can send families their "here's where to go" email:</p>
+        <p><strong>A room.</strong></p>
+        <p>If you can reserve a space on campus and tell us where it is, we'll handle
+        everything else — the location goes out automatically to every registered family, onto
+        the class calendar, and into all the reminder emails.</p>
+        ${cta}
+        <p>It's a single question ("Room C19 in the high school" is a perfect answer) — just
+        type it in and hit submit, and you're done.</p>
+        <p>Thanks for making this class possible!</p>
+        <p>Higher Ground Learning</p>
+      `,
+        { preheader: `One quick question — takes about 20 seconds.`, footer }
+      ),
+    }
+  }
+
+  if (opts.nudge === 1) {
+    return {
+      subject: `Still need a room for ${label}`,
+      html: wrap(
+        `
+        <p>Hi ${opts.counselorFirst},</p>
+        <p>Just circling back — the ${label} class starts ${firstDay}, and we still don't have
+        a room to tell families about.</p>
+        <p>We know reserving campus space sometimes takes a little legwork, so no stress if
+        it's in progress. The moment you know, just drop it here:</p>
+        ${cta}
+        <p>One question, ten seconds, and we take it from there.</p>
+        <p>Higher Ground Learning</p>
+      `,
+        { preheader: `Class starts ${firstDay} — 20 seconds fixes this.`, footer }
+      ),
+    }
+  }
+
   return {
-    subject: opts.nudge === 0 ? ask : `Reminder: ${ask}`,
+    subject: `Last call: room needed for ${label}`,
     html: wrap(
       `
       <p>Hi ${opts.counselorFirst},</p>
-      ${opener}
-      <p>It takes about ten seconds — one question, no login:</p>
-      ${button('Tell us the room', opts.formUrl)}
-      <p>Whatever you type (e.g. "Room C19 in the high school") goes straight onto the class
-      calendar, the reminder emails, and the parent portal — no back-and-forth needed.</p>
-      <p>Thank you!</p>
+      <p>Last nudge, we promise — in a few days we're scheduled to email every registered
+      family with the class location for ${label} (first day: ${firstDay}), and right now that
+      email would say "location TBD" — we'd love to give them something better.</p>
+      ${cta}
+      <p>If there's a snag on your end — no rooms available, room reservations are handled by
+      someone else at your school, anything — just reply to this email and one of our team
+      will help sort it out.</p>
       <p>Higher Ground Learning</p>
     `,
-      {
-        preheader: `One question, ten seconds — where should students go?`,
-        footer: footerT(),
-      }
+      { preheader: `Families get their location email in a few days.`, footer }
     ),
   }
 }

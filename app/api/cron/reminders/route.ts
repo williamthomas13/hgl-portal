@@ -626,6 +626,7 @@ async function sweepCounselorDigests(
       const since = counselor.digest_last_sent_at ?? new Date(Date.now() - 7 * 24 * 3_600_000).toISOString()
       const infos: DigestClassInfo[] = classes.map((b) => ({
         label: `${b.schoolLabel} ${b.classType}`,
+        classType: b.classType,
         firstSession: b.firstSession,
         paid: paidCount(b),
         capacity: b.capacity,
@@ -639,8 +640,8 @@ async function sweepCounselorDigests(
       const { subject, html } = counselorDigestEmail({
         counselorFirst: counselor.first_name,
         schoolName: classes[0].schoolName,
+        schoolNickname: classes[0].schoolLabel,
         classes: infos,
-        frequency: counselor.digest_frequency,
         frequencyUrls: {
           weekly: digestFrequencyUrlFor(counselor.id, 'weekly'),
           biweekly: digestFrequencyUrlFor(counselor.id, 'biweekly'),
@@ -688,13 +689,27 @@ async function sweepDeadlinePush(
   if (today < window[0] || today > window[1]) return
   if (localHour(bundle.timezone) < 8) return
 
-  const full = spotsTaken(bundle) >= bundle.capacity
+  // FP-alt replaces the FP series when PAID count reaches capacity (deck
+  // trigger). Spots can also all be *held* by pending registrations and
+  // unexpired waitlist offers without being paid — then neither email is
+  // honest ("0 spots open" / "class is full"), so send nothing that day.
+  const paid = paidCount(bundle)
+  const full = paid >= bundle.capacity
+  const spotsLeft = bundle.capacity - spotsTaken(bundle)
+  if (!full && spotsLeft <= 0) return
+  const daysToDeadline = Math.round(
+    (new Date(deadline + 'T00:00:00Z').getTime() - new Date(today + 'T00:00:00Z').getTime()) /
+      86_400_000
+  )
+
   for (const counselor of counselors) {
     if (full) {
       const { subject, html } = classFullNoticeEmail({
         counselorFirst: counselor.first_name,
         label: `${bundle.schoolLabel} ${bundle.classType}`,
+        capacity: bundle.capacity,
         waitlistDepth: waitlistDepth(bundle),
+        regUrl: registrationUrlFor(bundle),
       })
       const status = await sendOnce({
         dedupeKey: `class_full_notice:${bundle.id}:${counselor.id}`,
@@ -708,8 +723,10 @@ async function sweepDeadlinePush(
       const { subject, html } = deadlinePushEmail({
         counselorFirst: counselor.first_name,
         label: `${bundle.schoolLabel} ${bundle.classType}`,
-        spotsLeft: bundle.capacity - spotsTaken(bundle),
-        deadline,
+        spotsLeft,
+        daysToDeadline,
+        paidCount: paid,
+        capacity: bundle.capacity,
         regUrl: registrationUrlFor(bundle),
       })
       const status = await sendOnce({
@@ -771,6 +788,7 @@ async function sweepClassroomRequests(
       const { subject, html } = classroomRequestEmail({
         counselorFirst: counselor.first_name,
         schoolNickname: bundle.schoolLabel,
+        schoolName: bundle.schoolName,
         classType: bundle.classType,
         firstSession: bundle.firstSession,
         formUrl: classroomRequestUrlFor(bundle.id, counselor.email),
