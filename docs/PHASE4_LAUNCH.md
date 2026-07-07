@@ -97,6 +97,12 @@ not in that deck) remains agent-drafted.
 
 ## 6. Post-launch QA the agent can run next session (needs the migration applied)
 
+**After EVERY migration apply: Supabase Security Advisor shows zero findings** (added July 7
+after contacts/school_affiliations/instructors briefly shipped without RLS — a partial apply
+separated table creation from the enable-RLS statements; 20260709000003 consolidates the
+posture for those three). Rule going forward: any migration that creates a table includes
+`enable row level security` + its policies **in the same file**.
+
 Acceptance checklist from PHASE4_SPEC §11 — fixtures + verification for: second-family RLS
 isolation, sibling attach on repeat parent email, counselor scope (scores+accommodations yes;
 contacts/payments/notes no), digest frequency links, deadline push against a test deadline,
