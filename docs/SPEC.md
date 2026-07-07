@@ -1,7 +1,7 @@
 # HGL Portal — Master Spec
 
-**Last updated:** July 6, 2026 (v2.4 — Phase 3 auth + RLS built; launch runbook in §13)
-**Status:** Foundation and Phase 2 complete and verified in production. Phase 3 (Supabase Auth + roles + RLS) code complete and verified locally; awaiting the §13 launch runbook (Vercel env var → deploy → apply RLS migration → create admin users).
+**Last updated:** July 6, 2026 (v2.4 — Phase 3 auth + RLS deployed and verified in production)
+**Status:** Foundation, Phase 2, and Phase 3 (Supabase Auth + roles + RLS) complete and verified in production. Anon key has zero DB access; /admin requires an admin login. Two admin accounts active (williamraymondthomas@gmail.com, billy@highergroundlearning.com). Remaining nicety: disable public signup + set site URL in Supabase Auth settings (no signup UI exists). Next: Phase 4 portal views.
 **Stack:** Next.js + Supabase + Stripe on Vercel · Resend for transactional email
 **Live:** https://hgl-portal.vercel.app · Repo: github.com/williamthomas13/hgl-portal
 
@@ -15,7 +15,7 @@ Replace the stitched-together group-classes workflow (Squarespace + Arlo + Tutor
 
 - **Foundation (done, deployed, verified):** schools + school_counselors tables; sessions table; student_email/school_id/grade_level on students; instructor_email/default_location/synap_group/school_id on classes; stripe_session_id/stripe_payment_intent_id/paid_at on enrollments. Stripe webhook sibling bug fixed via enrollment_id in metadata — verified dead in production (back-to-back sibling test, July 2026).
 - **Phase 2 (done, deployed, verified):** everything in this spec.
-- **Phase 3 (current — code complete, launch runbook in §13):** Supabase Auth + roles (admin/instructor/counselor/parent) + RLS. Required before the URL is shared publicly.
+- **Phase 3 (done, deployed, verified July 6, 2026):** Supabase Auth + roles (admin/instructor/counselor/parent) + RLS. Required before the URL is shared publicly.
   - **Access model:** all server code (API routes, webhooks, cron, email) uses the service-role key (bypasses RLS; `SUPABASE_SERVICE_ROLE_KEY` env var). The anon key has **zero** DB access — public pages fetch sanitized payloads from `/api/class-info/{idOrSlug}` and write registrations through `/api/register`. Browser DB queries exist only in `/admin`, running as the signed-in admin under RLS.
   - **Auth:** email + password via `@supabase/ssr` cookie sessions. `/login` page; `proxy.ts` (Next 16 middleware) refreshes sessions and bounces signed-out visitors off `/admin`; `app/admin/layout.tsx` enforces the admin *role* server-side. No public signup UI — accounts are admin-created (parents get self-serve in Phase 4).
   - **Roles:** `profiles` table keyed to `auth.users` (`role`: admin | instructor | counselor | parent; signup trigger defaults to parent). Role linkage by email claim: `classes.instructor_email`, `school_counselors.email`, `families.parent_email`. RLS policies (migration `20260707000003`): admin full CRUD; instructor reads own classes/sessions/rosters; counselor reads own school's classes/students/enrollments; parent reads own family/students/enrollments/add-ons; email_log/email_events admin-read-only. Phase 4 portal views sit directly on these policies.
@@ -142,13 +142,7 @@ Architecture: Squarespace remains the marketing/sales site; each class's "Regist
 
 ## 13. Operational notes & open items
 
-- **Phase 3 launch runbook (order matters — the old build dies the moment RLS lands):**
-  1. `vercel env add SUPABASE_SERVICE_ROLE_KEY production --sensitive` (key is in `.env.local`; add to preview too if wanted).
-  2. `git push` → Vercel deploys the Phase 3 build (works with or without RLS applied).
-  3. Apply `supabase/migrations/20260707000003_phase3_auth_rls.sql` via the Supabase management API or SQL editor.
-  4. Create the two admin auth users (Scarlett + Billy) with email+password, then `update profiles set role='admin' where email in (...)`.
-  5. Smoke test: `/admin` redirects to `/login` signed out; login works; a `/register/{slug}` page loads and reaches Stripe; anon-key REST queries return empty.
-  6. Recommended: disable public signup in Supabase Auth settings and set the site URL to https://hgl-portal.vercel.app (no signup UI exists until Phase 4; admin-created accounts are unaffected).
+- **Phase 3 launched July 6, 2026** (env var → deploy → RLS migration → admin users → smoke test, all verified). One open nicety: disable public signup in Supabase Auth settings and set the site URL to https://hgl-portal.vercel.app (no signup UI exists until Phase 4; a self-signup would only get the near-zero-access `parent` role; admin-created accounts are unaffected).
 
 - Resend domain verification: DNS records pending green check → real delivery test → commit → push.
 - Squarespace: discount page password BESTSCORE (done/in progress), copy references both tests; keep SAT1600 during transition.
