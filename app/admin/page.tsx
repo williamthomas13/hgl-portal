@@ -78,6 +78,7 @@ const STATUS_STYLES: Record<string, string> = {
   Pending: 'bg-yellow-100 text-yellow-800',
   Waitlisted: 'bg-blue-100 text-blue-700',
   Expired: 'bg-gray-200 text-gray-500',
+  Refunded: 'bg-red-100 text-red-600',
 }
 
 export default function AdminDashboard() {
@@ -288,6 +289,34 @@ export default function AdminDashboard() {
           ? 'That slug is already used by another class.'
           : 'Error updating slug: ' + error.message
       )
+      return
+    }
+    fetchRosters()
+  }
+
+  // Refunds are Option A (SPEC v2.5 §13): money moves in the Stripe dashboard
+  // only — this just records the refund. The status change frees the capacity
+  // spot (the hourly sweep extends a W2 waitlist offer if anyone is in line),
+  // drops the enrollment out of paid counts and post-class emails #7/#8, and
+  // stops any still-pending scheduled sends. stripe_payment_intent_id and
+  // payment history stay on the row (audit trail for Phase 6 / QuickBooks).
+  async function handleMarkRefunded(enrollmentId: string, studentName: string) {
+    if (
+      !confirm(
+        `Mark ${studentName}'s enrollment as Refunded?\n\n` +
+          'This records the refund and frees the spot (waitlist offers go out ' +
+          'automatically). Issue the actual refund in the Stripe dashboard — ' +
+          'the portal moves no money.'
+      )
+    )
+      return
+    const { error } = await supabase
+      .from('enrollments')
+      .update({ payment_status: 'Refunded' })
+      .eq('id', enrollmentId)
+      .in('payment_status', ['Paid', 'Completed']) // guard: only paid rows
+    if (error) {
+      alert('Error marking refunded: ' + error.message)
       return
     }
     fetchRosters()
@@ -724,6 +753,21 @@ export default function AdminDashboard() {
                                     >
                                       {en.payment_status}
                                     </span>
+                                    {(en.payment_status === 'Paid' ||
+                                      en.payment_status === 'Completed') && (
+                                      <button
+                                        onClick={() =>
+                                          handleMarkRefunded(
+                                            en.id,
+                                            `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()
+                                          )
+                                        }
+                                        title="Records the refund and frees the spot — issue the actual refund in the Stripe dashboard"
+                                        className="ml-2 text-xs text-red-600 underline hover:text-red-800"
+                                      >
+                                        mark refunded
+                                      </button>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                                     {new Date(en.enrolled_at).toLocaleDateString()}

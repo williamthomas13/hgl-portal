@@ -33,7 +33,7 @@ export type TutoringPackage = {
 
 export type EnrollmentRow = {
   id: string
-  payment_status: 'Pending' | 'Paid' | 'Completed' | 'Expired' | 'Waitlisted'
+  payment_status: 'Pending' | 'Paid' | 'Completed' | 'Expired' | 'Waitlisted' | 'Refunded'
   enrolled_at: string
   paid_at: string | null
   amountPaid: number | null
