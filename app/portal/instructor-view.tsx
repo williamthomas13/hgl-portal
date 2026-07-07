@@ -23,7 +23,7 @@ export default async function InstructorView({
       .from('classes')
       .select(
         `
-        id, class_type, school_nickname, delivery_mode, capacity, min_enrollment,
+        id, status, class_type, school_nickname, delivery_mode, capacity, min_enrollment,
         start_date, instructor_email, instructor_name, default_location, synap_group,
         schools ( name, nickname ),
         sessions ( session_date, start_time, end_time, location ),
@@ -101,7 +101,13 @@ export default async function InstructorView({
               <div>
                 <h3 className="font-bold text-hgl-slate text-lg">
                   {label}
-                  {isPast && <span className="text-gray-400 text-sm font-normal"> · past</span>}
+                  {c.status === 'cancelled' ? (
+                    <span className="ml-2 align-middle inline-block px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded uppercase tracking-wide">
+                      Cancelled
+                    </span>
+                  ) : (
+                    isPast && <span className="text-gray-400 text-sm font-normal"> · past</span>
+                  )}
                 </h3>
                 <p className="text-sm text-gray-600">
                   Starts {formatDate(c.start_date)} ·{' '}

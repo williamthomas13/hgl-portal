@@ -51,7 +51,7 @@ export default async function ParentView({
         id, payment_status, enrolled_at, paid_at, amount_paid, stripe_payment_intent_id,
         enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
         classes (
-          id, class_type, school_nickname, instructor_name, default_location, delivery_mode,
+          id, status, class_type, school_nickname, instructor_name, default_location, delivery_mode,
           price, start_date,
           schools ( name, nickname ),
           sessions ( session_date, start_time, end_time, location )
@@ -153,14 +153,21 @@ export default async function ParentView({
                           )}
                         </p>
                       </div>
-                      <StatusBadge
-                        status={e.payment_status}
-                        detail={
-                          e.payment_status === 'Waitlisted'
-                            ? `position #${positions.get(e.id) ?? '—'}`
-                            : undefined
-                        }
-                      />
+                      <div className="flex flex-col items-end gap-1">
+                        <StatusBadge
+                          status={e.payment_status}
+                          detail={
+                            e.payment_status === 'Waitlisted'
+                              ? `position #${positions.get(e.id) ?? '—'}`
+                              : undefined
+                          }
+                        />
+                        {cls.status === 'cancelled' && (
+                          <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold bg-red-100 text-red-700">
+                            Class cancelled — see our email
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {e.payment_status === 'Pending' && (

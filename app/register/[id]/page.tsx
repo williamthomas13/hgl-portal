@@ -26,6 +26,8 @@ type ClassDetails = {
   schools: { name: string; nickname: string } | null
   sessions: SessionRow[] | null
   isFull: boolean
+  /** Cancelled classes render as full with no waitlist (PHASE4_SPEC §12). */
+  cancelled?: boolean
   packages: TutoringPackage[]
 }
 
@@ -270,6 +272,28 @@ export default function RegistrationPage() {
   const schoolLabel = classDetails.schools?.nickname ?? classDetails.school_nickname ?? 'HGL'
   const classLabel = `${schoolLabel} ${classDetails.class_type}`
   const today = new Date().toLocaleDateString('en-CA')
+
+  // Cancelled class: reads as "full", no waitlist form, link to the main
+  // site — deliberately not a cancellation notice (PHASE4_SPEC §12).
+  if (classDetails.cancelled) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
+        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
+          <h1 className="text-2xl font-bold text-hgl-slate mb-4">This class is full</h1>
+          <p className="text-gray-600 mb-6">
+            The {classLabel} class is not accepting new registrations. Upcoming classes are
+            listed on our main site.
+          </p>
+          <a
+            href={MAIN_SITE}
+            className="inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
+          >
+            Back to Higher Ground Learning
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   // Registration closes after the first session by default;
   // registration_close_date overrides per class (e.g. allow joining

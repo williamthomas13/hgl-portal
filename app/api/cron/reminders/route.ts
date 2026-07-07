@@ -580,10 +580,13 @@ async function loadCounselorsBySchool(): Promise<Map<string, CounselorRow[]>> {
   return map
 }
 
-/** Classes a counselor's digest covers: registration still open. */
+/** Classes a counselor's digest covers: registration still open, not cancelled. */
 function digestClasses(bundles: ClassBundle[], schoolId: string): ClassBundle[] {
   return bundles.filter(
-    (b) => b.schoolId === schoolId && localDate(b.timezone) <= registrationCloseFor(b)
+    (b) =>
+      b.schoolId === schoolId &&
+      b.status !== 'cancelled' &&
+      localDate(b.timezone) <= registrationCloseFor(b)
   )
 }
 
@@ -842,6 +845,10 @@ export async function GET(req: Request) {
   const counters: Counters = {}
 
   for (const bundle of bundles) {
+    // Cancelled classes send NOTHING, ever — the cancellation emails went out
+    // from the admin confirm; every scheduled send derives from this status
+    // (PHASE4_SPEC §12: atomic suppression).
+    if (bundle.status === 'cancelled') continue
     // Dead-class guard: a month after the last session there is nothing left
     // to send — skip entirely (prevents eternal hold-alerts on old classes).
     if (localDate(bundle.timezone) > addDaysISO(bundle.lastSession, 30)) continue

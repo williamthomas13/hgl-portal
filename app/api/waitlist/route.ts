@@ -39,6 +39,9 @@ export async function POST(request: Request) {
     if (!bundle) {
       return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
     }
+    if (bundle.status === 'cancelled') {
+      return NextResponse.json({ error: 'Registration for this class has closed.' }, { status: 410 })
+    }
     if (localDate(bundle.timezone) > registrationCloseFor(bundle)) {
       return NextResponse.json({ error: 'Registration for this class has closed.' }, { status: 410 })
     }

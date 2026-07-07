@@ -30,7 +30,11 @@ export async function GET(request: Request, ctx: RouteContext<'/api/classes/[id]
   const calName = `${bundle.schoolLabel} — ${bundle.classType}`
   const dtstamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z'
 
-  const events = bundle.sessions.map((s) => {
+  // Cancelled class: publish an empty feed so subscribed calendars clear
+  // their events on the next re-fetch (PHASE4_SPEC §12).
+  const sessions = bundle.status === 'cancelled' ? [] : bundle.sessions
+
+  const events = sessions.map((s) => {
     const location = s.location ?? bundle.defaultLocation
     const lines = [
       'BEGIN:VEVENT',

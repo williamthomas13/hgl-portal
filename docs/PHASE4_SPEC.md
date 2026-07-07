@@ -124,6 +124,24 @@ Replaces per-class manual Canva work.
 - [ ] #0 button deep-links in both auth states; root URL still redirects to highergroundlearning.com.
 - [ ] Multi-role email gets the role switcher.
 
-## 12. Resolved decisions log (July 6)
+## 12. Class cancellation flow (new — added July 6)
+
+Closes the loop the master spec left as "refund vs. convert is a human decision": today the decision triggers a manually written email and nothing stops the automation. New behavior:
+
+- **`classes.status`:** `open | cancelled` (default open). Cancelling is an explicit admin action, never automatic — min-enrollment alerts remain advisory only.
+- **Admin "Cancel class" flow:** admin opens the class → Cancel → a form composes the cancellation email before anything sends:
+  1. **Tutoring conversion offer (optional, on by default):** admin picks the number of 1-on-1 hours to offer for the already-paid fee (**default: 8 hours**, editable). Portal auto-computes the display math from `tutoring_packages` regular rate vs the class price paid — e.g. "10 hours (a savings of 42% / $551 vs our typical fees)." Hours picker, math generated, no hand calculation.
+  2. **Credit-to-next-course offer (optional):** free-text expected term (e.g. "February or March 2027").
+  3. Full refund is **always** listed as an option in the email regardless of toggles.
+  4. Preview rendered per family (prices differ if add-ons were purchased) → admin confirms → send.
+- **On confirm, atomically:**
+  - Class → `cancelled`; enrollments `Paid` → keep status but flag `class_cancelled` (refund handling stays manual in Stripe for now); `Pending` → `Expired` immediately (no cancellation email to unpaid — their PR sequence just stops).
+  - **All pending scheduled sends for the class are cancelled:** #2–#6 pre/post-start emails, PR reminders, counselor digest entries, final-days push, classroom-request emails, SU. Nothing class-related sends after cancellation except the cancellation email itself.
+  - Cancellation email (template CX) sends to **both parent and student of Paid enrollments** from billy@ (pronoun-rendered per the Phase 2 fix pattern; blank student_email → parent-only silently, per the standard audience rule). Waitlisted families get a short separate note (CX-W) releasing them.
+  - Counselor/school contact gets a plain notification ("class cancelled; families have been offered X").
+  - ICS calendar feed empties (subscribed calendars auto-clear); registration page flips to the existing "class full" state (reads better than a cancellation notice; no waitlist button) + link to main site.
+- **Reply handling stays human:** parents reply to billy@ with their preference; recording the outcome (refunded / converted / credited) is an admin field on the enrollment for bookkeeping, not automated Stripe action in this phase.
+
+## 13. Resolved decisions log (July 6)
 
 Magic link + OTP: YES · signup disabled: YES · session 30d · multi-role: switcher · receipt PDF: in · counselors see scores + accommodations: YES (contact/payments/notes still no) · root URL: marketing redirect until subdomain cutover · Synap ingestion method: pending investigation, Scarlett looking into it (§6.3) · classroom-request re-nudges: two (11d, 8d).

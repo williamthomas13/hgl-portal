@@ -101,8 +101,8 @@ export async function POST(req: Request) {
       });
 
     const { data, error } = enrollmentId
-      ? await enrollmentQuery.eq('id', enrollmentId).select('id, class_id')
-      : await enrollmentQuery.eq('stripe_session_id', sessionId).select('id, class_id');
+      ? await enrollmentQuery.eq('id', enrollmentId).select('id, class_id, classes ( status )')
+      : await enrollmentQuery.eq('stripe_session_id', sessionId).select('id, class_id, classes ( status )');
 
     if (error || !data || data.length === 0) {
       // Payment came in but we couldn't record it — the one failure the
@@ -125,6 +125,29 @@ export async function POST(req: Request) {
     const paidEnrollmentId = data[0].id;
     const classId = data[0].class_id;
     console.log(`Marked enrollment ${paidEnrollmentId} paid (session ${sessionId}).`);
+
+    // Race guard (PHASE4_SPEC §12): a checkout opened before the class was
+    // cancelled can complete after it. The payment is recorded (money moved —
+    // that's the refund audit trail), but no welcome emails go out; the admin
+    // refunds it in Stripe like the others.
+    const classRel = data[0].classes as { status?: string } | { status?: string }[] | null;
+    const classStatus = (Array.isArray(classRel) ? classRel[0] : classRel)?.status;
+    if (classStatus === 'cancelled') {
+      await supabase
+        .from('enrollments')
+        .update({ class_cancelled: true })
+        .eq('id', paidEnrollmentId);
+      await sendAdminAlert({
+        dedupeKey: `paid_after_cancel:${paidEnrollmentId}`,
+        adminEmail: ADMIN_EMAIL,
+        subject: 'Payment received for a CANCELLED class — refund needed',
+        body: `<p>Enrollment <code>${paidEnrollmentId}</code> completed Stripe checkout
+          (session <code>${sessionId}</code>) after its class was cancelled. No welcome email
+          was sent. Issue the refund in the Stripe dashboard and reply to the family from the
+          cancellation thread.</p>`,
+      }).catch((e) => console.error('Admin alert failed:', e));
+      return NextResponse.json({ received: true });
+    }
 
     // Record the in-checkout tutoring add-on before loading the bundle so
     // the #0 confirmation recap includes it.

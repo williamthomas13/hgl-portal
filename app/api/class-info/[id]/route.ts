@@ -29,7 +29,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      `id, slug, school_nickname, class_type, instructor_name, price, capacity,
+      `id, slug, status, school_nickname, class_type, instructor_name, price, capacity,
        start_date, default_location, registration_close_date,
        schools ( name, nickname ),
        sessions ( id, session_date, start_time, end_time, location ),
@@ -54,9 +54,14 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     capacity: number
   }
 
+  // Cancelled classes read as full-with-no-waitlist on the public page
+  // (PHASE4_SPEC §12: better than a cancellation notice).
+  const cancelled = (cls as { status?: string }).status === 'cancelled'
+
   return NextResponse.json({
     ...publicClass,
-    isFull: spotsTakenRaw(enrollments ?? []) >= capacity,
+    cancelled,
+    isFull: cancelled || spotsTakenRaw(enrollments ?? []) >= capacity,
     packages: pkgs ?? [],
   })
 }

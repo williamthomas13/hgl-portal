@@ -1195,6 +1195,154 @@ export function classroomRequestEmail(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// CX — Class Cancellation (Paid enrollments) · admin confirm · billy@ · T
+// Copy deck addendum (July 6). Pronoun-rendered per the Phase 2 pattern;
+// dynamic numbering: two offers → 1./2., one offer → unnumbered, none →
+// straight-to-refund body. The full-refund option always appears.
+// ---------------------------------------------------------------------------
+
+export type CancellationOffer = {
+  hours: number
+  /** What this family actually paid (class fee + any add-ons). */
+  price: number
+  savingsPct: number
+  savingsUsd: number
+}
+
+export function classCancellationEmail(
+  ctx: EnrollmentEmailContext,
+  audience: Audience,
+  offer: CancellationOffer | null,
+  creditTerm: string | null
+): Rendered {
+  const isStudent = audience === 'student'
+  const s = ctx.studentFirstName
+  const you = isStudent ? 'you' : s
+
+  const blocks: string[] = []
+  if (offer) {
+    blocks.push(
+      `<strong>We can convert the course fee that you have already paid into ${offer.hours}
+      1-on-1 tutoring hours — a savings of over ${offer.savingsPct}%
+      (USD $${offer.savingsUsd.toLocaleString()}) from our typical fees</strong> as our apology
+      that we weren't able to offer the group course. This means ${you} would receive
+      ${offer.hours} hours of 1-on-1 tutoring for $${offer.price.toLocaleString()}, which is
+      enough time to cover a lot of material and strategy and see a meaningful improvement. We
+      would tailor the schedule to ${isStudent ? 'your' : "your family's"} availability and the
+      lesson content to ${isStudent ? 'your' : `${s}'s`} strengths and weaknesses (according to
+      the first diagnostic test score).`
+    )
+  }
+  if (creditTerm) {
+    blocks.push(
+      `<strong>We can apply the fee that you paid to our next ${ctx.classType} course at
+      ${ctx.schoolNickname}.</strong> That course will most likely be offered in ${creditTerm}.`
+    )
+  }
+
+  const apology = `
+      <p>Hi ${recipientFirstName(ctx, audience)},</p>
+      <p>Unfortunately, I'm writing with a bit of bad news: we were unable to meet the minimum
+      number of students required to offer the ${ctx.className} class that ${you} signed up
+      for. As a result, we've unfortunately had to cancel the course. I understand that this
+      cancellation can be worrisome, and I sincerely apologize for the inconvenience.</p>`
+
+  let middle: string
+  if (blocks.length === 0) {
+    middle = `
+      <p>We'll be issuing you a full refund — just reply to confirm the best way to reach you
+      if any details are needed, and please accept our apologies again.</p>`
+  } else {
+    const rendered =
+      blocks.length === 1
+        ? `<p>${blocks[0]}</p>`
+        : `<ol style="padding-left:20px">${blocks.map((b) => `<li style="margin-bottom:12px">${b}</li>`).join('')}</ol>`
+    middle = `
+      <p>However, I have a couple of other options for you:</p>
+      ${rendered}
+      <p>If you prefer, of course we can also offer you a <strong>full refund</strong> instead.
+      <strong>Please let me know your preference by replying to this email — and reach out with
+      any questions at all.</strong></p>`
+  }
+
+  return {
+    from: PERSONAL_FROM,
+    subject: `IMPORTANT: ${ctx.className} Course Cancellation`,
+    html: wrap(
+      `
+      ${apology}
+      ${middle}
+      <p>Best,</p>
+      <p>William Thomas<br/>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `The class won't run — here are your options, including a full refund.`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CX-W — Cancellation note (waitlisted families) · admin confirm · info@ · T
+// ---------------------------------------------------------------------------
+
+export function waitlistCancellationEmail(ctx: EnrollmentEmailContext): Rendered {
+  return {
+    subject: `Update on the ${ctx.className} waitlist`,
+    html: wrap(
+      `
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>A quick update: the ${ctx.className} class that ${ctx.studentFirstName} was waitlisted
+      for won't be running this term, so the waitlist is closed. No payment was ever taken and
+      there's nothing you need to do.</p>
+      <p>If the class is offered again at ${ctx.schoolNickname}, registration will open through
+      the school as usual — and if you'd like a heads-up when that happens, just reply to this
+      email and we'll make sure you hear first.</p>
+      <p>Sorry it didn't work out this time!</p>
+      <p>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `The class won't run this term — no action needed.`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CX-C — Cancellation notification (school contact) · admin confirm · info@ · T
+// ---------------------------------------------------------------------------
+
+export function cancellationCounselorEmail(opts: {
+  counselorFirst: string
+  label: string
+  firstSession: string
+}): Rendered {
+  return {
+    subject: `${opts.label} has been cancelled`,
+    html: wrap(
+      `
+      <p>Hi ${opts.counselorFirst},</p>
+      <p>A heads-up: the ${opts.label} class scheduled to start
+      ${formatDate(opts.firstSession)} didn't reach the minimum enrollment, so we've had to
+      cancel it.</p>
+      <p>All registered families have already been notified directly with their options
+      (including a full refund), so there's nothing you need to do — though if any parents
+      mention it, you can let them know to check their email.</p>
+      <p>Thanks for your help promoting the class. If there's interest in running it again in a
+      future term, we'd love to try — just reply to this email.</p>
+      <p>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `Families have been notified with their options.`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LOGIN — Portal sign-in link + OTP code · on request · info@ · T
 // One email carries both: the link for normal use, the 6-digit code for
 // expired links and school-district link-scanners that consume one-time URLs.

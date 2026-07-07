@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
+import CancelClassPanel from './cancel-class-panel'
 
 type School = {
   id: string
@@ -23,6 +24,9 @@ type Enrollment = {
   id: string
   enrolled_at: string
   payment_status: string
+  amount_paid: number | null
+  class_cancelled: boolean
+  cancellation_outcome: string | null
   students: {
     first_name: string
     last_name: string
@@ -46,6 +50,7 @@ type RoomRequest = {
 type ClassRow = {
   id: string
   slug: string | null
+  status: string
   registration_close_date: string | null
   school_nickname: string | null
   class_type: string
@@ -139,6 +144,9 @@ export default function AdminDashboard() {
           id,
           enrolled_at,
           payment_status,
+          amount_paid,
+          class_cancelled,
+          cancellation_outcome,
           students (
             first_name,
             last_name,
@@ -360,6 +368,21 @@ export default function AdminDashboard() {
       .in('payment_status', ['Paid', 'Completed']) // guard: only paid rows
     if (error) {
       alert('Error marking refunded: ' + error.message)
+      return
+    }
+    fetchRosters()
+  }
+
+  // Bookkeeping after a cancellation: how each paid family resolved it
+  // (refunded / converted / credited) — recorded from the billy@ reply
+  // thread, no Stripe automation (PHASE4_SPEC §12).
+  async function handleOutcome(enrollmentId: string, outcome: string) {
+    const { error } = await supabase
+      .from('enrollments')
+      .update({ cancellation_outcome: outcome || null })
+      .eq('id', enrollmentId)
+    if (error) {
+      alert('Error recording outcome: ' + error.message)
       return
     }
     fetchRosters()
@@ -604,12 +627,18 @@ export default function AdminDashboard() {
                   const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
                     a.session_date.localeCompare(b.session_date)
                   )
+                  const isCancelled = c.status === 'cancelled'
                   return (
                     <div key={c.id} className="border border-gray-200 rounded-lg overflow-hidden">
                       <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-start gap-6">
                         <div>
                           <h3 className="text-lg font-bold text-hgl-slate">
                             {schoolLabel} — {c.class_type}
+                            {isCancelled && (
+                              <span className="ml-2 align-middle inline-block px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded uppercase tracking-wide">
+                                Cancelled
+                              </span>
+                            )}
                           </h3>
                           <p className="text-sm text-gray-600">
                             Instructor: {c.instructor_name}
@@ -670,6 +699,26 @@ export default function AdminDashboard() {
                               edit
                             </button>
                           </p>
+                          {!isCancelled && (
+                            <div className="mt-2">
+                              <CancelClassPanel
+                                classId={c.id}
+                                classLabel={`${schoolLabel} ${c.class_type}`}
+                                classPrice={Number(c.price)}
+                                paid={(c.enrollments ?? [])
+                                  .filter((en) => en.payment_status === 'Paid')
+                                  .map((en) => ({
+                                    enrollmentId: en.id,
+                                    studentName: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
+                                    parentName: `${en.students?.families?.parent_first_name ?? ''} ${en.students?.families?.parent_last_name ?? ''}`.trim(),
+                                    amountPaid: en.amount_paid != null ? Number(en.amount_paid) : null,
+                                  }))}
+                                pendingCount={(c.enrollments ?? []).filter((en) => en.payment_status === 'Pending').length}
+                                waitlistedCount={waitlistCount}
+                                onDone={fetchRosters}
+                              />
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
@@ -829,6 +878,22 @@ export default function AdminDashboard() {
                                         mark refunded
                                       </button>
                                     )}
+                                    {en.class_cancelled &&
+                                      (en.payment_status === 'Paid' ||
+                                        en.payment_status === 'Completed' ||
+                                        en.payment_status === 'Refunded') && (
+                                        <select
+                                          value={en.cancellation_outcome ?? ''}
+                                          onChange={(e) => handleOutcome(en.id, e.target.value)}
+                                          title="How this family resolved the cancellation (bookkeeping — from the billy@ reply thread)"
+                                          className="ml-2 border border-gray-300 rounded p-0.5 text-xs bg-white"
+                                        >
+                                          <option value="">outcome…</option>
+                                          <option value="refunded">refunded</option>
+                                          <option value="converted">converted to tutoring</option>
+                                          <option value="credited">credited to next course</option>
+                                        </select>
+                                      )}
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                                     {new Date(en.enrolled_at).toLocaleDateString()}

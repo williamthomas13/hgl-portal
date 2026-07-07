@@ -141,3 +141,75 @@ Higher Ground Learning
 - Pluralization helpers needed: {s}, {es}, is/are, day{s}, spot{s}, class{es} — render from counts.
 - {classListBlock} in CD covers multiple simultaneous classes at one school; single-class schools render one block, subject uses that class's count. Multi-class schools' subject reads "{n} classes, {total} students enrolled" (decided July 6, post-v1.0) so the total can't be mistaken for one class's headcount.
 - All five are transactional (no unsubscribe link); the digest's frequency links (incl. Pause) serve the control function.
+--
+
+# Addendum (July 6): Class Cancellation Templates
+
+**New variables:** {offerHours}, {offerPrice} (= class fee paid incl. context), {offerSavingsPct}, {offerSavingsUsd} (all computed from tutoring_packages regular rate vs amount paid), {nextCourseTerm} (admin free text), {tutoringOfferBlock} / {creditOfferBlock} (render only when toggled on in the cancel form).
+
+---
+
+## CX — Class Cancellation (Paid enrollments)
+
+**Audience:** both (pronoun rendering; blank student_email → parent-only silently) · **Trigger:** admin confirms cancellation · **From:** William Thomas <billy@> · **Footer:** T
+**Subject:** IMPORTANT: {schoolNickname} {classType} Course Cancellation
+**Preheader:** The class won't run — here are your options, including a full refund.
+
+Hi {recipientFirstName},
+
+Unfortunately, I'm writing with a bit of bad news: we were unable to meet the minimum number of students required to offer the {schoolNickname} {classType} class that {isStudent ? "you" : studentFirstName} signed up for. As a result, we've unfortunately had to cancel the course. I understand that this cancellation can be worrisome, and I sincerely apologize for the inconvenience.
+
+However, I have a couple of other options for you:
+
+{tutoringOfferBlock}
+*(Renders when the tutoring offer is on:)*
+1. **We can convert the course fee that you have already paid into {offerHours} 1-on-1 tutoring hours — a savings of over {offerSavingsPct} (USD {offerSavingsUsd}) from our typical fees** as our apology that we weren't able to offer the group course. This means {isStudent ? "you" : studentFirstName} would receive {offerHours} hours of 1-on-1 tutoring for {offerPrice}, which is enough time to cover a lot of material and strategy and see a meaningful improvement. We would tailor the schedule to {isStudent ? "your" : "your family's"} availability and the lesson content to {isStudent ? "your" : studentFirstName + "'s"} strengths and weaknesses (according to the first diagnostic test score).
+
+{creditOfferBlock}
+*(Renders when the credit offer is on:)*
+2. **We can apply the fee that you paid to our next {classType} course at {schoolNickname}.** That course will most likely be offered in {nextCourseTerm}.
+
+If you prefer, of course we can also offer you a **full refund** instead. **Please let me know your preference by replying to this email — and reach out with any questions at all.**
+
+Best,
+
+William Thomas
+Higher Ground Learning
+
+*(Numbering renders dynamically: if only one offer is on, it appears unnumbered; refund line always present. If both offers are off, the body skips straight from the apology paragraph to: "We'll be issuing you a full refund — just reply to confirm the best way to reach you if any details are needed, and please accept our apologies again.")*
+
+---
+
+## CX-W — Cancellation Note (waitlisted families)
+
+**Audience:** parent (Waitlisted) · **Trigger:** same admin confirm · **From:** info@ · **Footer:** T
+**Subject:** Update on the {schoolNickname} {classType} waitlist
+**Preheader:** The class won't run this term — no action needed.
+
+Hi {parentFirstName},
+
+A quick update: the {schoolNickname} {classType} class that {studentFirstName} was waitlisted for won't be running this term, so the waitlist is closed. No payment was ever taken and there's nothing you need to do.
+
+If the class is offered again at {schoolNickname}, registration will open through the school as usual — and if you'd like a heads-up when that happens, just reply to this email and we'll make sure you hear first.
+
+Sorry it didn't work out this time!
+
+Higher Ground Learning
+
+---
+
+## CX-C — Cancellation Notification (school contact)
+
+**Audience:** school contact · **Trigger:** same admin confirm · **From:** info@ · **Footer:** T
+**Subject:** {schoolNickname} {classType} has been cancelled
+**Preheader:** Families have been notified with their options.
+
+Hi {counselorFirstName},
+
+A heads-up: the {schoolNickname} {classType} class scheduled to start {firstSessionDate} didn't reach the minimum enrollment, so we've had to cancel it.
+
+All registered families have already been notified directly with their options (including a full refund), so there's nothing you need to do — though if any parents mention it, you can let them know to check their email.
+
+Thanks for your help promoting the class. If there's interest in running it again in a future term, we'd love to try — just reply to this email.
+
+Higher Ground Learning

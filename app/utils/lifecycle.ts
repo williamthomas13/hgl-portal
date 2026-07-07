@@ -56,6 +56,8 @@ export type EnrollmentRow = {
 export type ClassBundle = {
   id: string
   slug: string | null
+  /** open | cancelled — cancelled suppresses every scheduled send (§12). */
+  status: string
   classType: string
   schoolId: string | null
   schoolName: string
@@ -159,7 +161,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 export async function loadClassBundles(classId?: string): Promise<ClassBundle[]> {
   let query = supabase.from('classes').select(
     `
-    id, slug, class_type, school_nickname, school_id, instructor_name, instructor_email,
+    id, slug, status, class_type, school_nickname, school_id, instructor_name, instructor_email,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     schools ( name, nickname, timezone ),
@@ -225,6 +227,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     return {
       id: c.id,
       slug: c.slug ?? null,
+      status: c.status ?? 'open',
       classType: c.class_type,
       schoolId: c.school_id ?? null,
       schoolName: school?.name ?? school?.nickname ?? c.school_nickname ?? 'Higher Ground Learning',

@@ -4,16 +4,19 @@ Code is complete and building (`next build` clean, eslint clean). The steps belo
 the agent could not do (prod DDL / Vercel env / Supabase dashboard are approval-gated), in
 order, plus go-live behavior you should know about **before** deploying.
 
-## 1. Apply the migration (before deploying the code)
+## 1. Apply BOTH migrations, in order (before deploying the code)
 
-`supabase/migrations/20260708000001_phase4_portal.sql` — adds `student_scores`,
-`instructors`, `classroom_requests`, and `school_counselors.digest_frequency` /
-`digest_last_sent_at`, all with RLS policies.
+1. `supabase/migrations/20260708000001_phase4_portal.sql` — adds `student_scores`,
+   `instructors`, `classroom_requests`, and `school_counselors.digest_frequency` /
+   `digest_last_sent_at`, all with RLS policies.
+2. `supabase/migrations/20260708000002_class_cancellation.sql` — adds `classes.status`
+   (open | cancelled), `enrollments.class_cancelled`, `enrollments.cancellation_outcome`
+   (§12 cancellation flow).
 
-It is backward-compatible with the currently deployed Phase 3.1 code (new tables/columns are
-simply unused), so apply it first. The new code's `/portal` **fails without it**, so do not
-deploy first. Run it in the Supabase SQL editor (or approve the management-API call in an
-interactive session).
+Both are backward-compatible with the currently deployed Phase 3.1 code (new tables/columns
+are simply unused), so apply them first. The new code **fails without them** (`/portal`, the
+sweep, and the admin page all read the new columns), so do not deploy first. Run them in the
+Supabase SQL editor (or approve the management-API calls in an interactive session).
 
 ## 2. Vercel env var
 
@@ -48,6 +51,12 @@ interactive session).
 5. Receipt PDF button on a paid enrollment downloads with amount/date/add-on line.
 6. Admin page: new **School counselors** and **Instructors** panels at the bottom;
    classroom-request status badge on in-person classes.
+7. Cancellation flow (§12), best tested on a throwaway test class with a test-email
+   enrollment: "Cancel class…" → offers form + per-family math preview → confirm → CX to the
+   paid family (both audiences), CX-W to waitlisted, CX-C to the school contact; class shows
+   the CANCELLED chip; registration page reads "This class is full" with no waitlist form;
+   the ICS feed goes empty; the next hourly sweep sends nothing for the class; the outcome
+   dropdown appears on paid rows.
 
 ## 5. ⚠️ Go-live email behavior (check BEFORE deploying)
 

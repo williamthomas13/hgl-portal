@@ -39,7 +39,7 @@ export default async function CounselorView({
     .from('classes')
     .select(
       `
-      id, slug, class_type, school_nickname, delivery_mode, price, capacity,
+      id, slug, status, class_type, school_nickname, delivery_mode, price, capacity,
       start_date, registration_close_date, enrollment_deadline, instructor_name,
       default_location, school_id,
       schools ( name, nickname ),
@@ -81,7 +81,15 @@ export default async function CounselorView({
       (e: any) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
     ).length
     const waitlist = enrollments.filter((e: any) => e.payment_status === 'Waitlisted').length
-    return { ...c, sessions, firstSession, registrationClose, paid, waitlist, isOpen: today <= registrationClose }
+    return {
+      ...c,
+      sessions,
+      firstSession,
+      registrationClose,
+      paid,
+      waitlist,
+      isOpen: c.status !== 'cancelled' && today <= registrationClose,
+    }
   })
 
   const openClasses = decorated.filter((c) => c.isOpen)
@@ -97,7 +105,14 @@ export default async function CounselorView({
       <div key={c.id} className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-6">
         <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
           <div>
-            <h3 className="font-bold text-hgl-slate text-lg">{label}</h3>
+            <h3 className="font-bold text-hgl-slate text-lg">
+              {label}
+              {c.status === 'cancelled' && (
+                <span className="ml-2 align-middle inline-block px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded uppercase tracking-wide">
+                  Cancelled
+                </span>
+              )}
+            </h3>
             <p className="text-sm text-gray-600">
               Starts {formatDate(c.firstSession)} · ${Number(c.price).toLocaleString()} per student
               {c.instructor_name ? ` · ${c.instructor_name}` : ''}

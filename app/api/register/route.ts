@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      `id, school_id, capacity, registration_close_date, start_date,
+      `id, status, school_id, capacity, registration_close_date, start_date,
        schools ( timezone ),
        sessions ( session_date ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
@@ -57,6 +57,9 @@ export async function POST(request: Request) {
 
   if (!cls) {
     return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
+  }
+  if (cls.status === 'cancelled') {
+    return NextResponse.json({ error: 'Registration for this class has closed.' }, { status: 410 })
   }
 
   const school = Array.isArray(cls.schools) ? cls.schools[0] : cls.schools

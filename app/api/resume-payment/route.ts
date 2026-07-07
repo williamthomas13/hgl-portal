@@ -25,6 +25,12 @@ export async function GET(request: Request) {
   if (!bundle || !enrollment) {
     return NextResponse.json({ error: 'Registration not found.' }, { status: 404 })
   }
+  if (bundle.status === 'cancelled') {
+    // Cancelled class: never reopen a checkout (the enrollment was expired at
+    // cancel time; this covers the race where a reminder link is clicked
+    // mid-cancellation). The register page shows the full/no-waitlist state.
+    return NextResponse.redirect(`${baseUrl}/register/${bundle.slug ?? bundle.id}`, 303)
+  }
   if (enrollment.payment_status === 'Paid' || enrollment.payment_status === 'Completed') {
     return NextResponse.redirect(`${baseUrl}/success?already_paid=1`, 303)
   }
