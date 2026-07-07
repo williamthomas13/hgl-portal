@@ -139,5 +139,5 @@ Higher Ground Learning
 ## Notes for implementation
 
 - Pluralization helpers needed: {s}, {es}, is/are, day{s}, spot{s}, class{es} — render from counts.
-- {classListBlock} in CD covers multiple simultaneous classes at one school; single-class schools render one block, subject uses that class's count.
+- {classListBlock} in CD covers multiple simultaneous classes at one school; single-class schools render one block, subject uses that class's count. Multi-class schools' subject reads "{n} classes, {total} students enrolled" (decided July 6, post-v1.0) so the total can't be mistaken for one class's headcount.
 - All five are transactional (no unsubscribe link); the digest's frequency links (incl. Pause) serve the control function.

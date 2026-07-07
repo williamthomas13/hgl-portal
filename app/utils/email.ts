@@ -997,11 +997,18 @@ export function counselorDigestEmail(opts: {
       </div>`
     )
     .join('')
-  // Subject count: the class's count for single-class schools, total otherwise.
+  // Subject count: the class's count for single-class schools; multi-class
+  // schools say "2 classes, 17 students" so the total can't read as one
+  // class's headcount.
   const totalPaid = opts.classes.reduce((sum, c) => sum + c.paid, 0)
+  const nClasses = opts.classes.length
+  const subjectCount =
+    nClasses === 1
+      ? `${totalPaid} student${plS(totalPaid)} enrolled`
+      : `${nClasses} class${plEs(nClasses)}, ${totalPaid} student${plS(totalPaid)} enrolled`
   const f = opts.frequencyUrls
   return {
-    subject: `${opts.schoolNickname} enrollment update — ${totalPaid} student${plS(totalPaid)} enrolled`,
+    subject: `${opts.schoolNickname} enrollment update — ${subjectCount}`,
     html: wrap(
       `
       <p>Hi ${opts.counselorFirst},</p>
