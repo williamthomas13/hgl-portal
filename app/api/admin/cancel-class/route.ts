@@ -72,13 +72,14 @@ export async function POST(request: Request) {
     }
   }
 
-  // 1. THE GATE: flip status first. Guarded on 'open' so a double-click or a
-  // concurrent admin can't run the flow twice.
+  // 1. THE GATE: flip status first. Guarded on not-already-cancelled so a
+  // double-click or a concurrent admin can't run the flow twice. (neq, not
+  // eq('open'): tolerates any stray legacy status value.)
   const { data: flipped } = await supabase
     .from('classes')
     .update({ status: 'cancelled' })
     .eq('id', classId)
-    .eq('status', 'open')
+    .neq('status', 'cancelled')
     .select('id')
   const alreadyCancelled = !flipped || flipped.length === 0
   if (alreadyCancelled && bundle.status !== 'cancelled') {
@@ -173,13 +174,18 @@ export async function POST(request: Request) {
     if (status === 'sent') cxwSent++
   }
 
-  // 7. CX-C to the school contacts.
+  // 7. CX-C to the class's designated school contact when set, else every
+  // contact at the school (July 7 addition — matches CR/FP routing).
   let cxcSent = 0
   if (bundle.schoolId) {
-    const { data: counselors } = await supabase
+    const { data: allCounselors } = await supabase
       .from('school_counselors')
       .select('id, first_name, email')
       .eq('school_id', bundle.schoolId)
+    const chosen = bundle.counselorId
+      ? (allCounselors ?? []).filter((c) => c.id === bundle.counselorId)
+      : []
+    const counselors = chosen.length > 0 ? chosen : allCounselors
     for (const counselor of counselors ?? []) {
       const { subject, html } = cancellationCounselorEmail({
         counselorFirst: counselor.first_name,

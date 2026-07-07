@@ -39,6 +39,14 @@ type Enrollment = {
   } | null
 }
 
+type Counselor = {
+  id: string
+  school_id: string
+  first_name: string
+  last_name: string
+  email: string
+}
+
 type RoomRequest = {
   class_id: string
   status: string
@@ -51,6 +59,7 @@ type ClassRow = {
   id: string
   slug: string | null
   status: string
+  counselor_id: string | null
   registration_close_date: string | null
   school_nickname: string | null
   class_type: string
@@ -107,10 +116,24 @@ export default function AdminDashboard() {
   const [minEnrollment, setMinEnrollment] = useState('8')
   const [instructors, setInstructors] = useState<Instructor[]>([])
   const [roomRequests, setRoomRequests] = useState<Record<string, RoomRequest>>({})
+  // Per-class school contact (July 7 addition): dropdown of the selected
+  // school's contacts + inline add-new. Class-specific sends target the
+  // chosen contact; blank = all school contacts.
+  const [allCounselors, setAllCounselors] = useState<Counselor[]>([])
+  const [schoolNickname, setSchoolNickname] = useState('')
+  const [contactChoice, setContactChoice] = useState('')
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
     if (data) setSchools(data)
+  }, [])
+
+  const fetchAllCounselors = useCallback(async () => {
+    const { data } = await supabase
+      .from('school_counselors')
+      .select('id, school_id, first_name, last_name, email')
+      .order('first_name')
+    if (data) setAllCounselors(data as Counselor[])
   }, [])
 
   const fetchInstructors = useCallback(async () => {
@@ -131,9 +154,11 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const [rosterError, setRosterError] = useState('')
+
   const fetchRosters = useCallback(async () => {
     setFetchingRosters(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('classes')
       .select(
         `
@@ -158,6 +183,9 @@ export default function AdminDashboard() {
       )
       .order('created_at', { ascending: false })
 
+    // Never mask a failed read as an empty list — that's how "No classes
+    // exist yet" hid a missing migration column from the admin.
+    setRosterError(error ? `Roster query failed: ${error.message}` : '')
     if (data) setRosters(data as unknown as ClassRow[])
     setFetchingRosters(false)
   }, [])
@@ -170,7 +198,8 @@ export default function AdminDashboard() {
     fetchRosters()
     fetchInstructors()
     fetchRoomRequests()
-  }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests])
+    fetchAllCounselors()
+  }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests, fetchAllCounselors])
 
   // ---------------------------------------------------------------------------
   // Create class
@@ -181,20 +210,20 @@ export default function AdminDashboard() {
     setMessage('')
 
     const formData = new FormData(e.currentTarget)
-    const schoolNickname = (formData.get('school_nickname') as string).trim()
+    const schoolNicknameValue = (formData.get('school_nickname') as string).trim()
 
     // Find-or-create the school by nickname so new schools auto-register
     let schoolId: string | null = null
-    if (schoolNickname) {
+    if (schoolNicknameValue) {
       const existing = schools.find(
-        (s) => s.nickname.toLowerCase() === schoolNickname.toLowerCase()
+        (s) => s.nickname.toLowerCase() === schoolNicknameValue.toLowerCase()
       )
       if (existing) {
         schoolId = existing.id
       } else {
         const { data: newSchool, error: schoolErr } = await supabase
           .from('schools')
-          .insert([{ name: schoolNickname, nickname: schoolNickname }])
+          .insert([{ name: schoolNicknameValue, nickname: schoolNicknameValue }])
           .select()
           .single()
         if (schoolErr) {
@@ -205,6 +234,39 @@ export default function AdminDashboard() {
         schoolId = newSchool.id
         setSchools((prev) => [...prev, newSchool as School])
       }
+    }
+
+    // School contact: existing contact id, inline-created contact, or blank
+    // (= class-specific emails go to all of the school's contacts).
+    let counselorId: string | null = contactChoice || null
+    if (contactChoice === '__new') {
+      if (!schoolId) {
+        setMessage('Error: pick a school before adding a contact.')
+        setLoading(false)
+        return
+      }
+      const { data: newContact, error: contactErr } = await supabase
+        .from('school_counselors')
+        .insert([
+          {
+            school_id: schoolId,
+            first_name: (formData.get('contact_first') as string).trim(),
+            last_name: (formData.get('contact_last') as string).trim(),
+            email: ((formData.get('contact_email') as string) ?? '').trim().toLowerCase(),
+          },
+        ])
+        .select('id')
+        .single()
+      if (contactErr || !newContact) {
+        setMessage(
+          'Error adding contact: ' +
+            (contactErr?.code === '23505' ? 'that email is already a contact.' : contactErr?.message)
+        )
+        setLoading(false)
+        return
+      }
+      counselorId = newContact.id
+      fetchAllCounselors()
     }
 
     // Online classes with no explicit location auto-fill the instructor's
@@ -219,8 +281,9 @@ export default function AdminDashboard() {
     }
 
     const newClass = {
-      school_nickname: schoolNickname, // keep for backward compat; to be dropped later
+      school_nickname: schoolNicknameValue, // keep for backward compat; to be dropped later
       school_id: schoolId,
+      counselor_id: counselorId,
       class_type: formData.get('class_type'),
       instructor_name: formData.get('instructor_name'),
       instructor_email: instructorEmail || null,
@@ -235,7 +298,7 @@ export default function AdminDashboard() {
       registration_close_date: formData.get('registration_close_date') || null,
       // Human-readable registration URL segment: nickname-classtype-term.
       slug: slugify(
-        `${schoolNickname}-${formData.get('class_type')}-${termFor(formData.get('start_date') as string)}`
+        `${schoolNicknameValue}-${formData.get('class_type')}-${termFor(formData.get('start_date') as string)}`
       ),
     }
 
@@ -252,6 +315,8 @@ export default function AdminDashboard() {
     } else {
       setMessage('Success — class added. Scroll down to add session dates.')
       ;(e.target as HTMLFormElement).reset()
+      setSchoolNickname('')
+      setContactChoice('')
       fetchRosters()
     }
     setLoading(false)
@@ -431,6 +496,8 @@ export default function AdminDashboard() {
                   required
                   list="schools-list"
                   placeholder="e.g. Nido"
+                  value={schoolNickname}
+                  onChange={(e) => { setSchoolNickname(e.target.value); setContactChoice('') }}
                   className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
                 />
                 <datalist id="schools-list">
@@ -481,6 +548,47 @@ export default function AdminDashboard() {
                   className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
                 />
               </div>
+
+              {(() => {
+                const matchedSchool = schools.find(
+                  (s) => s.nickname.toLowerCase() === schoolNickname.trim().toLowerCase()
+                )
+                const contacts = matchedSchool
+                  ? allCounselors.filter((c) => c.school_id === matchedSchool.id)
+                  : []
+                return (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      School contact <span className="text-gray-400">(optional)</span>
+                    </label>
+                    <select
+                      value={contactChoice}
+                      onChange={(e) => setContactChoice(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition bg-white"
+                    >
+                      <option value="">All school contacts (default)</option>
+                      {contacts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.first_name} {c.last_name} ({c.email})
+                        </option>
+                      ))}
+                      <option value="__new">➕ Add a new contact…</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Class-specific emails (room requests, final-days push, cancellation note)
+                      go to this contact; blank sends them to every contact at the school.
+                      Digests stay school-wide.
+                    </p>
+                    {contactChoice === '__new' && (
+                      <div className="grid grid-cols-3 gap-2 mt-2">
+                        <input type="text" name="contact_first" required placeholder="First name" className="border border-gray-300 rounded-md p-2" />
+                        <input type="text" name="contact_last" required placeholder="Last name" className="border border-gray-300 rounded-md p-2" />
+                        <input type="email" name="contact_email" required placeholder="Email" className="border border-gray-300 rounded-md p-2" />
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">Start Date</label>
@@ -609,6 +717,12 @@ export default function AdminDashboard() {
         <div className="bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
           <h2 className="text-2xl font-bold text-hgl-slate mb-6">Live class rosters</h2>
 
+          {rosterError && (
+            <div className="mb-4 p-3 rounded bg-red-100 text-red-700 font-semibold text-sm">
+              {rosterError} — the classes below may be stale or missing. If this mentions a
+              missing column, a migration in supabase/migrations has not been applied.
+            </div>
+          )}
           {fetchingRosters ? (
             <p className="text-gray-500 animate-pulse">Loading rosters from database...</p>
           ) : (
@@ -648,6 +762,14 @@ export default function AdminDashboard() {
                           {c.default_location && (
                             <p className="text-sm text-gray-600">Location: {c.default_location}</p>
                           )}
+                          {c.counselor_id && (() => {
+                            const contact = allCounselors.find((x) => x.id === c.counselor_id)
+                            return contact ? (
+                              <p className="text-sm text-gray-600">
+                                School contact: {contact.first_name} {contact.last_name} ({contact.email})
+                              </p>
+                            ) : null
+                          })()}
                           {c.delivery_mode === 'in_person' && (() => {
                             const rr = roomRequests[c.id]
                             if (!rr && c.default_location) return null

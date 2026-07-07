@@ -4,19 +4,27 @@ Code is complete and building (`next build` clean, eslint clean). The steps belo
 the agent could not do (prod DDL / Vercel env / Supabase dashboard are approval-gated), in
 order, plus go-live behavior you should know about **before** deploying.
 
-## 1. Apply BOTH migrations, in order (before deploying the code)
+## 1. Migrations — July 7 status: 0001 applied; 0002 (REWRITTEN) and 0003 still pending
 
-1. `supabase/migrations/20260708000001_phase4_portal.sql` — adds `student_scores`,
-   `instructors`, `classroom_requests`, and `school_counselors.digest_frequency` /
-   `digest_last_sent_at`, all with RLS policies.
-2. `supabase/migrations/20260708000002_class_cancellation.sql` — adds `classes.status`
-   (open | cancelled), `enrollments.class_cancelled`, `enrollments.cancellation_outcome`
-   (§12 cancellation flow).
+**The July 7 "No classes exist yet" bug was migration 0002 never having been applied**: the
+admin roster query selects `enrollments.class_cancelled`, which didn't exist, so the read
+failed for everyone (verified: it failed even for the service role — not RLS, and not the
+allowlist). Writes don't touch the new columns, hence the confusing success-banner-but-empty
+-list symptom. The admin page now shows read errors instead of masking them as an empty list.
 
-Both are backward-compatible with the currently deployed Phase 3.1 code (new tables/columns
-are simply unused), so apply them first. The new code **fails without them** (`/portal`, the
-sweep, and the admin page all read the new columns), so do not deploy first. Run them in the
-Supabase SQL editor (or approve the management-API calls in an interactive session).
+Apply, in order:
+
+1. ~~`20260708000001_phase4_portal.sql`~~ — **already applied** (student_scores /
+   instructors / classroom_requests / digest columns are live).
+2. `20260708000002_class_cancellation.sql` — **REWRITTEN July 7, apply this version**: the
+   original could not have applied cleanly because `classes.status` already existed
+   (Gemini-era column, live value `'Enrolling'`). The rewrite normalizes legacy values to
+   `'open'`, pins the open/cancelled check, and adds the two enrollment columns.
+3. `20260708000003_class_school_contact.sql` — `classes.counselor_id` (optional per-class
+   school contact).
+
+Both pending migrations are backward-compatible with the currently deployed code; apply them
+before (or immediately with) the next push.
 
 ## 2. Vercel env var
 

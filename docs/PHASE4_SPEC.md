@@ -105,7 +105,8 @@ Replaces per-class manual Canva work.
 
 ## 10. Admin additions
 
-- `ADMIN_EMAILS` allowlist (env var, v1).
+- `ADMIN_EMAILS` allowlist (env var, v1). *Amended July 7: an allowlisted login also gets `profiles.role = 'admin'` at sign-in — RLS policies check profiles, so the allowlist alone isn't enough for reads; the promotion happens automatically on the next login request.*
+- **Per-class school contact (added July 7):** optional "School contact" dropdown at class creation — the selected school's contacts plus inline add-new. Sets `classes.counselor_id`; when set, class-specific sends (CR1–3, final-days push, FP-alt, CX-C) go to that contact only, when blank they go to all school contacts. Digests remain school-wide. The standalone counselor panel stays for turnover management; removing a contact nulls the reference (automatic fallback).
 - Counselor management (add/remove per school, set digest frequency) in admin UI.
 - Instructor management incl. `default_meeting_link`.
 - Classroom-request status visible on the class (requested / answered / overridden).
@@ -130,10 +131,11 @@ Closes the loop the master spec left as "refund vs. convert is a human decision"
 
 - **`classes.status`:** `open | cancelled` (default open). Cancelling is an explicit admin action, never automatic — min-enrollment alerts remain advisory only.
 - **Admin "Cancel class" flow:** admin opens the class → Cancel → a form composes the cancellation email before anything sends:
-  1. **Tutoring conversion offer (optional, on by default):** admin picks the number of 1-on-1 hours to offer for the already-paid fee (**default: 8 hours**, editable). Portal auto-computes the display math from `tutoring_packages` regular rate vs **`classes.price` only — never `amount_paid`** (amended July 6: the cancelled product is the group class; tutoring add-ons are a separate purchase that survives cancellation in every outcome, including refund — refund = class fee only). E.g. "10 hours (a savings of 42% / $551 vs our typical fees)." Hours picker, math generated, no hand calculation; sanity flag when offerHours × regular rate ≤ class price.
+  1. **Tutoring conversion offer (optional, on by default):** admin picks the number of 1-on-1 hours to offer (**default: 8 hours**, editable). **Math is computed against the GROUP CLASS PRICE ONLY (`classes.price`), never `amount_paid`** — tutoring add-ons are not part of the cancelled product. Display math from `tutoring_packages` regular rate vs class price — e.g. "10 hours (a savings of 42% / $551 vs our typical fees)." Hours picker, math generated, no hand calculation.
+  1a. **Add-on families keep their add-on:** purchased tutoring packages are unaffected by cancellation — the family keeps the discounted hours whichever option they choose (incl. refund of the class fee). Their CX renders an extra sentence combining totals ("With your {addonHours} discounted hours already purchased, {studentFirstName} would receive a total of {totalHours} hours…") plus an explicit keep-your-hours reassurance line. Refund option refers to the class fee only.
   2. **Credit-to-next-course offer (optional):** free-text expected term (e.g. "February or March 2027").
   3. Full refund is **always** listed as an option in the email regardless of toggles.
-  4. Preview rendered per family — amended July 6: the math is identical for all families; the preview differs only in **which CX variant renders**. Add-on families get the combined-total wording ({addonHours}, {totalHours} = offerHours + addonHours) and the keep-your-hours reassurance line; the confirm summary lists which families get the add-on variant. → admin confirms → send.
+  4. Preview rendered per family — same conversion math for everyone (class price is uniform); add-on families differ only in the combined-total sentence. Flag if hours × regular rate ≤ class price (offer reads as no savings) → admin confirms → send. Confirm screen summarizes exactly who gets which variant.
 - **On confirm, atomically:**
   - Class → `cancelled`; enrollments `Paid` → keep status but flag `class_cancelled` (refund handling stays manual in Stripe for now); `Pending` → `Expired` immediately (no cancellation email to unpaid — their PR sequence just stops).
   - **All pending scheduled sends for the class are cancelled:** #2–#6 pre/post-start emails, PR reminders, counselor digest entries, final-days push, classroom-request emails, SU. Nothing class-related sends after cancellation except the cancellation email itself.
@@ -141,6 +143,8 @@ Closes the loop the master spec left as "refund vs. convert is a human decision"
   - Counselor/school contact gets a plain notification ("class cancelled; families have been offered X").
   - ICS calendar feed empties (subscribed calendars auto-clear); registration page flips to the existing "class full" state (reads better than a cancellation notice; no waitlist button) + link to main site.
 - **Reply handling stays human:** parents reply to billy@ with their preference; recording the outcome (refunded / converted / credited) is an admin field on the enrollment for bookkeeping, not automated Stripe action in this phase.
+
+
 
 ## 13. Resolved decisions log (July 6)
 

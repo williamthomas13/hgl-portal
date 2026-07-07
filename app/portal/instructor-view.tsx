@@ -136,7 +136,7 @@ export default async function InstructorView({
               </div>
               <div className="text-right">
                 <div className="text-lg font-bold text-hgl-slate">
-                  {paidCount} <span className="text-gray-400 font-normal">/ {c.capacity} paid</span>
+                  {paidCount} <span className="text-gray-400 font-normal">/ {c.capacity} enrolled</span>
                 </div>
                 <div className={`text-xs font-semibold ${paidCount >= minEnrollment ? 'text-green-700' : 'text-amber-700'}`}>
                   minimum {minEnrollment}

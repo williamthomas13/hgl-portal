@@ -53,8 +53,11 @@ export async function deriveRoles(emailRaw: string): Promise<PortalRole[]> {
 /**
  * Lazy provisioning: make sure an auth user exists for this email (the signup
  * trigger creates the profiles row), then keep profiles.role in sync with the
- * top derived role. Stored admin/manager roles are never downgraded here —
- * those are granted by an admin, not derived.
+ * top derived role. The ADMIN_EMAILS allowlist IS the admin authority (spec
+ * §2), so allowlisted logins get profiles.role='admin' — RLS policies check
+ * profiles, not env vars, so without this promotion an allowlist admin would
+ * pass the layout gate someday but see zero rows. Stored admin/manager roles
+ * are otherwise never touched here — those are granted by an admin.
  */
 export async function ensureAuthUser(emailRaw: string, roles: PortalRole[]): Promise<void> {
   const email = emailRaw.trim().toLowerCase()
@@ -75,6 +78,13 @@ export async function ensureAuthUser(emailRaw: string, roles: PortalRole[]): Pro
     .limit(1)
     .single()
   if (!profile) return
+
+  if (adminAllowlist().includes(email)) {
+    if (profile.role !== 'admin') {
+      await supabaseAdmin.from('profiles').update({ role: 'admin' }).eq('id', profile.id)
+    }
+    return
+  }
   if (profile.role === 'admin' || profile.role === 'manager') return
 
   const target = roles.find((r) => r !== 'admin' && r !== 'manager') ?? 'parent'

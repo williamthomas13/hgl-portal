@@ -580,6 +580,24 @@ async function loadCounselorsBySchool(): Promise<Map<string, CounselorRow[]>> {
   return map
 }
 
+/**
+ * Recipients for CLASS-specific sends (classroom requests, final-days push,
+ * class-full note): the class's designated school contact when set, else
+ * every contact at the school. Digests stay school-wide regardless.
+ */
+function contactsForClass(
+  bundle: ClassBundle,
+  counselorsBySchool: Map<string, CounselorRow[]>
+): CounselorRow[] {
+  if (!bundle.schoolId) return []
+  const all = counselorsBySchool.get(bundle.schoolId) ?? []
+  if (bundle.counselorId) {
+    const chosen = all.filter((c) => c.id === bundle.counselorId)
+    if (chosen.length > 0) return chosen
+  }
+  return all
+}
+
 /** Classes a counselor's digest covers: registration still open, not cancelled. */
 function digestClasses(bundles: ClassBundle[], schoolId: string): ClassBundle[] {
   return bundles.filter(
@@ -681,8 +699,7 @@ async function sweepDeadlinePush(
   counselorsBySchool: Map<string, CounselorRow[]>,
   c: Counters
 ) {
-  if (!bundle.schoolId) return
-  const counselors = counselorsBySchool.get(bundle.schoolId) ?? []
+  const counselors = contactsForClass(bundle, counselorsBySchool)
   if (counselors.length === 0) return
 
   const today = localDate(bundle.timezone)
@@ -781,8 +798,7 @@ async function sweepClassroomRequests(
   }
 
   if (today < addDaysISO(bundle.firstSession, -CLASSROOM_REQUEST_LEAD_DAYS)) return
-  if (!bundle.schoolId) return
-  const counselors = counselorsBySchool.get(bundle.schoolId) ?? []
+  const counselors = contactsForClass(bundle, counselorsBySchool)
   if (counselors.length === 0) return
   if (localHour(bundle.timezone) < 8) return
 

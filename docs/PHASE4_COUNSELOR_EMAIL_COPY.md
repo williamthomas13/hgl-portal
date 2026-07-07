@@ -145,7 +145,7 @@ Higher Ground Learning
 
 # Addendum (July 6): Class Cancellation Templates
 
-**New variables:** {offerHours}, {offerPrice} (= class fee paid incl. context), {offerSavingsPct}, {offerSavingsUsd} (all computed from tutoring_packages regular rate vs amount paid), {nextCourseTerm} (admin free text), {tutoringOfferBlock} / {creditOfferBlock} (render only when toggled on in the cancel form).
+**New variables:** {offerHours}, {classPrice} (group class fee only — never includes add-ons), {offerSavingsPct}, {offerSavingsUsd} (computed from tutoring_packages regular rate vs {classPrice}), {nextCourseTerm} (admin free text), {tutoringOfferBlock} / {creditOfferBlock} (render only when toggled on), {addonHours}, {totalHours} (= offerHours + addonHours; add-on families only).
 
 ---
 
@@ -162,8 +162,14 @@ Unfortunately, I'm writing with a bit of bad news: we were unable to meet the mi
 However, I have a couple of other options for you:
 
 {tutoringOfferBlock}
-*(Renders when the tutoring offer is on:)*
-1. **We can convert the course fee that you have already paid into {offerHours} 1-on-1 tutoring hours — a savings of over {offerSavingsPct} (USD {offerSavingsUsd}) from our typical fees** as our apology that we weren't able to offer the group course. This means {isStudent ? "you" : studentFirstName} would receive {offerHours} hours of 1-on-1 tutoring for {offerPrice}, which is enough time to cover a lot of material and strategy and see a meaningful improvement. We would tailor the schedule to {isStudent ? "your" : "your family's"} availability and the lesson content to {isStudent ? "your" : studentFirstName + "'s"} strengths and weaknesses (according to the first diagnostic test score).
+*(Renders when the tutoring offer is on — no add-on purchased:)*
+1. **We can convert the group course fee of {classPrice} that you have already paid into {offerHours} 1-on-1 tutoring hours — a savings of over {offerSavingsPct} (USD {offerSavingsUsd}) from our typical fees** as our apology that we weren't able to offer the group course. This means {isStudent ? "you" : studentFirstName} would receive {offerHours} hours of 1-on-1 tutoring for {classPrice}, which is enough time to cover a lot of material and strategy and see a meaningful improvement. We would tailor the schedule to {isStudent ? "your" : "your family's"} availability and the lesson content to {isStudent ? "your" : studentFirstName + "'s"} strengths and weaknesses (according to the first diagnostic test score).
+
+*(Add-on families render this version of item 1 instead:)*
+1. **We can convert the group course fee of {classPrice} that you have already paid into {offerHours} 1-on-1 tutoring hours — a savings of over {offerSavingsPct} (USD {offerSavingsUsd}) from our typical fees** as our apology that we weren't able to offer the group course. With {isStudent ? "your" : "the"} {addonHours} discounted tutoring hours already purchased, {isStudent ? "you" : studentFirstName} would receive a total of {totalHours} hours of 1-on-1 tutoring, which would be enough time to cover a lot of material and strategy and see a very meaningful improvement. We would tailor the schedule to {isStudent ? "your" : "your family's"} availability and the lesson content to {isStudent ? "your" : studentFirstName + "'s"} strengths and weaknesses (according to the first diagnostic test score).
+
+*(Add-on families ALSO get this reassurance line immediately after the options list, regardless of which offers are on:)*
+(And just to be clear: the {addonHours} discounted 1-on-1 tutoring hours you already purchased are {isStudent ? "yours" : studentFirstName + "'s"} to keep no matter which option you choose — including a refund of the course fee.)
 
 {creditOfferBlock}
 *(Renders when the credit offer is on:)*

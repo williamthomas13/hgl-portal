@@ -58,6 +58,8 @@ export type ClassBundle = {
   slug: string | null
   /** open | cancelled — cancelled suppresses every scheduled send (§12). */
   status: string
+  /** Optional per-class school contact; class-specific sends target them. */
+  counselorId: string | null
   classType: string
   schoolId: string | null
   schoolName: string
@@ -161,7 +163,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 export async function loadClassBundles(classId?: string): Promise<ClassBundle[]> {
   let query = supabase.from('classes').select(
     `
-    id, slug, status, class_type, school_nickname, school_id, instructor_name, instructor_email,
+    id, slug, status, counselor_id, class_type, school_nickname, school_id, instructor_name, instructor_email,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     schools ( name, nickname, timezone ),
@@ -228,6 +230,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       id: c.id,
       slug: c.slug ?? null,
       status: c.status ?? 'open',
+      counselorId: c.counselor_id ?? null,
       classType: c.class_type,
       schoolId: c.school_id ?? null,
       schoolName: school?.name ?? school?.nickname ?? c.school_nickname ?? 'Higher Ground Learning',
