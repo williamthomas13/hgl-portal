@@ -1,21 +1,9 @@
 // Shared bits for the three portal views (server-rendered).
 
-export function formatDate(iso: string) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
+import { formatDateFull, formatDateShort } from '../utils/dates'
 
-export function formatDateShort(iso: string) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
+export const formatDate = formatDateFull
+export { formatDateShort }
 
 const STATUS_STYLES: Record<string, string> = {
   Pending: 'bg-amber-100 text-amber-800',

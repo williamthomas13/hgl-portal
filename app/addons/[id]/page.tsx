@@ -1,11 +1,11 @@
 import {
-  addDaysISO,
   loadClassBundles,
   loadTutoringPackages,
   localDate,
   packageSavings,
   verifyAddonToken,
 } from '../../utils/lifecycle'
+import { formatDateOnly } from '../../utils/dates'
 
 // Per-enrollment discounted tutoring add-on page — the target of email #9.
 // Server component: the signed token is verified server-side, and the page
@@ -90,7 +90,7 @@ export default async function AddonPage({
       </p>
       <p className="text-sm bg-yellow-50 text-yellow-800 rounded p-3 mb-6">
         These rates are only available before class starts —{' '}
-        <strong>pricing ends {new Date(addDaysISO(bundle.firstSession, 0) + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</strong>.
+        <strong>pricing ends {formatDateOnly(bundle.firstSession, { month: 'long', day: 'numeric' })}</strong>.
       </p>
       <div className="space-y-3">
         {pre.map((p) => (

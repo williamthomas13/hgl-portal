@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { verifyClassroomRequestToken } from '../../utils/lifecycle'
 import RequestForm from './request-form'
+import { formatDateOnly } from '../../utils/dates'
 
 // The classroom-request form (PHASE4_SPEC §4b): one question, tokenized, no
 // login. Server component validates the token and loads the class; the tiny
@@ -75,11 +76,7 @@ export default async function ClassroomRequestPage({
       <h1 className="text-xl font-bold text-hgl-slate mb-1">Where will {label} be held?</h1>
       <p className="text-sm text-gray-500 mb-6">
         First session:{' '}
-        {new Date(firstSession + 'T00:00:00').toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-        })}
+        {formatDateOnly(firstSession, { weekday: 'long', month: 'long', day: 'numeric' })}
       </p>
       {cls.default_location ? (
         <p className="text-sm bg-green-50 text-green-800 rounded p-3">

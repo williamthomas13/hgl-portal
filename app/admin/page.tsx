@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
+import { formatDateAdmin, monthYear } from '../utils/dates'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
 import CancelClassPanel from './cancel-class-panel'
@@ -90,10 +91,9 @@ function slugify(s: string) {
 
 /** Season+year term from the start date, e.g. "fall26". */
 function termFor(startDate: string) {
-  const d = new Date(startDate + 'T00:00:00')
-  const m = d.getMonth() + 1
+  const { month: m, year } = monthYear(startDate)
   const season = m <= 4 ? 'spring' : m <= 7 ? 'summer' : m <= 10 ? 'fall' : 'winter'
-  return `${season}${String(d.getFullYear()).slice(-2)}`
+  return `${season}${String(year).slice(-2)}`
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -757,7 +757,7 @@ export default function AdminDashboard() {
                           <p className="text-sm text-gray-600">
                             Instructor: {c.instructor_name}
                             {c.instructor_email ? ` (${c.instructor_email})` : ''} · Starts:{' '}
-                            {new Date(c.start_date).toLocaleDateString()}
+                            {formatDateAdmin(c.start_date)}
                           </p>
                           {c.default_location && (
                             <p className="text-sm text-gray-600">Location: {c.default_location}</p>
@@ -812,7 +812,7 @@ export default function AdminDashboard() {
                           <p className="text-sm text-gray-600 flex items-center gap-2">
                             <span className="font-semibold">Registration closes:</span>
                             {c.registration_close_date
-                              ? new Date(c.registration_close_date + 'T00:00:00').toLocaleDateString()
+                              ? formatDateAdmin(c.registration_close_date)
                               : 'first session (default)'}
                             <button
                               onClick={() => handleEditRegistrationClose(c)}
@@ -875,7 +875,7 @@ export default function AdminDashboard() {
                                 className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
                               >
                                 <span>
-                                  <strong>{new Date(s.session_date).toLocaleDateString()}</strong>
+                                  <strong>{formatDateAdmin(s.session_date)}</strong>
                                   {s.start_time && ` · ${s.start_time}`}
                                   {s.end_time && ` – ${s.end_time}`}
                                   {s.location && ` · ${s.location}`}

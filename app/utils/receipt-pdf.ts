@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib'
+import { formatDateOnly } from './dates'
 
 // Receipt PDF drawing (PHASE4_SPEC §3), shared by the /api/receipts route and
 // the render-check script. Proper two-column item layout: names wrap within
@@ -23,11 +24,7 @@ const RIGHT = 556
 const NAME_COL_WIDTH = 380 // item names wrap inside [LEFT, LEFT+380]
 
 function formatDate(iso: string) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatDateOnly(iso, { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {

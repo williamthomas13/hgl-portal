@@ -3,6 +3,8 @@
 // the Phase 4 portal views can reuse it read-only. Pure presentational: no
 // hooks, renders in server and client components alike.
 
+import { dateParts } from '../utils/dates'
+
 export type CalendarSession = {
   session_date: string
   start_time: string | null
@@ -35,7 +37,7 @@ export default function SessionCalendar({
     <div className="mb-4">
       <div className="grid grid-cols-1 gap-1.5">
         {sorted.map((s, i) => {
-          const d = new Date(s.session_date + 'T00:00:00')
+          const d = dateParts(s.session_date)
           const loc = s.location ?? defaultLocation
           return (
             <div
@@ -44,15 +46,15 @@ export default function SessionCalendar({
             >
               <div className="w-12 text-center shrink-0 bg-white border border-gray-200 rounded">
                 <div className="text-[10px] font-bold text-hgl-blue uppercase leading-tight pt-0.5">
-                  {d.toLocaleDateString('en-US', { month: 'short' })}
+                  {d.monthShort}
                 </div>
                 <div className="text-base font-bold text-hgl-slate leading-tight pb-0.5">
-                  {d.getDate()}
+                  {d.dayOfMonth}
                 </div>
               </div>
               <div>
                 <div className="font-semibold text-hgl-slate">
-                  {d.toLocaleDateString('en-US', { weekday: 'long' })}
+                  {d.weekdayLong}
                   <span className="text-gray-500 font-normal"> · Session {i + 1}</span>
                 </div>
                 <div className="text-gray-600">

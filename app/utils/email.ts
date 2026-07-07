@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
+import { formatDateFull } from './dates'
 
 // Server-side only. Every send goes through sendOnce(), which claims a row in
 // email_log first — Stripe webhook retries and cron re-runs never double-send.
@@ -83,12 +84,7 @@ export type EnrollmentEmailContext = {
 // ---------------------------------------------------------------------------
 
 export function formatDate(iso: string) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatDateFull(iso)
 }
 
 function formatTime(t: string | null) {

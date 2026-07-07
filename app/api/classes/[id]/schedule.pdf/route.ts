@@ -3,14 +3,7 @@ import { loadClassBundles } from '../../../../utils/lifecycle'
 
 // Simple formatted session list (dates, times, location) as a PDF.
 
-function formatDate(iso: string) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
+import { formatDateFull as formatDate } from '../../../../utils/dates'
 
 function formatTime(t: string | null) {
   if (!t) return null

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import SessionCalendar from '../../components/SessionCalendar'
+import { formatDateOnly } from '../../utils/dates'
 
 type SessionRow = {
   session_date: string
@@ -42,11 +43,7 @@ function fmtTime(t: string | null) {
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatDateOnly(iso, { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 /** Mirrors the server's {classTime}: uniform session time range or null. */
