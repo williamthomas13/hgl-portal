@@ -3,6 +3,10 @@ import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { createHash } from 'crypto'
 import {
   classDetailsEmail,
+  classFullNoticeEmail,
+  classroomRequestEmail,
+  counselorDigestEmail,
+  deadlinePushEmail,
   faqEmail,
   formatDate,
   locationReminderEmail,
@@ -19,6 +23,7 @@ import {
   tutoringUpsellEmail,
   waitlistOfferEmail,
   type Audience,
+  type DigestClassInfo,
   type EnrollmentEmailContext,
   type Rendered,
   type ScheduleChange,
@@ -34,6 +39,8 @@ import {
   addonPageUrlFor,
   claimUrlFor,
   classDetailsSnapshot,
+  classroomRequestUrlFor,
+  digestFrequencyUrlFor,
   emailContext,
   hoursSince,
   isDue,
@@ -42,6 +49,7 @@ import {
   localDate,
   localHour,
   registrationCloseFor,
+  registrationUrlFor,
   spotsTaken,
   stepTargetDate,
   type ClassBundle,
@@ -543,6 +551,265 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
 }
 
 // ---------------------------------------------------------------------------
+// 8. Phase 4 counselor loop (PHASE4_SPEC §4a/§4b): enrollment digests,
+// final-days push, and the classroom-request ask + nudges. All derived from
+// current DB state and deduped through email_log like everything else.
+// ---------------------------------------------------------------------------
+
+type CounselorRow = {
+  id: string
+  school_id: string
+  first_name: string
+  email: string
+  digest_frequency: 'weekly' | 'biweekly' | 'monthly' | 'paused'
+  digest_last_sent_at: string | null
+}
+
+async function loadCounselorsBySchool(): Promise<Map<string, CounselorRow[]>> {
+  const { data, error } = await supabase
+    .from('school_counselors')
+    .select('id, school_id, first_name, email, digest_frequency, digest_last_sent_at')
+  if (error || !data) {
+    console.error('loadCounselorsBySchool failed:', error?.message)
+    return new Map()
+  }
+  const map = new Map<string, CounselorRow[]>()
+  for (const c of data as CounselorRow[]) {
+    map.set(c.school_id, [...(map.get(c.school_id) ?? []), c])
+  }
+  return map
+}
+
+/** Classes a counselor's digest covers: registration still open. */
+function digestClasses(bundles: ClassBundle[], schoolId: string): ClassBundle[] {
+  return bundles.filter(
+    (b) => b.schoolId === schoolId && localDate(b.timezone) <= registrationCloseFor(b)
+  )
+}
+
+function waitlistDepth(bundle: ClassBundle): number {
+  return bundle.enrollments.filter((e) => e.payment_status === 'Waitlisted').length
+}
+
+function paidCount(bundle: ClassBundle): number {
+  return bundle.enrollments.filter(
+    (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+  ).length
+}
+
+// Minimum days between digests per frequency (with slack for cron jitter).
+const DIGEST_INTERVAL_DAYS: Record<string, number> = { weekly: 6, biweekly: 13, monthly: 27 }
+
+async function sweepCounselorDigests(
+  bundles: ClassBundle[],
+  counselorsBySchool: Map<string, CounselorRow[]>,
+  c: Counters
+) {
+  for (const [schoolId, counselors] of counselorsBySchool) {
+    const classes = digestClasses(bundles, schoolId)
+    if (classes.length === 0) continue
+    const tz = classes[0].timezone
+    const today = localDate(tz)
+    // Digests go out Monday mornings, school-local.
+    const isMonday = new Date(today + 'T12:00:00Z').getUTCDay() === 1
+    if (!isMonday || localHour(tz) < 8) continue
+
+    for (const counselor of counselors) {
+      if (counselor.digest_frequency === 'paused') continue
+      const interval = DIGEST_INTERVAL_DAYS[counselor.digest_frequency] ?? 6
+      if (
+        counselor.digest_last_sent_at &&
+        hoursSince(counselor.digest_last_sent_at) < interval * 24
+      )
+        continue
+
+      const since = counselor.digest_last_sent_at ?? new Date(Date.now() - 7 * 24 * 3_600_000).toISOString()
+      const infos: DigestClassInfo[] = classes.map((b) => ({
+        label: `${b.schoolLabel} ${b.classType}`,
+        firstSession: b.firstSession,
+        paid: paidCount(b),
+        capacity: b.capacity,
+        waitlistDepth: waitlistDepth(b),
+        newSinceLast: b.enrollments.filter(
+          (e) => e.enrolled_at >= since && e.payment_status !== 'Expired'
+        ).length,
+        regUrl: registrationUrlFor(b),
+      }))
+
+      const { subject, html } = counselorDigestEmail({
+        counselorFirst: counselor.first_name,
+        schoolName: classes[0].schoolName,
+        classes: infos,
+        frequency: counselor.digest_frequency,
+        frequencyUrls: {
+          weekly: digestFrequencyUrlFor(counselor.id, 'weekly'),
+          biweekly: digestFrequencyUrlFor(counselor.id, 'biweekly'),
+          monthly: digestFrequencyUrlFor(counselor.id, 'monthly'),
+          paused: digestFrequencyUrlFor(counselor.id, 'paused'),
+        },
+      })
+      const status = await sendOnce({
+        dedupeKey: `counselor_digest:${counselor.id}:${today}`,
+        emailType: 'counselor_digest',
+        to: [counselor.email],
+        subject,
+        html,
+      })
+      if (status === 'sent') {
+        await supabase
+          .from('school_counselors')
+          .update({ digest_last_sent_at: new Date().toISOString() })
+          .eq('id', counselor.id)
+        bump(c, 'counselor_digest')
+      }
+    }
+  }
+}
+
+/**
+ * Final-week push (§4a): on each of the last 3 days before the enrollment
+ * deadline (fallback: first session), a daily last-call email — regardless of
+ * digest frequency. A full class suppresses the push and sends the one-off
+ * "class is full 🎉" note instead.
+ */
+async function sweepDeadlinePush(
+  bundle: ClassBundle,
+  counselorsBySchool: Map<string, CounselorRow[]>,
+  c: Counters
+) {
+  if (!bundle.schoolId) return
+  const counselors = counselorsBySchool.get(bundle.schoolId) ?? []
+  if (counselors.length === 0) return
+
+  const today = localDate(bundle.timezone)
+  if (today > registrationCloseFor(bundle)) return
+  const deadline = bundle.enrollmentDeadline ?? bundle.firstSession
+  const window = [addDaysISO(deadline, -3), addDaysISO(deadline, -1)]
+  if (today < window[0] || today > window[1]) return
+  if (localHour(bundle.timezone) < 8) return
+
+  const full = spotsTaken(bundle) >= bundle.capacity
+  for (const counselor of counselors) {
+    if (full) {
+      const { subject, html } = classFullNoticeEmail({
+        counselorFirst: counselor.first_name,
+        label: `${bundle.schoolLabel} ${bundle.classType}`,
+        waitlistDepth: waitlistDepth(bundle),
+      })
+      const status = await sendOnce({
+        dedupeKey: `class_full_notice:${bundle.id}:${counselor.id}`,
+        emailType: 'class_full_notice',
+        to: [counselor.email],
+        subject,
+        html,
+      })
+      if (status === 'sent') bump(c, 'class_full_notice')
+    } else {
+      const { subject, html } = deadlinePushEmail({
+        counselorFirst: counselor.first_name,
+        label: `${bundle.schoolLabel} ${bundle.classType}`,
+        spotsLeft: bundle.capacity - spotsTaken(bundle),
+        deadline,
+        regUrl: registrationUrlFor(bundle),
+      })
+      const status = await sendOnce({
+        dedupeKey: `deadline_push:${bundle.id}:${counselor.id}:${today}`,
+        emailType: 'deadline_push',
+        to: [counselor.email],
+        subject,
+        html,
+      })
+      if (status === 'sent') bump(c, 'deadline_push')
+    }
+  }
+}
+
+/**
+ * Classroom-request loop (§4b): in-person class, no room, 14 days out → ask
+ * the school's counselors via tokenized form; re-nudge at 11 and 8 days; the
+ * existing 6-day #4 hold-and-alert remains the backstop. Admin setting the
+ * room directly auto-cancels the pending request.
+ */
+const CLASSROOM_REQUEST_LEAD_DAYS = Number(process.env.CLASSROOM_REQUEST_LEAD_DAYS ?? 14)
+const CLASSROOM_NUDGE_DAYS = [11, 8]
+
+async function sweepClassroomRequests(
+  bundle: ClassBundle,
+  counselorsBySchool: Map<string, CounselorRow[]>,
+  c: Counters
+) {
+  if (bundle.deliveryMode !== 'in_person') return
+  const today = localDate(bundle.timezone)
+  if (today > bundle.firstSession) return
+
+  const { data: existing } = await supabase
+    .from('classroom_requests')
+    .select('id, status, nudge_count')
+    .eq('class_id', bundle.id)
+    .maybeSingle()
+
+  // Room got set (by the counselor form or the admin directly): close out.
+  if (bundle.defaultLocation) {
+    if (existing?.status === 'pending') {
+      await supabase
+        .from('classroom_requests')
+        .update({ status: 'cancelled' })
+        .eq('id', existing.id)
+        .eq('status', 'pending')
+    }
+    return
+  }
+
+  if (today < addDaysISO(bundle.firstSession, -CLASSROOM_REQUEST_LEAD_DAYS)) return
+  if (!bundle.schoolId) return
+  const counselors = counselorsBySchool.get(bundle.schoolId) ?? []
+  if (counselors.length === 0) return
+  if (localHour(bundle.timezone) < 8) return
+
+  const sendAsk = async (nudge: number) => {
+    for (const counselor of counselors) {
+      const { subject, html } = classroomRequestEmail({
+        counselorFirst: counselor.first_name,
+        schoolNickname: bundle.schoolLabel,
+        classType: bundle.classType,
+        firstSession: bundle.firstSession,
+        formUrl: classroomRequestUrlFor(bundle.id, counselor.email),
+        nudge,
+      })
+      const status = await sendOnce({
+        dedupeKey: `classroom_request:${bundle.id}:${counselor.id}:${nudge}`,
+        emailType: 'classroom_request',
+        to: [counselor.email],
+        subject,
+        html,
+      })
+      if (status === 'sent') bump(c, 'classroom_request')
+    }
+  }
+
+  if (!existing) {
+    const { error } = await supabase
+      .from('classroom_requests')
+      .insert([{ class_id: bundle.id }])
+    if (!error) await sendAsk(0)
+    return
+  }
+
+  if (existing.status !== 'pending') return
+  for (const [i, days] of CLASSROOM_NUDGE_DAYS.entries()) {
+    const nudgeNumber = i + 1
+    if (existing.nudge_count < nudgeNumber && today >= addDaysISO(bundle.firstSession, -days)) {
+      await sendAsk(nudgeNumber)
+      await supabase
+        .from('classroom_requests')
+        .update({ nudge_count: nudgeNumber, last_nudge_at: new Date().toISOString() })
+        .eq('id', existing.id)
+      return // at most one nudge per sweep
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 export async function GET(req: Request) {
   // Vercel Cron / pg_cron send Authorization: Bearer <CRON_SECRET>.
@@ -553,6 +820,7 @@ export async function GET(req: Request) {
 
   const bundles = await loadClassBundles()
   const packages = await loadTutoringPackages()
+  const counselorsBySchool = await loadCounselorsBySchool()
   const counters: Counters = {}
 
   for (const bundle of bundles) {
@@ -568,7 +836,10 @@ export async function GET(req: Request) {
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)
     await sweepAdminCheckpoints(bundle, counters)
+    await sweepDeadlinePush(bundle, counselorsBySchool, counters)
+    await sweepClassroomRequests(bundle, counselorsBySchool, counters)
   }
+  await sweepCounselorDigests(bundles, counselorsBySchool, counters)
   await sweepWeeklyDigest(bundles, counters)
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })

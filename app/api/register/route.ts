@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { localDate, DEFAULT_TIMEZONE } from '../../utils/lifecycle'
+import { upsertFamilyAndStudent } from '../../utils/registration'
 
 // Creates the family + student + Pending enrollment for a registration.
 // Phase 3 moved these writes out of the browser (anon has no RLS policies);
@@ -73,50 +74,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This class is full.', full: true }, { status: 409 })
   }
 
-  // 1. Upsert the Family (billing account, one row per parent email)
-  const { data: familyData, error: familyError } = await supabase
-    .from('families')
-    .upsert(
-      [
-        {
-          parent_first_name: parentFirst,
-          parent_last_name: parentLast,
-          parent_email: parentEmail,
-        },
-      ],
-      { onConflict: 'parent_email' }
-    )
-    .select()
-    .single()
-
-  if (familyError || !familyData) {
-    return NextResponse.json(
-      { error: 'Error saving account: ' + (familyError?.message ?? 'unknown') },
-      { status: 500 }
-    )
-  }
-
-  // 2. Create the Student, link to Family, and capture student_email + school_id
-  const { data: studentData, error: studentError } = await supabase
-    .from('students')
-    .insert([
-      {
-        family_id: familyData.id,
-        first_name: studentFirst,
-        last_name: studentLast,
-        student_email: studentEmail,
-        school_id: cls.school_id ?? null,
-        graduating_year: body.graduatingYear || null,
-      },
-    ])
-    .select()
-    .single()
-
-  if (studentError || !studentData) {
-    return NextResponse.json(
-      { error: 'Error saving student: ' + (studentError?.message ?? 'unknown') },
-      { status: 500 }
-    )
+  // 1+2. Family + student: match on parent email and attach to the existing
+  // family (PHASE4_SPEC §7 — siblings and returning families share one row;
+  // repeat registrations never overwrite the parent's name).
+  const result = await upsertFamilyAndStudent({
+    parentFirst,
+    parentLast,
+    parentEmail,
+    studentFirst,
+    studentLast,
+    studentEmail,
+    schoolId: cls.school_id ?? null,
+    graduatingYear: body.graduatingYear || null,
+  })
+  if ('error' in result) {
+    return NextResponse.json({ error: result.error }, { status: 500 })
   }
 
   // 3. Create the Enrollment in "Pending" state (holds a capacity spot)
@@ -124,7 +96,7 @@ export async function POST(request: Request) {
     .from('enrollments')
     .insert([
       {
-        student_id: studentData.id,
+        student_id: result.studentId,
         class_id: cls.id,
         payment_status: 'Pending',
         accommodations: body.accommodations || null,

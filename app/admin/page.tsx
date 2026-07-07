@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
+import CounselorsPanel from './counselors-panel'
+import InstructorsPanel, { type Instructor } from './instructors-panel'
 
 type School = {
   id: string
@@ -31,6 +33,14 @@ type Enrollment = {
       parent_last_name: string
     } | null
   } | null
+}
+
+type RoomRequest = {
+  class_id: string
+  status: string
+  nudge_count: number
+  answer: string | null
+  answered_by: string | null
 }
 
 type ClassRow = {
@@ -90,10 +100,30 @@ export default function AdminDashboard() {
   const [fetchingRosters, setFetchingRosters] = useState(true)
   const [deliveryMode, setDeliveryMode] = useState<'in_person' | 'online'>('in_person')
   const [minEnrollment, setMinEnrollment] = useState('8')
+  const [instructors, setInstructors] = useState<Instructor[]>([])
+  const [roomRequests, setRoomRequests] = useState<Record<string, RoomRequest>>({})
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
     if (data) setSchools(data)
+  }, [])
+
+  const fetchInstructors = useCallback(async () => {
+    const { data } = await supabase
+      .from('instructors')
+      .select('id, email, name, default_meeting_link')
+      .order('email')
+    if (data) setInstructors(data as Instructor[])
+  }, [])
+
+  // Classroom-request status per class (PHASE4_SPEC §4b/§10).
+  const fetchRoomRequests = useCallback(async () => {
+    const { data } = await supabase
+      .from('classroom_requests')
+      .select('class_id, status, nudge_count, answer, answered_by')
+    if (data) {
+      setRoomRequests(Object.fromEntries((data as RoomRequest[]).map((r) => [r.class_id, r])))
+    }
   }, [])
 
   const fetchRosters = useCallback(async () => {
@@ -130,7 +160,9 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSchools()
     fetchRosters()
-  }, [fetchSchools, fetchRosters])
+    fetchInstructors()
+    fetchRoomRequests()
+  }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests])
 
   // ---------------------------------------------------------------------------
   // Create class
@@ -167,16 +199,27 @@ export default function AdminDashboard() {
       }
     }
 
+    // Online classes with no explicit location auto-fill the instructor's
+    // default meeting link (PHASE4_SPEC §5); admin can still override here or
+    // later. In-person classes stay blank → the classroom-request loop asks
+    // the counselor at 14 days out.
+    const instructorEmail = ((formData.get('instructor_email') as string) || '').trim().toLowerCase()
+    let defaultLocation = (formData.get('default_location') as string) || null
+    if (!defaultLocation && deliveryMode === 'online' && instructorEmail) {
+      defaultLocation =
+        instructors.find((i) => i.email === instructorEmail)?.default_meeting_link ?? null
+    }
+
     const newClass = {
       school_nickname: schoolNickname, // keep for backward compat; to be dropped later
       school_id: schoolId,
       class_type: formData.get('class_type'),
       instructor_name: formData.get('instructor_name'),
-      instructor_email: formData.get('instructor_email') || null,
+      instructor_email: instructorEmail || null,
       price: formData.get('price'),
       capacity: formData.get('capacity'),
       start_date: formData.get('start_date'),
-      default_location: formData.get('default_location') || null,
+      default_location: defaultLocation,
       synap_group: formData.get('synap_group') || null,
       delivery_mode: deliveryMode,
       min_enrollment: Number(minEnrollment) || (deliveryMode === 'online' ? 3 : 8),
@@ -576,6 +619,24 @@ export default function AdminDashboard() {
                           {c.default_location && (
                             <p className="text-sm text-gray-600">Location: {c.default_location}</p>
                           )}
+                          {c.delivery_mode === 'in_person' && (() => {
+                            const rr = roomRequests[c.id]
+                            if (!rr && c.default_location) return null
+                            const badge = !rr
+                              ? { text: 'room not set — counselor gets asked 14 days out', cls: 'bg-gray-100 text-gray-500' }
+                              : rr.status === 'pending'
+                                ? { text: `room requested from counselor${rr.nudge_count > 0 ? ` · ${rr.nudge_count} nudge${rr.nudge_count > 1 ? 's' : ''}` : ''}`, cls: 'bg-yellow-100 text-yellow-800' }
+                                : rr.status === 'answered'
+                                  ? { text: `room set by ${rr.answered_by ?? 'counselor'}: ${rr.answer}`, cls: 'bg-green-100 text-green-700' }
+                                  : { text: 'room request cancelled (set directly)', cls: 'bg-gray-100 text-gray-500' }
+                            return (
+                              <p className="text-xs mt-1">
+                                <span className={`inline-block px-2 py-0.5 rounded font-semibold ${badge.cls}`}>
+                                  {badge.text}
+                                </span>
+                              </p>
+                            )
+                          })()}
                           {c.synap_group && (
                             <p className="text-sm text-gray-600">Synap group: {c.synap_group}</p>
                           )}
@@ -785,6 +846,10 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
+
+        {/* PHASE 4: COUNSELORS + INSTRUCTORS */}
+        <CounselorsPanel schools={schools} />
+        <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
       </div>
     </div>
   )

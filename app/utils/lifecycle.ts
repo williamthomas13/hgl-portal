@@ -55,6 +55,7 @@ export type EnrollmentRow = {
 
 export type ClassBundle = {
   id: string
+  slug: string | null
   classType: string
   schoolId: string | null
   schoolName: string
@@ -158,7 +159,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 export async function loadClassBundles(classId?: string): Promise<ClassBundle[]> {
   let query = supabase.from('classes').select(
     `
-    id, class_type, school_nickname, school_id, instructor_name, instructor_email,
+    id, slug, class_type, school_nickname, school_id, instructor_name, instructor_email,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     schools ( name, nickname, timezone ),
@@ -223,6 +224,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
 
     return {
       id: c.id,
+      slug: c.slug ?? null,
       classType: c.class_type,
       schoolId: c.school_id ?? null,
       schoolName: school?.name ?? school?.nickname ?? c.school_nickname ?? 'Higher Ground Learning',
@@ -253,12 +255,29 @@ export function calendarPageUrlFor(classId: string) {
   return `${base}/classes/${classId}/calendar`
 }
 
+/**
+ * #0's "View your registration" button (PHASE4_SPEC §9). With a session,
+ * /portal deep-links to the enrollment card; without one, the proxy bounces
+ * to /login carrying pe/pt so the email is prefilled — one tap for the link.
+ * The pt HMAC matches portal-auth's loginPrefillToken.
+ */
+export function portalDeepLinkFor(enrollmentId: string, parentEmail: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const email = parentEmail.trim().toLowerCase()
+  const token = createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`login:${email}`)
+    .digest('hex')
+    .slice(0, 32)
+  return `${base}/portal?enrollment=${enrollmentId}&pe=${encodeURIComponent(email)}&pt=${token}`
+}
+
 export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentEmailContext {
   return {
     enrollmentId: e.id,
     classId: bundle.id,
     calendarPageUrl: calendarPageUrlFor(bundle.id),
     resumePaymentUrl: resumePaymentUrlFor(e.id),
+    portalUrl: portalDeepLinkFor(e.id, e.parentEmail),
     // Always first session minus one day — computed, never stored.
     diagnosticDueDate: addDaysISO(bundle.firstSession, -1),
     addons: e.addons,
@@ -459,6 +478,53 @@ export function unsubscribeUrlFor(familyId: string) {
 
 export function verifyUnsubToken(familyId: string, token: string) {
   const expected = Buffer.from(unsubToken(familyId))
+  const given = Buffer.from(token)
+  return expected.length === given.length && timingSafeEqual(expected, given)
+}
+
+/** Public registration link for a class (slug preferred, uuid fallback). */
+export function registrationUrlFor(bundle: Pick<ClassBundle, 'id' | 'slug'>) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/register/${bundle.slug ?? bundle.id}`
+}
+
+// Counselor digest frequency links (PHASE4_SPEC §4a): tokenized one-click,
+// no login. One token per counselor; the freq travels as a plain param.
+// Distinct HMAC prefix, as with the other signed-link families.
+function digestToken(counselorId: string) {
+  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`digest:${counselorId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function digestFrequencyUrlFor(counselorId: string, frequency: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/api/counselor-digest/frequency?c=${counselorId}&f=${frequency}&t=${digestToken(counselorId)}`
+}
+
+export function verifyDigestToken(counselorId: string, token: string) {
+  const expected = Buffer.from(digestToken(counselorId))
+  const given = Buffer.from(token)
+  return expected.length === given.length && timingSafeEqual(expected, given)
+}
+
+// Classroom-request form links (PHASE4_SPEC §4b): single-question tokenized
+// form, no login. `ce` (counselor email) rides along so we know who answered.
+function classroomRequestToken(classId: string) {
+  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`room:${classId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function classroomRequestUrlFor(classId: string, counselorEmail: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/classroom-request/${classId}?t=${classroomRequestToken(classId)}&ce=${encodeURIComponent(counselorEmail)}`
+}
+
+export function verifyClassroomRequestToken(classId: string, token: string) {
+  const expected = Buffer.from(classroomRequestToken(classId))
   const given = Buffer.from(token)
   return expected.length === given.length && timingSafeEqual(expected, given)
 }

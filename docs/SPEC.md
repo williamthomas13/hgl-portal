@@ -1,7 +1,7 @@
 # HGL Portal — Master Spec
 
-**Last updated:** July 6, 2026 (v2.5 — Phase 3.1 manager role + Refunded status, refunds Option A)
-**Status:** Foundation, Phase 2, Phase 3 (Supabase Auth + roles + RLS), and Phase 3.1 (manager role) complete and verified in production. Anon key has zero DB access; /admin admits admin + manager. Roles: **admin** (ownership: roles, users, config) · **manager** (operations: everything else, incl. marking refunds) · instructor / counselor / parent (Phase 4 read scopes). Two admin accounts active (williamraymondthomas@gmail.com, billy@highergroundlearning.com); no manager accounts yet. Next: Phase 4 portal views.
+**Last updated:** July 6, 2026 (v2.6 — Phase 4 portal views in progress; Phase 4 spec: docs/PHASE4_SPEC.md)
+**Status:** Foundation, Phase 2, Phase 3 (Supabase Auth + roles + RLS), and Phase 3.1 (manager role) complete and verified in production. Anon key has zero DB access; /admin admits admin + manager. Roles: **admin** (ownership: roles, users, config) · **manager** (operations: everything else, incl. marking refunds) · instructor / counselor / parent (Phase 4 read scopes). Two admin accounts active (williamraymondthomas@gmail.com, billy@highergroundlearning.com); no manager accounts yet. **Phase 4 (portal views, magic-link login, counselor digests, classroom-request loop — see docs/PHASE4_SPEC.md) is being built.**
 **Stack:** Next.js + Supabase + Stripe on Vercel · Resend for transactional email
 **Live:** https://hgl-portal.vercel.app · Repo: github.com/williamthomas13/hgl-portal
 
@@ -25,7 +25,7 @@ Replace the stitched-together group-classes workflow (Squarespace + Arlo + Tutor
   - **Manager cannot:** read any profile but their own; write any profile (role changes stay `is_admin()`-only — no privilege-escalation path, verified); create/delete auth users; delete rows with payment history (enrollments with a `stripe_payment_intent_id` or a paid status, enrollment_addons ever, families/students with any paid enrollment — RLS-enforced; admin unrestricted).
   - **Refunded status (refunds Option A):** portal moves no money and makes no Stripe API refund calls — refunds are issued in the Stripe dashboard. Marking Refunded (admin UI button on Paid/Completed rows) frees the capacity spot (hourly sweep extends the W2 offer, same as expiry), excludes the enrollment from paid counts and post-class #7/#8, stops still-pending scheduled sends (every email pass filters by status), and keeps `stripe_payment_intent_id`/payment history intact for the Phase 6 / QuickBooks audit trail.
   - `/admin` (proxy + layout) admits admin and manager; the manager sees the full admin UI plus a server-rendered "Manager" badge; there is no role-management UI in the portal at all.
-- **Phase 4:** portal views — instructor (classes/rosters), counselor (school's students), parent (kids' classes/schedule/receipts). #0's "View your registration" button returns here.
+- **Phase 4 (in progress):** portal views — instructor (classes/rosters), counselor (school's students), parent (kids' classes/schedule/receipts). #0's "View your registration" button returns here. Plus: passwordless magic-link + OTP login provisioned from existing data, counselor enrollment digests + final-3-days push, classroom-request loop, `student_scores` display layer, instructor `default_meeting_link`. Full spec: **docs/PHASE4_SPEC.md** (draft v2, all decisions resolved July 6).
 - **Phase 5:** course templates (clone template → school-specific cohort).
 - **Phase 6:** QuickBooks integration (Stripe payment → QBO revenue record).
 - **Later:** TutorBird replacement (purchased 1-on-1 hours become schedulable sessions — see enrollment_addons), Synap integration, portal.highergroundlearning.com subdomain.

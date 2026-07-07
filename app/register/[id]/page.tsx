@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
+import SessionCalendar from '../../components/SessionCalendar'
 
 type SessionRow = {
   session_date: string
@@ -298,52 +299,14 @@ export default function RegistrationPage() {
 
   // Visual session calendar rendered from the sessions table — replaces the
   // old workflow of pasting Google Sheets calendar screenshots into
-  // Squarespace pages.
+  // Squarespace pages. Shared with the Phase 4 portal views.
   const sessionCalendar =
     sessions.length > 0 ? (
-      <div className="mb-4">
-        <div className="grid grid-cols-1 gap-1.5">
-          {sessions.map((s, i) => {
-            const d = new Date(s.session_date + 'T00:00:00')
-            const loc = s.location ?? classDetails.default_location
-            return (
-              <div
-                key={s.session_date + i}
-                className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-sm"
-              >
-                <div className="w-12 text-center shrink-0 bg-white border border-gray-200 rounded">
-                  <div className="text-[10px] font-bold text-hgl-blue uppercase leading-tight pt-0.5">
-                    {d.toLocaleDateString('en-US', { month: 'short' })}
-                  </div>
-                  <div className="text-base font-bold text-hgl-slate leading-tight pb-0.5">
-                    {d.getDate()}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-semibold text-hgl-slate">
-                    {d.toLocaleDateString('en-US', { weekday: 'long' })}
-                    <span className="text-gray-500 font-normal"> · Session {i + 1}</span>
-                  </div>
-                  <div className="text-gray-600">
-                    {fmtTime(s.start_time)
-                      ? `${fmtTime(s.start_time)}${s.end_time ? ` – ${fmtTime(s.end_time)}` : ''}`
-                      : 'Time TBD'}
-                    {loc ? ` · ${loc}` : ''}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <p className="text-sm mt-2">
-          <a
-            href={`/classes/${classDetails.id}/calendar`}
-            className="text-hgl-blue underline font-semibold"
-          >
-            Add to your calendar / subscribe →
-          </a>
-        </p>
-      </div>
+      <SessionCalendar
+        sessions={sessions}
+        defaultLocation={classDetails.default_location}
+        calendarHref={`/classes/${classDetails.id}/calendar`}
+      />
     ) : null
 
   const classHeader = (

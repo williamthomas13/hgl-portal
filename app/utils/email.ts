@@ -39,6 +39,8 @@ export type EnrollmentEmailContext = {
   classId: string
   calendarPageUrl: string
   resumePaymentUrl: string
+  /** /portal deep link with signed login prefill (#0 button, PHASE4_SPEC §9). */
+  portalUrl: string
   /** Always first session date − 1 day. Computed, never stored. */
   diagnosticDueDate: string
   /** Tutoring add-ons purchased with this enrollment. */
@@ -221,6 +223,7 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       ${detail('Testing accommodations', ctx.accommodations)}
       ${detail('Previous test scores', ctx.previousScores)}
       ${detail('Notes', ctx.notes)}</p>
+      ${button('View your registration', ctx.portalUrl)}
     `,
       {
         preheader: `${ctx.studentFirstName} is registered. Here's what happens next.`,
@@ -932,6 +935,200 @@ export function lateRegistrationWelcomeEmail(
     `,
       {
         preheader: `Class starts ${formatDate(ctx.firstSession)}. One thing to do first.`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CD — Counselor enrollment digest · per digest_frequency · info@ · T
+// (PHASE4_SPEC §4a. Footer carries tokenized frequency links instead of an
+// unsubscribe — "pause" is the opt-out.)
+// ---------------------------------------------------------------------------
+
+export type DigestClassInfo = {
+  label: string
+  firstSession: string
+  paid: number
+  capacity: number
+  waitlistDepth: number
+  newSinceLast: number
+  regUrl: string
+}
+
+export function counselorDigestEmail(opts: {
+  counselorFirst: string
+  schoolName: string
+  classes: DigestClassInfo[]
+  frequency: string
+  frequencyUrls: { weekly: string; biweekly: string; monthly: string; paused: string }
+}): Rendered {
+  const rows = opts.classes
+    .map(
+      (c) => `
+      <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0">
+        <p style="margin:0 0 4px"><strong>${c.label}</strong> · starts ${formatDate(c.firstSession)}</p>
+        <p style="margin:0;color:#475569">
+          <strong>${c.paid} / ${c.capacity}</strong> spots filled
+          ${c.newSinceLast > 0 ? ` · <strong>${c.newSinceLast} new</strong> since the last digest` : ''}
+          ${c.waitlistDepth > 0 ? ` · waitlist: ${c.waitlistDepth}` : ''}
+        </p>
+        <p style="margin:6px 0 0;font-size:13px">Registration link to share:
+        <a href="${c.regUrl}">${c.regUrl}</a></p>
+      </div>`
+    )
+    .join('')
+  const f = opts.frequencyUrls
+  return {
+    subject: `${opts.schoolName} — enrollment update from Higher Ground Learning`,
+    html: wrap(
+      `
+      <p>Hi ${opts.counselorFirst},</p>
+      <p>Here's where enrollment stands for the upcoming Higher Ground Learning
+      ${opts.classes.length === 1 ? 'class' : 'classes'} at ${opts.schoolName}:</p>
+      ${rows}
+      <p>No action needed — this is just so you never have to email us for a headcount.
+      Questions or updates? Just reply.</p>
+      <p>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `Enrollment counts for ${opts.schoolName} — no action needed.`,
+        footer: `<p style="font-size:13px;color:#64748b">You get this digest ${
+          opts.frequency === 'biweekly' ? 'every 2 weeks' : opts.frequency
+        }. Switch to
+          <a href="${f.weekly}" style="color:#64748b">weekly</a> ·
+          <a href="${f.biweekly}" style="color:#64748b">every 2 weeks</a> ·
+          <a href="${f.monthly}" style="color:#64748b">monthly</a> ·
+          <a href="${f.paused}" style="color:#64748b">pause</a></p>
+          <p style="font-size:13px;color:#64748b">Higher Ground Learning · highergroundlearning.com</p>`,
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CP — Final-days enrollment push · daily, last 3 days before deadline ·
+// info@ · T. Suppressed when full (the class-full note below goes instead).
+// ---------------------------------------------------------------------------
+
+export function deadlinePushEmail(opts: {
+  counselorFirst: string
+  label: string
+  spotsLeft: number
+  deadline: string
+  regUrl: string
+}): Rendered {
+  return {
+    subject: `${opts.label}: ${opts.spotsLeft} spot${opts.spotsLeft === 1 ? '' : 's'} left — registration closes ${formatDate(opts.deadline)}`,
+    html: wrap(
+      `
+      <p>Hi ${opts.counselorFirst},</p>
+      <p>Quick one — registration for <strong>${opts.label}</strong> closes
+      ${formatDate(opts.deadline)}, and there ${opts.spotsLeft === 1 ? 'is' : 'are'} still
+      <strong>${opts.spotsLeft} spot${opts.spotsLeft === 1 ? '' : 's'}</strong> open.</p>
+      <p>If any families are still on the fence, now's the moment. Here's the link to forward:</p>
+      <p><a href="${opts.regUrl}">${opts.regUrl}</a></p>
+      ${button('Registration page', opts.regUrl)}
+      <p>Thanks for helping us get the word out!</p>
+      <p>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `Last call — ${opts.spotsLeft} open spot${opts.spotsLeft === 1 ? '' : 's'} before ${formatDate(opts.deadline)}.`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+export function classFullNoticeEmail(opts: {
+  counselorFirst: string
+  label: string
+  waitlistDepth: number
+}): Rendered {
+  return {
+    subject: `${opts.label} is full 🎉`,
+    html: wrap(
+      `
+      <p>Hi ${opts.counselorFirst},</p>
+      <p>Good news — <strong>${opts.label}</strong> has filled every spot.
+      ${opts.waitlistDepth > 0 ? `There are currently <strong>${opts.waitlistDepth}</strong> ${opts.waitlistDepth === 1 ? 'family' : 'families'} on the waitlist, so late interest is still worth sending our way — spots do open up.` : `Families can still join the waitlist in case a spot opens up.`}</p>
+      <p>Thanks for all your help spreading the word!</p>
+      <p>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `Every spot is taken${opts.waitlistDepth > 0 ? ` — ${opts.waitlistDepth} on the waitlist` : ''}.`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CR — Classroom request · 14d before start (re-nudges 11d / 8d) · info@ · T
+// (PHASE4_SPEC §4b: single-question tokenized form, no login.)
+// ---------------------------------------------------------------------------
+
+export function classroomRequestEmail(opts: {
+  counselorFirst: string
+  schoolNickname: string
+  classType: string
+  firstSession: string
+  formUrl: string
+  nudge: number // 0 = first ask, 1–2 = re-nudges
+}): Rendered {
+  const ask = `Where will the ${opts.schoolNickname} ${opts.classType} class be held?`
+  const opener =
+    opts.nudge === 0
+      ? `<p>The <strong>${opts.schoolNickname} ${opts.classType}</strong> class starts
+         ${formatDate(opts.firstSession)}, and we still need one thing from you: the room.</p>`
+      : `<p>Just a friendly nudge — the <strong>${opts.schoolNickname} ${opts.classType}</strong>
+         class starts ${formatDate(opts.firstSession)} and we still don't have a room for it.</p>`
+  return {
+    subject: opts.nudge === 0 ? ask : `Reminder: ${ask}`,
+    html: wrap(
+      `
+      <p>Hi ${opts.counselorFirst},</p>
+      ${opener}
+      <p>It takes about ten seconds — one question, no login:</p>
+      ${button('Tell us the room', opts.formUrl)}
+      <p>Whatever you type (e.g. "Room C19 in the high school") goes straight onto the class
+      calendar, the reminder emails, and the parent portal — no back-and-forth needed.</p>
+      <p>Thank you!</p>
+      <p>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `One question, ten seconds — where should students go?`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// LOGIN — Portal sign-in link + OTP code · on request · info@ · T
+// One email carries both: the link for normal use, the 6-digit code for
+// expired links and school-district link-scanners that consume one-time URLs.
+// ---------------------------------------------------------------------------
+
+export function loginLinkEmail(confirmUrl: string, otp: string): Rendered {
+  return {
+    subject: `Your Higher Ground Learning sign-in link`,
+    html: wrap(
+      `
+      <p>Hi,</p>
+      <p>Here's your sign-in link for the Higher Ground Learning portal:</p>
+      ${button('Sign in to your portal', confirmUrl)}
+      <p>If the button doesn't work (some school networks pre-open links, which can use them up),
+      enter this code on the sign-in page instead:</p>
+      <p style="font-size:28px;font-weight:bold;letter-spacing:6px;color:#334155;
+      background:#f1f5f9;border-radius:8px;padding:14px 20px;text-align:center">${otp}</p>
+      <p>The link and code expire in 1 hour. If you didn't request this email, you can safely
+      ignore it — nobody can sign in without it.</p>
+      <p>Higher Ground Learning</p>
+    `,
+      {
+        preheader: `Your sign-in link and code are inside.`,
         footer: footerT(),
       }
     ),
