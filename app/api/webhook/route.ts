@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import Stripe from 'stripe';
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
+import { processQboQueue } from '../../utils/qbo-sync';
 import {
   lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
@@ -27,7 +28,14 @@ export const runtime = 'nodejs';
 // Durably record a purchased tutoring add-on (hours become schedulable
 // sessions in the future TutorBird-replacement phase). Idempotent: the
 // (enrollment_id, package_id) unique constraint absorbs webhook retries.
-async function recordAddon(enrollmentId: string, packageId: string, stripeSessionId: string) {
+// Returns the addon row id (inserted or pre-existing) so addon-only
+// purchases can enqueue their QBO sale against it (Phase 6).
+async function recordAddon(
+  enrollmentId: string,
+  packageId: string,
+  stripeSessionId: string,
+  paymentIntentId: string | null
+): Promise<string | null> {
   const { data: pkg } = await supabase
     .from('tutoring_packages')
     .select('hours, package_price')
@@ -35,20 +43,51 @@ async function recordAddon(enrollmentId: string, packageId: string, stripeSessio
     .single();
   if (!pkg) {
     console.error(`Addon package ${packageId} not found for enrollment ${enrollmentId}`);
-    return;
+    return null;
   }
-  const { error } = await supabase.from('enrollment_addons').insert([
-    {
-      enrollment_id: enrollmentId,
-      package_id: packageId,
-      hours: pkg.hours,
-      price_paid: pkg.package_price,
-      stripe_session_id: stripeSessionId,
-    },
-  ]);
+  const { data, error } = await supabase
+    .from('enrollment_addons')
+    .insert([
+      {
+        enrollment_id: enrollmentId,
+        package_id: packageId,
+        hours: pkg.hours,
+        price_paid: pkg.package_price,
+        stripe_session_id: stripeSessionId,
+        stripe_payment_intent_id: paymentIntentId,
+      },
+    ])
+    .select('id');
+  if (data?.[0]?.id) return data[0].id;
   if (error && error.code !== '23505') {
     console.error(`Failed to record addon for enrollment ${enrollmentId}:`, error.message);
+    return null;
   }
+  // Webhook retry: the row already exists — fetch it.
+  const { data: existing } = await supabase
+    .from('enrollment_addons')
+    .select('id')
+    .eq('enrollment_id', enrollmentId)
+    .eq('package_id', packageId)
+    .maybeSingle();
+  return existing?.id ?? null;
+}
+
+// Phase 6 (docs/PHASE6_SPEC.md §4/§5): enqueue a QBO sync row. Never blocks
+// or fails the webhook — QBO downtime must never affect checkout. Duplicate
+// webhook deliveries insert-conflict away on (payment_intent, kind).
+async function enqueueQboSync(row: {
+  enrollment_id: string;
+  enrollment_addon_id?: string | null;
+  stripe_payment_intent_id: string;
+  kind: 'sale' | 'refund';
+  amount: number | null;
+}) {
+  const { error } = await supabase.from('qbo_sync_log').insert([row]);
+  if (!error) return 'inserted';
+  if (error.code === '23505') return 'duplicate';
+  console.error(`QBO enqueue failed for ${row.kind} ${row.stripe_payment_intent_id}:`, error.message);
+  return 'failed';
 }
 
 export async function POST(req: Request) {
@@ -75,19 +114,31 @@ export async function POST(req: Request) {
     const packageId = session.metadata?.package_id;
     const sessionId = session.id;
 
-    // Addon-only purchase (from the #9 upsell page): the enrollment was
-    // already paid — record the addon and leave the payment fields alone.
-    if (session.metadata?.addon_only === '1') {
-      if (enrollmentId && packageId) {
-        await recordAddon(enrollmentId, packageId, sessionId);
-        console.log(`Recorded addon-only purchase for enrollment ${enrollmentId}.`);
-      }
-      return NextResponse.json({ received: true });
-    }
     const paymentIntentId =
       typeof session.payment_intent === 'string'
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
+
+    // Addon-only purchase (from the #9 upsell page): the enrollment was
+    // already paid — record the addon and leave the payment fields alone.
+    // It is still portal revenue, so it gets its own QBO Sales Receipt.
+    if (session.metadata?.addon_only === '1') {
+      if (enrollmentId && packageId) {
+        const addonId = await recordAddon(enrollmentId, packageId, sessionId, paymentIntentId);
+        console.log(`Recorded addon-only purchase for enrollment ${enrollmentId}.`);
+        if (addonId && paymentIntentId) {
+          await enqueueQboSync({
+            enrollment_id: enrollmentId,
+            enrollment_addon_id: addonId,
+            stripe_payment_intent_id: paymentIntentId,
+            kind: 'sale',
+            amount: session.amount_total != null ? session.amount_total / 100 : null,
+          });
+          after(() => processQboQueue());
+        }
+      }
+      return NextResponse.json({ received: true });
+    }
 
     // Primary match: the enrollment id we set in metadata.
     // Fallback: the stripe session id we stamped on the enrollment before redirect.
@@ -128,6 +179,21 @@ export async function POST(req: Request) {
     const classId = data[0].class_id;
     console.log(`Marked enrollment ${paidEnrollmentId} paid (session ${sessionId}).`);
 
+    // Phase 6: money moved, so the sale must reach QuickBooks — even in the
+    // paid-after-cancel race below (the refund receipt will pair with it).
+    // The worker runs after the response; the webhook never waits on QBO.
+    if (paymentIntentId) {
+      await enqueueQboSync({
+        enrollment_id: paidEnrollmentId,
+        stripe_payment_intent_id: paymentIntentId,
+        kind: 'sale',
+        amount: session.amount_total != null ? session.amount_total / 100 : null,
+      });
+      after(() => processQboQueue());
+    } else {
+      console.error(`No payment intent on session ${sessionId} — QBO sale not enqueued.`);
+    }
+
     // Race guard (PHASE4_SPEC §12): a checkout opened before the class was
     // cancelled can complete after it. The payment is recorded (money moved —
     // that's the refund audit trail), but no welcome emails go out; the admin
@@ -152,9 +218,11 @@ export async function POST(req: Request) {
     }
 
     // Record the in-checkout tutoring add-on before loading the bundle so
-    // the #0 confirmation recap includes it.
+    // the #0 confirmation recap includes it. PI stays null here — in-checkout
+    // add-ons ride the enrollment's payment intent; only addon-only purchases
+    // (their own checkout) stamp a PI, which is what refund matching keys on.
     if (packageId) {
-      await recordAddon(paidEnrollmentId, packageId, sessionId);
+      await recordAddon(paidEnrollmentId, packageId, sessionId, null);
     }
 
     // Welcome email: normally the thank-you; if the signup happened after
@@ -278,6 +346,86 @@ export async function POST(req: Request) {
     } catch (emailErr) {
       console.error('Confirmation email failed:', emailErr);
     }
+  }
+
+  // Phase 6 (docs/PHASE6_SPEC.md §5): a refund issued in the Stripe dashboard
+  // flows to a QBO Refund Receipt. Matching: the payment intent on the charge
+  // is either an enrollment's class payment or an addon-only purchase. The
+  // portal-side status change (mark Refunded) stays a manual staff action —
+  // this only keeps the books in step with the money.
+  if (event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge;
+    const refundPi =
+      typeof charge.payment_intent === 'string'
+        ? charge.payment_intent
+        : charge.payment_intent?.id ?? null;
+    const refundedAmount = charge.amount_refunded != null ? charge.amount_refunded / 100 : null;
+    if (!refundPi || !refundedAmount) return NextResponse.json({ received: true });
+
+    let refundEnrollmentId: string | null = null;
+    const { data: byEnrollment } = await supabase
+      .from('enrollments')
+      .select('id')
+      .eq('stripe_payment_intent_id', refundPi)
+      .maybeSingle();
+    if (byEnrollment) {
+      refundEnrollmentId = byEnrollment.id;
+    } else {
+      const { data: byAddon } = await supabase
+        .from('enrollment_addons')
+        .select('enrollment_id')
+        .eq('stripe_payment_intent_id', refundPi)
+        .maybeSingle();
+      refundEnrollmentId = byAddon?.enrollment_id ?? null;
+    }
+    if (!refundEnrollmentId) {
+      // Not a portal payment we know (e.g. pre-Phase-6 history) — note it and
+      // move on; the bookkeeper handles it like before.
+      console.log(`charge.refunded for unknown payment intent ${refundPi} — no QBO row enqueued.`);
+      return NextResponse.json({ received: true });
+    }
+
+    const outcome = await enqueueQboSync({
+      enrollment_id: refundEnrollmentId,
+      stripe_payment_intent_id: refundPi,
+      kind: 'refund',
+      amount: refundedAmount,
+    });
+
+    if (outcome === 'duplicate') {
+      // charge.refunded reports the CUMULATIVE refunded amount, and one
+      // Refund Receipt per payment is the idempotency rule (spec §3). A
+      // second partial refund can only be recorded manually — tell the admin.
+      const { data: existing } = await supabase
+        .from('qbo_sync_log')
+        .select('id, amount, status')
+        .eq('stripe_payment_intent_id', refundPi)
+        .eq('kind', 'refund')
+        .maybeSingle();
+      if (existing && refundedAmount > Number(existing.amount ?? 0)) {
+        if (existing.status === 'synced') {
+          await sendAdminAlert({
+            dedupeKey: `qbo_refund_extra:${refundPi}:${Math.round(refundedAmount * 100)}`,
+            adminEmail: ADMIN_EMAIL,
+            subject: 'Additional Stripe refund needs a manual QuickBooks entry',
+            body: `<p>Payment <code>${refundPi}</code> (enrollment <code>${refundEnrollmentId}</code>)
+              was refunded again in Stripe — cumulative refunds now total
+              <strong>$${refundedAmount.toFixed(2)}</strong>, but a Refund Receipt for the earlier
+              amount ($${Number(existing.amount ?? 0).toFixed(2)}) already synced to QuickBooks.</p>
+              <p>Enter the additional refund in QuickBooks manually.</p>`,
+            enrollmentId: refundEnrollmentId,
+          }).catch((e) => console.error('Admin alert failed:', e));
+        } else {
+          // Not synced yet — the pending row can absorb the new total.
+          await supabase
+            .from('qbo_sync_log')
+            .update({ amount: refundedAmount })
+            .eq('id', existing.id)
+            .neq('status', 'synced');
+        }
+      }
+    }
+    after(() => processQboQueue());
   }
 
   return NextResponse.json({ received: true });

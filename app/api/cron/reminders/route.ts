@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
+import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
 import { createHash } from 'crypto'
 import {
   classDetailsEmail,
@@ -1021,6 +1022,14 @@ export async function GET(req: Request) {
   }
   await sweepCounselorDigests(bundles, counselorsBySchool, counters)
   await sweepAdminRosterReport(bundles, counters)
+
+  // Phase 6: retry/backup pass over the QBO queue (the webhook's after()
+  // trigger is the fast path) + the daily expired-connection nag.
+  const qbo = await processQboQueue()
+  if (qbo.synced > 0) counters.qbo_synced = qbo.synced
+  if (qbo.failed > 0) counters.qbo_failed = qbo.failed
+  if (qbo.deferred > 0) counters.qbo_deferred = qbo.deferred
+  if ((await sweepQboHealth()) === 'alerted') bump(counters, 'qbo_expired_alert')
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })
 }

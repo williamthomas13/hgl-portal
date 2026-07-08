@@ -10,6 +10,7 @@ import CancelClassPanel from './cancel-class-panel'
 import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-wizard'
 import CollateralCard, { type CollateralFields } from './collateral-card'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
+import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import { CollapsibleSection, TimeSelect, to24h } from './ui'
 
 type Session = {
@@ -20,6 +21,15 @@ type Session = {
   location: string | null
 }
 
+type QboSyncEntry = {
+  id: string
+  kind: 'sale' | 'refund'
+  status: 'pending' | 'synced' | 'failed'
+  qbo_doc_id: string | null
+  qbo_doc_number: string | null
+  last_error: string | null
+}
+
 type Enrollment = {
   id: string
   enrolled_at: string
@@ -27,6 +37,7 @@ type Enrollment = {
   class_cancelled: boolean
   cancellation_outcome: string | null
   enrollment_addons: { hours: number }[] | null
+  qbo_sync_log: QboSyncEntry[] | null
   students: {
     first_name: string
     last_name: string
@@ -235,6 +246,14 @@ export default function AdminDashboard() {
     if (data) setInstructors(data as Instructor[])
   }, [])
 
+  // Phase 6: QBO connection summary — drives the QuickBooks panel and the
+  // roster badges' deep links (sandbox vs production host).
+  const [qboStatus, setQboStatus] = useState<QboStatus | null>(null)
+  const fetchQboStatus = useCallback(async () => {
+    const res = await fetch('/api/qbo/status')
+    if (res.ok) setQboStatus(await res.json())
+  }, [])
+
   // Classroom-request status per class (PHASE4_SPEC §4b/§10).
   const fetchRoomRequests = useCallback(async () => {
     const { data } = await supabase
@@ -262,6 +281,7 @@ export default function AdminDashboard() {
           class_cancelled,
           cancellation_outcome,
           enrollment_addons ( hours ),
+          qbo_sync_log ( id, kind, status, qbo_doc_id, qbo_doc_number, last_error ),
           students (
             first_name,
             last_name,
@@ -289,7 +309,8 @@ export default function AdminDashboard() {
     fetchInstructors()
     fetchRoomRequests()
     fetchAllCounselors()
-  }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests, fetchAllCounselors])
+    fetchQboStatus()
+  }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests, fetchAllCounselors, fetchQboStatus])
 
   // ---------------------------------------------------------------------------
   // Registration links (pasted into Squarespace "Register" buttons)
@@ -501,6 +522,49 @@ export default function AdminDashboard() {
     activeTab === '__past' || liveClasses.some((c) => c.id === activeTab)
       ? activeTab
       : (liveClasses[0]?.id ?? '__past')
+
+  // Phase 6 §8: per-enrollment QBO badge — worst status wins (failed >
+  // pending > synced); ✓ deep-links to the Sales Receipt. Enrollments with no
+  // sync rows (pre-Phase-6 history) show nothing.
+  function qboBadge(en: Enrollment) {
+    const rows = en.qbo_sync_log ?? []
+    if (rows.length === 0) return null
+    const failed = rows.find((r) => r.status === 'failed')
+    if (failed) {
+      return (
+        <span
+          title={failed.last_error ?? 'QuickBooks sync failed — see the QuickBooks panel'}
+          className="ml-2 inline-block px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-600"
+        >
+          QBO ✗
+        </span>
+      )
+    }
+    if (rows.some((r) => r.status === 'pending')) {
+      return (
+        <span
+          title="Waiting to sync to QuickBooks"
+          className="ml-2 inline-block px-2 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-800"
+        >
+          QBO ⏳
+        </span>
+      )
+    }
+    const sale = rows.find((r) => r.kind === 'sale' && r.qbo_doc_id)
+    const link = sale ? qboDocLink(qboStatus, 'sale', sale.qbo_doc_id) : null
+    const badge = (
+      <span className="ml-2 inline-block px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">
+        QBO ✓
+      </span>
+    )
+    return link ? (
+      <a href={link} target="_blank" rel="noopener" title="Open the Sales Receipt in QuickBooks">
+        {badge}
+      </a>
+    ) : (
+      badge
+    )
+  }
 
   function classCard(c: ClassRow) {
     const enrolledCount =
@@ -769,6 +833,7 @@ export default function AdminDashboard() {
                       >
                         {en.payment_status}
                       </span>
+                      {qboBadge(en)}
                       {(en.payment_status === 'Paid' ||
                         en.payment_status === 'Completed') && (
                         <button
@@ -1016,6 +1081,15 @@ export default function AdminDashboard() {
           subtitle="Logo, accent color, and default language for the generated flyer + parent letter"
         >
           <SchoolBrandingPanel schools={schools} onChange={fetchSchools} />
+        </CollapsibleSection>
+
+        {/* Phase 6: accounting integration — connection + mapping are
+            admin-only; the sync log and retries are staff-wide. */}
+        <CollapsibleSection
+          title="QuickBooks"
+          subtitle="Stripe payments post to QuickBooks automatically — connection, item mapping, and the sync log"
+        >
+          <QboPanel status={qboStatus} onStatusChange={fetchQboStatus} />
         </CollapsibleSection>
       </div>
     </div>
