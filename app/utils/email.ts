@@ -971,6 +971,12 @@ export type DigestClassInfo = {
   waitlistDepth: number
   newSinceLast: number
   regUrl: string
+  /** Portal link for the Phase 4.5 flyer + letter downloads (auth-gated —
+   *  links, never attachments, so the files can't go stale in an inbox). */
+  materialsUrl?: string
+  /** §8 regeneration notice: a collateral-visible detail changed since the
+   *  counselor's last digest — posted copies are stale. */
+  materialsUpdated?: boolean
 }
 
 export function counselorDigestEmail(opts: {
@@ -990,6 +996,21 @@ export function counselorDigestEmail(opts: {
         (${c.newSinceLast} new since last update) · Waitlist: ${c.waitlistDepth}</p>
         <p style="margin:6px 0 0;font-size:13px">Registration link to share:
         <a href="${c.regUrl}">${c.regUrl}</a></p>
+        ${
+          c.materialsUpdated && c.materialsUrl
+            ? `<p style="margin:6px 0 0;font-size:13px;color:#b45309"><strong>Class
+        materials updated</strong> — details on the flyer or parent letter changed, so
+        please <a href="${c.materialsUrl}">re-download</a> and replace any posted copies.</p>`
+            : ''
+        }
+        ${
+          c.materialsUrl && !c.materialsUpdated
+            ? `<p style="margin:6px 0 0;font-size:13px">Class materials (flyer for
+        bulletin boards &amp; screens, parent letter to forward) are in
+        <a href="${c.materialsUrl}">your portal</a> — always current, so
+        re-download rather than reusing saved copies.</p>`
+            : ''
+        }
       </div>`
     )
     .join('')

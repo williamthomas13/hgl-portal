@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
   // don't ship silently. If you hit a blocker, fix the code — don't flip
   // these flags on.
 
+  // Phase 4.5 collateral rendering: keep the Chromium packages out of the
+  // bundler (native require) and ship the template art/fonts inside the
+  // render function — they're read from disk and inlined as data URLs.
+  serverExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
+  outputFileTracingIncludes: {
+    '/api/classes/[id]/collateral/[artifact]': ['./public/collateral/**/*'],
+  },
+
   async redirects() {
     return [
       // The portal has no public front page: parents arrive on per-class

@@ -17,6 +17,12 @@ function gradeOf(st: any): string {
   return '—'
 }
 
+/** Effective collateral language(s): class override, else school default. */
+function materialLangs(c: any): ('en' | 'es')[] {
+  const setting = c.collateral_language ?? one<any>(c.schools)?.collateral_language ?? 'en'
+  return setting === 'both' ? ['en', 'es'] : [setting === 'es' ? 'es' : 'en']
+}
+
 export default async function CounselorView({
   supabase,
   email,
@@ -43,8 +49,8 @@ export default async function CounselorView({
       `
       id, slug, status, class_type, delivery_mode, price, capacity,
       start_date, registration_close_date, enrollment_deadline,
-      default_location, school_id,
-      schools ( name, nickname ),
+      default_location, school_id, collateral_language,
+      schools ( name, nickname, collateral_language ),
       instructors ( name, email ),
       sessions ( session_date, start_time, end_time, location ),
       enrollments (
@@ -137,6 +143,42 @@ export default async function CounselorView({
           <div className="flex items-center gap-2 mb-3 bg-gray-50 border border-gray-200 rounded p-2 text-sm">
             <span className="text-gray-600 truncate">{regLink}</span>
             <CopyButton text={regLink} />
+          </div>
+        )}
+
+        {/* Phase 4.5: flyer + parent letter downloads (spec §8). Rendered live
+            from class data, so they can never be stale. */}
+        {withRegLink && (
+          <div className="mb-4 border border-gray-200 rounded p-3">
+            <h4 className="text-sm font-bold text-hgl-slate mb-2">Class materials</h4>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {materialLangs(c).map((lang) =>
+                (
+                  [
+                    ['flyer.pdf', 'Flyer PDF'],
+                    ['flyer.jpg', 'Flyer JPG'],
+                    ['letter.pdf', 'Parent letter PDF'],
+                    ['letter.jpg', 'Parent letter JPG'],
+                  ] as const
+                ).map(([artifact, name]) => (
+                  <a
+                    key={artifact + lang}
+                    href={`/api/classes/${c.id}/collateral/${artifact}?lang=${lang}`}
+                    className="bg-hgl-blue text-white text-xs font-bold px-3 py-1.5 rounded hover:opacity-90 transition"
+                  >
+                    {materialLangs(c).length > 1 ? `${name} (${lang.toUpperCase()})` : name}
+                  </a>
+                ))
+              )}
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              <strong>How to share these materials:</strong> The flyer works well on bulletin
+              boards, hallway screens, and in student newsletters (use the JPG for screens and
+              digital, the PDF for printing). The letter is written for parents — forward it in
+              your parent communications or print it for distribution. Both always reflect the
+              latest class details, so if the schedule changes, please re-download rather than
+              reusing saved copies.
+            </p>
           </div>
         )}
 

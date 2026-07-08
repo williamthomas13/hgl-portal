@@ -86,6 +86,9 @@ export type ClassBundle = {
   firstSession: string // falls back to start_date when no sessions exist
   lastSession: string
   enrollments: EnrollmentRow[]
+  /** Last time a collateral-visible detail changed (Phase 4.5 §8) —
+   *  DB-trigger-maintained, drives the digest's "materials updated" flag. */
+  collateralChangedAt: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +175,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     id, slug, status, counselor_id, class_type, school_id, instructor_id,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
+    collateral_changed_at,
     schools ( name, nickname, timezone ),
     instructors ( name, email ),
     sessions ( id, session_date, start_time, end_time, location ),
@@ -260,6 +264,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       firstSession: sessions[0]?.session_date ?? c.start_date,
       lastSession: sessions[sessions.length - 1]?.session_date ?? c.start_date,
       enrollments,
+      collateralChangedAt: c.collateral_changed_at ?? null,
     }
   })
 }

@@ -56,6 +56,7 @@ export async function GET(request: Request) {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
     customer_email: family?.parent_email,
+    allow_promotion_codes: true,
     line_items: [
       {
         price_data: {

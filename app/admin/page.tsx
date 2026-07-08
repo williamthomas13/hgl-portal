@@ -7,7 +7,9 @@ import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
 import CancelClassPanel from './cancel-class-panel'
-import ClassWizard, { type School, type ContactAtSchool, type WizardPrefill } from './class-wizard'
+import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-wizard'
+import CollateralCard, { type CollateralFields } from './collateral-card'
+import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import { CollapsibleSection, TimeSelect, to24h } from './ui'
 
 type Session = {
@@ -66,7 +68,7 @@ type ClassRow = {
   instructors: { name: string | null; email: string } | null
   enrollments: Enrollment[] | null
   sessions: Session[] | null
-}
+} & CollateralFields
 
 const STATUS_STYLES: Record<string, string> = {
   Paid: 'bg-green-100 text-green-700',
@@ -176,7 +178,7 @@ function AddSessionForm({
 }
 
 export default function AdminDashboard() {
-  const [schools, setSchools] = useState<School[]>([])
+  const [schools, setSchools] = useState<SchoolBranding[]>([])
   const [rosters, setRosters] = useState<ClassRow[]>([])
   const [fetchingRosters, setFetchingRosters] = useState(true)
   const [instructors, setInstructors] = useState<Instructor[]>([])
@@ -653,6 +655,14 @@ export default function AdminDashboard() {
           />
         </div>
 
+        {/* COLLATERAL — flyer + parent letter downloads and the fields that drive them */}
+        <CollateralCard
+          classId={c.id}
+          fields={c}
+          school={schools.find((s) => s.id === c.school_id) ?? null}
+          onSaved={fetchRosters}
+        />
+
         {/* ROSTER */}
         <div className="p-0 overflow-x-auto">
           {enrolledCount === 0 ? (
@@ -930,6 +940,13 @@ export default function AdminDashboard() {
               )}
             </div>
           )}
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="School branding &amp; collateral defaults"
+          subtitle="Logo, accent color, and default language for the generated flyer + parent letter"
+        >
+          <SchoolBrandingPanel schools={schools} onChange={fetchSchools} />
         </CollapsibleSection>
 
         <CollapsibleSection

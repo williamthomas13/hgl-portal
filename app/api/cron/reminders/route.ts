@@ -738,6 +738,13 @@ async function sweepCounselorDigests(
           (e) => e.enrolled_at >= since && e.payment_status !== 'Expired'
         ).length,
         regUrl: registrationUrlFor(b),
+        materialsUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/portal`,
+        // Only meaningful when the counselor has seen a previous digest —
+        // otherwise there are no "posted copies" to replace yet.
+        materialsUpdated:
+          counselor.digest_last_sent_at != null &&
+          b.collateralChangedAt != null &&
+          b.collateralChangedAt >= counselor.digest_last_sent_at,
       }))
 
       const { subject, html } = counselorDigestEmail({
