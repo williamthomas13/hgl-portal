@@ -429,9 +429,9 @@ export default function AdminDashboard() {
   }
 
   // "Duplicate class" (class-card action): everything EXCEPT sessions/dates —
-  // details plus the collateral fields (blurbs, short link, language, test
-  // count). Promos never copy (their deadlines are cohort-specific), and the
-  // usual never-copied set (slug, deadlines, contact, enrollment state) holds.
+  // details plus ALL collateral fields, promo included. The usual
+  // never-copied set (slug, deadlines, contact, enrollment state) holds.
+  // This is the primary flow for repeat cohorts (SLS fall → SLS spring).
   function duplicateClass(c: ClassRow) {
     setWizardPrefill({
       schoolId: c.school_id ?? '',
@@ -451,6 +451,9 @@ export default function AdminDashboard() {
         letter_blurb: c.letter_blurb ?? null,
         letter_blurb_es: c.letter_blurb_es ?? null,
         practice_test_count: c.practice_test_count ?? null,
+        promo_code: c.promo_code ?? null,
+        promo_amount: c.promo_amount ?? null,
+        promo_deadline: c.promo_deadline ?? null,
       },
     })
     setWizardSourceLabel(
@@ -650,6 +653,18 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* COLLATERAL — with the class setup fields, not the roster: flyer +
+            parent letter downloads and the fields that drive them */}
+        <CollateralCard
+          classId={c.id}
+          classType={c.class_type}
+          inPerson={c.delivery_mode !== 'online'}
+          sessionDates={sortedSessions.map((s) => s.session_date)}
+          fields={c}
+          school={schools.find((s) => s.id === c.school_id) ?? null}
+          onSaved={fetchRosters}
+        />
+
         {/* SESSIONS — same visual calendar as the public registration page */}
         <div className="p-6 border-b border-gray-200">
           <h4 className="font-semibold text-hgl-slate mb-1">Sessions</h4>
@@ -698,18 +713,7 @@ export default function AdminDashboard() {
           />
         </div>
 
-        {/* COLLATERAL — flyer + parent letter downloads and the fields that drive them */}
-        <CollateralCard
-          classId={c.id}
-          classType={c.class_type}
-          inPerson={c.delivery_mode !== 'online'}
-          sessionDates={sortedSessions.map((s) => s.session_date)}
-          fields={c}
-          school={schools.find((s) => s.id === c.school_id) ?? null}
-          onSaved={fetchRosters}
-        />
-
-        {/* ROSTER */}
+        {/* ROSTER — read-only source of truth about signups */}
         <div className="p-0 overflow-x-auto">
           {enrolledCount === 0 ? (
             <p className="text-sm text-gray-500 p-6 text-center italic">
@@ -993,13 +997,6 @@ export default function AdminDashboard() {
         </CollapsibleSection>
 
         <CollapsibleSection
-          title="School branding &amp; collateral defaults"
-          subtitle="Logo, accent color, and default language for the generated flyer + parent letter"
-        >
-          <SchoolBrandingPanel schools={schools} onChange={fetchSchools} />
-        </CollapsibleSection>
-
-        <CollapsibleSection
           title="School contacts"
           subtitle="The person + their school affiliation — portal access and digests follow active affiliations"
         >
@@ -1011,6 +1008,14 @@ export default function AdminDashboard() {
           subtitle="Default meeting links auto-fill online classes; instructors sign in with their email"
         >
           <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
+        </CollapsibleSection>
+
+        {/* Out-of-flow branding edits — setup happens in the new-school wizard branch. */}
+        <CollapsibleSection
+          title="School branding &amp; collateral defaults"
+          subtitle="Logo, accent color, and default language for the generated flyer + parent letter"
+        >
+          <SchoolBrandingPanel schools={schools} onChange={fetchSchools} />
         </CollapsibleSection>
       </div>
     </div>

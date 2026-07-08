@@ -131,7 +131,7 @@ export default function CollateralCard({
                 key={artifact + lang}
                 href={artifactUrl(artifact, lang)}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener"
                 className="bg-hgl-blue text-white text-xs font-bold px-3 py-1.5 rounded hover:bg-hgl-blue-hover transition"
               >
                 {label(name, lang)}
@@ -226,26 +226,26 @@ export default function CollateralCard({
         <div className={langs.includes('es') ? 'col-span-3 sm:col-span-2' : 'col-span-3'}>
           <label className="block text-xs text-gray-600">
             Extra letter paragraph{langs.includes('es') && langs.includes('en') ? ' (English letter)' : ''} —
-            optional, added after the standard letter copy
+            additive, not an override
           </label>
           <textarea
             value={form.letter_blurb}
             onChange={(e) => set('letter_blurb', e.target.value)}
             rows={2}
-            placeholder={`Optional — e.g. "We're excited to return to ${school?.nickname ?? 'the school'} after last term's class!" Blank = no extra paragraph.`}
+            placeholder={`Optional extra paragraph, inserted after the standard letter copy. Example: "We're delighted to be returning to ${school?.nickname ?? 'ASF'} for a third year…"`}
             className="mt-1 w-full border rounded p-1.5"
           />
         </div>
         {langs.includes('es') && (
           <div className="col-span-3 sm:col-span-1">
             <label className="block text-xs text-gray-600">
-              Extra letter paragraph (Spanish letter)
+              Extra letter paragraph (Spanish letter) — additive, not an override
             </label>
             <textarea
               value={form.letter_blurb_es}
               onChange={(e) => set('letter_blurb_es', e.target.value)}
               rows={2}
-              placeholder={`Optional — e.g. "¡Nos alegra volver a trabajar con las familias de ${school?.nickname ?? 'la escuela'}!"`}
+              placeholder={`Párrafo adicional opcional, insertado después del texto estándar de la carta. Ejemplo: "¡Nos complace regresar a ${school?.nickname ?? 'ASF'} por tercer año consecutivo…"`}
               className="mt-1 w-full border rounded p-1.5"
             />
           </div>

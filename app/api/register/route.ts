@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
-import { localDate, DEFAULT_TIMEZONE, INTERNAL_EMAIL } from '../../utils/lifecycle'
-import { registrationAlertContent, sendAdminAlert } from '../../utils/email'
+import { localDate, DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { upsertFamilyAndStudent } from '../../utils/registration'
 
 // Creates the family + student + Pending enrollment for a registration.
@@ -48,9 +47,8 @@ export async function POST(request: Request) {
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      `id, status, school_id, capacity, min_enrollment, class_type, delivery_mode,
-       registration_close_date, start_date,
-       schools ( timezone, nickname ),
+      `id, status, school_id, capacity, registration_close_date, start_date,
+       schools ( timezone ),
        sessions ( session_date ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )
@@ -119,29 +117,7 @@ export async function POST(request: Request) {
     )
   }
 
-  // Instant internal heads-up to info@ (July 8 punch list). Counts come from
-  // the pre-insert snapshot, so the fresh Pending row is added by hand.
-  // sendOnce never throws — a mail hiccup must not fail the registration.
-  const slots = (cls.enrollments as Slot[]) ?? []
-  const alert = registrationAlertContent({
-    studentName: `${studentFirst} ${studentLast}`,
-    parentName: `${parentFirst} ${parentLast}`,
-    parentEmail,
-    label: `${(school as { nickname?: string } | null)?.nickname ?? 'HGL'} ${cls.class_type}`,
-    status: 'Pending',
-    paid: slots.filter((e) => e.payment_status === 'Paid' || e.payment_status === 'Completed').length,
-    pending: slots.filter((e) => e.payment_status === 'Pending').length + 1,
-    waitlisted: slots.filter((e) => e.payment_status === 'Waitlisted').length,
-    minEnrollment: cls.min_enrollment ?? (cls.delivery_mode === 'online' ? 3 : 8),
-    capacity: cls.capacity,
-  })
-  await sendAdminAlert({
-    dedupeKey: `internal_reg:${enrollmentData.id}`,
-    adminEmail: INTERNAL_EMAIL,
-    subject: alert.subject,
-    body: alert.body,
-    enrollmentId: enrollmentData.id,
-  })
-
+  // The admin registration notification fires from the Stripe webhook once
+  // this enrollment is PAID — creation alone is silent (July 8 punch list).
   return NextResponse.json({ enrollmentId: enrollmentData.id })
 }

@@ -59,8 +59,9 @@ export type WizardPrefill = {
   defaultLocation: string
   sessions: SessionDraft[]
   /** "Duplicate class": collateral fields carried onto the new class row
-   *  verbatim (blurbs, short link, language, test count — never promos,
-   *  their deadlines are cohort-specific). Absent for Phase 5 copy. */
+   *  verbatim — including the promo trio (repeat cohorts usually rerun the
+   *  same offer; the admin edits the deadline on the Collateral card).
+   *  Absent for Phase 5 copy. */
   collateral?: {
     short_link: string | null
     collateral_language: string | null
@@ -68,6 +69,9 @@ export type WizardPrefill = {
     letter_blurb: string | null
     letter_blurb_es: string | null
     practice_test_count: number | null
+    promo_code: string | null
+    promo_amount: number | null
+    promo_deadline: string | null
   }
 }
 
@@ -151,6 +155,9 @@ export default function ClassWizard({
   // final-days push all need someone) — so creating a school REQUIRES its
   // first contact (addendum §7.1), and the full name is REQUIRED too
   // (nickname alone is ambiguous internally — ASM = Milan or Madrid).
+  // Branding fields (logo / accent / language) are part of school SETUP —
+  // captured once here, then class creation never touches branding again
+  // (out-of-flow edits live in the School branding panel).
   const [newSchool, setNewSchool] = useState({
     nickname: '',
     name: '',
@@ -158,7 +165,10 @@ export default function ClassWizard({
     contactFirst: '',
     contactLast: '',
     contactEmail: '',
+    accentColor: '',
+    collateralLanguage: 'en',
   })
+  const [newSchoolLogo, setNewSchoolLogo] = useState<File | null>(null)
   const [addingContact, setAddingContact] = useState(false)
   const [newContact, setNewContact] = useState({ first_name: '', last_name: '', email: '' })
   const [addingInstructor, setAddingInstructor] = useState(false)
@@ -220,6 +230,10 @@ export default function ClassWizard({
       setMessage('Error: a new school needs nickname, full name, timezone, and a contact.')
       return
     }
+    if (newSchool.accentColor && !/^#[0-9a-fA-F]{6}$/.test(newSchool.accentColor)) {
+      setMessage('Error: accent must be a hex color like #7a1f3d (or blank for HGL blue).')
+      return
+    }
     const { data, error } = await supabase
       .from('schools')
       .insert([
@@ -227,6 +241,8 @@ export default function ClassWizard({
           nickname: newSchool.nickname.trim(),
           name: newSchool.name.trim(),
           timezone: newSchool.timezone,
+          accent_color: newSchool.accentColor || null,
+          collateral_language: newSchool.collateralLanguage,
         },
       ])
       .select('id')
@@ -238,19 +254,38 @@ export default function ClassWizard({
       )
       return
     }
+    // Logo upload needs the school id for its storage path; a failure here
+    // leaves the school usable (flyer just omits the crest — same as blank).
+    if (newSchoolLogo) {
+      const ext = (newSchoolLogo.name.split('.').pop() || 'png').toLowerCase()
+      const path = `${data.id}/logo-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from('school-assets')
+        .upload(path, newSchoolLogo, { cacheControl: '3600', upsert: true })
+      if (upErr) {
+        setMessage(`School saved, but the logo upload failed (${upErr.message}) — retry from the School branding panel.`)
+      } else {
+        const { data: pub } = supabase.storage.from('school-assets').getPublicUrl(path)
+        await supabase.from('schools').update({ logo_url: pub.publicUrl }).eq('id', data.id)
+      }
+    }
     const affiliationId = await ensureContactAffiliation(data.id, {
       first: newSchool.contactFirst,
       last: newSchool.contactLast,
       email: newSchool.contactEmail,
     })
     if (!affiliationId) return // school saved; contact error message already set
-    setMessage('')
+    if (!newSchoolLogo) setMessage('')
     onSchoolsChange()
     onContactsChange()
     setSchoolId(data.id)
     setCounselorId(affiliationId)
     setAddingSchool(false)
-    setNewSchool({ nickname: '', name: '', timezone: '', contactFirst: '', contactLast: '', contactEmail: '' })
+    setNewSchool({
+      nickname: '', name: '', timezone: '', contactFirst: '', contactLast: '',
+      contactEmail: '', accentColor: '', collateralLanguage: 'en',
+    })
+    setNewSchoolLogo(null)
   }
 
   async function saveNewContact() {
@@ -534,6 +569,49 @@ export default function ClassWizard({
                     onChange={(e) => setNewSchool({ ...newSchool, contactEmail: e.target.value })}
                     className="border border-gray-300 rounded-md p-2"
                   />
+                </div>
+                <p className="text-xs text-gray-500 pt-1">
+                  Collateral branding (used on the generated flyer &amp; parent letter — set once
+                  here, edit later in the School branding panel):
+                </p>
+                <div className="grid grid-cols-3 gap-2 items-center">
+                  <label className="text-xs text-gray-600 col-span-3 -mb-1">School logo (flyer top-right; optional)</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setNewSchoolLogo(e.target.files?.[0] ?? null)}
+                    className="col-span-3 text-xs"
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs text-gray-600">Accent</label>
+                    <input
+                      type="color"
+                      value={newSchool.accentColor || '#00AEEE'}
+                      onChange={(e) => setNewSchool({ ...newSchool, accentColor: e.target.value })}
+                      className="h-7 w-9 border border-gray-300 rounded cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={newSchool.accentColor}
+                      onChange={(e) => setNewSchool({ ...newSchool, accentColor: e.target.value })}
+                      placeholder="HGL blue"
+                      className="w-20 border border-gray-300 rounded p-1 text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 col-span-2">
+                    <label className="text-xs text-gray-600">Collateral language</label>
+                    <select
+                      value={newSchool.collateralLanguage}
+                      onChange={(e) =>
+                        setNewSchool({ ...newSchool, collateralLanguage: e.target.value })
+                      }
+                      className="border border-gray-300 rounded p-1 text-xs bg-white"
+                    >
+                      <option value="en">English</option>
+                      <option value="es">Spanish</option>
+                      <option value="both">Both</option>
+                    </select>
+                  </div>
                 </div>
                 <button
                   type="button"

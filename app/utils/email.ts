@@ -1527,39 +1527,33 @@ export async function sendOnce(opts: {
 
 /** Admin notification. Dedupe key still applies (e.g. one alert per class per day). */
 /**
- * Internal instant registration notification (July 8 punch list): fires on
- * every new registration and waitlist signup so the team sees momentum
- * without opening the admin. Delivered via sendAdminAlert → INTERNAL_EMAIL;
- * the paid/min/cap counts ride in the subject so the inbox list alone reads
- * as a ticker.
+ * Registration notification (ADMIN email, July 8 punch list): fires once per
+ * PAID registration from the Stripe webhook — replaces the old Squarespace
+ * notification. Strictly separate from the Phase 4 counselor digest. The
+ * running counts ride in the subject so the inbox list alone reads as a
+ * ticker. Recipient: REGISTRATION_NOTIFY_EMAIL (billy@ during testing).
  */
-export function registrationAlertContent(opts: {
+export function registrationNotificationContent(opts: {
   studentName: string
-  parentName: string
-  parentEmail: string
-  label: string
-  status: 'Pending' | 'Waitlisted'
+  label: string // "{nickname} {classType}"
+  schoolName: string
+  addonNames: string[] // in-checkout tutoring add-ons, [] when none
   paid: number
-  pending: number
-  waitlisted: number
   minEnrollment: number
   capacity: number
 }): { subject: string; body: string } {
-  const kind = opts.status === 'Waitlisted' ? 'Waitlist signup' : 'New registration'
+  const counts = `${opts.paid} paid / ${opts.minEnrollment} min / ${opts.capacity} cap`
   return {
-    subject: `${kind}: ${opts.studentName} — ${opts.label} (${opts.paid} paid / min ${opts.minEnrollment} / cap ${opts.capacity})`,
+    subject: `New paid registration: ${opts.studentName} — ${opts.label} (${counts})`,
     body: `
-      <p><strong>${opts.studentName}</strong> just ${
-        opts.status === 'Waitlisted' ? 'joined the waitlist for' : 'registered for'
-      } <strong>${opts.label}</strong>.</p>
-      <p>Parent: ${opts.parentName} (${opts.parentEmail})</p>
-      <ul>
-        <li>Paid: <strong>${opts.paid}</strong> of ${opts.capacity} (minimum to run: ${opts.minEnrollment})</li>
-        <li>Pending payment: ${opts.pending}</li>
-        <li>Waitlisted: ${opts.waitlisted}</li>
-      </ul>
-      <p style="font-size:13px;color:#64748b">Counts include this signup; paid moves when
-      their payment completes. Full rosters are in the admin dashboard.</p>`,
+      <p><strong>${opts.studentName}</strong> paid for <strong>${opts.label}</strong>
+      (${opts.schoolName}).</p>
+      ${
+        opts.addonNames.length > 0
+          ? `<p>Add-on purchased: <strong>${opts.addonNames.join(', ')}</strong></p>`
+          : ''
+      }
+      <p>${opts.label}: <strong>${counts}</strong></p>`,
   }
 }
 

@@ -165,7 +165,7 @@ export default async function CounselorView({
                     key={artifact + lang}
                     href={`/api/classes/${c.id}/collateral/${artifact}?lang=${lang}`}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener"
                     className="bg-hgl-blue text-white text-xs font-bold px-3 py-1.5 rounded hover:opacity-90 transition"
                   >
                     {materialLangs(c).length > 1 ? `${name} (${lang.toUpperCase()})` : name}

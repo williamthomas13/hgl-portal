@@ -33,6 +33,7 @@ import {
   ADMIN_EMAIL,
   DEFAULT_TIMEZONE,
   INTERNAL_EMAIL,
+  REGISTRATION_NOTIFY_EMAIL,
   PAYMENT_EXPIRY_HOURS,
   PAYMENT_REMINDERS,
   SEQUENCE,
@@ -547,7 +548,12 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
   }
 }
 
-async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
+// Admin roster report (ADMIN email — upgraded Phase 2 weekly digest, July 8
+// punch list; strictly separate from the Phase 4 counselor digest): every
+// open class's full roster with paid/pending/waitlist counts vs minimum and
+// capacity, flagging in-person classes still under minimum (those drive
+// travel-booking decisions), plus the existing email-health reporting.
+async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
   // Monday 8:00+ admin-local. Dedupe on the Monday date.
   const today = localDate(DEFAULT_TIMEZONE)
   const isMonday = new Date(today + 'T12:00:00Z').getUTCDay() === 1
@@ -556,10 +562,8 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
   const weekAgo = Date.now() - 7 * 24 * 3_600_000
   const sections: string[] = []
 
-  // Full roster report vs. minimums (July 8 punch list): every live class,
-  // every active registration, flagged against min enrollment — the Monday
-  // "do our classes run?" answer without opening the admin.
   const live = bundles.filter((b) => b.status !== 'cancelled' && b.lastSession >= today)
+  const underMinInPerson: string[] = []
   const classBlocks: string[] = []
   for (const b of live) {
     const active = b.enrollments.filter((e: EnrollmentRow) =>
@@ -568,12 +572,19 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
     const paid = active.filter(
       (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
     ).length
+    const pending = active.filter((e) => e.payment_status === 'Pending').length
+    const waitlisted = active.filter((e) => e.payment_status === 'Waitlisted').length
     const verdict =
       paid >= b.capacity
         ? `<span style="color:#15803d;font-weight:bold">FULL</span>`
         : paid >= b.minEnrollment
           ? `<span style="color:#15803d;font-weight:bold">runs (min ${b.minEnrollment} met)</span>`
           : `<span style="color:#b45309;font-weight:bold">below minimum — needs ${b.minEnrollment - paid} more paid</span>`
+    if (paid < b.minEnrollment && b.deliveryMode !== 'online') {
+      underMinInPerson.push(
+        `<li><strong>${b.schoolLabel} ${b.classType}</strong> — ${paid} paid / ${b.minEnrollment} min, starts ${b.firstSession}</li>`
+      )
+    }
     const roster =
       active.length === 0
         ? '<li style="color:#64748b">no registrations yet</li>'
@@ -589,13 +600,21 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
     classBlocks.push(
       `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0">
         <p style="margin:0"><strong>${b.schoolLabel} ${b.classType}</strong> — starts ${b.firstSession} ·
-        ${paid} paid / min ${b.minEnrollment} / cap ${b.capacity} · ${verdict}</p>
+        ${paid} paid / ${pending} pending / ${waitlisted} waitlisted ·
+        ${b.minEnrollment} min / ${b.capacity} cap · ${verdict}</p>
         <ul style="margin:6px 0 0">${roster}</ul>
       </div>`
     )
   }
+  // Travel decisions first: in-person classes that don't run yet.
+  if (underMinInPerson.length > 0) {
+    sections.push(
+      `<p><strong style="color:#b45309">⚠ In-person classes under minimum</strong>
+       (travel booking waits on these):</p><ul>${underMinInPerson.join('')}</ul>`
+    )
+  }
   if (classBlocks.length > 0) {
-    sections.push(`<p><strong>Live classes vs. minimums:</strong></p>${classBlocks.join('')}`)
+    sections.push(`<p><strong>Open classes — full rosters:</strong></p>${classBlocks.join('')}`)
   }
 
   // Delivery problems from the Resend webhook: hard bounces on student
@@ -635,12 +654,14 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
   if (sections.length === 0) return
 
   const status = await sendAdminAlert({
+    // Dedupe key kept from the Phase 2 weekly digest so a Monday deploy
+    // can't send both the old and new report.
     dedupeKey: `weekly_digest:${today}`,
-    adminEmail: ADMIN_EMAIL,
-    subject: `Weekly digest — registrations & email health`,
+    adminEmail: REGISTRATION_NOTIFY_EMAIL,
+    subject: `Admin roster report — classes vs. minimums & email health`,
     body: sections.join(''),
   })
-  if (status === 'sent') bump(c, 'weekly_digest')
+  if (status === 'sent') bump(c, 'admin_roster_report')
 }
 
 // ---------------------------------------------------------------------------
@@ -999,7 +1020,7 @@ export async function GET(req: Request) {
     await sweepClassroomRequests(bundle, counselorsBySchool, counters)
   }
   await sweepCounselorDigests(bundles, counselorsBySchool, counters)
-  await sweepWeeklyDigest(bundles, counters)
+  await sweepAdminRosterReport(bundles, counters)
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })
 }

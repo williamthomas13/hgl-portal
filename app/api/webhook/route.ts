@@ -4,12 +4,14 @@ import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import {
   lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
+  registrationNotificationContent,
   sendAdminAlert,
   sendOnce,
   studentConfirmationEmail,
 } from '../../utils/email';
 import {
   ADMIN_EMAIL,
+  REGISTRATION_NOTIFY_EMAIL,
   SEQUENCE,
   emailContext,
   isDue,
@@ -166,6 +168,30 @@ export async function POST(req: Request) {
       const enrollment = bundle?.enrollments.find((e) => e.id === paidEnrollmentId);
       if (bundle && enrollment) {
         const ctx = emailContext(bundle, enrollment);
+
+        // Registration notification (ADMIN email — replaces the old
+        // Squarespace notification): once per PAID registration, with the
+        // add-on and the class's running counts. The bundle was loaded after
+        // the Paid update and recordAddon, so both are reflected.
+        const paidCount = bundle.enrollments.filter(
+          (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+        ).length;
+        const note = registrationNotificationContent({
+          studentName: `${enrollment.studentFirstName} ${enrollment.studentLastName}`,
+          label: `${bundle.schoolLabel} ${bundle.classType}`,
+          schoolName: bundle.schoolName,
+          addonNames: enrollment.addons.map((a) => `${a.name} (${a.hours}h)`),
+          paid: paidCount,
+          minEnrollment: bundle.minEnrollment,
+          capacity: bundle.capacity,
+        });
+        await sendAdminAlert({
+          dedupeKey: `registration_notification:${paidEnrollmentId}`,
+          adminEmail: REGISTRATION_NOTIFY_EMAIL,
+          subject: note.subject,
+          body: note.body,
+          enrollmentId: paidEnrollmentId,
+        });
 
         // Late registration test: would the pre-start emails (#2/#3) already
         // have fired? If so, the LR welcome replaces the whole confirmation

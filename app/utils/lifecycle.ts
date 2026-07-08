@@ -15,6 +15,13 @@ export const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmai
  * consistent with other admin-facing sends (addendum §7.4). */
 export const INTERNAL_EMAIL = process.env.INTERNAL_EMAIL ?? 'info@highergroundlearning.com'
 
+// Recipient for the ADMIN-side registration notification + weekly admin
+// roster report (July 8 punch list). These are internal ops emails — strictly
+// separate from the Phase 4 counselor digest.
+// TODO: switch to INTERNAL_EMAIL (info@highergroundlearning.com) once the
+// format is confirmed in testing.
+export const REGISTRATION_NOTIFY_EMAIL = 'billy@highergroundlearning.com'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
