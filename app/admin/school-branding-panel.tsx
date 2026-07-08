@@ -40,27 +40,21 @@ function SchoolRow({ school, onChange }: { school: SchoolBranding; onChange: () 
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (file.size > 4 * 1024 * 1024) {
-      setMessage('Error: logo must be under 4MB.')
-      return
-    }
     setBusy(true)
     setMessage('')
-    const ext = (file.name.split('.').pop() || 'png').toLowerCase()
-    // Timestamped name: the public URL changes on re-upload, so cached
-    // collateral previews can never show a stale crest.
-    const path = `${school.id}/logo-${Date.now()}.${ext}`
-    const { error } = await supabase.storage.from('school-assets').upload(path, file, {
-      cacheControl: '3600',
-      upsert: true,
-    })
-    if (error) {
-      setBusy(false)
-      setMessage('Error uploading: ' + error.message)
+    // Server-side route: flood-fills the white background to transparency and
+    // trims before storing, so crests never render as a box on the flyer.
+    const body = new FormData()
+    body.set('schoolId', school.id)
+    body.set('file', file)
+    const res = await fetch('/api/admin/school-logo', { method: 'POST', body })
+    setBusy(false)
+    if (!res.ok) {
+      setMessage('Error uploading: ' + (await res.text()))
       return
     }
-    const { data } = supabase.storage.from('school-assets').getPublicUrl(path)
-    if (await save({ logo_url: data.publicUrl })) setMessage('Logo updated.')
+    setMessage('Logo updated (background removed automatically).')
+    onChange()
   }
 
   async function handleSave() {

@@ -65,6 +65,14 @@ ${css}
 <body><div class="page ${lang}">${body}</div></body></html>`
 }
 
+/** Long variable text (promo codes, custom class types) steps the font size
+ *  down instead of overflowing: full size up to `comfortable` characters,
+ *  then proportional shrink, floored at 65%. */
+function stepPt(base: number, len: number, comfortable: number): number {
+  if (len <= comfortable) return base
+  return Math.max((base * comfortable) / len, base * 0.65)
+}
+
 /** Accent-tinted brush circle (the burst / CTA element): the brush-ring PNG's
  *  alpha becomes a CSS mask so one asset serves every school color. */
 function brush(mask: string, color: string, extra = ''): string {
@@ -81,12 +89,14 @@ const FLYER_COPY = {
   en: {
     qrCaption: 'Scan to register',
     seeDays: (link: string) => `(VISIT ${link} TO SEE CLASS DAYS)`,
-    promo: (amount: string, deadline: string, code: string) =>
-      `<div class="burst-big">SAVE ${esc(amount)}</div>
-       <div class="burst-small">SIGN UP BEFORE ${esc(deadline).toUpperCase()} &amp; USE CODE &ldquo;${esc(code)}&rdquo;</div>`,
+    promo: (amount: string, deadline: string, code: string) => {
+      const small = `SIGN UP BEFORE ${deadline.toUpperCase()} & USE CODE "${code}"`
+      return `<div class="burst-big" style="font-size:${stepPt(30, `SAVE ${amount}`.length, 9)}pt;">SAVE ${esc(amount)}</div>
+       <div class="burst-small" style="font-size:${stepPt(12.5, small.length, 44)}pt;">SIGN UP BEFORE ${esc(deadline).toUpperCase()} &amp; USE CODE &ldquo;${esc(code)}&rdquo;</div>`
+    },
     deadline: (date: string) =>
-      `<div class="burst-small" style="font-size:15pt; line-height:1.25;">REGISTRATION CLOSES ${esc(date).toUpperCase()}</div>
-       <div class="burst-small" style="margin-top:2mm;">SAVE YOUR SPOT!</div>`,
+      `<div class="burst-small" style="font-size:17pt; line-height:1.2;">REGISTRATION CLOSES ${esc(date).toUpperCase()}</div>
+       <div class="burst-small" style="font-size:14pt; margin-top:2.5mm;">SAVE YOUR SPOT!</div>`,
     bullets: (m: CollateralModel) => [
       `${m.inPerson ? 'In-person' : 'Live online'} instruction from expert instructors`,
       `${m.practiceTestCount} full-length tests`,
@@ -98,12 +108,14 @@ const FLYER_COPY = {
   es: {
     qrCaption: 'Escanea para inscribirte',
     seeDays: (link: string) => `(VISITA ${link} PARA VER LOS DÍAS DE CLASE)`,
-    promo: (amount: string, deadline: string, code: string) =>
-      `<div class="burst-big">AHORRA ${esc(amount)}</div>
-       <div class="burst-small">INSCRÍBETE ANTES DEL ${esc(deadline).toUpperCase()} CON EL CÓDIGO &ldquo;${esc(code)}&rdquo;</div>`,
+    promo: (amount: string, deadline: string, code: string) => {
+      const small = `INSCRÍBETE ANTES DEL ${deadline.toUpperCase()} CON EL CÓDIGO "${code}"`
+      return `<div class="burst-big" style="font-size:${stepPt(28, `AHORRA ${amount}`.length, 11)}pt;">AHORRA ${esc(amount)}</div>
+       <div class="burst-small" style="font-size:${stepPt(12, small.length, 48)}pt;">INSCRÍBETE ANTES DEL ${esc(deadline).toUpperCase()} CON EL CÓDIGO &ldquo;${esc(code)}&rdquo;</div>`
+    },
     deadline: (date: string) =>
-      `<div class="burst-small" style="font-size:14pt; line-height:1.25;">INSCRIPCIONES HASTA EL ${esc(date).toUpperCase()}</div>
-       <div class="burst-small" style="margin-top:2mm;">¡APARTA TU LUGAR!</div>`,
+      `<div class="burst-small" style="font-size:15.5pt; line-height:1.2;">INSCRIPCIONES HASTA EL ${esc(date).toUpperCase()}</div>
+       <div class="burst-small" style="font-size:13.5pt; margin-top:2.5mm;">¡APARTA TU LUGAR!</div>`,
     bullets: (m: CollateralModel) => [
       `Instrucción ${m.inPerson ? 'presencial' : 'en línea y en vivo'} con instructores expertos`,
       `${m.practiceTestCount} exámenes completos de práctica`,
@@ -135,6 +147,12 @@ export function flyerHtml(m: CollateralModel, lang: CollateralLanguage, assets: 
     lang === 'es'
       ? `CURSO DE<br>PREPARACIÓN<br>${esc(m.examName)}`
       : `${esc(m.classType).toUpperCase().replace(/ PREP$/, ' PREP')}<br>COURSE`
+  // Custom class types can outgrow the column left of the QR — shrink the
+  // headline instead of wrapping mid-word.
+  const headlinePt =
+    lang === 'es'
+      ? stepPt(32, Math.max(m.examName.length, 11), 11)
+      : stepPt(47, Math.max(m.classType.length, 6), 9)
   const days = dayPattern(m, lang)
   const time = classTime(m, '|')
 
@@ -151,48 +169,49 @@ export function flyerHtml(m: CollateralModel, lang: CollateralLanguage, assets: 
   .hero { position:absolute; right:0; bottom:0; width:106mm; height:134mm;
     object-fit:cover; border-radius:16mm 0 0 0; z-index:1; }
   .hgl-logo { position:absolute; left:13mm; top:8mm; width:46mm; z-index:2; }
-  .school-logo-wrap { position:absolute; right:9mm; top:5mm; width:54mm; height:25mm;
+  .school-logo-wrap { position:absolute; right:5mm; top:3mm; width:62mm; height:38mm;
     display:flex; align-items:center; justify-content:center; z-index:2; }
   .school-logo-wrap img { max-width:100%; max-height:100%; }
-  .headline { position:absolute; left:13mm; top:47mm; z-index:2; color:${SLATE};
-    font-size:40pt; font-weight:400; line-height:1.05; }
+  .headline { position:absolute; left:13mm; top:44mm; z-index:2; color:${SLATE};
+    font-weight:500; line-height:1.04; }
   .qr { position:absolute; left:108mm; top:45mm; width:37mm; z-index:2; text-align:center; }
   .qr img { width:37mm; height:37mm; }
   .qr .cap { font-size:9pt; color:${SLATE}; font-weight:500; margin-top:1mm; }
   .intro { position:absolute; left:13mm; top:90mm; width:97mm; z-index:2;
     color:${SLATE}; font-size:13.5pt; font-weight:300; line-height:1.4; }
-  .sched { position:absolute; left:13mm; top:122mm; width:104mm; z-index:2; color:${SLATE}; }
-  .sched .range { font-size:20pt; font-weight:500; letter-spacing:0.3pt; text-transform:uppercase; }
-  .sched .days { font-size:20pt; font-weight:500; text-transform:uppercase; }
-  .sched .see-days { font-size:10.5pt; font-weight:500; letter-spacing:0.2pt; margin:1mm 0; }
+  .sched { position:absolute; left:13mm; top:120mm; width:104mm; z-index:2; color:${SLATE}; }
+  .sched .range { font-size:21pt; font-weight:600; letter-spacing:0.3pt; text-transform:uppercase; }
+  .sched .days { font-size:21pt; font-weight:600; text-transform:uppercase; }
+  .sched .see-days { font-size:11.5pt; font-weight:500; letter-spacing:0.2pt; margin:1mm 0; }
   .sched .see-days .lnk { text-decoration:underline; }
-  .sched .time { font-size:21pt; font-weight:300; margin-top:0.5mm; }
-  .sched .time.split { font-size:16.5pt; }
+  .sched .time { font-size:22pt; font-weight:300; margin-top:0.5mm; }
+  .sched .time.split { font-size:17pt; }
   .burst { position:absolute; left:135mm; top:94mm; width:70mm; height:70mm; z-index:3; }
-  .burst .txt { position:absolute; inset:8mm; display:flex; flex-direction:column;
+  .burst .txt { position:absolute; inset:6mm; display:flex; flex-direction:column;
     align-items:center; justify-content:center; text-align:center; color:#fff; z-index:2; }
-  .burst-big { font-size:25pt; font-weight:600; line-height:1.1; }
-  .burst-small { font-size:11pt; font-weight:500; line-height:1.3; margin-top:1.5mm; }
+  .burst-big { font-weight:700; line-height:1.05; }
+  .burst-small { font-weight:600; line-height:1.25; margin-top:2mm; }
   .bullets { position:absolute; left:13mm; top:170mm; width:88mm; z-index:2; }
   .bullet { display:flex; align-items:flex-start; gap:4mm; margin-bottom:5mm;
     color:${SLATE}; font-size:13.5pt; font-weight:500; line-height:1.2; }
   .dot { flex:0 0 auto; width:5.5mm; height:5.5mm; border-radius:50%; background:${SLATE};
     border:0.9mm solid #bfe9fa; margin-top:1mm; }
   .cta { position:absolute; left:17mm; top:223mm; width:74mm; height:74mm; z-index:3; }
-  .cta .txt { position:absolute; inset:10mm 9mm 22mm; display:flex; flex-direction:column;
+  .cta .txt { position:absolute; inset:8mm 8mm 22mm; display:flex; flex-direction:column;
     align-items:center; justify-content:center; text-align:center; color:#fff; z-index:2;
-    font-size:13.5pt; font-weight:500; line-height:1.3; }
+    font-size:15pt; font-weight:600; line-height:1.25; }
   .cta-pill { position:absolute; left:-3mm; top:54mm; min-width:86mm; z-index:4;
     background:${BLUE}; border-radius:7mm; padding:2.5mm 7mm; text-align:center; }
   .cta-pill span { color:#fff; font-size:21pt; font-weight:700; text-decoration:underline;
     letter-spacing:0.5pt; white-space:nowrap; }
   /* Spanish copy runs longer: smaller headline (3 lines), tighter intro/bullets. */
-  .es .headline { font-size:28pt; top:46mm; }
+  .es .headline { top:43mm; }
   .es .intro { font-size:12.5pt; top:86mm; }
   .es .sched { top:126mm; }
+  .es .sched .range, .es .sched .days { font-size:19pt; }
   .es .bullets { top:169mm; }
   .es .bullet { font-size:12.5pt; margin-bottom:4mm; }
-  .es .cta .txt { font-size:12.5pt; }
+  .es .cta .txt { font-size:13.5pt; }
   `
 
   const svgBands = `
@@ -202,7 +221,7 @@ export function flyerHtml(m: CollateralModel, lang: CollateralLanguage, assets: 
     <!-- top-left blue wave -->
     <path d="M0,0 L127,0 C112,18 92,26 74,32 C52,39 26,52 0,88 Z" fill="${BLUE}"/>
     <!-- top-right slate blob behind the school logo -->
-    <path d="M136,0 L210,0 L210,44 C198,54 174,52 158,42 C148,35 140,22 136,0 Z" fill="#93a5b8"/>
+    <path d="M133,0 L210,0 L210,48 C196,58 170,56 153,44 C144,37 135,24 133,0 Z" fill="#93a5b8"/>
   </svg>`
 
   const body = `
@@ -210,7 +229,7 @@ export function flyerHtml(m: CollateralModel, lang: CollateralLanguage, assets: 
   <img class="hero" src="${assets.hero}" alt="">
   <img class="hgl-logo" src="${assets.logoWhite}" alt="Higher Ground Learning">
   ${m.schoolLogoUrl ? `<div class="school-logo-wrap"><img src="${esc(m.schoolLogoUrl)}" alt=""></div>` : ''}
-  <div class="headline">${headline}</div>
+  <div class="headline" style="font-size:${headlinePt}pt;">${headline}</div>
   <div class="qr"><img src="${assets.qrDataUrl}" alt="QR"><div class="cap">${t.qrCaption}</div></div>
   <div class="intro">${flyerIntro(m, lang)}</div>
   <div class="sched">

@@ -254,19 +254,18 @@ export default function ClassWizard({
       )
       return
     }
-    // Logo upload needs the school id for its storage path; a failure here
-    // leaves the school usable (flyer just omits the crest — same as blank).
+    // Logo goes through the processing route (white background removed,
+    // borders trimmed) — a failure leaves the school usable, the flyer just
+    // omits the crest until a retry from the School branding panel.
     if (newSchoolLogo) {
-      const ext = (newSchoolLogo.name.split('.').pop() || 'png').toLowerCase()
-      const path = `${data.id}/logo-${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage
-        .from('school-assets')
-        .upload(path, newSchoolLogo, { cacheControl: '3600', upsert: true })
-      if (upErr) {
-        setMessage(`School saved, but the logo upload failed (${upErr.message}) — retry from the School branding panel.`)
-      } else {
-        const { data: pub } = supabase.storage.from('school-assets').getPublicUrl(path)
-        await supabase.from('schools').update({ logo_url: pub.publicUrl }).eq('id', data.id)
+      const body = new FormData()
+      body.set('schoolId', data.id)
+      body.set('file', newSchoolLogo)
+      const res = await fetch('/api/admin/school-logo', { method: 'POST', body })
+      if (!res.ok) {
+        setMessage(
+          `School saved, but the logo upload failed (${await res.text()}) — retry from the School branding panel.`
+        )
       }
     }
     const affiliationId = await ensureContactAffiliation(data.id, {
