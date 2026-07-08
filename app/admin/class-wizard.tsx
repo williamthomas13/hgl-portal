@@ -30,11 +30,31 @@ export type ContactAtSchool = {
   email: string
 }
 
-type SessionDraft = {
+export type SessionDraft = {
   session_date: string
   start_time: string // '' or 'HH:MM'
   end_time: string
   location: string
+}
+
+/**
+ * Phase 5 "Copy a previous class": snapshot of a source class fed into the
+ * wizard as initial state (remount with a fresh `key` per source). Sessions
+ * arrive with times + locations copied and DATES BLANK — times repeat across
+ * terms; dates never do. Never carries slug, enrollment_deadline, school
+ * contact, or any enrollment/email/Stripe state.
+ */
+export type WizardPrefill = {
+  schoolId: string
+  classType: string
+  deliveryMode: 'in_person' | 'online'
+  price: string
+  capacity: string
+  minEnrollment: string
+  instructorId: string
+  synapGroup: string
+  defaultLocation: string
+  sessions: SessionDraft[]
 }
 
 function slugify(s: string) {
@@ -59,6 +79,7 @@ export default function ClassWizard({
   schools,
   contacts,
   instructors,
+  initial,
   onSchoolsChange,
   onContactsChange,
   onInstructorsChange,
@@ -67,6 +88,8 @@ export default function ClassWizard({
   schools: School[]
   contacts: ContactAtSchool[]
   instructors: Instructor[]
+  /** Copy-a-previous-class prefill — pass a fresh `key` with it to remount. */
+  initial?: WizardPrefill
   onSchoolsChange: () => void
   onContactsChange: () => void
   onInstructorsChange: () => void
@@ -77,21 +100,23 @@ export default function ClassWizard({
   const [message, setMessage] = useState('')
 
   // -- step 1: details ------------------------------------------------------
-  const [schoolId, setSchoolId] = useState('')
-  const [counselorId, setCounselorId] = useState('') // '' = all school contacts
-  const [classType, setClassType] = useState('')
-  const [instructorId, setInstructorId] = useState('')
-  const [price, setPrice] = useState('')
-  const [capacity, setCapacity] = useState('')
-  const [deliveryMode, setDeliveryMode] = useState<'in_person' | 'online'>('in_person')
-  const [minEnrollment, setMinEnrollment] = useState('8')
-  const [enrollmentDeadline, setEnrollmentDeadline] = useState('')
-  const [registrationClose, setRegistrationClose] = useState('')
-  const [synapGroup, setSynapGroup] = useState('')
-  const [defaultLocation, setDefaultLocation] = useState('')
+  const [schoolId, setSchoolId] = useState(initial?.schoolId ?? '')
+  const [counselorId, setCounselorId] = useState('') // '' = all school contacts; never copied
+  const [classType, setClassType] = useState(initial?.classType ?? '')
+  const [instructorId, setInstructorId] = useState(initial?.instructorId ?? '')
+  const [price, setPrice] = useState(initial?.price ?? '')
+  const [capacity, setCapacity] = useState(initial?.capacity ?? '')
+  const [deliveryMode, setDeliveryMode] = useState<'in_person' | 'online'>(
+    initial?.deliveryMode ?? 'in_person'
+  )
+  const [minEnrollment, setMinEnrollment] = useState(initial?.minEnrollment ?? '8')
+  const [enrollmentDeadline, setEnrollmentDeadline] = useState('') // cohort-specific; never copied
+  const [registrationClose, setRegistrationClose] = useState('') // cohort-specific; never copied
+  const [synapGroup, setSynapGroup] = useState(initial?.synapGroup ?? '')
+  const [defaultLocation, setDefaultLocation] = useState(initial?.defaultLocation ?? '')
 
   // -- step 2: sessions ------------------------------------------------------
-  const [sessions, setSessions] = useState<SessionDraft[]>([])
+  const [sessions, setSessions] = useState<SessionDraft[]>(initial?.sessions ?? [])
   const [draft, setDraft] = useState<SessionDraft>({
     session_date: '',
     start_time: '',
@@ -279,6 +304,14 @@ export default function ClassWizard({
     setSessions((prev) => prev.filter((_, i) => i !== idx))
   }
 
+  // Copied session rows arrive with blank dates (times repeat across terms;
+  // dates never do) — each gets an inline date input until it's set.
+  function setSessionDate(idx: number, date: string) {
+    setSessions((prev) => prev.map((s, i) => (i === idx ? { ...s, session_date: date } : s)))
+  }
+
+  const allDated = sessions.every((s) => s.session_date !== '')
+
   // -- create ----------------------------------------------------------------
   // Instructor is OPTIONAL (addendum §7.3) — classes are frequently created
   // before an instructor is confirmed. The scheduling nudge + #4's
@@ -286,7 +319,7 @@ export default function ClassWizard({
   const detailsComplete = Boolean(schoolId && classType.trim() && price && capacity)
 
   async function handleCreate() {
-    if (!school || sessions.length === 0) return
+    if (!school || sessions.length === 0 || !allDated) return
     setSaving(true)
     setMessage('')
 
@@ -713,6 +746,12 @@ export default function ClassWizard({
               school record, read-only)
             </p>
           )}
+          {sorted.length > 0 && !allDated && (
+            <p className="text-sm text-amber-700 font-semibold mb-3">
+              Copied sessions need dates — times and locations carried over; enter each new
+              date below.
+            </p>
+          )}
           {sorted.length === 0 ? (
             <p className="text-sm text-gray-500 italic mb-3">
               No sessions yet — a class needs at least one session before it can be created.
@@ -724,8 +763,18 @@ export default function ClassWizard({
                   key={`${s.session_date}-${i}`}
                   className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
                 >
-                  <span>
-                    <strong>{formatDateAdmin(s.session_date)}</strong>
+                  <span className="flex items-center gap-2">
+                    {s.session_date ? (
+                      <strong>{formatDateAdmin(s.session_date)}</strong>
+                    ) : (
+                      <input
+                        type="date"
+                        value=""
+                        onChange={(e) => setSessionDate(sessions.indexOf(s), e.target.value)}
+                        className="border border-amber-400 rounded p-1"
+                        title="Copied session — enter the new date"
+                      />
+                    )}
                     {s.start_time && ` · ${s.start_time}`}
                     {s.end_time && ` – ${s.end_time}`}
                     {s.location && ` · ${s.location}`}
@@ -863,13 +912,15 @@ export default function ClassWizard({
           <button
             type="button"
             onClick={() => setStep((s) => (s + 1) as 2 | 3)}
-            disabled={step === 1 ? !detailsComplete : sessions.length === 0}
+            disabled={step === 1 ? !detailsComplete : sessions.length === 0 || !allDated}
             title={
               step === 1 && !detailsComplete
                 ? 'School, class type, price, and capacity are required'
                 : step === 2 && sessions.length === 0
                   ? 'Add at least one session'
-                  : undefined
+                  : step === 2 && !allDated
+                    ? 'Every copied session needs a date first'
+                    : undefined
             }
             className="bg-hgl-blue text-white font-bold py-2.5 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
           >
@@ -879,7 +930,7 @@ export default function ClassWizard({
           <button
             type="button"
             onClick={handleCreate}
-            disabled={saving || sessions.length === 0}
+            disabled={saving || sessions.length === 0 || !allDated}
             className="bg-hgl-blue text-white font-bold py-2.5 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
           >
             {saving ? 'Creating…' : `Create class (${sorted.length} session${sorted.length === 1 ? '' : 's'})`}

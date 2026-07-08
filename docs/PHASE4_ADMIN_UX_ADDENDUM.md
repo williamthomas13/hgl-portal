@@ -50,6 +50,29 @@ Goal: prevent the "ASF" vs "American School Foundation" split and equivalents fo
   - **Sequencing:** land this before Phase 4 counselor login — auth attaches to the contact's email; data visibility scopes through *active* affiliations in RLS. Doing it after would mean rewriting counselor RLS twice.
 - **Instructors:** promote from text fields on `classes` (`instructor_name`, `instructor_email`) to a proper `instructors` table (name, email, default meeting link per Phase 4 spec) with `instructor_id` FK on classes and a strict select in admin. Migrate existing text values; keep legacy columns until reads are confirmed switched, then drop (same pattern as `school_nickname`). This also gives Phase 4's instructor login a real entity to attach to.
 
-## 7. Pre-launch data reset (checklist item)
+## 7. Testing feedback — round 2 (July 2026)
+
+### 7.1 Field validation in Add a New Class
+- **School full name: required** (nickname alone is ambiguous internally — ASM = Milan or Madrid).
+- **School contact: required** when creating a school.
+- **Session time validation:** end time must be after start time on the same date; block save with an inline error. (Currently 12:00–10:00 saves.)
+
+### 7.2 Timezones
+Current picker offers only 6 Americas timezones; a Düsseldorf class can't be created. Replace with the **full IANA timezone list**, searchable (type "Berlin" or "Europe" to filter). Group by region for browsability. HGL's schools span at minimum the Americas and Europe; don't curate a subset.
+
+### 7.3 Instructor becomes optional at class creation
+- Instructor field in the wizard is **optional**; classes are frequently created before an instructor is confirmed (especially pre-minimum).
+- Display when unassigned: admin surfaces show **"Not yet assigned"**; any family-facing surface shows **"to be announced"** (avoid the abbreviation "TBD" — not internationally clear). Family-facing emails already handle this: #4 retains its existing **hold-and-alert** behavior when instructor is blank — that safety net is unchanged.
+
+### 7.4 Instructor scheduling nudge (internal email)
+Same pattern as the classroom-request loop for school contacts, but internal:
+- **Trigger:** fires once per class at whichever comes first — (a) paid enrollments reach `min_enrollment`, or (b) `enrollment_deadline` passes with minimum met.
+- **If the deadline passes with minimum NOT met:** no instructor nudge; the existing min-enrollment checkpoint alert covers that case. The two alerts share a moment but never both fire.
+- **To:** info@highergroundlearning.com · **From:** info@ (self-send is fine; consistent with other admin notifications).
+- **Content:** class, school, current paid count vs. minimum, first session date, and a link to the admin class view with a prompt to **select an instructor from the dropdown or add a new one**.
+- **Re-nudge:** if still unassigned, remind at the same cadence as the classroom-request loop (11 and 8 days before first session) — this backstops well before #4's 4-day hold-and-alert would trip.
+- Suppressed automatically once an instructor is assigned or the class is cancelled.
+
+## 8. Pre-launch data reset (checklist item)
 
 Test/joke classes, registrations, and fake people remain in the database during testing — fine for now. **Before real launch: truncate all test data (classes, sessions, enrollments, families, students, add-ons, waitlist rows) and start fresh.** Add to the launch runbook.

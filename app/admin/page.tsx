@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../utils/supabase'
 import { formatDateAdmin, formatTimestampAdmin, addDays } from '../utils/dates'
 import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
 import CancelClassPanel from './cancel-class-panel'
-import ClassWizard, { type School, type ContactAtSchool } from './class-wizard'
+import ClassWizard, { type School, type ContactAtSchool, type WizardPrefill } from './class-wizard'
 import { CollapsibleSection, TimeSelect, to24h } from './ui'
 
 type Session = {
@@ -185,6 +185,15 @@ export default function AdminDashboard() {
   const [rosterError, setRosterError] = useState('')
   // Live classes render as tabs; '' = first live class, '__past' = the rest.
   const [activeTab, setActiveTab] = useState('')
+  // Phase 5 copy-a-previous-class: 'blank' renders an empty wizard; 'pick'
+  // shows the source picker; a prefill snapshot renders a pre-filled wizard.
+  // wizardKey remounts the wizard whenever the source (or blank reset) changes.
+  const [wizardMode, setWizardMode] = useState<'blank' | 'pick'>('blank')
+  const [wizardPrefill, setWizardPrefill] = useState<WizardPrefill | null>(null)
+  const [wizardSourceLabel, setWizardSourceLabel] = useState('')
+  const [wizardKey, setWizardKey] = useState('blank')
+  const wizardKeySeq = useRef(0)
+  const [copySearch, setCopySearch] = useState('')
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
@@ -383,6 +392,45 @@ export default function AdminDashboard() {
       return
     }
     fetchRosters()
+  }
+
+  // Phase 5: snapshot a source class into wizard prefill. Times + locations
+  // copy; dates are cleared (times repeat across terms, dates never do).
+  // Slug, deadline, close date, school contact, and all enrollment/email/
+  // Stripe state are NEVER copied — the new class is a plain new class.
+  function copyClass(c: ClassRow) {
+    const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
+      a.session_date.localeCompare(b.session_date)
+    )
+    setWizardPrefill({
+      schoolId: c.school_id ?? '',
+      classType: c.class_type,
+      deliveryMode: c.delivery_mode === 'online' ? 'online' : 'in_person',
+      price: String(c.price),
+      capacity: String(c.capacity),
+      minEnrollment: String(c.min_enrollment ?? (c.delivery_mode === 'online' ? 3 : 8)),
+      instructorId: c.instructor_id ?? '',
+      synapGroup: c.synap_group ?? '',
+      defaultLocation: c.default_location ?? '',
+      sessions: sortedSessions.map((s) => ({
+        session_date: '',
+        start_time: to24h(s.start_time),
+        end_time: to24h(s.end_time),
+        location: s.location ?? '',
+      })),
+    })
+    setWizardSourceLabel(`${c.schools?.nickname ?? '—'} ${c.class_type} (started ${formatDateAdmin(c.start_date)})`)
+    wizardKeySeq.current += 1
+    setWizardKey(`copy:${c.id}:${wizardKeySeq.current}`)
+    setWizardMode('blank') // picker closes; the pre-filled wizard shows
+  }
+
+  function resetWizardToBlank() {
+    setWizardPrefill(null)
+    setWizardSourceLabel('')
+    wizardKeySeq.current += 1
+    setWizardKey(`blank:${wizardKeySeq.current}`)
+    setWizardMode('blank')
   }
 
   async function handleDeleteSession(sessionId: string) {
@@ -726,18 +774,108 @@ export default function AdminDashboard() {
         </div>
 
         <CollapsibleSection title="Add a new class" accent="border-hgl-slate">
-          <ClassWizard
-            schools={schools}
-            contacts={allCounselors}
-            instructors={instructors}
-            onSchoolsChange={fetchSchools}
-            onContactsChange={fetchAllCounselors}
-            onInstructorsChange={fetchInstructors}
-            onCreated={() => {
-              fetchRosters()
-              fetchRoomRequests()
-            }}
-          />
+          {/* Two paths (Phase 5): start blank, or copy a previous class. */}
+          <div className="flex items-center gap-2 mb-5 text-sm">
+            <button
+              onClick={resetWizardToBlank}
+              className={`px-4 py-1.5 rounded-full font-semibold border transition ${
+                wizardMode === 'blank' && !wizardPrefill
+                  ? 'bg-hgl-slate text-white border-hgl-slate'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-hgl-slate'
+              }`}
+            >
+              Start blank
+            </button>
+            <button
+              onClick={() => setWizardMode('pick')}
+              className={`px-4 py-1.5 rounded-full font-semibold border transition ${
+                wizardMode === 'pick' || wizardPrefill
+                  ? 'bg-hgl-slate text-white border-hgl-slate'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-hgl-slate'
+              }`}
+            >
+              Copy a previous class
+            </button>
+          </div>
+
+          {wizardMode === 'pick' ? (
+            <div>
+              <input
+                type="text"
+                value={copySearch}
+                onChange={(e) => setCopySearch(e.target.value)}
+                placeholder="Filter by school or class type — e.g. SLS or SAT"
+                className="block w-full border border-gray-300 rounded-md p-2 mb-3"
+              />
+              <ul className="divide-y divide-gray-100 border border-gray-200 rounded-md max-h-80 overflow-y-auto">
+                {rosters
+                  .filter((c) => {
+                    const q = copySearch.trim().toLowerCase()
+                    if (!q) return true
+                    return (
+                      (c.schools?.nickname ?? '').toLowerCase().includes(q) ||
+                      (c.schools?.name ?? '').toLowerCase().includes(q) ||
+                      c.class_type.toLowerCase().includes(q)
+                    )
+                  })
+                  .slice(0, 30)
+                  .map((c) => (
+                    <li key={c.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                      <span>
+                        <strong className="text-hgl-slate">
+                          {c.schools?.nickname ?? '—'} {c.class_type}
+                        </strong>
+                        <span className="text-gray-500">
+                          {' '}· started {formatDateAdmin(c.start_date)} · {c.sessions?.length ?? 0} sessions
+                          {c.status === 'cancelled' ? ' · cancelled' : ''}
+                        </span>
+                      </span>
+                      <button
+                        onClick={() => copyClass(c)}
+                        className="bg-hgl-blue text-white text-xs font-bold px-3 py-1.5 rounded hover:bg-hgl-blue-hover transition"
+                      >
+                        Copy
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+              <p className="text-xs text-gray-500 mt-2">
+                Most recent first, top 30 shown — type to narrow. Copying takes a snapshot:
+                details and session times carry over, dates start blank, and the source class
+                is never affected.
+              </p>
+            </div>
+          ) : (
+            <>
+              {wizardPrefill && (
+                <p className="mb-4 text-sm bg-blue-50 text-hgl-slate border border-blue-200 rounded p-3">
+                  Pre-filled from <strong>{wizardSourceLabel}</strong> — everything below is
+                  editable, and the source class is unaffected.{' '}
+                  <button onClick={resetWizardToBlank} className="underline text-hgl-blue">
+                    Start blank instead
+                  </button>
+                </p>
+              )}
+              <ClassWizard
+                key={wizardKey}
+                schools={schools}
+                contacts={allCounselors}
+                instructors={instructors}
+                initial={wizardPrefill ?? undefined}
+                onSchoolsChange={fetchSchools}
+                onContactsChange={fetchAllCounselors}
+                onInstructorsChange={fetchInstructors}
+                onCreated={() => {
+                  fetchRosters()
+                  fetchRoomRequests()
+                  // the wizard resets its own fields; drop the copy banner
+                  // without remounting so the success message stays visible
+                  setWizardPrefill(null)
+                  setWizardSourceLabel('')
+                }}
+              />
+            </>
+          )}
         </CollapsibleSection>
 
         <CollapsibleSection title="Live class rosters" accent="border-hgl-blue" defaultOpen>
