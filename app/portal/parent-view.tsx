@@ -145,11 +145,8 @@ export default async function ParentView({
                         <h3 className="font-bold text-hgl-slate">{label}</h3>
                         <p className="text-sm text-gray-600">
                           Starts {formatDate(cls.start_date)}
-                          {cls.instructor_name
-                            ? ` · Instructor: ${cls.instructor_name}`
-                            : showPlaceholders
-                              ? ' · Instructor: details coming soon'
-                              : ''}
+                          {/* family-facing never says "TBD" (addendum §7.3) */}
+                          {` · Instructor: ${cls.instructor_name ?? 'to be announced'}`}
                         </p>
                         {(cls.default_location || showPlaceholders) && (
                           <p className="text-sm text-gray-600">

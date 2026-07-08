@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '../utils/supabase'
 import SessionCalendar from '../components/SessionCalendar'
 import { formatDateAdmin, addDays, monthYear } from '../utils/dates'
-import { TimeSelect } from './ui'
+import { TimeSelect, TimezoneSelect } from './ui'
 import type { Instructor } from './instructors-panel'
 
 // Class creation wizard (admin UX addendum): details → sessions → review.
@@ -36,15 +36,6 @@ type SessionDraft = {
   end_time: string
   location: string
 }
-
-const COMMON_TIMEZONES = [
-  'America/Mexico_City',
-  'America/Santiago',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-]
 
 function slugify(s: string) {
   return s
@@ -107,6 +98,7 @@ export default function ClassWizard({
     end_time: '',
     location: '',
   })
+  const [sessionError, setSessionError] = useState('')
 
   const school = schools.find((s) => s.id === schoolId) ?? null
   const instructor = instructors.find((i) => i.id === instructorId) ?? null
@@ -116,21 +108,85 @@ export default function ClassWizard({
 
   // -- "+ Add new" inline creators ------------------------------------------
   const [addingSchool, setAddingSchool] = useState(false)
-  const [newSchool, setNewSchool] = useState({ nickname: '', name: '', timezone: COMMON_TIMEZONES[0] })
+  // A school without a contact is useless downstream (room requests, digests,
+  // final-days push all need someone) — so creating a school REQUIRES its
+  // first contact (addendum §7.1), and the full name is REQUIRED too
+  // (nickname alone is ambiguous internally — ASM = Milan or Madrid).
+  const [newSchool, setNewSchool] = useState({
+    nickname: '',
+    name: '',
+    timezone: '',
+    contactFirst: '',
+    contactLast: '',
+    contactEmail: '',
+  })
   const [addingContact, setAddingContact] = useState(false)
   const [newContact, setNewContact] = useState({ first_name: '', last_name: '', email: '' })
   const [addingInstructor, setAddingInstructor] = useState(false)
   const [newInstructor, setNewInstructor] = useState({ name: '', email: '', default_meeting_link: '' })
 
+  /** Find-or-create the person by email, then reuse or open an ACTIVE
+   * affiliation at the school. Returns the affiliation id (what
+   * classes.counselor_id stores), or null after setting an error message. */
+  async function ensureContactAffiliation(
+    targetSchoolId: string,
+    info: { first: string; last: string; email: string }
+  ): Promise<string | null> {
+    const email = info.email.trim().toLowerCase()
+    const { data: existing } = await supabase
+      .from('contacts')
+      .select('id')
+      .ilike('email', email)
+      .maybeSingle()
+    let contactId = existing?.id as string | undefined
+    if (!contactId) {
+      const { data: created, error } = await supabase
+        .from('contacts')
+        .insert([{ first_name: info.first.trim(), last_name: info.last.trim(), email }])
+        .select('id')
+        .single()
+      if (error || !created) {
+        setMessage('Error adding contact: ' + (error?.message ?? 'unknown'))
+        return null
+      }
+      contactId = created.id
+    }
+    const reuse = contacts.find(
+      (c) => c.contact_id === contactId && c.school_id === targetSchoolId
+    )?.id
+    if (reuse) return reuse
+    const { data: aff, error: affErr } = await supabase
+      .from('school_affiliations')
+      .insert([{ contact_id: contactId, school_id: targetSchoolId, role: 'counselor' }])
+      .select('id')
+      .single()
+    if (affErr || !aff) {
+      setMessage('Error adding affiliation: ' + (affErr?.message ?? 'unknown'))
+      return null
+    }
+    return aff.id
+  }
+
+  const newSchoolComplete = Boolean(
+    newSchool.nickname.trim() &&
+      newSchool.name.trim() &&
+      newSchool.timezone &&
+      newSchool.contactFirst.trim() &&
+      newSchool.contactLast.trim() &&
+      newSchool.contactEmail.trim()
+  )
+
   async function saveNewSchool() {
-    const nickname = newSchool.nickname.trim()
-    if (!nickname) return
+    if (!newSchoolComplete) {
+      setMessage('Error: a new school needs nickname, full name, timezone, and a contact.')
+      return
+    }
     const { data, error } = await supabase
       .from('schools')
       .insert([
         {
-          nickname,
-          name: newSchool.name.trim() || nickname,
+          nickname: newSchool.nickname.trim(),
+          name: newSchool.name.trim(),
           timezone: newSchool.timezone,
         },
       ])
@@ -143,61 +199,32 @@ export default function ClassWizard({
       )
       return
     }
+    const affiliationId = await ensureContactAffiliation(data.id, {
+      first: newSchool.contactFirst,
+      last: newSchool.contactLast,
+      email: newSchool.contactEmail,
+    })
+    if (!affiliationId) return // school saved; contact error message already set
     setMessage('')
     onSchoolsChange()
+    onContactsChange()
     setSchoolId(data.id)
+    setCounselorId(affiliationId)
     setAddingSchool(false)
-    setNewSchool({ nickname: '', name: '', timezone: COMMON_TIMEZONES[0] })
+    setNewSchool({ nickname: '', name: '', timezone: '', contactFirst: '', contactLast: '', contactEmail: '' })
   }
 
   async function saveNewContact() {
-    if (!schoolId) return
-    const email = newContact.email.trim().toLowerCase()
-    if (!email) return
-    // Find-or-create the person, then open an affiliation at this school.
-    const { data: existing } = await supabase
-      .from('contacts')
-      .select('id')
-      .ilike('email', email)
-      .maybeSingle()
-    let contactId = existing?.id as string | undefined
-    if (!contactId) {
-      const { data: created, error } = await supabase
-        .from('contacts')
-        .insert([
-          {
-            first_name: newContact.first_name.trim(),
-            last_name: newContact.last_name.trim(),
-            email,
-          },
-        ])
-        .select('id')
-        .single()
-      if (error || !created) {
-        setMessage('Error adding contact: ' + (error?.message ?? 'unknown'))
-        return
-      }
-      contactId = created.id
-    }
-    // The class stores the AFFILIATION id — reuse the active one or open one.
-    let affiliationId = contacts.find(
-      (c) => c.contact_id === contactId && c.school_id === schoolId
-    )?.id
-    if (!affiliationId) {
-      const { data: aff, error: affErr } = await supabase
-        .from('school_affiliations')
-        .insert([{ contact_id: contactId, school_id: schoolId, role: 'counselor' }])
-        .select('id')
-        .single()
-      if (affErr || !aff) {
-        setMessage('Error adding affiliation: ' + (affErr?.message ?? 'unknown'))
-        return
-      }
-      affiliationId = aff.id
-    }
+    if (!schoolId || !newContact.email.trim()) return
+    const affiliationId = await ensureContactAffiliation(schoolId, {
+      first: newContact.first_name,
+      last: newContact.last_name,
+      email: newContact.email,
+    })
+    if (!affiliationId) return
     setMessage('')
     onContactsChange()
-    setCounselorId(affiliationId!)
+    setCounselorId(affiliationId)
     setAddingContact(false)
     setNewContact({ first_name: '', last_name: '', email: '' })
   }
@@ -235,6 +262,13 @@ export default function ClassWizard({
   // -- session drafts --------------------------------------------------------
   function addSession() {
     if (!draft.session_date) return
+    // End must be after start on the same date (addendum §7.1) — without this,
+    // 12:00–10:00 saved silently.
+    if (draft.start_time && draft.end_time && draft.end_time <= draft.start_time) {
+      setSessionError('End time must be after the start time.')
+      return
+    }
+    setSessionError('')
     setSessions((prev) => [...prev, draft])
     // Pre-fill the next form from this session: same times and location,
     // date advanced a week (weekly cadence is the norm; still editable).
@@ -246,10 +280,13 @@ export default function ClassWizard({
   }
 
   // -- create ----------------------------------------------------------------
-  const detailsComplete = Boolean(schoolId && classType.trim() && instructorId && price && capacity)
+  // Instructor is OPTIONAL (addendum §7.3) — classes are frequently created
+  // before an instructor is confirmed. The scheduling nudge + #4's
+  // hold-and-alert are the safety nets.
+  const detailsComplete = Boolean(schoolId && classType.trim() && price && capacity)
 
   async function handleCreate() {
-    if (!school || !instructor || sessions.length === 0) return
+    if (!school || sessions.length === 0) return
     setSaving(true)
     setMessage('')
 
@@ -257,7 +294,7 @@ export default function ClassWizard({
     // default meeting link (PHASE4_SPEC §5). In-person classes left blank get
     // the classroom-request loop at 14 days out.
     let location = defaultLocation.trim() || null
-    if (!location && deliveryMode === 'online') {
+    if (!location && deliveryMode === 'online' && instructor) {
       location = instructor.default_meeting_link ?? null
     }
 
@@ -266,9 +303,9 @@ export default function ClassWizard({
       school_id: school.id,
       counselor_id: counselorId || null,
       class_type: classType.trim(),
-      instructor_id: instructor.id,
-      instructor_name: instructor.name ?? instructor.email, // legacy copy
-      instructor_email: instructor.email, // legacy copy
+      instructor_id: instructor?.id ?? null,
+      instructor_name: instructor ? (instructor.name ?? instructor.email) : null, // legacy copy
+      instructor_email: instructor?.email ?? null, // legacy copy
       price: Number(price),
       capacity: Number(capacity),
       start_date: startDate,
@@ -404,36 +441,61 @@ export default function ClassWizard({
               <option value="__new">➕ Add a new school…</option>
             </select>
             {addingSchool && (
-              <div className="grid grid-cols-2 gap-2 mt-2 items-end">
-                <input
-                  type="text"
-                  placeholder="Nickname (e.g. Nido)"
-                  value={newSchool.nickname}
-                  onChange={(e) => setNewSchool({ ...newSchool, nickname: e.target.value })}
-                  className="border border-gray-300 rounded-md p-2"
-                />
-                <input
-                  type="text"
-                  placeholder="Full name (optional)"
-                  value={newSchool.name}
-                  onChange={(e) => setNewSchool({ ...newSchool, name: e.target.value })}
-                  className="border border-gray-300 rounded-md p-2"
-                />
-                <select
+              <div className="mt-2 space-y-2 border border-gray-200 rounded-md p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Nickname (e.g. Nido)"
+                    value={newSchool.nickname}
+                    onChange={(e) => setNewSchool({ ...newSchool, nickname: e.target.value })}
+                    className="border border-gray-300 rounded-md p-2"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Full name (required — ASM alone is ambiguous)"
+                    value={newSchool.name}
+                    onChange={(e) => setNewSchool({ ...newSchool, name: e.target.value })}
+                    className="border border-gray-300 rounded-md p-2"
+                  />
+                </div>
+                <TimezoneSelect
                   value={newSchool.timezone}
-                  onChange={(e) => setNewSchool({ ...newSchool, timezone: e.target.value })}
-                  className="border border-gray-300 rounded-md p-2 bg-white"
-                >
-                  {COMMON_TIMEZONES.map((tz) => (
-                    <option key={tz} value={tz}>{tz}</option>
-                  ))}
-                </select>
+                  onChange={(tz) => setNewSchool({ ...newSchool, timezone: tz })}
+                />
+                <p className="text-xs text-gray-500">
+                  First contact at the school (required — room requests, digests, and the
+                  final-days push all need someone to email):
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Contact first name"
+                    value={newSchool.contactFirst}
+                    onChange={(e) => setNewSchool({ ...newSchool, contactFirst: e.target.value })}
+                    className="border border-gray-300 rounded-md p-2"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Contact last name"
+                    value={newSchool.contactLast}
+                    onChange={(e) => setNewSchool({ ...newSchool, contactLast: e.target.value })}
+                    className="border border-gray-300 rounded-md p-2"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Contact email"
+                    value={newSchool.contactEmail}
+                    onChange={(e) => setNewSchool({ ...newSchool, contactEmail: e.target.value })}
+                    className="border border-gray-300 rounded-md p-2"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={saveNewSchool}
-                  className="bg-hgl-slate text-white rounded-md p-2 font-semibold hover:opacity-90"
+                  disabled={!newSchoolComplete}
+                  className="bg-hgl-slate text-white rounded-md py-2 px-4 font-semibold hover:opacity-90 disabled:opacity-50"
                 >
-                  Save school
+                  Save school + contact
                 </button>
               </div>
             )}
@@ -464,7 +526,9 @@ export default function ClassWizard({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Instructor</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Instructor <span className="text-gray-400">(optional — often confirmed later)</span>
+            </label>
             <select
               value={addingInstructor ? '__new' : instructorId}
               onChange={(e) => {
@@ -476,7 +540,7 @@ export default function ClassWizard({
               }}
               className={selectCls}
             >
-              <option value="">Pick an instructor…</option>
+              <option value="">Not yet assigned</option>
               {instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name ? `${i.name} (${i.email})` : i.email}
@@ -681,6 +745,9 @@ export default function ClassWizard({
             </ul>
           )}
 
+          {sessionError && (
+            <p className="text-sm text-red-600 font-semibold mb-2">{sessionError}</p>
+          )}
           <div className="border border-gray-200 rounded-md p-4 grid grid-cols-4 gap-3 items-end text-sm">
             <div>
               <label className="block text-xs text-gray-600">Date</label>
@@ -729,13 +796,18 @@ export default function ClassWizard({
         </div>
       )}
 
-      {step === 3 && school && instructor && (
+      {step === 3 && school && (
         <div className="grid grid-cols-2 gap-8">
           <div className="text-sm space-y-1.5">
             <h3 className="font-bold text-hgl-slate text-base mb-2">
               {school.nickname} — {classType}
             </h3>
-            <p><span className="text-gray-500">Instructor:</span> {instructor.name ?? instructor.email} ({instructor.email})</p>
+            <p>
+              <span className="text-gray-500">Instructor:</span>{' '}
+              {instructor
+                ? `${instructor.name ?? instructor.email} (${instructor.email})`
+                : 'Not yet assigned — the scheduling nudge fires once enrollment reaches minimum'}
+            </p>
             <p>
               <span className="text-gray-500">School contact:</span>{' '}
               {counselorId
@@ -753,7 +825,10 @@ export default function ClassWizard({
               <span className="text-gray-500">Location:</span>{' '}
               {defaultLocation.trim() ||
                 (deliveryMode === 'online'
-                  ? (instructor.default_meeting_link ?? 'instructor has no default link — set later')
+                  ? (instructor?.default_meeting_link ??
+                    (instructor
+                      ? 'instructor has no default link — set later'
+                      : 'set when the instructor is assigned'))
                   : 'blank — counselor gets asked 14 days out')}
             </p>
             <p><span className="text-gray-500">Enrollment deadline:</span> {enrollmentDeadline ? formatDateAdmin(enrollmentDeadline) : 'default (7 days before start)'}</p>
@@ -794,7 +869,7 @@ export default function ClassWizard({
             disabled={step === 1 ? !detailsComplete : sessions.length === 0}
             title={
               step === 1 && !detailsComplete
-                ? 'School, class type, instructor, price, and capacity are required'
+                ? 'School, class type, price, and capacity are required'
                 : step === 2 && sessions.length === 0
                   ? 'Add at least one session'
                   : undefined

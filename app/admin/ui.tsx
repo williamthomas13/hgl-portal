@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 
 // Small shared admin UI pieces (admin UX addendum): collapsible sections and
 // the 24-hour / 5-minute time picker used everywhere a session time is set.
@@ -35,6 +35,77 @@ export function CollapsibleSection({
         </span>
       </button>
       {open && <div className="px-8 pb-8">{children}</div>}
+    </div>
+  )
+}
+
+// Full IANA timezone picker (addendum §7.2): HGL's schools span at least the
+// Americas and Europe, so no curated subset — the complete list, searchable
+// ("Berlin" or "Europe" both filter) and grouped by region for browsing.
+const TZ_FALLBACK = [
+  'America/Mexico_City',
+  'America/Santiago',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/Berlin',
+  'Europe/Madrid',
+  'Europe/Rome',
+  'Europe/London',
+]
+
+export function TimezoneSelect({
+  value,
+  onChange,
+  required = false,
+}: {
+  value: string
+  onChange: (v: string) => void
+  required?: boolean
+}) {
+  const [filter, setFilter] = useState('')
+  const all = useMemo<string[]>(
+    () =>
+      typeof Intl.supportedValuesOf === 'function'
+        ? Intl.supportedValuesOf('timeZone')
+        : TZ_FALLBACK,
+    []
+  )
+  const filtered = filter.trim()
+    ? all.filter((tz) => tz.toLowerCase().includes(filter.trim().toLowerCase()))
+    : all
+  const groups = new Map<string, string[]>()
+  for (const tz of filtered) {
+    const region = tz.includes('/') ? tz.slice(0, tz.indexOf('/')) : 'Other'
+    groups.set(region, [...(groups.get(region) ?? []), tz])
+  }
+  return (
+    <div>
+      <input
+        type="text"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder='Search timezones — e.g. "Berlin" or "Europe"'
+        className="block w-full border border-gray-300 rounded-md p-2 mb-1"
+      />
+      <select
+        value={value}
+        required={required}
+        onChange={(e) => onChange(e.target.value)}
+        className="block w-full border border-gray-300 rounded-md p-2 bg-white"
+      >
+        <option value="">Pick a timezone…</option>
+        {/* keep the current value selectable even when the filter hides it */}
+        {value && !filtered.includes(value) && <option value={value}>{value}</option>}
+        {[...groups.entries()].map(([region, zones]) => (
+          <optgroup key={region} label={region}>
+            {zones.map((tz) => (
+              <option key={tz} value={tz}>{tz}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
     </div>
   )
 }

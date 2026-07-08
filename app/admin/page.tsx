@@ -98,9 +98,16 @@ function AddSessionForm({
   const [end, setEnd] = useState(to24h(lastSession?.end_time))
   const [location, setLocation] = useState(lastSession?.location ?? '')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleAdd() {
     if (!date) return
+    // End must be after start (addendum §7.1) — 12:00–10:00 used to save.
+    if (start && end && end <= start) {
+      setError('End time must be after the start time.')
+      return
+    }
+    setError('')
     setSaving(true)
     const { error } = await supabase.from('sessions').insert([
       {
@@ -122,6 +129,9 @@ function AddSessionForm({
 
   return (
     <div className="grid grid-cols-4 gap-2 items-end text-sm">
+      {error && (
+        <p className="col-span-4 text-sm text-red-600 font-semibold">{error}</p>
+      )}
       <div>
         <label className="block text-xs text-gray-600">Date</label>
         <input
@@ -430,9 +440,16 @@ export default function AdminDashboard() {
               )}
             </h3>
             <p className="text-sm text-gray-600">
-              Instructor: {c.instructor_name}
-              {c.instructor_email ? ` (${c.instructor_email})` : ''} · Starts:{' '}
-              {formatDateAdmin(c.start_date)}
+              Instructor:{' '}
+              {c.instructor_name ? (
+                <>
+                  {c.instructor_name}
+                  {c.instructor_email ? ` (${c.instructor_email})` : ''}
+                </>
+              ) : (
+                <span className="italic text-amber-700">Not yet assigned</span>
+              )}{' '}
+              · Starts: {formatDateAdmin(c.start_date)}
             </p>
             <p className="text-sm text-gray-600">
               Timezone: {c.schools?.timezone ?? '—'}{' '}

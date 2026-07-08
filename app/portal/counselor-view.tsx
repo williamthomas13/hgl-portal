@@ -117,7 +117,7 @@ export default async function CounselorView({
             </h3>
             <p className="text-sm text-gray-600">
               Starts {formatDate(c.firstSession)} · ${Number(c.price).toLocaleString()} per student
-              {c.instructor_name ? ` · ${c.instructor_name}` : ''}
+              {` · ${c.instructor_name ?? 'instructor to be announced'}`}
             </p>
           </div>
           <div className="text-right">
