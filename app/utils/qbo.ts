@@ -281,7 +281,9 @@ export async function qboQuery(q: string): Promise<any> {
 
 export async function companyName(): Promise<string | null> {
   try {
-    const qr = await qboQuery('select CompanyName from CompanyInfo')
+    // CompanyInfo rejects property selection ("Property CompanyName not
+    // found") — select * is the supported form.
+    const qr = await qboQuery('select * from CompanyInfo')
     return qr.CompanyInfo?.[0]?.CompanyName ?? null
   } catch (e) {
     console.error('QBO companyName failed:', e)
