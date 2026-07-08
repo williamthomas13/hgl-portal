@@ -2,7 +2,6 @@ import {
   classTime,
   dayMonth,
   dayPattern,
-  durationPhrase,
   escapeHtml as esc,
   flyerDateRange,
   letterDateRange,
@@ -10,6 +9,7 @@ import {
   type CollateralLanguage,
   type CollateralModel,
 } from './collateral'
+import { flyerIntroDefault } from './collateral-shared'
 
 // Phase 4.5 templates: A4 HTML/CSS rendered by headless Chromium. All copy is
 // deck-verbatim (docs/hgl-phase4.5-collateral-copy.md) — do not reword here.
@@ -116,16 +116,16 @@ const FLYER_COPY = {
 
 function flyerIntro(m: CollateralModel, lang: CollateralLanguage): string {
   if (m.flyerBlurb) return esc(m.flyerBlurb)
-  const nick = esc(m.schoolNickname)
-  if (lang === 'es') {
-    // "{nick} se ha asociado ... para el {exam} {presencial, impartido en {nick} | en vivo y en línea}{ de N semanas}."
-    const mode = m.inPerson ? `presencial, impartido en ${nick}` : 'en vivo y en línea'
-    return `${nick} se ha asociado con Higher Ground Learning para ofrecer un curso de preparación para el ${esc(m.examName)} ${mode}${durationPhrase(m, 'es')}.`
-  }
-  const dur = durationPhrase(m, 'en') // "a 4-week" / "an upcoming"
-  const mode = m.inPerson ? 'in-person' : 'live online'
-  const taughtAt = m.inPerson ? ` taught at ${nick}` : ''
-  return `${nick} has partnered with Higher Ground Learning to offer ${dur} ${mode} ${esc(m.examName)} prep course${taughtAt}.`
+  // Single source of truth with the admin card's placeholder default.
+  return esc(
+    flyerIntroDefault({
+      schoolNickname: m.schoolNickname,
+      classType: m.classType,
+      inPerson: m.inPerson,
+      sessionDates: m.sessions.map((s) => s.session_date),
+      lang,
+    })
+  )
 }
 
 export function flyerHtml(m: CollateralModel, lang: CollateralLanguage, assets: TemplateAssets): string {

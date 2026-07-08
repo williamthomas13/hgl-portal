@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
-import { sendOnce, waitlistConfirmationEmail } from '../../utils/email'
+import { registrationAlertContent, sendAdminAlert, sendOnce, waitlistConfirmationEmail } from '../../utils/email'
 import {
   emailContext,
   loadClassBundles,
   localDate,
   registrationCloseFor,
   spotsTaken,
+  INTERNAL_EMAIL,
 } from '../../utils/lifecycle'
 import { upsertFamilyAndStudent } from '../../utils/registration'
 
@@ -85,6 +86,33 @@ export async function POST(request: Request) {
       .single()
     if (enrErr || !enrollment) {
       return NextResponse.json({ error: enrErr?.message ?? 'Could not join waitlist.' }, { status: 500 })
+    }
+
+    // Instant internal heads-up to info@ (July 8 punch list) — counts from
+    // the pre-insert bundle, plus this fresh Waitlisted row.
+    {
+      const { subject, body } = registrationAlertContent({
+        studentName: `${studentFirst} ${studentLast}`,
+        parentName: `${parentFirst} ${parentLast}`,
+        parentEmail: email,
+        label: `${bundle.schoolLabel} ${bundle.classType}`,
+        status: 'Waitlisted',
+        paid: bundle.enrollments.filter(
+          (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+        ).length,
+        pending: bundle.enrollments.filter((e) => e.payment_status === 'Pending').length,
+        waitlisted:
+          bundle.enrollments.filter((e) => e.payment_status === 'Waitlisted').length + 1,
+        minEnrollment: bundle.minEnrollment,
+        capacity: bundle.capacity,
+      })
+      await sendAdminAlert({
+        dedupeKey: `internal_reg:${enrollment.id}`,
+        adminEmail: INTERNAL_EMAIL,
+        subject,
+        body,
+        enrollmentId: enrollment.id,
+      })
     }
 
     // Position = how many waitlisted joined at or before us.

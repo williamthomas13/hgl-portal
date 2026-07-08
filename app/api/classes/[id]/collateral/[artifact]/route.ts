@@ -83,15 +83,28 @@ export async function GET(
         : langs[0]
       : langs[0]
 
-  const [statics, qr, signature] = await Promise.all([
-    loadStaticAssets(),
-    qrDataUrl(model.registerUrl),
-    spec.type === 'letter' ? signatureDataUrl() : Promise.resolve(null),
-  ])
-  const assets = { ...statics, qrDataUrl: qr, signatureDataUrl: signature }
-  const html =
-    spec.type === 'flyer' ? flyerHtml(model, lang, assets) : letterHtml(model, lang, assets)
-  const bytes = await renderHtml(html, spec.format)
+  // Stage-tagged failures: Vercel truncates messages in the dashboard list,
+  // so the stage prefix is what makes a 500 diagnosable at a glance.
+  let stage = 'load-assets'
+  let bytes: Buffer
+  try {
+    const [statics, qr, signature] = await Promise.all([
+      loadStaticAssets(),
+      qrDataUrl(model.registerUrl),
+      spec.type === 'letter' ? signatureDataUrl() : Promise.resolve(null),
+    ])
+    stage = 'render'
+    const assets = { ...statics, qrDataUrl: qr, signatureDataUrl: signature }
+    const html =
+      spec.type === 'flyer' ? flyerHtml(model, lang, assets) : letterHtml(model, lang, assets)
+    bytes = await renderHtml(html, spec.format)
+  } catch (e) {
+    console.error(`collateral ${artifact} failed at ${stage} for class ${id}:`, e)
+    return new Response(
+      'Could not generate this file — the error has been logged. Try again in a minute.',
+      { status: 500 }
+    )
+  }
 
   const filename = `${collateralFilename(model, spec.type, lang)}.${spec.format}`
   const inline = url.searchParams.get('inline') === '1' // admin preview thumbnails

@@ -10,15 +10,26 @@ export function CollapsibleSection({
   subtitle,
   accent = 'border-hgl-slate',
   defaultOpen = false,
+  openSignal,
   children,
 }: {
   title: string
   subtitle?: string
   accent?: string
   defaultOpen?: boolean
+  /** Bump this counter to force the section open (e.g. "Duplicate class"
+   *  jumping the user up into the wizard). */
+  openSignal?: number
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  // "Adjust state during render" pattern: a bumped openSignal (Duplicate
+  // class) forces the section open without an effect-driven double render.
+  const [seenSignal, setSeenSignal] = useState(openSignal ?? 0)
+  if (openSignal !== undefined && openSignal !== seenSignal) {
+    setSeenSignal(openSignal)
+    setOpen(true)
+  }
   return (
     <div className={`bg-white rounded-lg shadow-md border-t-4 ${accent}`}>
       <button

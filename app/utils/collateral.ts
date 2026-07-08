@@ -1,12 +1,19 @@
 import { supabaseAdmin } from './supabase-admin'
+import {
+  durationPhraseFromDates,
+  examNameFor,
+  weekdayNumbersFromDates,
+} from './collateral-shared'
+import type { CollateralLanguage, CollateralType } from './collateral-types'
 
 // Phase 4.5 collateral data layer (docs/hgl-phase4.5-collateral-spec.md §3).
 // Loads one class into the template model both artifacts render from. All
 // computed values live here — collateral is a *view* of the class data, so
-// nothing here is ever stored back.
+// nothing here is ever stored back. Pure copy helpers that the admin UI also
+// needs (placeholder defaults) live in collateral-shared.ts.
 
-export type CollateralLanguage = 'en' | 'es'
-export type CollateralType = 'flyer' | 'letter'
+export type { CollateralLanguage, CollateralType }
+export { examNameFor }
 
 type SessionRow = {
   session_date: string
@@ -60,12 +67,6 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 
 const HGL_BLUE = '#00AEEE'
-
-export function examNameFor(classType: string): string {
-  if (/sat/i.test(classType)) return 'SAT'
-  if (/act/i.test(classType)) return 'ACT'
-  return classType
-}
 
 export async function loadCollateralModel(classId: string): Promise<CollateralModel | null> {
   const { data: c, error } = await supabaseAdmin
@@ -185,10 +186,7 @@ function timeBlocksFor(sessions: SessionRow[]): { start: string; end: string | n
 
 /** Distinct session weekdays in Monday-first order; [] = no consistent pattern. */
 function weekdaysFor(sessions: SessionRow[]): number[] {
-  if (sessions.length < 2) return []
-  const days = new Set(sessions.map((s) => utc(s.session_date).getUTCDay()))
-  if (days.size > 3) return [] // spread over the week — no printable pattern
-  return [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
+  return weekdayNumbersFromDates(sessions.map((s) => s.session_date))
 }
 
 // ---------------------------------------------------------------------------
@@ -293,27 +291,12 @@ export function classTime(m: CollateralModel, joiner: string): string | null {
   return parts.join(` ${joiner} `)
 }
 
-/**
- * Flyer intro duration: "a 4-week" / "a 2-weekend" / "an upcoming" (EN);
- * " de 4 semanas" / " de 2 fines de semana" / "" (ES suffix). Weekend classes
- * are ones meeting only Sat/Sun; everything else counts calendar weeks.
- */
+/** Flyer intro duration (see collateral-shared.durationPhraseFromDates). */
 export function durationPhrase(m: CollateralModel, lang: CollateralLanguage): string {
-  const spanDays = (utc(m.lastSession).getTime() - utc(m.firstSession).getTime()) / 86400_000 + 1
-  const weeks = Math.max(1, Math.ceil(spanDays / 7))
-  const weekendOnly =
-    m.weekdayNumbers.length > 0 && m.weekdayNumbers.every((d) => d === 0 || d === 6)
-  // Irregular pattern (no printable weekdays) or a single session -> the
-  // copy-deck fallback: "an upcoming ... course" / no duration suffix in ES.
-  if (m.sessions.length < 2 || m.weekdayNumbers.length === 0) {
-    return lang === 'es' ? '' : 'an upcoming'
-  }
-  if (weekendOnly) {
-    if (lang === 'es') return weeks === 1 ? ' de un fin de semana' : ` de ${weeks} fines de semana`
-    return weeks === 1 ? 'a 1-weekend' : `a ${weeks}-weekend`
-  }
-  if (lang === 'es') return weeks === 1 ? ' de una semana' : ` de ${weeks} semanas`
-  return weeks === 1 ? 'a 1-week' : `a ${weeks}-week`
+  return durationPhraseFromDates(
+    m.sessions.map((s) => s.session_date),
+    lang
+  )
 }
 
 /** Download filename matching the historical convention, e.g. "Flyer_ASF SAT Prep - September 2026". */

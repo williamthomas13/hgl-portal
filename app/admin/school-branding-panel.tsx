@@ -80,7 +80,12 @@ function SchoolRow({ school, onChange }: { school: SchoolBranding; onChange: () 
 
   return (
     <li className="flex items-center gap-4 px-4 py-3 text-sm flex-wrap">
-      <div className="w-40 font-semibold text-hgl-slate">{school.nickname}</div>
+      <div className="w-56">
+        <span className="font-semibold text-hgl-slate">{school.nickname}</span>
+        <span className="block text-xs text-gray-500 truncate" title={school.name}>
+          {school.name}
+        </span>
+      </div>
       <div className="flex items-center gap-2">
         {school.logo_url ? (
           // eslint-disable-next-line @next/next/no-img-element

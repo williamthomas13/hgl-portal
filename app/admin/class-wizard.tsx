@@ -7,12 +7,15 @@ import { formatDateAdmin, addDays, monthYear } from '../utils/dates'
 import { TimeSelect, TimezoneSelect } from './ui'
 import type { Instructor } from './instructors-panel'
 
-// Class creation wizard (admin UX addendum): details → sessions → review.
-// Cannot complete with zero sessions; the class's start_date derives from the
-// earliest session. School / contact / instructor are strict selects with
-// explicit "+ Add new" actions — no free text, no find-or-create-by-typo.
-// Each new session form pre-fills from the previous session (same times and
-// location, date advanced a week — the weekly-cadence default).
+// Class creation wizard (admin UX addendum, school-first revision):
+// school → details → sessions → review. Everything downstream hangs off the
+// school (timezone, contacts, collateral branding), so it's chosen first —
+// with the add-a-new-school branch right there. Cannot complete with zero
+// sessions; the class's start_date derives from the earliest session.
+// School / contact / instructor are strict selects with explicit "+ Add new"
+// actions — no free text, no find-or-create-by-typo. Each new session form
+// pre-fills from the previous session (same times and location, date advanced
+// a week — the weekly-cadence default).
 
 export type School = {
   id: string
@@ -55,6 +58,17 @@ export type WizardPrefill = {
   synapGroup: string
   defaultLocation: string
   sessions: SessionDraft[]
+  /** "Duplicate class": collateral fields carried onto the new class row
+   *  verbatim (blurbs, short link, language, test count — never promos,
+   *  their deadlines are cohort-specific). Absent for Phase 5 copy. */
+  collateral?: {
+    short_link: string | null
+    collateral_language: string | null
+    flyer_blurb: string | null
+    letter_blurb: string | null
+    letter_blurb_es: string | null
+    practice_test_count: number | null
+  }
 }
 
 function slugify(s: string) {
@@ -95,7 +109,7 @@ export default function ClassWizard({
   onInstructorsChange: () => void
   onCreated: () => void
 }) {
-  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -316,7 +330,7 @@ export default function ClassWizard({
   // Instructor is OPTIONAL (addendum §7.3) — classes are frequently created
   // before an instructor is confirmed. The scheduling nudge + #4's
   // hold-and-alert are the safety nets.
-  const detailsComplete = Boolean(schoolId && classType.trim() && price && capacity)
+  const detailsComplete = Boolean(classType.trim() && price && capacity)
 
   async function handleCreate() {
     if (!school || sessions.length === 0 || !allDated) return
@@ -346,6 +360,8 @@ export default function ClassWizard({
       enrollment_deadline: enrollmentDeadline || null,
       registration_close_date: registrationClose || null,
       slug: slugify(`${school.nickname}-${classType}-${termFor(startDate)}`),
+      // Duplicate-class prefill carries the collateral fields onto the new row.
+      ...(initial?.collateral ?? {}),
     }
 
     let { data: created, error } = await supabase
@@ -406,13 +422,13 @@ export default function ClassWizard({
   }
 
   // -- render ----------------------------------------------------------------
-  const steps = ['Details', 'Sessions', 'Review'] as const
+  const steps = ['School', 'Details', 'Sessions', 'Review'] as const
 
   return (
     <div>
       <div className="flex items-center gap-2 mb-6">
         {steps.map((label, i) => {
-          const n = (i + 1) as 1 | 2 | 3
+          const n = (i + 1) as 1 | 2 | 3 | 4
           const state = n === step ? 'current' : n < step ? 'done' : 'todo'
           return (
             <div key={label} className="flex items-center gap-2">
@@ -465,7 +481,7 @@ export default function ClassWizard({
               <option value="">Pick a school…</option>
               {schools.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.nickname}
+                  {s.nickname} — {s.name}
                 </option>
               ))}
               <option value="__new">➕ Add a new school…</option>
@@ -537,6 +553,72 @@ export default function ClassWizard({
             )}
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              School contact <span className="text-gray-400">(optional)</span>
+            </label>
+            <select
+              value={addingContact ? '__new' : counselorId}
+              onChange={(e) => {
+                if (e.target.value === '__new') setAddingContact(true)
+                else {
+                  setAddingContact(false)
+                  setCounselorId(e.target.value)
+                }
+              }}
+              disabled={!schoolId}
+              className={selectCls + ' disabled:bg-gray-50 disabled:text-gray-400'}
+            >
+              <option value="">All school contacts (default)</option>
+              {schoolContacts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.first_name} {c.last_name} ({c.email})
+                </option>
+              ))}
+              <option value="__new">➕ Add a new contact…</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Class-specific emails (room requests, final-days push, cancellation note) go to
+              this contact; blank sends them to every contact at the school.
+            </p>
+            {addingContact && (
+              <div className="grid grid-cols-2 gap-2 mt-2 items-end">
+                <input
+                  type="text"
+                  placeholder="First name"
+                  value={newContact.first_name}
+                  onChange={(e) => setNewContact({ ...newContact, first_name: e.target.value })}
+                  className="border border-gray-300 rounded-md p-2"
+                />
+                <input
+                  type="text"
+                  placeholder="Last name"
+                  value={newContact.last_name}
+                  onChange={(e) => setNewContact({ ...newContact, last_name: e.target.value })}
+                  className="border border-gray-300 rounded-md p-2"
+                />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={newContact.email}
+                  onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+                  className="border border-gray-300 rounded-md p-2"
+                />
+                <button
+                  type="button"
+                  onClick={saveNewContact}
+                  className="bg-hgl-slate text-white rounded-md p-2 font-semibold hover:opacity-90"
+                >
+                  Save contact
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">Class type</label>
             <input
@@ -615,68 +697,6 @@ export default function ClassWizard({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              School contact <span className="text-gray-400">(optional)</span>
-            </label>
-            <select
-              value={addingContact ? '__new' : counselorId}
-              onChange={(e) => {
-                if (e.target.value === '__new') setAddingContact(true)
-                else {
-                  setAddingContact(false)
-                  setCounselorId(e.target.value)
-                }
-              }}
-              disabled={!schoolId}
-              className={selectCls + ' disabled:bg-gray-50 disabled:text-gray-400'}
-            >
-              <option value="">All school contacts (default)</option>
-              {schoolContacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.first_name} {c.last_name} ({c.email})
-                </option>
-              ))}
-              <option value="__new">➕ Add a new contact…</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Class-specific emails (room requests, final-days push, cancellation note) go to
-              this contact; blank sends them to every contact at the school.
-            </p>
-            {addingContact && (
-              <div className="grid grid-cols-2 gap-2 mt-2 items-end">
-                <input
-                  type="text"
-                  placeholder="First name"
-                  value={newContact.first_name}
-                  onChange={(e) => setNewContact({ ...newContact, first_name: e.target.value })}
-                  className="border border-gray-300 rounded-md p-2"
-                />
-                <input
-                  type="text"
-                  placeholder="Last name"
-                  value={newContact.last_name}
-                  onChange={(e) => setNewContact({ ...newContact, last_name: e.target.value })}
-                  className="border border-gray-300 rounded-md p-2"
-                />
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={newContact.email}
-                  onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
-                  className="border border-gray-300 rounded-md p-2"
-                />
-                <button
-                  type="button"
-                  onClick={saveNewContact}
-                  className="bg-hgl-slate text-white rounded-md p-2 font-semibold hover:opacity-90"
-                >
-                  Save contact
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div>
             <label className="block text-sm font-medium text-gray-700">Price (USD)</label>
             <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="750" className={inputCls} />
           </div>
@@ -738,7 +758,7 @@ export default function ClassWizard({
         </div>
       )}
 
-      {step === 2 && (
+      {step === 3 && (
         <div>
           {school && (
             <p className="text-xs text-gray-500 mb-3">
@@ -842,7 +862,7 @@ export default function ClassWizard({
         </div>
       )}
 
-      {step === 3 && school && (
+      {step === 4 && school && (
         <div className="grid grid-cols-2 gap-8">
           <div className="text-sm space-y-1.5">
             <h3 className="font-bold text-hgl-slate text-base mb-2">
@@ -902,25 +922,33 @@ export default function ClassWizard({
       <div className="flex items-center justify-between mt-6">
         <button
           type="button"
-          onClick={() => setStep((s) => (s === 1 ? s : ((s - 1) as 1 | 2)))}
+          onClick={() => setStep((s) => (s === 1 ? s : ((s - 1) as 1 | 2 | 3)))}
           disabled={step === 1}
           className="text-sm text-gray-500 underline hover:text-hgl-slate disabled:opacity-0"
         >
           ← Back
         </button>
-        {step < 3 ? (
+        {step < 4 ? (
           <button
             type="button"
-            onClick={() => setStep((s) => (s + 1) as 2 | 3)}
-            disabled={step === 1 ? !detailsComplete : sessions.length === 0 || !allDated}
+            onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4)}
+            disabled={
+              step === 1
+                ? !schoolId
+                : step === 2
+                  ? !detailsComplete
+                  : sessions.length === 0 || !allDated
+            }
             title={
-              step === 1 && !detailsComplete
-                ? 'School, class type, price, and capacity are required'
-                : step === 2 && sessions.length === 0
-                  ? 'Add at least one session'
-                  : step === 2 && !allDated
-                    ? 'Every copied session needs a date first'
-                    : undefined
+              step === 1 && !schoolId
+                ? 'Pick (or add) the school first — everything else hangs off it'
+                : step === 2 && !detailsComplete
+                  ? 'Class type, price, and capacity are required'
+                  : step === 3 && sessions.length === 0
+                    ? 'Add at least one session'
+                    : step === 3 && !allDated
+                      ? 'Every copied session needs a date first'
+                      : undefined
             }
             className="bg-hgl-blue text-white font-bold py-2.5 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
           >

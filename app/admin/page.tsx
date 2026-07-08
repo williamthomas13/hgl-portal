@@ -196,6 +196,7 @@ export default function AdminDashboard() {
   const [wizardKey, setWizardKey] = useState('blank')
   const wizardKeySeq = useRef(0)
   const [copySearch, setCopySearch] = useState('')
+  const [wizardOpenSignal, setWizardOpenSignal] = useState(0)
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
@@ -427,6 +428,41 @@ export default function AdminDashboard() {
     setWizardMode('blank') // picker closes; the pre-filled wizard shows
   }
 
+  // "Duplicate class" (class-card action): everything EXCEPT sessions/dates —
+  // details plus the collateral fields (blurbs, short link, language, test
+  // count). Promos never copy (their deadlines are cohort-specific), and the
+  // usual never-copied set (slug, deadlines, contact, enrollment state) holds.
+  function duplicateClass(c: ClassRow) {
+    setWizardPrefill({
+      schoolId: c.school_id ?? '',
+      classType: c.class_type,
+      deliveryMode: c.delivery_mode === 'online' ? 'online' : 'in_person',
+      price: String(c.price),
+      capacity: String(c.capacity),
+      minEnrollment: String(c.min_enrollment ?? (c.delivery_mode === 'online' ? 3 : 8)),
+      instructorId: c.instructor_id ?? '',
+      synapGroup: c.synap_group ?? '',
+      defaultLocation: c.default_location ?? '',
+      sessions: [],
+      collateral: {
+        short_link: c.short_link ?? null,
+        collateral_language: c.collateral_language ?? null,
+        flyer_blurb: c.flyer_blurb ?? null,
+        letter_blurb: c.letter_blurb ?? null,
+        letter_blurb_es: c.letter_blurb_es ?? null,
+        practice_test_count: c.practice_test_count ?? null,
+      },
+    })
+    setWizardSourceLabel(
+      `${c.schools?.nickname ?? '—'} ${c.class_type} (started ${formatDateAdmin(c.start_date)}) — sessions not copied`
+    )
+    wizardKeySeq.current += 1
+    setWizardKey(`dup:${c.id}:${wizardKeySeq.current}`)
+    setWizardMode('blank')
+    setWizardOpenSignal((n) => n + 1)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   function resetWizardToBlank() {
     setWizardPrefill(null)
     setWizardSourceLabel('')
@@ -594,6 +630,13 @@ export default function AdminDashboard() {
             <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
               {enrolledCount} / {c.capacity} enrolled
             </span>
+            <button
+              onClick={() => duplicateClass(c)}
+              title="Start a new class from this one — copies details and collateral fields, never sessions or dates"
+              className="text-xs text-hgl-blue underline hover:text-hgl-slate whitespace-nowrap"
+            >
+              Duplicate class
+            </button>
             {waitlistCount > 0 && (
               <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full whitespace-nowrap">
                 {waitlistCount} waitlisted
@@ -658,6 +701,9 @@ export default function AdminDashboard() {
         {/* COLLATERAL — flyer + parent letter downloads and the fields that drive them */}
         <CollateralCard
           classId={c.id}
+          classType={c.class_type}
+          inPerson={c.delivery_mode !== 'online'}
+          sessionDates={sortedSessions.map((s) => s.session_date)}
           fields={c}
           school={schools.find((s) => s.id === c.school_id) ?? null}
           onSaved={fetchRosters}
@@ -783,7 +829,11 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        <CollapsibleSection title="Add a new class" accent="border-hgl-slate">
+        <CollapsibleSection
+          title="Add a new class"
+          accent="border-hgl-slate"
+          openSignal={wizardOpenSignal}
+        >
           {/* Two paths (Phase 5): start blank, or copy a previous class. */}
           <div className="flex items-center gap-2 mb-5 text-sm">
             <button

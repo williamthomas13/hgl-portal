@@ -1526,6 +1526,43 @@ export async function sendOnce(opts: {
 }
 
 /** Admin notification. Dedupe key still applies (e.g. one alert per class per day). */
+/**
+ * Internal instant registration notification (July 8 punch list): fires on
+ * every new registration and waitlist signup so the team sees momentum
+ * without opening the admin. Delivered via sendAdminAlert → INTERNAL_EMAIL;
+ * the paid/min/cap counts ride in the subject so the inbox list alone reads
+ * as a ticker.
+ */
+export function registrationAlertContent(opts: {
+  studentName: string
+  parentName: string
+  parentEmail: string
+  label: string
+  status: 'Pending' | 'Waitlisted'
+  paid: number
+  pending: number
+  waitlisted: number
+  minEnrollment: number
+  capacity: number
+}): { subject: string; body: string } {
+  const kind = opts.status === 'Waitlisted' ? 'Waitlist signup' : 'New registration'
+  return {
+    subject: `${kind}: ${opts.studentName} — ${opts.label} (${opts.paid} paid / min ${opts.minEnrollment} / cap ${opts.capacity})`,
+    body: `
+      <p><strong>${opts.studentName}</strong> just ${
+        opts.status === 'Waitlisted' ? 'joined the waitlist for' : 'registered for'
+      } <strong>${opts.label}</strong>.</p>
+      <p>Parent: ${opts.parentName} (${opts.parentEmail})</p>
+      <ul>
+        <li>Paid: <strong>${opts.paid}</strong> of ${opts.capacity} (minimum to run: ${opts.minEnrollment})</li>
+        <li>Pending payment: ${opts.pending}</li>
+        <li>Waitlisted: ${opts.waitlisted}</li>
+      </ul>
+      <p style="font-size:13px;color:#64748b">Counts include this signup; paid moves when
+      their payment completes. Full rosters are in the admin dashboard.</p>`,
+  }
+}
+
 export async function sendAdminAlert(opts: {
   dedupeKey: string
   adminEmail: string

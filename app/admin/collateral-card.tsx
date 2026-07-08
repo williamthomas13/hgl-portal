@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
+import { flyerIntroDefault } from '../utils/collateral-shared'
 import type { School } from './class-wizard'
 
 // Phase 4.5 admin Collateral card (spec §7): download buttons + preview
@@ -23,11 +24,17 @@ export type CollateralFields = {
 
 export default function CollateralCard({
   classId,
+  classType,
+  inPerson,
+  sessionDates,
   fields,
   school,
   onSaved,
 }: {
   classId: string
+  classType: string
+  inPerson: boolean
+  sessionDates: string[]
   fields: CollateralFields
   school: (School & { collateral_language?: string | null }) | null
   onSaved: () => void
@@ -123,6 +130,8 @@ export default function CollateralCard({
               <a
                 key={artifact + lang}
                 href={artifactUrl(artifact, lang)}
+                target="_blank"
+                rel="noreferrer"
                 className="bg-hgl-blue text-white text-xs font-bold px-3 py-1.5 rounded hover:bg-hgl-blue-hover transition"
               >
                 {label(name, lang)}
@@ -158,7 +167,8 @@ export default function CollateralCard({
       <div className="grid grid-cols-3 gap-3 text-sm items-end">
         <div>
           <label className="block text-xs text-gray-600">
-            Short link (printed on flyer &amp; letter)
+            hgl.co short link — the &ldquo;more info &amp; registration&rdquo; destination printed
+            on both pieces
           </label>
           <input
             type="text"
@@ -169,20 +179,24 @@ export default function CollateralCard({
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-600">Language</label>
+          <label className="block text-xs text-gray-600">
+            Language of the generated files
+          </label>
           <select
             value={form.collateral_language}
             onChange={(e) => set('collateral_language', e.target.value)}
             className="mt-1 w-full border rounded p-1.5 bg-white"
           >
             <option value="">School default ({schoolDefault})</option>
-            <option value="en">English</option>
-            <option value="es">Spanish</option>
-            <option value="both">Both (EN + ES)</option>
+            <option value="en">English only</option>
+            <option value="es">Spanish only</option>
+            <option value="both">Both (separate EN + ES files)</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-600">Practice tests</label>
+          <label className="block text-xs text-gray-600">
+            Practice tests — the &ldquo;{form.practice_test_count || '2'} full-length tests&rdquo; bullet
+          </label>
           <input
             type="number"
             min="0"
@@ -193,40 +207,53 @@ export default function CollateralCard({
         </div>
         <div className="col-span-3">
           <label className="block text-xs text-gray-600">
-            Flyer intro override (blank = standard &ldquo;{'{school}'} has partnered…&rdquo; sentence)
+            Flyer intro sentence — leave blank to use the standard one (shown grey below)
           </label>
           <textarea
             value={form.flyer_blurb}
             onChange={(e) => set('flyer_blurb', e.target.value)}
             rows={2}
+            placeholder={flyerIntroDefault({
+              schoolNickname: school?.nickname ?? 'School',
+              classType,
+              inPerson,
+              sessionDates,
+              lang: langs[0] === 'es' ? 'es' : 'en',
+            })}
             className="mt-1 w-full border rounded p-1.5"
           />
         </div>
         <div className={langs.includes('es') ? 'col-span-3 sm:col-span-2' : 'col-span-3'}>
           <label className="block text-xs text-gray-600">
-            Letter paragraph {langs.includes('es') && langs.includes('en') ? '(EN) ' : ''}— optional,
-            inserted after the standard copy (returning-school framing, special notes)
+            Extra letter paragraph{langs.includes('es') && langs.includes('en') ? ' (English letter)' : ''} —
+            optional, added after the standard letter copy
           </label>
           <textarea
             value={form.letter_blurb}
             onChange={(e) => set('letter_blurb', e.target.value)}
             rows={2}
+            placeholder={`Optional — e.g. "We're excited to return to ${school?.nickname ?? 'the school'} after last term's class!" Blank = no extra paragraph.`}
             className="mt-1 w-full border rounded p-1.5"
           />
         </div>
         {langs.includes('es') && (
           <div className="col-span-3 sm:col-span-1">
-            <label className="block text-xs text-gray-600">Letter paragraph (ES)</label>
+            <label className="block text-xs text-gray-600">
+              Extra letter paragraph (Spanish letter)
+            </label>
             <textarea
               value={form.letter_blurb_es}
               onChange={(e) => set('letter_blurb_es', e.target.value)}
               rows={2}
+              placeholder={`Optional — e.g. "¡Nos alegra volver a trabajar con las familias de ${school?.nickname ?? 'la escuela'}!"`}
               className="mt-1 w-full border rounded p-1.5"
             />
           </div>
         )}
         <div>
-          <label className="block text-xs text-gray-600">Promo code (display only)</label>
+          <label className="block text-xs text-gray-600">
+            Promo code — must match a code created in Stripe
+          </label>
           <input
             type="text"
             value={form.promo_code}
@@ -236,7 +263,9 @@ export default function CollateralCard({
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-600">Promo amount (USD)</label>
+          <label className="block text-xs text-gray-600">
+            Promo savings (USD) — the &ldquo;SAVE $50&rdquo; number
+          </label>
           <input
             type="number"
             min="0"
@@ -247,7 +276,9 @@ export default function CollateralCard({
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-600">Promo deadline</label>
+          <label className="block text-xs text-gray-600">
+            Promo deadline — &ldquo;sign up before&rdquo; date
+          </label>
           <input
             type="date"
             value={form.promo_deadline}

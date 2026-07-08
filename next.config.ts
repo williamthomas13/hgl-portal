@@ -10,7 +10,16 @@ const nextConfig: NextConfig = {
   // render function — they're read from disk and inlined as data URLs.
   serverExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
   outputFileTracingIncludes: {
-    '/api/classes/[id]/collateral/[artifact]': ['./public/collateral/**/*'],
+    // The key is a picomatch ROUTE GLOB: [id] would be a character class, so
+    // dynamic segments must be escaped or the include silently never applies.
+    '/api/classes/\\[id\\]/collateral/\\[artifact\\]': [
+      './public/collateral/**/*',
+      // The compressed Chromium binary is opened with dynamic fs paths, so
+      // the tracer can't discover it — without this the lambda 500s with
+      // "input directory /var/task/node_modules/@sparticuz/chromium/bin
+      // does not exist" (seen in prod July 7).
+      './node_modules/@sparticuz/chromium/bin/**/*',
+    ],
   },
 
   async redirects() {

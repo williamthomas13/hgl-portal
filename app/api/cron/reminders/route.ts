@@ -556,18 +556,46 @@ async function sweepWeeklyDigest(bundles: ClassBundle[], c: Counters) {
   const weekAgo = Date.now() - 7 * 24 * 3_600_000
   const sections: string[] = []
 
-  // New registrations.
-  const rows: string[] = []
-  for (const b of bundles) {
-    const recent = b.enrollments.filter((e: EnrollmentRow) => new Date(e.enrolled_at).getTime() >= weekAgo)
-    if (recent.length === 0) continue
-    const names = recent
-      .map((e) => `${e.studentFirstName} ${e.studentLastName} (${e.payment_status})`)
-      .join(', ')
-    rows.push(`<li><strong>${b.schoolLabel} ${b.classType}</strong>: ${recent.length} — ${names}</li>`)
+  // Full roster report vs. minimums (July 8 punch list): every live class,
+  // every active registration, flagged against min enrollment — the Monday
+  // "do our classes run?" answer without opening the admin.
+  const live = bundles.filter((b) => b.status !== 'cancelled' && b.lastSession >= today)
+  const classBlocks: string[] = []
+  for (const b of live) {
+    const active = b.enrollments.filter((e: EnrollmentRow) =>
+      ['Paid', 'Completed', 'Pending', 'Waitlisted'].includes(e.payment_status)
+    )
+    const paid = active.filter(
+      (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+    ).length
+    const verdict =
+      paid >= b.capacity
+        ? `<span style="color:#15803d;font-weight:bold">FULL</span>`
+        : paid >= b.minEnrollment
+          ? `<span style="color:#15803d;font-weight:bold">runs (min ${b.minEnrollment} met)</span>`
+          : `<span style="color:#b45309;font-weight:bold">below minimum — needs ${b.minEnrollment - paid} more paid</span>`
+    const roster =
+      active.length === 0
+        ? '<li style="color:#64748b">no registrations yet</li>'
+        : [...active]
+            .sort((a, b2) => a.studentLastName.localeCompare(b2.studentLastName))
+            .map((e) => {
+              const isNew = new Date(e.enrolled_at).getTime() >= weekAgo
+              return `<li>${e.studentFirstName} ${e.studentLastName} — ${e.payment_status}${
+                isNew ? ' <span style="color:#0284c7;font-weight:bold">(new this week)</span>' : ''
+              }</li>`
+            })
+            .join('')
+    classBlocks.push(
+      `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0">
+        <p style="margin:0"><strong>${b.schoolLabel} ${b.classType}</strong> — starts ${b.firstSession} ·
+        ${paid} paid / min ${b.minEnrollment} / cap ${b.capacity} · ${verdict}</p>
+        <ul style="margin:6px 0 0">${roster}</ul>
+      </div>`
+    )
   }
-  if (rows.length > 0) {
-    sections.push(`<p>Registrations in the last 7 days:</p><ul>${rows.join('')}</ul>`)
+  if (classBlocks.length > 0) {
+    sections.push(`<p><strong>Live classes vs. minimums:</strong></p>${classBlocks.join('')}`)
   }
 
   // Delivery problems from the Resend webhook: hard bounces on student
