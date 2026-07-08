@@ -1111,6 +1111,49 @@ export function classFullNoticeEmail(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// Instructor scheduling nudge (addendum §7.4) — INTERNAL, info@ → info@.
+// Fires once when paid enrollments reach the class minimum and no instructor
+// is assigned; re-nudges at 11 and 8 days before the first session (the
+// classroom-request cadence), backstopping well before #4's 4-day hold.
+// ---------------------------------------------------------------------------
+
+export function instructorNudgeEmail(opts: {
+  label: string
+  schoolName: string
+  paidCount: number
+  minEnrollment: number
+  firstSession: string
+  adminUrl: string
+  /** 0 = initial, 1/2 = re-nudges */
+  nudge: number
+}): Rendered {
+  const subject =
+    opts.nudge === 0
+      ? `Instructor needed — ${opts.label} reached minimum enrollment`
+      : `Reminder ${opts.nudge}: ${opts.label} still has no instructor (starts ${formatDate(opts.firstSession)})`
+  return {
+    subject: `[HGL Admin] ${subject}`,
+    html: wrap(
+      `
+      <h2 style="color:#334155">${subject}</h2>
+      <p><strong>${opts.label}</strong> (${opts.schoolName}) has
+      <strong>${opts.paidCount} paid</strong> enrollments against a minimum of
+      <strong>${opts.minEnrollment}</strong> — the class is running, and no instructor is
+      assigned yet.</p>
+      <p>First session: <strong>${formatDate(opts.firstSession)}</strong>.</p>
+      <p><a href="${opts.adminUrl}">Open the admin class view</a> and select an instructor
+      from the dropdown — or add a new one — so the class-details email can go out on
+      schedule.</p>
+    `,
+      {
+        preheader: `${opts.paidCount} paid / ${opts.minEnrollment} minimum — assign an instructor`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CR1/CR2/CR3 — Classroom Request + re-nudges · 14d / 11d / 8d before start ·
 // info@ · T (single-question tokenized form, no login)
 // ---------------------------------------------------------------------------

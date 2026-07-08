@@ -9,6 +9,7 @@ import {
   deadlinePushEmail,
   faqEmail,
   formatDate,
+  instructorNudgeEmail,
   locationReminderEmail,
   paymentReminderEmail,
   reviewRequestEmail,
@@ -31,6 +32,7 @@ import {
 import {
   ADMIN_EMAIL,
   DEFAULT_TIMEZONE,
+  INTERNAL_EMAIL,
   PAYMENT_EXPIRY_HOURS,
   PAYMENT_REMINDERS,
   SEQUENCE,
@@ -466,9 +468,14 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
   }
 
   // Min-enrollment checkpoint at the deadline (or 7 days before start).
+  // §7.4 rule — the checkpoint and the instructor nudge "share a moment but
+  // never both fire": when the minimum IS met and no instructor is assigned,
+  // the nudge owns that moment, so the checkpoint stays quiet.
   const checkpoint = bundle.enrollmentDeadline ?? addDaysISO(bundle.firstSession, -7)
   if (isDue(bundle.timezone, checkpoint, 8) && today <= bundle.firstSession) {
     const paidCount = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
+    const unassigned = !bundle.instructorId && !bundle.instructorName
+    if (paidCount >= bundle.minEnrollment && unassigned) return
     const status = await sendAdminAlert({
       dedupeKey: `min_enrollment:${bundle.id}`,
       adminEmail: ADMIN_EMAIL,
@@ -479,6 +486,64 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
         ${paidCount < bundle.minEnrollment ? 'Below minimum — decide whether to run, push, or cancel.' : 'Minimum met.'}</p>`,
     })
     if (status === 'sent') bump(c, 'admin_alert')
+  }
+}
+
+/**
+ * Instructor scheduling nudge (addendum §7.4) — internal, info@ → info@.
+ * Fires once per class the moment paid enrollments reach min_enrollment with
+ * no instructor assigned (which also covers "deadline passes with minimum
+ * met"). Below minimum: nothing — the min-enrollment checkpoint owns that
+ * case. Re-nudges at 11 and 8 days before the first session, most recent
+ * window only, at most one send per sweep. Assigning an instructor (or
+ * cancelling — the main loop skips cancelled) suppresses everything.
+ */
+async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
+  if (bundle.instructorId || bundle.instructorName) return
+  const paid = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
+  if (paid < bundle.minEnrollment) return
+  const today = localDate(bundle.timezone)
+  if (today > bundle.firstSession) return
+  if (localHour(bundle.timezone) < 8) return
+
+  const base = {
+    label: `${bundle.schoolLabel} ${bundle.classType}`,
+    schoolName: bundle.schoolName,
+    paidCount: paid,
+    minEnrollment: bundle.minEnrollment,
+    firstSession: bundle.firstSession,
+    adminUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/admin`,
+  }
+
+  const initial = instructorNudgeEmail({ ...base, nudge: 0 })
+  const initialStatus = await sendOnce({
+    dedupeKey: `instructor_nudge:${bundle.id}`,
+    emailType: 'instructor_nudge',
+    to: [INTERNAL_EMAIL],
+    subject: initial.subject,
+    html: initial.html,
+  })
+  if (initialStatus === 'sent') {
+    bump(c, 'instructor_nudge')
+    return // never a same-day re-nudge on top of the initial
+  }
+
+  for (const [n, days] of [
+    [2, 8],
+    [1, 11],
+  ] as const) {
+    if (today >= addDaysISO(bundle.firstSession, -days)) {
+      const { subject, html } = instructorNudgeEmail({ ...base, nudge: n })
+      const status = await sendOnce({
+        dedupeKey: `instructor_nudge:${bundle.id}:r${n}`,
+        emailType: 'instructor_nudge',
+        to: [INTERNAL_EMAIL],
+        subject,
+        html,
+      })
+      if (status === 'sent') bump(c, 'instructor_nudge')
+      return // most recent window only, one per sweep
+    }
   }
 }
 
@@ -894,6 +959,7 @@ export async function GET(req: Request) {
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)
     await sweepAdminCheckpoints(bundle, counters)
+    await sweepInstructorNudges(bundle, counters)
     await sweepDeadlinePush(bundle, counselorsBySchool, counters)
     await sweepClassroomRequests(bundle, counselorsBySchool, counters)
   }

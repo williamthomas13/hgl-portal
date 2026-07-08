@@ -89,6 +89,10 @@ The hourly sweep gains three counselor-facing sends. On the **first sweep after 
 - **Counselor digests** start the first **Monday ≥ 8:00 school-local** after deploy, to every
   counselor whose school has a class with open registration (default frequency: weekly). To
   hold someone back, set their digest to *Paused* in the new admin panel before Monday.
+- **Instructor scheduling nudge (addendum §7.4, INTERNAL info@→info@ only):** fires on the
+  first sweep for any un-cancelled class that has reached its paid minimum with no instructor
+  assigned; re-nudges at 11/8 days before first session. When it fires, the min-enrollment
+  checkpoint for that class stays quiet (never both). No family/counselor-facing risk.
 
 **Copy status:** the school-contact templates (CR1/CR2/CR3, CD, FP, FP-alt) carry the FINAL
 approved copy from `docs/PHASE4_COUNSELOR_EMAIL_COPY.md` (v1.0, July 6). FP-alt fires instead

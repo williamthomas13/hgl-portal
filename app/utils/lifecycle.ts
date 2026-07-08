@@ -11,6 +11,10 @@ import type { EnrollmentEmailContext, SessionInfo } from './email'
 export const DEFAULT_TIMEZONE = process.env.CLASS_TIMEZONE ?? 'America/Mexico_City'
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmail.com'
 
+/** Internal ops notifications (instructor scheduling nudge) — info@ to info@,
+ * consistent with other admin-facing sends (addendum §7.4). */
+export const INTERNAL_EMAIL = process.env.INTERNAL_EMAIL ?? 'info@highergroundlearning.com'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -66,6 +70,7 @@ export type ClassBundle = {
   schoolName: string
   schoolLabel: string
   timezone: string
+  instructorId: string | null
   instructorName: string | null
   instructorEmail: string | null
   defaultLocation: string | null
@@ -164,7 +169,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 export async function loadClassBundles(classId?: string): Promise<ClassBundle[]> {
   let query = supabase.from('classes').select(
     `
-    id, slug, status, counselor_id, class_type, school_nickname, school_id, instructor_name, instructor_email,
+    id, slug, status, counselor_id, class_type, school_nickname, school_id, instructor_id, instructor_name, instructor_email,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     schools ( name, nickname, timezone ),
@@ -237,6 +242,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       schoolName: school?.name ?? school?.nickname ?? c.school_nickname ?? 'Higher Ground Learning',
       schoolLabel: school?.nickname ?? c.school_nickname ?? 'HGL',
       timezone: school?.timezone ?? DEFAULT_TIMEZONE,
+      instructorId: c.instructor_id ?? null,
       instructorName: c.instructor_name || null,
       instructorEmail: c.instructor_email || null,
       defaultLocation: c.default_location || null,
