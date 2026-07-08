@@ -20,7 +20,13 @@ export type Affiliation = {
   started_at: string
   ended_at: string | null
   digest_frequency: string
-  contacts: { first_name: string; last_name: string; email: string } | null
+  contacts: {
+    first_name: string
+    last_name: string
+    email: string
+    phone: string | null
+    notes: string | null
+  } | null
   schools: { nickname: string } | null
 }
 
@@ -52,7 +58,7 @@ export default function CounselorsPanel({
     const { data } = await supabase
       .from('school_affiliations')
       .select(
-        'id, contact_id, school_id, role, started_at, ended_at, digest_frequency, contacts ( first_name, last_name, email ), schools ( nickname )'
+        'id, contact_id, school_id, role, started_at, ended_at, digest_frequency, contacts ( first_name, last_name, email, phone, notes ), schools ( nickname )'
       )
       .order('started_at', { ascending: false })
     if (data) {
@@ -139,6 +145,84 @@ export default function CounselorsPanel({
     else fetchAffiliations()
   }
 
+  // Edit the PERSON (name/email/phone/notes) — school-independent, so the
+  // change shows up on every affiliation. Sequential prompts, matching the
+  // slug/close-date edit pattern; cancel at any step keeps the current value.
+  async function handleEditContact(a: Affiliation) {
+    const ct = a.contacts
+    if (!ct) return
+    const first = prompt('First name:', ct.first_name) ?? ct.first_name
+    const last = prompt('Last name:', ct.last_name) ?? ct.last_name
+    const email = prompt('Email (their portal login):', ct.email) ?? ct.email
+    const phone = prompt('Phone (blank = none):', ct.phone ?? '') ?? (ct.phone ?? '')
+    const notes = prompt('Notes (blank = none):', ct.notes ?? '') ?? (ct.notes ?? '')
+    const { error } = await supabase
+      .from('contacts')
+      .update({
+        first_name: first.trim() || ct.first_name,
+        last_name: last.trim() || ct.last_name,
+        email: email.trim().toLowerCase() || ct.email,
+        phone: phone.trim() || null,
+        notes: notes.trim() || null,
+      })
+      .eq('id', a.contact_id)
+    if (error) {
+      alert(
+        'Error updating contact: ' +
+          (error.code === '23505' ? 'that email belongs to another contact.' : error.message)
+      )
+      return
+    }
+    fetchAffiliations()
+    onChange?.()
+  }
+
+  // "Move to another school" = end + create in one action (addendum §6).
+  // The new affiliation keeps the digest frequency; history stays anchored
+  // to the old school through the ended row.
+  async function handleMove(a: Affiliation) {
+    const name = `${a.contacts?.first_name ?? ''} ${a.contacts?.last_name ?? ''}`.trim()
+    const options = schools.filter((s) => s.id !== a.school_id)
+    if (options.length === 0) {
+      alert('No other school to move to — add the school first.')
+      return
+    }
+    const nickname = prompt(
+      `Move ${name} from ${a.schools?.nickname ?? 'this school'} to which school?\n\n` +
+        `Options: ${options.map((s) => s.nickname).join(' · ')}`
+    )
+    if (nickname == null) return
+    const target = options.find((s) => s.nickname.toLowerCase() === nickname.trim().toLowerCase())
+    if (!target) {
+      alert(`No school named "${nickname.trim()}" — copy one of the options exactly.`)
+      return
+    }
+    const { error: newErr } = await supabase.from('school_affiliations').insert([
+      {
+        contact_id: a.contact_id,
+        school_id: target.id,
+        role: a.role,
+        digest_frequency: a.digest_frequency,
+      },
+    ])
+    if (newErr) {
+      alert('Error opening the new affiliation (nothing was ended): ' + newErr.message)
+      return
+    }
+    const { error: endErr } = await supabase
+      .from('school_affiliations')
+      .update({ ended_at: new Date().toLocaleDateString('en-CA') })
+      .eq('id', a.id)
+    if (endErr) {
+      alert(
+        'New affiliation created, but ending the old one failed — end it manually: ' +
+          endErr.message
+      )
+    }
+    fetchAffiliations()
+    onChange?.()
+  }
+
   async function handleEnd(a: Affiliation) {
     const name = `${a.contacts?.first_name ?? ''} ${a.contacts?.last_name ?? ''}`.trim()
     if (
@@ -188,6 +272,11 @@ export default function CounselorsPanel({
                 <td className="px-4 py-2 font-semibold text-hgl-slate">{a.schools?.nickname ?? '—'}</td>
                 <td className="px-4 py-2">
                   {a.contacts?.first_name} {a.contacts?.last_name}
+                  {a.contacts?.notes && (
+                    <span className="block text-xs text-gray-400 max-w-56 truncate" title={a.contacts.notes}>
+                      {a.contacts.notes}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2 text-hgl-blue">{a.contacts?.email}</td>
                 <td className="px-4 py-2 text-gray-500">{formatDateAdmin(a.started_at)}</td>
@@ -202,7 +291,13 @@ export default function CounselorsPanel({
                     ))}
                   </select>
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-right whitespace-nowrap">
+                  <button onClick={() => handleEditContact(a)} className="text-gray-500 text-xs hover:underline mr-3">
+                    Edit
+                  </button>
+                  <button onClick={() => handleMove(a)} className="text-gray-500 text-xs hover:underline mr-3">
+                    Move school
+                  </button>
                   <button onClick={() => handleEnd(a)} className="text-red-600 text-xs hover:underline">
                     End affiliation
                   </button>

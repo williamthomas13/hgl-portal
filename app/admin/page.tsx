@@ -186,14 +186,21 @@ export default function AdminDashboard() {
   const fetchAllCounselors = useCallback(async () => {
     const { data } = await supabase
       .from('school_affiliations')
-      .select('contact_id, school_id, contacts ( first_name, last_name, email )')
+      .select('id, contact_id, school_id, contacts ( first_name, last_name, email )')
       .is('ended_at', null)
     if (data) {
       setAllCounselors(
         data
           .flatMap((row) => {
             const ct = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts
-            return ct ? [{ id: row.contact_id as string, school_id: row.school_id as string, ...ct }] : []
+            return ct
+              ? [{
+                  id: row.id as string, // affiliation id — what classes.counselor_id stores
+                  contact_id: row.contact_id as string,
+                  school_id: row.school_id as string,
+                  ...ct,
+                }]
+              : []
           })
           .sort((a, b) => a.first_name.localeCompare(b.first_name))
       )
@@ -536,7 +543,11 @@ export default function AdminDashboard() {
 
         {/* SESSIONS — same visual calendar as the public registration page */}
         <div className="p-6 border-b border-gray-200">
-          <h4 className="font-semibold text-hgl-slate mb-3">Sessions</h4>
+          <h4 className="font-semibold text-hgl-slate mb-1">Sessions</h4>
+          <p className="text-xs text-gray-500 mb-3">
+            All times in <span className="font-semibold">{c.schools?.timezone ?? '—'}</span>{' '}
+            (from the school record, read-only)
+          </p>
           {sortedSessions.length === 0 ? (
             <p className="text-sm text-gray-500 italic mb-3">No sessions scheduled yet.</p>
           ) : (

@@ -58,7 +58,8 @@ export type ClassBundle = {
   slug: string | null
   /** open | cancelled — cancelled suppresses every scheduled send (§12). */
   status: string
-  /** Optional per-class school contact (a contacts.id); class-specific sends target them. */
+  /** Optional per-class school contact (a school_affiliations.id — addendum §6);
+   * class-specific sends target that affiliation's contact. */
   counselorId: string | null
   classType: string
   schoolId: string | null

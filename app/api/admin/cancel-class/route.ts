@@ -180,16 +180,16 @@ export async function POST(request: Request) {
   if (bundle.schoolId) {
     const { data: affiliations } = await supabase
       .from('school_affiliations')
-      .select('contact_id, contacts ( first_name, email )')
+      .select('id, contacts ( first_name, email )')
       .eq('school_id', bundle.schoolId)
       .is('ended_at', null)
     const allCounselors = (affiliations ?? []).flatMap((a) => {
       const contact = Array.isArray(a.contacts) ? a.contacts[0] : a.contacts
       return contact
-        ? [{ id: a.contact_id as string, first_name: contact.first_name, email: contact.email }]
+        ? [{ id: a.id as string, first_name: contact.first_name, email: contact.email }]
         : []
     })
-    // counselor_id names a contact; an ended affiliation falls back to all.
+    // counselor_id names an affiliation; an ended one falls back to all.
     const chosen = bundle.counselorId
       ? allCounselors.filter((c) => c.id === bundle.counselorId)
       : []

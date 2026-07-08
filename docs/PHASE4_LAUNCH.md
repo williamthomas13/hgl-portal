@@ -114,3 +114,10 @@ fallback, seeded `student_scores` rendering in all three views (and hidden when 
 - Synap score ingestion method (spec §6.3): Scarlett reviewing Synap API/export docs; the
   `student_scores` display layer is live-but-dark either way.
 - Phase 4.5 fast-follow: parent letter / student flyer PDFs (spec §8) — not in this build.
+- **Pre-launch data reset (addendum §7):** test/joke classes, registrations, and fake people
+  stay in the DB during testing. Before real launch, truncate all test data — classes,
+  sessions, enrollments, families, students, add-ons, waitlist rows, email_log — and start
+  fresh (established deletion order in the ops notes: email_log → enrollments/addons →
+  students → classes → schools). Also drop the deprecated `school_counselors` table and the
+  legacy `classes.instructor_name`/`instructor_email` columns once reads are confirmed
+  switched.

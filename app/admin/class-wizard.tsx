@@ -22,7 +22,8 @@ export type School = {
 }
 
 export type ContactAtSchool = {
-  id: string // contact id (what classes.counselor_id stores)
+  id: string // ACTIVE affiliation id (what classes.counselor_id stores — addendum §6)
+  contact_id: string // the person
   school_id: string
   first_name: string
   last_name: string
@@ -178,18 +179,25 @@ export default function ClassWizard({
       }
       contactId = created.id
     }
-    if (!contacts.some((c) => c.id === contactId && c.school_id === schoolId)) {
-      const { error: affErr } = await supabase
+    // The class stores the AFFILIATION id — reuse the active one or open one.
+    let affiliationId = contacts.find(
+      (c) => c.contact_id === contactId && c.school_id === schoolId
+    )?.id
+    if (!affiliationId) {
+      const { data: aff, error: affErr } = await supabase
         .from('school_affiliations')
         .insert([{ contact_id: contactId, school_id: schoolId, role: 'counselor' }])
-      if (affErr) {
-        setMessage('Error adding affiliation: ' + affErr.message)
+        .select('id')
+        .single()
+      if (affErr || !aff) {
+        setMessage('Error adding affiliation: ' + (affErr?.message ?? 'unknown'))
         return
       }
+      affiliationId = aff.id
     }
     setMessage('')
     onContactsChange()
-    setCounselorId(contactId!)
+    setCounselorId(affiliationId!)
     setAddingContact(false)
     setNewContact({ first_name: '', last_name: '', email: '' })
   }
@@ -638,6 +646,12 @@ export default function ClassWizard({
 
       {step === 2 && (
         <div>
+          {school && (
+            <p className="text-xs text-gray-500 mb-3">
+              All times in <span className="font-semibold">{school.timezone}</span> (from the
+              school record, read-only)
+            </p>
+          )}
           {sorted.length === 0 ? (
             <p className="text-sm text-gray-500 italic mb-3">
               No sessions yet — a class needs at least one session before it can be created.
