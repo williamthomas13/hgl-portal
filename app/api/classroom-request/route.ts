@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
   const { data: cls } = await supabase
     .from('classes')
-    .select('id, class_type, school_nickname, schools ( nickname )')
+    .select('id, class_type, schools ( nickname )')
     .eq('id', classId)
     .single()
   if (!cls) {
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     .eq('status', 'pending')
 
   const school = Array.isArray(cls.schools) ? cls.schools[0] : cls.schools
-  const label = `${(school as { nickname?: string } | null)?.nickname ?? cls.school_nickname ?? 'HGL'} ${cls.class_type}`
+  const label = `${(school as { nickname?: string } | null)?.nickname ?? 'HGL'} ${cls.class_type}`
   await sendAdminAlert({
     dedupeKey: `classroom_answer:${classId}:${Date.now()}`,
     adminEmail: ADMIN_EMAIL,

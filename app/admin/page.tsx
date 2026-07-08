@@ -51,11 +51,8 @@ type ClassRow = {
   status: string
   counselor_id: string | null
   registration_close_date: string | null
-  school_nickname: string | null
   class_type: string
   instructor_id: string | null
-  instructor_name: string
-  instructor_email: string | null
   price: number
   capacity: number
   start_date: string
@@ -66,6 +63,7 @@ type ClassRow = {
   min_enrollment: number | null
   enrollment_deadline: string | null
   schools: { name: string; nickname: string; timezone: string } | null
+  instructors: { name: string | null; email: string } | null
   enrollments: Enrollment[] | null
   sessions: Session[] | null
 }
@@ -243,6 +241,7 @@ export default function AdminDashboard() {
         `
         *,
         schools ( name, nickname, timezone ),
+        instructors ( name, email ),
         sessions ( id, session_date, start_time, end_time, location ),
         enrollments (
           id,
@@ -421,7 +420,7 @@ export default function AdminDashboard() {
       ).length ?? 0
     const waitlistCount =
       c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
-    const schoolLabel = c.schools?.nickname ?? c.school_nickname ?? '—'
+    const schoolLabel = c.schools?.nickname ?? '—'
     const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
       a.session_date.localeCompare(b.session_date)
     )
@@ -441,10 +440,10 @@ export default function AdminDashboard() {
             </h3>
             <p className="text-sm text-gray-600">
               Instructor:{' '}
-              {c.instructor_name ? (
+              {c.instructors ? (
                 <>
-                  {c.instructor_name}
-                  {c.instructor_email ? ` (${c.instructor_email})` : ''}
+                  {c.instructors.name ?? c.instructors.email}
+                  {c.instructors.name ? ` (${c.instructors.email})` : ''}
                 </>
               ) : (
                 <span className="italic text-amber-700">Not yet assigned</span>
@@ -765,7 +764,7 @@ export default function AdminDashboard() {
                         : 'bg-gray-50 border-transparent text-gray-500 hover:text-hgl-slate'
                     }`}
                   >
-                    {(c.schools?.nickname ?? c.school_nickname ?? '—') + ' ' + c.class_type}
+                    {(c.schools?.nickname ?? '—') + ' ' + c.class_type}
                   </button>
                 ))}
                 <button

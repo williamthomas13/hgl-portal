@@ -24,7 +24,7 @@ export async function GET(_request: Request, ctx: RouteContext<'/api/receipts/[i
       id, payment_status, amount_paid, paid_at, stripe_payment_intent_id,
       enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
       students ( first_name, last_name, families ( parent_first_name, parent_last_name, parent_email ) ),
-      classes ( class_type, school_nickname, price, start_date, schools ( name, nickname ) )
+      classes ( class_type, price, start_date, schools ( name, nickname ) )
     `
     )
     .eq('id', id)
@@ -38,7 +38,7 @@ export async function GET(_request: Request, ctx: RouteContext<'/api/receipts/[i
   const family = one<any>(student?.families)
   const cls = one<any>(e.classes)
   const school = one<any>(cls?.schools)
-  const label = `${school?.nickname ?? cls?.school_nickname ?? 'HGL'} ${cls?.class_type ?? 'Class'}`
+  const label = `${school?.nickname ?? 'HGL'} ${cls?.class_type ?? 'Class'}`
 
   const bytes = await buildReceiptPdf({
     label,

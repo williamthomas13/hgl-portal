@@ -17,8 +17,6 @@ type Session = {
 type ClassInfo = {
   id: string
   class_type: string
-  school_nickname: string | null
-  instructor_name: string | null
   default_location: string | null
   schools: { nickname: string } | null
   sessions: Session[] | null
@@ -57,7 +55,7 @@ export default function ClassCalendarPage() {
   if (loading) return <div className="p-10 text-center">Loading calendar...</div>
   if (!info) return <div className="p-10 text-center">Class not found.</div>
 
-  const label = `${info.schools?.nickname ?? info.school_nickname ?? 'HGL'} — ${info.class_type}`
+  const label = `${info.schools?.nickname ?? 'HGL'} — ${info.class_type}`
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const icsPath = `/api/classes/${classId}/calendar.ics`
   const icsUrl = `${origin}${icsPath}`

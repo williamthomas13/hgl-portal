@@ -17,9 +17,7 @@ type SessionRow = {
 type ClassDetails = {
   id: string
   slug: string | null
-  school_nickname: string | null
   class_type: string
-  instructor_name: string
   price: number
   start_date: string
   default_location: string | null
@@ -266,7 +264,7 @@ export default function RegistrationPage() {
   )
   const firstSession = sessions[0]?.session_date ?? classDetails.start_date
   const classTime = classTimeOf(sessions)
-  const schoolLabel = classDetails.schools?.nickname ?? classDetails.school_nickname ?? 'HGL'
+  const schoolLabel = classDetails.schools?.nickname ?? 'HGL'
   const classLabel = `${schoolLabel} ${classDetails.class_type}`
   const today = new Date().toLocaleDateString('en-CA')
 

@@ -51,9 +51,10 @@ export default async function ParentView({
         id, payment_status, enrolled_at, paid_at, amount_paid, stripe_payment_intent_id,
         enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
         classes (
-          id, status, class_type, school_nickname, instructor_name, default_location, delivery_mode,
+          id, status, class_type, default_location, delivery_mode,
           price, start_date,
           schools ( name, nickname ),
+          instructors ( name, email ),
           sessions ( session_date, start_time, end_time, location )
         )
       )
@@ -112,7 +113,7 @@ export default async function ParentView({
                 const cls = one<any>(e.classes)
                 if (!cls) return null
                 const clsSchool = one<any>(cls.schools)
-                const label = `${clsSchool?.nickname ?? cls.school_nickname ?? 'HGL'} ${cls.class_type}`
+                const label = `${clsSchool?.nickname ?? 'HGL'} ${cls.class_type}`
                 const sessions: CalendarSession[] = cls.sessions ?? []
                 const highlighted = e.id === highlightEnrollment
                 const addons = (e.enrollment_addons ?? []).map((a: any) => ({
@@ -146,7 +147,7 @@ export default async function ParentView({
                         <p className="text-sm text-gray-600">
                           Starts {formatDate(cls.start_date)}
                           {/* family-facing never says "TBD" (addendum §7.3) */}
-                          {` · Instructor: ${cls.instructor_name ?? 'to be announced'}`}
+                          {` · Instructor: ${one<any>(cls.instructors)?.name ?? one<any>(cls.instructors)?.email ?? 'to be announced'}`}
                         </p>
                         {(cls.default_location || showPlaceholders) && (
                           <p className="text-sm text-gray-600">

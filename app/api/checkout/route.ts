@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       .from('enrollments')
       .select(
         `id, payment_status, class_id,
-         classes ( id, price, class_type, school_nickname, schools ( nickname ) ),
+         classes ( id, price, class_type, schools ( nickname ) ),
          students ( families ( parent_email ) )`
       )
       .eq('id', enrollmentId)
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     const classId: string = cls.id;
     const price = Number(cls.price);
     const customerEmail: string = family.parent_email;
-    const schoolLabel = one<{ nickname?: string }>(cls.schools)?.nickname ?? cls.school_nickname ?? 'HGL';
+    const schoolLabel = one<{ nickname?: string }>(cls.schools)?.nickname ?? 'HGL';
     const className = `${schoolLabel} — ${cls.class_type}`;
 
     // Base URL for redirects. Set NEXT_PUBLIC_APP_URL in env

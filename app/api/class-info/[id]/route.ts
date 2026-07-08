@@ -29,7 +29,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      `id, slug, status, school_nickname, class_type, instructor_name, price, capacity,
+      `id, slug, status, class_type, price, capacity,
        start_date, default_location, registration_close_date,
        schools ( name, nickname ),
        sessions ( id, session_date, start_time, end_time, location ),

@@ -299,13 +299,10 @@ export default function ClassWizard({
     }
 
     const newClass = {
-      school_nickname: school.nickname, // legacy copy; to be dropped later
       school_id: school.id,
       counselor_id: counselorId || null,
       class_type: classType.trim(),
       instructor_id: instructor?.id ?? null,
-      instructor_name: instructor ? (instructor.name ?? instructor.email) : null, // legacy copy
-      instructor_email: instructor?.email ?? null, // legacy copy
       price: Number(price),
       capacity: Number(capacity),
       start_date: startDate,

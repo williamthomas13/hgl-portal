@@ -169,10 +169,11 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 export async function loadClassBundles(classId?: string): Promise<ClassBundle[]> {
   let query = supabase.from('classes').select(
     `
-    id, slug, status, counselor_id, class_type, school_nickname, school_id, instructor_id, instructor_name, instructor_email,
+    id, slug, status, counselor_id, class_type, school_id, instructor_id,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     schools ( name, nickname, timezone ),
+    instructors ( name, email ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
       id, payment_status, enrolled_at, paid_at, amount_paid,
@@ -196,6 +197,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
 
   return (data as any[]).map((c) => {
     const school = one<any>(c.schools)
+    const instructor = one<any>(c.instructors)
     const sessions: SessionInfo[] = [...(c.sessions ?? [])].sort((a: SessionInfo, b: SessionInfo) =>
       a.session_date.localeCompare(b.session_date)
     )
@@ -239,12 +241,12 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       counselorId: c.counselor_id ?? null,
       classType: c.class_type,
       schoolId: c.school_id ?? null,
-      schoolName: school?.name ?? school?.nickname ?? c.school_nickname ?? 'Higher Ground Learning',
-      schoolLabel: school?.nickname ?? c.school_nickname ?? 'HGL',
+      schoolName: school?.name ?? school?.nickname ?? 'Higher Ground Learning',
+      schoolLabel: school?.nickname ?? 'HGL',
       timezone: school?.timezone ?? DEFAULT_TIMEZONE,
       instructorId: c.instructor_id ?? null,
-      instructorName: c.instructor_name || null,
-      instructorEmail: c.instructor_email || null,
+      instructorName: instructor?.name ?? instructor?.email ?? null,
+      instructorEmail: instructor?.email ?? null,
       defaultLocation: c.default_location || null,
       synapGroup: c.synap_group || null,
       price: Number(c.price),

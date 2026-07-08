@@ -51,7 +51,7 @@ export default async function ClassroomRequestPage({
 
   const { data: cls } = await supabase
     .from('classes')
-    .select('id, class_type, school_nickname, start_date, default_location, schools ( name, nickname ), sessions ( session_date )')
+    .select('id, class_type, start_date, default_location, schools ( name, nickname ), sessions ( session_date )')
     .eq('id', id)
     .single()
 
@@ -65,7 +65,7 @@ export default async function ClassroomRequestPage({
   }
 
   const school = Array.isArray(cls.schools) ? cls.schools[0] : cls.schools
-  const nickname = (school as { nickname?: string } | null)?.nickname ?? cls.school_nickname ?? 'HGL'
+  const nickname = (school as { nickname?: string } | null)?.nickname ?? 'HGL'
   const label = `${nickname} ${cls.class_type}`
   const firstSession =
     [...((cls.sessions as { session_date: string }[]) ?? []).map((s) => s.session_date)].sort()[0] ??

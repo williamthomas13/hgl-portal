@@ -23,9 +23,10 @@ export default async function InstructorView({
       .from('classes')
       .select(
         `
-        id, status, class_type, school_nickname, delivery_mode, capacity, min_enrollment,
-        start_date, instructor_email, instructor_name, default_location, synap_group,
+        id, status, class_type, delivery_mode, capacity, min_enrollment,
+        start_date, default_location, synap_group,
         schools ( name, nickname ),
+        instructors!inner ( email ),
         sessions ( session_date, start_time, end_time, location ),
         enrollments (
           id, payment_status, accommodations, previous_scores, notes,
@@ -36,7 +37,7 @@ export default async function InstructorView({
         )
       `
       )
-      .ilike('instructor_email', email)
+      .ilike('instructors.email', email)
       .order('start_date', { ascending: false }),
   ])
 
@@ -68,7 +69,7 @@ export default async function InstructorView({
     <div className="space-y-6">
       {(classes as any[]).map((c) => {
         const school = one<any>(c.schools)
-        const label = `${school?.nickname ?? c.school_nickname ?? 'HGL'} ${c.class_type}`
+        const label = `${school?.nickname ?? 'HGL'} ${c.class_type}`
         const sessions = [...(c.sessions ?? [])].sort((a: any, b: any) =>
           a.session_date.localeCompare(b.session_date)
         )

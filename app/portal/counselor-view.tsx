@@ -41,10 +41,11 @@ export default async function CounselorView({
     .from('classes')
     .select(
       `
-      id, slug, status, class_type, school_nickname, delivery_mode, price, capacity,
-      start_date, registration_close_date, enrollment_deadline, instructor_name,
+      id, slug, status, class_type, delivery_mode, price, capacity,
+      start_date, registration_close_date, enrollment_deadline,
       default_location, school_id,
       schools ( name, nickname ),
+      instructors ( name, email ),
       sessions ( session_date, start_time, end_time, location ),
       enrollments (
         id, payment_status, enrolled_at, accommodations, waitlist_offer_expires_at,
@@ -98,7 +99,7 @@ export default async function CounselorView({
   const pastClasses = decorated.filter((c) => !c.isOpen)
 
   function roster(c: any, withRegLink: boolean) {
-    const label = `${one<any>(c.schools)?.nickname ?? c.school_nickname ?? 'HGL'} ${c.class_type}`
+    const label = `${one<any>(c.schools)?.nickname ?? 'HGL'} ${c.class_type}`
     const regLink = `${base}/register/${c.slug ?? c.id}`
     const active = (c.enrollments ?? []).filter(
       (e: any) => e.payment_status !== 'Expired' && e.payment_status !== 'Refunded'
@@ -117,7 +118,7 @@ export default async function CounselorView({
             </h3>
             <p className="text-sm text-gray-600">
               Starts {formatDate(c.firstSession)} · ${Number(c.price).toLocaleString()} per student
-              {` · ${c.instructor_name ?? 'instructor to be announced'}`}
+              {` · ${one<any>(c.instructors)?.name ?? one<any>(c.instructors)?.email ?? 'instructor to be announced'}`}
             </p>
           </div>
           <div className="text-right">

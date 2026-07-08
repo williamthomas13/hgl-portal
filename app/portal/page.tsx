@@ -47,7 +47,11 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
       .is('ended_at', null)
       .ilike('contacts.email', email)
       .limit(1),
-    supabase.from('classes').select('id').ilike('instructor_email', email).limit(1),
+    supabase
+      .from('classes')
+      .select('id, instructors!inner(email)')
+      .ilike('instructors.email', email)
+      .limit(1),
     supabase.from('profiles').select('role').eq('id', user.id).single(),
   ])
 
