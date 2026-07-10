@@ -4,8 +4,16 @@ import { createHmac, timingSafeEqual } from 'crypto'
 
 // Resend delivery-event webhook. Configure in the Resend dashboard →
 // Webhooks → endpoint https://hgl-portal.vercel.app/api/webhooks/resend,
-// subscribed to email.bounced and email.complained; put the signing secret
-// (whsec_…) in RESEND_WEBHOOK_SECRET.
+// subscribed to email.sent, email.delivered, email.opened, email.clicked,
+// email.bounced, email.complained; put the signing secret (whsec_…) in
+// RESEND_WEBHOOK_SECRET. Open/click tracking must also be enabled on the
+// sending domain (Resend dashboard → Domains) for those events to fire.
+//
+// Feature A2 (docs/COMMS_ATTENDANCE_PARENT_SPEC.md): every event updates the
+// matching email_sends row by resend_email_id — delivered/opened/clicked
+// upgrade engagement fields; bounced/complained flip the status. The
+// email_events table keeps its bounce/complaint feed (the Monday roster
+// report reads it).
 //
 // Resend signs webhooks Svix-style: HMAC-SHA256 over "{id}.{timestamp}.{body}"
 // with the base64-decoded secret, carried in svix-id / svix-timestamp /
@@ -78,6 +86,47 @@ export async function POST(req: Request) {
         },
       ])
       if (error) console.error('Failed to store email event:', error.message)
+    }
+  }
+
+  // Engagement tracking onto the canonical send log (spec §A2).
+  const emailId = event.data?.email_id
+  if (emailId && event.type?.startsWith('email.')) {
+    const nowIso = new Date().toISOString()
+    const { data: row } = await supabase
+      .from('email_sends')
+      .select('id, status, open_count, click_count, first_opened_at, first_clicked_at')
+      .eq('resend_email_id', emailId)
+      .maybeSingle()
+    if (row) {
+      // 'sent' may be upgraded; bounce/complaint always win; opens/clicks
+      // never downgrade a bounce (events can arrive out of order).
+      const patch: Record<string, unknown> = { updated_at: nowIso }
+      switch (event.type) {
+        case 'email.delivered':
+          patch.delivered_at = nowIso
+          if (row.status === 'sent') patch.status = 'delivered'
+          break
+        case 'email.opened':
+          patch.open_count = (row.open_count ?? 0) + 1
+          if (!row.first_opened_at) patch.first_opened_at = nowIso
+          break
+        case 'email.clicked':
+          patch.click_count = (row.click_count ?? 0) + 1
+          if (!row.first_clicked_at) patch.first_clicked_at = nowIso
+          break
+        case 'email.bounced':
+          patch.status = 'bounced'
+          patch.bounced_at = nowIso
+          break
+        case 'email.complained':
+          patch.status = 'complained'
+          break
+      }
+      if (Object.keys(patch).length > 1) {
+        const { error } = await supabase.from('email_sends').update(patch).eq('id', row.id)
+        if (error) console.error('email_sends engagement update failed:', error.message)
+      }
     }
   }
 

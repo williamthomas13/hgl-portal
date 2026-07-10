@@ -296,8 +296,10 @@ export async function POST(req: Request) {
           }
           if (anySent) {
             // Claim the replaced sends: thank-you (#1) + both audiences of
-            // the superseded pre-start steps. One by one so a duplicate
-            // (webhook retry) can't abort the remaining claims.
+            // the superseded pre-start steps. Cancelled email_sends rows ARE
+            // the claim (sendOnce suppresses on cancelled) — and the comms
+            // dashboard shows exactly why each step didn't go out. One by one
+            // so a duplicate (webhook retry) can't abort the remaining claims.
             const claimKeys = [
               `thank_you:${paidEnrollmentId}`,
               ...supersededSteps.flatMap((s) =>
@@ -305,18 +307,31 @@ export async function POST(req: Request) {
               ),
             ];
             for (const dedupe_key of claimKeys) {
-              const { error: claimErr } = await supabase.from('email_log').insert([
+              const { error: claimErr } = await supabase.from('email_sends').insert([
                 {
                   dedupe_key,
-                  email_type: 'superseded_by_welcome',
+                  template_key: 'SUPERSEDED',
                   enrollment_id: paidEnrollmentId,
-                  recipients: targets.map((t) => t.to),
+                  class_id: classId,
+                  recipient_email: ctx.parentEmail.toLowerCase(),
+                  status: 'cancelled',
+                  cancel_reason: 'superseded by combined late-registration welcome',
                 },
               ]);
               if (claimErr && claimErr.code !== '23505') {
                 console.error(`Failed to claim ${dedupe_key}:`, claimErr.message);
               }
             }
+            // A pre-projected scheduled row may already exist for these keys —
+            // the insert conflicts away; cancel those in place instead.
+            await supabase
+              .from('email_sends')
+              .update({
+                status: 'cancelled',
+                cancel_reason: 'superseded by combined late-registration welcome',
+              })
+              .in('dedupe_key', claimKeys)
+              .in('status', ['scheduled', 'held']);
           }
         } else {
           // Normal flow: #0-P + #0-S now; #1 follows from the sweep at ~3h.

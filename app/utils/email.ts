@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
+import { templateMetaFor, type RecipientRole } from './comms'
 import { formatDateFull } from './dates'
 
 // Server-side only. Every send goes through sendOnce(), which claims a row in
@@ -1464,19 +1465,30 @@ export function loginLinkEmail(confirmUrl: string, otp: string): Rendered {
 }
 
 // ---------------------------------------------------------------------------
-// Idempotent send
+// Idempotent send — email_sends is the canonical claim + log (Feature A,
+// docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A2). email_log is legacy read-only
+// history; its rows were backfilled into email_sends by the A1 migration.
 // ---------------------------------------------------------------------------
 
 /**
- * Send an email exactly once per dedupe key.
- * Claims the email_log row first; if the claim conflicts, someone already
- * sent it. If the actual send fails, the claim is released so a retry
- * (webhook redelivery / next cron run) can try again.
+ * Send an email exactly once per dedupe key, honoring dashboard controls.
+ *
+ * The dedupe key claims a row in email_sends. A pre-existing row can be:
+ *   - already sent (any of SENT_STATUSES/'failed' claim races) → 'duplicate'
+ *   - held or cancelled from the comms dashboard          → 'suppressed'
+ *   - scheduled with a future time (manually rescheduled) → 'suppressed'
+ *   - scheduled & due, or failed (retryable)              → claimed & sent
+ * No row → an ad-hoc row is inserted (event-driven sends, alerts, login
+ * links), so history is complete either way. On Resend failure a previously
+ * scheduled row returns to 'scheduled' (the hourly sweep retries); an ad-hoc
+ * row becomes 'failed' (retryable on the next webhook redelivery/cron pass —
+ * the claim treats 'failed' as claimable).
  */
 export async function sendOnce(opts: {
   dedupeKey: string
   emailType: string
   enrollmentId?: string
+  classId?: string
   sessionId?: string
   to: string[]
   cc?: string[]
@@ -1484,31 +1496,74 @@ export async function sendOnce(opts: {
   subject: string
   html: string
   payload?: Record<string, unknown>
-}): Promise<'sent' | 'duplicate' | 'failed'> {
+  /** Explicit registry key/role override (defaults derive from emailType). */
+  templateKey?: string
+  recipientRole?: RecipientRole
+  /** Feature B3: composing instructor — drives their self-read RLS. */
+  senderEmail?: string
+  /** A4 test sends: logged, excluded from stats. */
+  isTest?: boolean
+}): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
   if (!process.env.RESEND_API_KEY) {
     console.warn(`RESEND_API_KEY not set — skipping email ${opts.dedupeKey}`)
     return 'failed'
   }
 
-  const { error: claimError } = await supabase.from('email_log').insert([
-    {
-      dedupe_key: opts.dedupeKey,
-      email_type: opts.emailType,
-      enrollment_id: opts.enrollmentId ?? null,
-      session_id: opts.sessionId ?? null,
-      recipients: opts.to,
-      payload: opts.payload ?? null,
-    },
-  ])
+  const meta = templateMetaFor(opts.emailType, opts.dedupeKey)
+  const nowIso = new Date().toISOString()
 
-  if (claimError) {
-    if (claimError.code === '23505') return 'duplicate' // unique violation: already sent
-    console.error(`email_log claim failed for ${opts.dedupeKey}:`, claimError.message)
-    return 'failed'
+  const { data: existing } = await supabase
+    .from('email_sends')
+    .select('id, status, scheduled_for')
+    .eq('dedupe_key', opts.dedupeKey)
+    .maybeSingle()
+
+  let rowId: string
+  let wasScheduled = false
+  if (existing) {
+    if (existing.status === 'held' || existing.status === 'cancelled') return 'suppressed'
+    if (existing.status === 'scheduled' && existing.scheduled_for > nowIso) return 'suppressed'
+    if (existing.status !== 'scheduled' && existing.status !== 'failed') return 'duplicate'
+    // Claim: conditional transition to 'sending'. A concurrent run loses.
+    const { data: claimed } = await supabase
+      .from('email_sends')
+      .update({ status: 'sending', updated_at: nowIso })
+      .eq('id', existing.id)
+      .in('status', ['scheduled', 'failed'])
+      .select('id')
+    if (!claimed || claimed.length === 0) return 'duplicate'
+    rowId = existing.id
+    wasScheduled = existing.status === 'scheduled'
+  } else {
+    const { data: inserted, error: claimError } = await supabase
+      .from('email_sends')
+      .insert([
+        {
+          dedupe_key: opts.dedupeKey,
+          template_key: opts.templateKey ?? meta.key,
+          enrollment_id: opts.enrollmentId ?? null,
+          class_id: opts.classId ?? null,
+          recipient_email: opts.to[0]?.toLowerCase() ?? 'unknown@invalid',
+          recipient_role: opts.recipientRole ?? meta.role,
+          sender_email: opts.senderEmail ?? null,
+          cc: opts.cc ?? null,
+          scheduled_for: nowIso,
+          status: 'sending',
+          payload: opts.payload ?? null,
+          is_test: opts.isTest ?? false,
+        },
+      ])
+      .select('id')
+    if (claimError || !inserted || inserted.length === 0) {
+      if (claimError?.code === '23505') return 'duplicate'
+      console.error(`email_sends claim failed for ${opts.dedupeKey}:`, claimError?.message)
+      return 'failed'
+    }
+    rowId = inserted[0].id
   }
 
   const resend = new Resend(process.env.RESEND_API_KEY)
-  const { error: sendError } = await resend.emails.send({
+  const { data: sendData, error: sendError } = await resend.emails.send({
     from: opts.from ?? FROM,
     to: opts.to,
     cc: opts.cc,
@@ -1518,9 +1573,24 @@ export async function sendOnce(opts: {
 
   if (sendError) {
     console.error(`Resend send failed for ${opts.dedupeKey}:`, sendError.message)
-    await supabase.from('email_log').delete().eq('dedupe_key', opts.dedupeKey)
+    await supabase
+      .from('email_sends')
+      .update({ status: wasScheduled ? 'scheduled' : 'failed', updated_at: new Date().toISOString() })
+      .eq('id', rowId)
     return 'failed'
   }
+
+  await supabase
+    .from('email_sends')
+    .update({
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      resend_email_id: sendData?.id ?? null,
+      subject_rendered: opts.subject,
+      ...(opts.payload ? { payload: opts.payload } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', rowId)
 
   return 'sent'
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
+import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
 import {
   classDetailsEmail,
@@ -327,9 +328,10 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
   if (enrollmentIds.length === 0) return
 
   const { data: sentDetails } = await supabase
-    .from('email_log')
+    .from('email_sends')
     .select('enrollment_id, payload')
-    .eq('email_type', 'class_details')
+    .eq('template_key', 'E4_CLASS_DETAILS')
+    .in('status', ['sent', 'delivered', 'bounced', 'complained'])
     .in('enrollment_id', enrollmentIds)
   if (!sentDetails || sentDetails.length === 0) return
 
@@ -367,9 +369,10 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
 
   // Refresh the snapshots so the *next* change triggers again.
   await supabase
-    .from('email_log')
+    .from('email_sends')
     .update({ payload: current })
-    .eq('email_type', 'class_details')
+    .eq('template_key', 'E4_CLASS_DETAILS')
+    .in('status', ['sent', 'delivered', 'bounced', 'complained'])
     .in('enrollment_id', [...staleByEnrollment.keys()])
 }
 
@@ -1002,11 +1005,28 @@ export async function GET(req: Request) {
   for (const bundle of bundles) {
     // Cancelled classes send NOTHING, ever — the cancellation emails went out
     // from the admin confirm; every scheduled send derives from this status
-    // (PHASE4_SPEC §12: atomic suppression).
-    if (bundle.status === 'cancelled') continue
+    // (PHASE4_SPEC §12: atomic suppression). Feature A: any still-scheduled
+    // email_sends rows for the class get audit-cancelled.
+    if (bundle.status === 'cancelled') {
+      const n = await cancelScheduledForClass(bundle.id, 'class cancelled')
+      if (n > 0) counters.comms_cancelled = (counters.comms_cancelled ?? 0) + n
+      continue
+    }
     // Dead-class guard: a month after the last session there is nothing left
     // to send — skip entirely (prevents eternal hold-alerts on old classes).
-    if (localDate(bundle.timezone) > addDaysISO(bundle.lastSession, 30)) continue
+    if (localDate(bundle.timezone) > addDaysISO(bundle.lastSession, 30)) {
+      const n = await cancelScheduledForClass(bundle.id, 'class ended (30-day guard)')
+      if (n > 0) counters.comms_cancelled = (counters.comms_cancelled ?? 0) + n
+      continue
+    }
+
+    // Feature A projector: materialize/reconcile this class's upcoming sends
+    // BEFORE the send passes, so held/cancelled/rescheduled rows exist for
+    // sendOnce to honor and the dashboard's Upcoming tab reflects reality.
+    const proj = await projectScheduledSends(bundle, packages.pre)
+    if (proj.inserted > 0) counters.comms_projected = (counters.comms_projected ?? 0) + proj.inserted
+    if (proj.retimed > 0) counters.comms_retimed = (counters.comms_retimed ?? 0) + proj.retimed
+    if (proj.cancelled > 0) counters.comms_cancelled = (counters.comms_cancelled ?? 0) + proj.cancelled
 
     await sweepPaymentReminders(bundle, counters)
     await sweepCompletion(bundle, counters)

@@ -868,6 +868,13 @@ export default function AdminDashboard() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                       {formatTimestampAdmin(en.enrolled_at)}
+                      <a
+                        href={`/admin/communications?enrollment=${en.id}`}
+                        title="Every email for this enrollment — sent, scheduled, cancelled"
+                        className="block text-xs text-hgl-blue underline hover:text-hgl-slate"
+                      >
+                        comms
+                      </a>
                     </td>
                   </tr>
                 ))}
@@ -887,6 +894,13 @@ export default function AdminDashboard() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
           <h1 className="text-2xl font-bold text-hgl-slate">HGL Admin</h1>
+          <div className="flex items-center gap-4">
+            <a
+              href="/admin/communications"
+              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
+            >
+              Communications
+            </a>
           <button
             onClick={async () => {
               await supabase.auth.signOut()
@@ -896,6 +910,7 @@ export default function AdminDashboard() {
           >
             Sign out
           </button>
+          </div>
         </div>
 
         <CollapsibleSection
