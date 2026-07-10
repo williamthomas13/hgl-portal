@@ -13,11 +13,11 @@ import { formatDateFull } from './dates'
 // person for the student send. Footer types per the deck: T = transactional
 // (no unsubscribe), R = relationship (marketing opt-out link).
 
-const FROM = process.env.EMAIL_FROM ?? 'Higher Ground Learning <onboarding@resend.dev>'
+export const FROM = process.env.EMAIL_FROM ?? 'Higher Ground Learning <onboarding@resend.dev>'
 
 // Personal sender for #1, #7, #8, #9 (and the combined welcome, which
 // carries #1). Deck: "William Thomas <billy@highergroundlearning.com>".
-const PERSONAL_FROM =
+export const PERSONAL_FROM =
   process.env.EMAIL_FROM_PERSONAL ?? 'William Thomas <billy@highergroundlearning.com>'
 
 const FAQ_LINKS = `<a href="https://highergroundlearning.com/faqs#general">General</a> · <a href="https://highergroundlearning.com/faqs#diagnostic-tests">Diagnostic tests</a> · <a href="https://highergroundlearning.com/faqs#attendance">Attendance</a> · <a href="https://highergroundlearning.com/faqs#1on1">1-on-1 tutoring</a>`
@@ -143,25 +143,25 @@ export function calendarButton(ctx: EnrollmentEmailContext) {
 
 // Footer types per the deck. T = transactional: address block + footer text,
 // no unsubscribe. R = relationship: address block + opt-out link.
-function footerT(customText?: string) {
+export function footerT(customText?: string) {
   return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
     <p style="font-size:13px;color:#64748b">Higher Ground Learning · highergroundlearning.com ·
     questions? Just reply to this email.</p>`
 }
 
-function footerR(unsubscribeUrl: string, customText?: string) {
+export function footerR(unsubscribeUrl: string, customText?: string) {
   return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
     <p style="font-size:13px;color:#64748b">Higher Ground Learning · highergroundlearning.com ·
     <a href="${unsubscribeUrl}" style="color:#64748b">Unsubscribe from non-essential updates</a></p>`
 }
 
-type WrapOpts = {
+export type WrapOpts = {
   /** Hidden preview-text line shown next to the subject in inbox lists. */
   preheader: string
   footer: string
 }
 
-function wrap(body: string, opts: WrapOpts) {
+export function wrap(body: string, opts: WrapOpts) {
   // Hidden preheader + whitespace padding so clients don't pull body text
   // into the preview line instead. Same technique React Email's <Preview>
   // renders to.
@@ -1503,6 +1503,8 @@ export async function sendOnce(opts: {
   senderEmail?: string
   /** A4 test sends: logged, excluded from stats. */
   isTest?: boolean
+  /** A4: which email_template_versions row rendered this body. */
+  bodySnapshotId?: string
 }): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
   if (!process.env.RESEND_API_KEY) {
     console.warn(`RESEND_API_KEY not set — skipping email ${opts.dedupeKey}`)
@@ -1551,6 +1553,7 @@ export async function sendOnce(opts: {
           status: 'sending',
           payload: opts.payload ?? null,
           is_test: opts.isTest ?? false,
+          body_snapshot_id: opts.bodySnapshotId ?? null,
         },
       ])
       .select('id')
@@ -1587,6 +1590,7 @@ export async function sendOnce(opts: {
       sent_at: new Date().toISOString(),
       resend_email_id: sendData?.id ?? null,
       subject_rendered: opts.subject,
+      ...(opts.bodySnapshotId ? { body_snapshot_id: opts.bodySnapshotId } : {}),
       ...(opts.payload ? { payload: opts.payload } : {}),
       updated_at: new Date().toISOString(),
     })

@@ -31,6 +31,7 @@ import {
   type Rendered,
   type ScheduleChange,
 } from '../../../utils/email'
+import { renderEmail, type RenderedWithVersion } from '../../../utils/comms-db-render'
 import {
   ADMIN_EMAIL,
   DEFAULT_TIMEZONE,
@@ -40,6 +41,7 @@ import {
   PAYMENT_REMINDERS,
   SEQUENCE,
   WAITLIST_CLAIM_HOURS,
+  packageSavings,
   addDaysISO,
   addonPageUrlFor,
   claimUrlFor,
@@ -78,27 +80,42 @@ import {
 // relationship per the deck; #1/#9 are handled in their own steps.)
 const RELATIONSHIP_TYPES = new Set(['faq', 'second_diagnostic', 'review_request', 'tutoring_offer'])
 
-type StepRenderers = Partial<Record<Audience, (ctx: EnrollmentEmailContext) => Rendered>>
+// Renderers are async since A4: renderEmail() serves the DB-managed copy when
+// the template is live, falling back to the code-rendered original otherwise.
+type StepRenderers = Partial<
+  Record<Audience, (ctx: EnrollmentEmailContext) => Promise<RenderedWithVersion>>
+>
 
 function renderersFor(step: string, postPackages: TutoringPackage[]): StepRenderers {
+  const pair = (
+    parentKey: string,
+    studentKey: string,
+    fallback: (c: EnrollmentEmailContext, a: Audience) => Rendered
+  ): StepRenderers => ({
+    parent: (c) => renderEmail(parentKey, c, 'parent', {}, () => fallback(c, 'parent')),
+    student: (c) => renderEmail(studentKey, c, 'student', {}, () => fallback(c, 'student')),
+  })
   switch (step) {
     case 'synap_access':
-      return { parent: synapAccessParentEmail, student: synapAccessStudentEmail }
+      return pair('E2_DIAG_PARENT', 'E2_DIAG_STUDENT', (c, a) =>
+        a === 'parent' ? synapAccessParentEmail(c) : synapAccessStudentEmail(c)
+      )
     case 'faq':
-      return { parent: (c) => faqEmail(c, 'parent'), student: (c) => faqEmail(c, 'student') }
+      return pair('E3_VFAQ', 'E3_VFAQ', (c, a) => faqEmail(c, a))
     case 'class_details':
-      return { parent: (c) => classDetailsEmail(c, 'parent'), student: (c) => classDetailsEmail(c, 'student') }
+      return pair('E4_CLASS_DETAILS', 'E4_CLASS_DETAILS', (c, a) => classDetailsEmail(c, a))
     case 'location_reminder':
-      return { parent: (c) => locationReminderEmail(c, 'parent'), student: (c) => locationReminderEmail(c, 'student') }
+      return pair('E5_LOCATION', 'E5_LOCATION', (c, a) => locationReminderEmail(c, a))
     case 'second_diagnostic':
-      return { parent: (c) => secondDiagnosticEmail(c, 'parent'), student: (c) => secondDiagnosticEmail(c, 'student') }
+      return pair('E6_DIAG2', 'E6_DIAG2', (c, a) => secondDiagnosticEmail(c, a))
     case 'review_request':
-      return { parent: reviewRequestEmail } // parent-only
-    case 'tutoring_offer':
       return {
-        parent: (c) => tutoringOfferEmail(c, postPackages, 'parent'),
-        student: (c) => tutoringOfferEmail(c, postPackages, 'student'),
-      }
+        parent: (c) => renderEmail('E7_REVIEW', c, 'parent', {}, () => reviewRequestEmail(c)),
+      } // parent-only
+    case 'tutoring_offer':
+      return pair('E8_POSTCLASS_TUTORING', 'E8_POSTCLASS_TUTORING', (c, a) =>
+        tutoringOfferEmail(c, postPackages, a)
+      )
     default:
       return {}
   }
@@ -126,16 +143,18 @@ async function sendToAudiences(opts: {
     targets.push({ audience: 'student', to: ctx.studentEmail, tag: 's' })
 
   for (const t of targets) {
-    const { subject, html, from } = renderers[t.audience]!(ctx)
+    const { subject, html, from, versionId } = await renderers[t.audience]!(ctx)
     const status = await sendOnce({
       dedupeKey: `${type}_${t.tag}:${ctx.enrollmentId}${suffix}`,
       emailType: type,
       enrollmentId: ctx.enrollmentId,
+      classId: ctx.classId,
       to: [t.to],
       from,
       subject,
       html,
       payload: opts.payload,
+      bodySnapshotId: versionId,
     })
     if (status === 'sent') bump(counters, type)
   }
@@ -166,14 +185,22 @@ async function sweepPaymentReminders(bundle: ClassBundle, c: Counters) {
     const ctx = emailContext(bundle, e)
     for (const r of PAYMENT_REMINDERS) {
       if (age < r.afterHours) break
-      const { subject, html } = paymentReminderEmail(ctx, r.n)
+      const { subject, html, versionId } = await renderEmail(
+        `PR${r.n}`,
+        ctx,
+        'parent',
+        {},
+        () => paymentReminderEmail(ctx, r.n)
+      )
       const status = await sendOnce({
         dedupeKey: `payment_reminder_${r.n}:${e.id}`,
         emailType: 'payment_reminder',
         enrollmentId: e.id,
+        classId: bundle.id,
         to: [ctx.parentEmail],
         subject,
         html,
+        bodySnapshotId: versionId,
       })
       if (status === 'sent') bump(c, 'payment_reminder')
     }
@@ -213,15 +240,19 @@ async function sweepThankYou(bundle: ClassBundle, c: Counters) {
     if (!e.paid_at || hoursSince(e.paid_at) < 3) continue
 
     const ctx = emailContext(bundle, e)
-    const { subject, html, from } = thankYouEmail(ctx)
+    const { subject, html, from, versionId } = await renderEmail('E1_THANKS', ctx, 'parent', {}, () =>
+      thankYouEmail(ctx)
+    )
     const status = await sendOnce({
       dedupeKey: `thank_you:${e.id}`,
       emailType: 'thank_you',
       enrollmentId: e.id,
+      classId: bundle.id,
       to: [ctx.parentEmail],
       from,
       subject,
       html,
+      bodySnapshotId: versionId,
     })
     if (status === 'sent') bump(c, 'thank_you')
   }
@@ -244,15 +275,36 @@ async function sweepUpsell(bundle: ClassBundle, c: Counters, prePackages: Tutori
     if (e.addons.length > 0) continue // they already bought tutoring
 
     const ctx = emailContext(bundle, e)
-    const { subject, html, from } = tutoringUpsellEmail(ctx, prePackages, addonPageUrlFor(e.id))
+    const addonUrl = addonPageUrlFor(e.id)
+    // {upsellPackagesBlock}: live package math, computed for the DB template
+    // exactly as the code template renders it.
+    const upsellPackagesBlock = prePackages
+      .map(
+        (p) => `
+      <p style="margin:8px 0">
+        <a href="${addonUrl}" style="display:inline-block;background:#00AEEE;color:#fff;
+        font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">
+        ${p.hours} hours — save $${packageSavings(p)}</a>
+      </p>`
+      )
+      .join('')
+    const { subject, html, from, versionId } = await renderEmail(
+      'E9_UPSELL',
+      ctx,
+      'parent',
+      { upsellPackagesBlock },
+      () => tutoringUpsellEmail(ctx, prePackages, addonUrl)
+    )
     const status = await sendOnce({
       dedupeKey: `tutoring_upsell:${e.id}`,
       emailType: 'tutoring_upsell',
       enrollmentId: e.id,
+      classId: bundle.id,
       to: [ctx.parentEmail],
       from,
       subject,
       html,
+      bodySnapshotId: versionId,
     })
     if (status === 'sent') bump(c, 'tutoring_upsell')
   }
@@ -355,11 +407,20 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
         (en.payment_status === 'Paid' || en.payment_status === 'Completed')
     )
     if (!e) continue
+    const changesBlock = `<ul style="padding-left:20px">${changes
+      .map((ch) => `<li><strong>${ch.label}:</strong> now ${ch.value}</li>`)
+      .join('')}</ul>`
     await sendToAudiences({
       type: 'schedule_update',
       renderers: {
-        parent: (ctx) => scheduleUpdateEmail(ctx, 'parent', changes),
-        student: (ctx) => scheduleUpdateEmail(ctx, 'student', changes),
+        parent: (ctx) =>
+          renderEmail('SU_SCHEDULE_UPDATE', ctx, 'parent', { changesBlock }, () =>
+            scheduleUpdateEmail(ctx, 'parent', changes)
+          ),
+        student: (ctx) =>
+          renderEmail('SU_SCHEDULE_UPDATE', ctx, 'student', { changesBlock }, () =>
+            scheduleUpdateEmail(ctx, 'student', changes)
+          ),
       },
       ctx: emailContext(bundle, e),
       counters: c,
@@ -424,15 +485,27 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
 
     const expiresAt = new Date(now + WAITLIST_CLAIM_HOURS * 3_600_000).toISOString()
     const ctx = emailContext(bundle, e)
-    const { subject, html } = waitlistOfferEmail(ctx, claimUrlFor(e.id), expiresAt)
+    const claimLink = claimUrlFor(e.id)
+    const claimDeadline = new Date(expiresAt).toLocaleString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    })
+    const { subject, html, versionId } = await renderEmail(
+      'W2_SPOT_OPEN',
+      ctx,
+      'parent',
+      { claimLink, claimDeadline },
+      () => waitlistOfferEmail(ctx, claimLink, expiresAt)
+    )
     const status = await sendOnce({
       dedupeKey: `waitlist_offer:${e.id}`,
       emailType: 'waitlist_offer',
       enrollmentId: e.id,
+      classId: bundle.id,
       to: [ctx.parentEmail],
       cc: [ADMIN_EMAIL], // admin CC'd on each offer
       subject,
       html,
+      bodySnapshotId: versionId,
     })
     if (status === 'sent') {
       await supabase

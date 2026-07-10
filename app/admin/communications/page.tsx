@@ -216,9 +216,14 @@ export default function CommunicationsDashboard() {
       <div className="max-w-7xl mx-auto space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-bold text-hgl-slate">Communications</h1>
-          <a href="/admin" className="text-sm text-gray-500 underline hover:text-hgl-slate">
-            ← Back to admin
-          </a>
+          <div className="flex items-center gap-4 text-sm">
+            <a href="/admin/communications/templates" className="font-semibold text-hgl-blue underline hover:text-hgl-slate">
+              Edit templates
+            </a>
+            <a href="/admin" className="text-gray-500 underline hover:text-hgl-slate">
+              ← Back to admin
+            </a>
+          </div>
         </div>
 
         {error && (

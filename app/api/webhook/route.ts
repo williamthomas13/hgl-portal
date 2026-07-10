@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server';
 import Stripe from 'stripe';
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { processQboQueue } from '../../utils/qbo-sync';
+import { renderEmail } from '../../utils/comms-db-render';
 import {
   lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
@@ -283,14 +284,22 @@ export async function POST(req: Request) {
           }
           let anySent = false;
           for (const t of targets) {
-            const { subject, html } = lateRegistrationWelcomeEmail(ctx, t.audience);
+            const { subject, html, versionId } = await renderEmail(
+              'LR_WELCOME',
+              ctx,
+              t.audience,
+              {},
+              () => lateRegistrationWelcomeEmail(ctx, t.audience)
+            );
             const status = await sendOnce({
               dedupeKey: t.key,
               emailType: 'late_welcome',
               enrollmentId: paidEnrollmentId,
+              classId,
               to: [t.to],
               subject,
               html,
+              bodySnapshotId: versionId,
             });
             if (status === 'sent') anySent = true;
           }
@@ -335,25 +344,33 @@ export async function POST(req: Request) {
           }
         } else {
           // Normal flow: #0-P + #0-S now; #1 follows from the sweep at ~3h.
-          const parent = parentConfirmationEmail(ctx);
+          const parent = await renderEmail('E0_CONFIRM_PARENT', ctx, 'parent', {}, () =>
+            parentConfirmationEmail(ctx)
+          );
           await sendOnce({
             dedupeKey: `parent_confirmation:${paidEnrollmentId}`,
             emailType: 'parent_confirmation',
             enrollmentId: paidEnrollmentId,
+            classId,
             to: [ctx.parentEmail],
             subject: parent.subject,
             html: parent.html,
+            bodySnapshotId: parent.versionId,
           });
 
           if (ctx.studentEmail) {
-            const student = studentConfirmationEmail(ctx);
+            const student = await renderEmail('E0_CONFIRM_STUDENT', ctx, 'student', {}, () =>
+              studentConfirmationEmail(ctx)
+            );
             await sendOnce({
               dedupeKey: `student_confirmation:${paidEnrollmentId}`,
               emailType: 'student_confirmation',
               enrollmentId: paidEnrollmentId,
+              classId,
               to: [ctx.studentEmail],
               subject: student.subject,
               html: student.html,
+              bodySnapshotId: student.versionId,
             });
           }
         }

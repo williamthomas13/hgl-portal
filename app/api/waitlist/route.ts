@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { sendOnce, waitlistConfirmationEmail } from '../../utils/email'
+import { renderEmail } from '../../utils/comms-db-render'
 import {
   emailContext,
   loadClassBundles,
@@ -100,14 +101,22 @@ export async function POST(request: Request) {
     const row = fresh?.enrollments.find((e) => e.id === enrollment.id)
     if (fresh && row) {
       const ctx = emailContext(fresh, row)
-      const { subject, html } = waitlistConfirmationEmail(ctx, position)
+      const { subject, html, versionId } = await renderEmail(
+        'W1_WAITLIST',
+        ctx,
+        'parent',
+        { waitlistPosition: position },
+        () => waitlistConfirmationEmail(ctx, position)
+      )
       await sendOnce({
         dedupeKey: `waitlist_confirmation:${enrollment.id}`,
         emailType: 'waitlist_confirmation',
         enrollmentId: enrollment.id,
+        classId,
         to: [ctx.parentEmail], // W1 is parent-only per the deck
         subject,
         html,
+        bodySnapshotId: versionId,
       })
     }
 

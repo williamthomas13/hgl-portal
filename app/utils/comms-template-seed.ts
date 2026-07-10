@@ -1,0 +1,612 @@
+// Feature A4 seed data (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4 migration):
+// the approved Phase 2 copy deck (docs/EMAIL_COPY.md v1.0), transcribed into
+// the template markdown dialect as version 1 of every template. Seeding is
+// idempotent (skips templates that already exist — never overwrites edits).
+// Templates go live one by one AFTER test-send verification, not here.
+
+export type TemplateSeed = {
+  template_key: string
+  display_name: string
+  sequence_number: string | null
+  audience: 'parent' | 'student' | 'both'
+  from_identity: 'info' | 'billy'
+  category: 'transactional' | 'relationship'
+  subject: string
+  preheader: string
+  footer_note: string | null
+  body_markdown: string
+}
+
+export const TEMPLATE_SEEDS: TemplateSeed[] = [
+  {
+    template_key: 'E0_CONFIRM_PARENT',
+    display_name: '#0-P — Registration confirmation (parent)',
+    sequence_number: '0-P',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Order Confirmed — {className}',
+    preheader: "{studentFirstName} is registered. Here's what happens next.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Thanks for registering! Your class registration with Higher Ground Learning is confirmed.
+
+We'll be in touch with you in the days before the first day of class with all the relevant information that you'll need! This includes diagnostic test information, instructor information, and course room location (for both in-person and online classes).
+
+*Did you register for 1-on-1 tutoring?* The 1-on-1 tutoring sessions are best used after the group class is completed. We'll be in touch with you after the course is done in order to schedule these sessions. If you'd like to schedule them now, that's okay too; just reply to this email with some general time frames when you're available so that we can propose a schedule.
+
+If you have any questions between now and then, you can respond to this email (but maybe check our [FAQs](https://highergroundlearning.com/faqs#general) first).
+
+{orderSummaryBlock}
+
+{registrationDetailsBlock}
+
+[button:View your registration]({portalLink})`,
+  },
+  {
+    template_key: 'E0_CONFIRM_STUDENT',
+    display_name: '#0-S — Registration confirmation (student)',
+    sequence_number: '0-S',
+    audience: 'student',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{className} - you're in!",
+    preheader: 'See you on {firstSessionDate}',
+    footer_note: null,
+    body_markdown: `Or is it "your in"? "Yore inn"?
+
+…If you don't know, don't worry. We'll teach you!
+
+If you do know, great! We'll teach you a lot of other things, too. 🙂
+
+**{studentFirstName}, this is just a quick note to let you know that you have been registered for the {className} class starting on {firstSessionDate}.**
+
+In the days before the course starts, you'll receive the necessary course information, such as classroom location and information to access your initial diagnostic test.
+
+(By the way, that test is due {diagnosticDueDate}!)
+
+Until then, you might be interested in signing up for our free [College Prep Compass]({compassLink}), which goes over:
+
+- Practice problems with quick tips to tackle them,
+- How you can get the most out of the class,
+- How to best take advantage of your free 30-minute strategy session,
+- Common misconceptions and FAQs about the test,
+- Which schools are test optional (and what's the difference between test optional and test blind),
+- What to do about test anxiety,
+- and more.
+
+Either way, we'll see you in class!
+
+P.S. Here's what other students have had to say about the class:
+
+> "I am extremely excited to tell you that I got my best EVER score (better than any practice test) and I improved by 180 points. I GOT A 1500!!!! I got 8 wrong in reading, 1 wrong in writing, and 3 wrong in math! I wanted to thank you for everything that you've done for me and all the help you have given me with this test. I would not have been able to do this without your help. I hope you keep teaching students just like you taught me, because you are probably one of the best teachers I have ever had."
+> —Gonzalo Dominguez, Madrid Spain
+
+> "This course helped me a lot to prepare for the SAT. The course as a whole focuses on giving tips and strategies for the SAT. Also, weekly practice tests are done to test your skills and make you a more personalized preparation and experience. In the end, I increased by 140 points on the real SAT! A very enriching experience. Recommend it 100%"
+> —Lucia de la Hoz, Bogotá Colombia
+
+> "Best decision I made for my children's college preparation!!! Their ACT scores went from 27 and 28 to 32 and 34!!!!"
+> —Kirsten McNeal, Salt Lake City USA`,
+  },
+  {
+    template_key: 'PR1',
+    display_name: 'PR1 — Payment reminder (2h)',
+    sequence_number: 'PR1',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s registration for {className} isn't confirmed yet",
+    preheader: 'Complete your payment to save their place in class',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+We saw that you filled out the registration form for {studentFirstName} for the {className} class but didn't proceed to complete payment and confirm their registration. If that was on purpose, no worries – {studentFirstName} is welcome to register any time until the upcoming registration deadline if you change your mind.
+
+If you *did* intend to register for the class, we'd like to kindly ask you to complete the registration by making the payment here:
+
+[button:Finalize Registration]({resumePaymentLink})
+
+P.S. Do you have a question about the class? It's probably answered in our FAQs here:
+
+{faqLinks}`,
+  },
+  {
+    template_key: 'PR2',
+    display_name: 'PR2 — Payment reminder (24h)',
+    sequence_number: 'PR2',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s registration for {className} isn't confirmed yet",
+    preheader: 'Complete your payment to save their place in class',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Just circling back — {studentFirstName}'s registration for the {className} class is still waiting on payment to be confirmed.
+
+If you paused because you had a question, that's completely reasonable — most answers are in our FAQs below, and for anything else, you can simply reply to this email and a real human will get back to you.
+
+If you're ready to go, it takes about a minute:
+
+[button:Finalize Registration]({resumePaymentLink})
+
+P.S. FAQs: {faqLinks}`,
+  },
+  {
+    template_key: 'PR3',
+    display_name: 'PR3 — Payment reminder (72h)',
+    sequence_number: 'PR3',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s registration for {className} isn't confirmed yet",
+    preheader: 'Complete your payment to save their place in class',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Quick nudge: {studentFirstName}'s spot in {className} is still reserved but unconfirmed. One minute finishes it:
+
+[button:Finalize Registration]({resumePaymentLink})`,
+  },
+  {
+    template_key: 'PR4',
+    display_name: 'PR4 — Payment reminder (final)',
+    sequence_number: 'PR4',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Last reminder: {studentFirstName}'s {className} registration expires soon",
+    preheader: 'After {expiryDate}, the spot returns to the pool.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+This is our last reminder — {studentFirstName}'s registration for the {className} class will **expire on {expiryDate}**, and the spot will go back into the pool.
+
+If you'd still like to register, there's time:
+
+[button:Finalize Registration]({resumePaymentLink})
+
+And if plans changed, no action needed — the registration will simply expire on its own, and {studentFirstName} is welcome back anytime while spots remain.
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'E1_THANKS',
+    display_name: '#1 — Thank you',
+    sequence_number: '1',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: 'Thank you, {parentFirstName}',
+    preheader: "We're looking forward to working with {studentFirstName}",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+You registered {studentFirstName} for the {className} class and I just wanted to take a moment to reach out to you to say thank you.
+
+There are a lot of ways that you can choose to invest in {studentFirstName}'s future, and we're really honored that you've chosen Higher Ground Learning as one of them.
+
+Getting ready for university can be a challenging time for students, so by registering {studentFirstName} for our class you've given them one less thing to worry about.
+
+I know that, personally, I never would have even gone to university if it weren't for one person...
+
+My amazing mom.
+
+I certainly wouldn't have gone on to earn a Master's degree and definitely wouldn't be here right now, writing you this email.
+
+We don't take lightly the chance to work with {studentFirstName} and to help them achieve their best score on the test. And we really appreciate your vote of confidence in us.
+
+So here's what happens next.
+
+In the days before the course starts, you and {studentFirstName} will receive the necessary course information, such as classroom location and diagnostic test access.
+
+By the way, you might be interested in [College Prep Compass]({compassLink}), where we send out useful information to help you along in this process:
+
+- How {studentFirstName} can get the most out of the class,
+- How to best take advantage of the free 30-minute strategy session,
+- Common misconceptions and FAQs about the test,
+- Which schools are test optional (and what's the difference between test optional and test blind),
+- What to do about test anxiety,
+- and more.
+
+By choosing to help {studentFirstName} prepare for this test, you've made a great investment in {studentFirstName}'s growth and future opportunities. We're humbled to be part of the journey, so thanks again.
+
+See you soon!
+
+To {studentFirstName}'s success,
+
+William Thomas
+President, Higher Ground Learning
+
+P.S. Here's what some other parents have said about our classes:
+
+> "My wife and I would like to thank you for the excellent support that Higher Ground Learning gave to our son in his preparation for the SAT test. From a 1260 at the first practice test, he reached 1400 at the official test. This should be more than enough to enter his first choice university." —Walter Michelini, Italy
+
+> "After his sessions, he wrote the SAT twice more, improving dramatically each time and his second score was a 1590. He loved the sessions as they worked on so much more than just the actual content – talking and learning about confidence in exam technique and about manifesting a good outcome. This had a wonderful impact on his approach to exams in general. I would recommend Higher Ground without reservation. Thanks again for a superb experience!!" —Elise Malherbe, South Africa
+
+> "We initially worked with HGL to help my son with his SAT test prep. Beyond just teaching my son how to improve, Eric was a great mentor who legitimately cared about my son's interests and activities. Through this bond, Eric was able to push my son to invest in test prep and ultimately achieve a score good enough for any elite university." —Parent of Stanford '25 & '26, USA`,
+  },
+  {
+    template_key: 'E9_UPSELL',
+    display_name: '#9 — Pre-class tutoring upsell',
+    sequence_number: '9',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: "We didn't want you to miss this",
+    preheader: "A lot of people don't notice it",
+    footer_note:
+      "Don't want to receive emails like this? We're sorry. This is actually the only one like it that we're planning to send to you.",
+    body_markdown: `Hi {parentFirstName},
+
+This is definitely not for every student. But so many people miss it and ask about it later when the discount is gone... so here's a quick reminder:
+
+After the {className} class ends, a great way for {studentFirstName} to get even *bigger* point gains is through specialized 1-on-1 tutoring.
+
+Our 1-on-1 tutoring sessions are tailored to overcome {studentFirstName}'s specific weaknesses, exploit {studentFirstName}'s strengths, and refine strategies that are specific to {studentFirstName}'s situation. These sessions work in tandem with the group course, and are perfect for students who are taking the test multiple times, reaching for exceptionally high scores, or facing unique challenges.
+
+Spots always go quickly after the class ends, so we offer a discount and priority scheduling to parents who register early.
+
+*If you know that {studentFirstName} is going to keep studying after the {className} class ends, now is the best time to get these discounted 1-on-1 tutoring hours.*
+
+{upsellPackagesBlock}
+
+These savings are only available before class starts!
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'E2_DIAG_PARENT',
+    display_name: '#2-P — Diagnostic & Synap access (parent)',
+    sequence_number: '2-P',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Important {className} diagnostic test information',
+    preheader: "Here's how to access the first practice test.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+The first full length remote diagnostic test for {studentFirstName} is now available. The exam is broken into two parts:
+
+- Reading & Writing
+- Math
+
+For a more realistic test experience, we strongly recommend that {studentFirstName} complete Part 1 (Reading & Writing), followed by Part 2 (Math) immediately afterward. The instructor will talk about the test during the first class session and will use students' results to tailor the course content and pace, so {studentFirstName} should complete the test by {diagnosticDueDate}, the day before the first class.
+
+**To get started, just click the button below and then click "register." Quickly provide some basic info, and you'll be ready to access the test on our online testing system.**
+
+Invested in {studentFirstName}'s success,
+
+Higher Ground Learning
+
+[button:Access the first diagnostic test]({synapGroupLink})
+
+[button:Download the course calendar]({calendarLink})`,
+  },
+  {
+    template_key: 'E2_DIAG_STUDENT',
+    display_name: '#2-S — Diagnostic & Synap access (student)',
+    sequence_number: '2-S',
+    audience: 'student',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Your {classType} diagnostic test is ready',
+    preheader: "Finish it by {diagnosticDueDate} — here's how to get in.",
+    footer_note: null,
+    body_markdown: `Hi {studentFirstName},
+
+Your first diagnostic test is ready. It's in two parts — Reading & Writing, then Math — and for the most realistic practice, do them back-to-back in one sitting.
+
+**Deadline: {diagnosticDueDate}** (the day before your first class). Your instructor uses the results to shape the course, so this one matters.
+
+To get in: click the button below, hit **"register,"** and provide some quick basic info. That creates your account on our testing platform and unlocks the test.
+
+[button:Take the diagnostic test]({synapGroupLink})
+
+See you in class,
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'E3_VFAQ',
+    display_name: '#3 — Video FAQs',
+    sequence_number: '3',
+    audience: 'both',
+    from_identity: 'info',
+    category: 'relationship',
+    subject: '{className} – here are some VFAQs',
+    preheader: 'You know, VERY Frequently Asked Questions',
+    footer_note:
+      "Sorry if this was annoying, but please don't unsubscribe yet because we're still planning to send you at least one more important communication about the class.",
+    body_markdown: `Hey {recipientFirstName},
+
+The {className} class is just around the corner, so I want to give you some key information to keep in mind. Below are some VFAQs (Very Frequently Asked Questions):
+
+**What time are classes scheduled?**
+All classes are held from {classTime}. You can download the full calendar of class dates [here]({calendarLink}).
+
+**Does enrolling in this course also register me for the {examName}?**
+NO. You must register for official exams through the {examRegistrationLink}.
+
+**What's the exact location for the class?**
+We don't have that information confirmed just yet, but we'll write you again when we know!
+
+Are you still here? You are? Okay, here are a few regular FAQs, just for you:
+
+**I didn't receive the diagnostic test link or information. What should I do?**
+Actually we emailed this information to you very recently. Search your inbox and spam folders for an email titled "Important diagnostic test information."
+
+**What is the 30-minute strategy session? And when can I schedule it?**
+Each student receives one strategy session with enrollment, during which the instructor will help you craft an individualized study and review plan, build a perfect test-day mindset, understand your diagnostic score report, or go over day-of test strategies.
+
+The strategy sessions usually work best when they're done after the first week of classes, at the earliest. During the first class sessions, you can approach the instructor directly to find and schedule a time during the following week that's mutually agreeable. If you'd like to or need to do the strategy session earlier, however, just let us know and we can try to arrange it.
+
+**I'm going to miss a class, show up late, and/or leave early. What should I do?**
+Check with your instructor to get the lesson plan, materials, and homework. You can follow-up with the instructor afterward if you have any questions about the material.
+
+All online class sessions are recorded and shared with students after the class ends. Again, you can follow-up with the instructor afterward if you have any questions about the material.
+
+If you've signed up for 1-on-1 tutoring, you can also use this time to go over any lessons that you missed.
+
+P.S. In case you have a question that wasn't answered here, here are even more course FAQs:
+
+{faqLinks}
+
+Invested in {your_or_names} success,
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'E4_CLASS_DETAILS',
+    display_name: '#4 — Class details',
+    sequence_number: '4',
+    audience: 'both',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{className} Reminder',
+    preheader: 'Class starts soon! Open to see where classes will be held.',
+    footer_note: "We're still planning to send you a few more important communications about the class.",
+    body_markdown: `# It's almost class time.
+
+Hi {recipientFirstName},
+
+I think you already know, but just in case...
+
+The {className} class {for_name_or_blank}is coming up soon! (The first day is {firstSessionDate} from {classTime}.)
+
+The instructor will be {instructorName}, and **all classes will take place here: {classroom}**.
+
+We're looking forward to seeing {you_or_name} in class!
+
+All the best,
+
+Higher Ground Learning
+
+P.S. If {you_havent_or_name_hasnt} found a moment to take the diagnostic test yet, {you_or_they} can still do so by clicking below. If {you_have_or_they_have} already completed the test, no need to let us know. We surely have it.
+
+[button:Access Diagnostic Tests]({synapGroupLink})`,
+  },
+  {
+    template_key: 'E5_LOCATION',
+    display_name: '#5 — Location reminder',
+    sequence_number: '5',
+    audience: 'both',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Classroom location for {className}',
+    preheader: 'Open up to see where to go for class.',
+    footer_note:
+      "You received this email because you signed up for a class that starts really soon and we didn't want you to miss it.",
+    body_markdown: `# Class starts soon!
+
+*Like, really soon.*
+
+Hey {recipientFirstName},
+
+Sorry for so many messages, but we really wanted to make sure that {you_dont_or_name_doesnt} miss the first day of {className}!
+
+So here you go...one last reminder: the first day of class is {firstSessionDate} from {classTime}.
+
+**All classes take place here: {classroom}**
+
+Looking forward to seeing {you_or_name} in class!
+
+P.S. If {you_still_havent_or_name_still_hasnt} taken the first diagnostic test, don't worry. It's still available [here]({synapGroupLink}).`,
+  },
+  {
+    template_key: 'E6_DIAG2',
+    display_name: '#6 — Second diagnostic',
+    sequence_number: '6',
+    audience: 'both',
+    from_identity: 'info',
+    category: 'relationship',
+    subject: '2nd Diagnostic Reminder for {className}',
+    preheader: 'Taking practice tests leads to better scores.',
+    footer_note: null,
+    body_markdown: `Dear {recipientFirstName},
+
+I sincerely hope that {you_have_or_name_has} been taking advantage of {your_or_their} class time with {instructorName} to the fullest.
+
+As a friendly reminder, there is still one more diagnostic test {for_you_or_for_name} to take!
+
+Just like before, {you_or_name} can click [here]({synapGroupLink}) to login to our online testing platform and access the test.
+
+Kind regards,
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'E7_REVIEW',
+    display_name: '#7 — Review request',
+    sequence_number: '7',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: 'How did the {className} class go?',
+    preheader: 'Tell us how we did — it genuinely helps.',
+    footer_note:
+      "...we're a small company and we have a theory that a nice review from someone like you could really help us to help more students.",
+    body_markdown: `Hi again {parentFirstName},
+
+Now that the {className} class has wrapped up, {studentFirstName} should be feeling a lot more confident and ready to do their best on the exam!
+
+Congrats to {studentFirstName} for their hard work and commitment to improvement.
+
+{parentFirstName}, I know it's a lot to ask, but if you have something nice to say and you don't mind publicly sharing it, we'd be really grateful if you could leave us a review here:
+
+[{reviewLink}]({reviewLink})
+
+Thanks in advance if you can spare a few minutes!
+
+To {studentFirstName}'s bright future,
+
+William Thomas
+
+[button:Tell us how you feel]({reviewLink})`,
+  },
+  {
+    template_key: 'E8_POSTCLASS_TUTORING',
+    display_name: '#8 — Post-class tutoring offer',
+    sequence_number: '8',
+    audience: 'both',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: 'Discounted 1-on-1 Tutoring for students who took the {className} Class',
+    preheader: "Keep {studentFirstName}'s momentum going before test day.",
+    footer_note:
+      'You received this email because we genuinely thought it might interest you. You could always unsubscribe.',
+    body_markdown: `Hello again {recipientFirstName}!
+
+I hope that the recent {classType} class with {instructorName} was useful for {studentFirstName} (and maybe even a little bit fun).
+
+The idea behind our classes is that {studentFirstName} should now have the tools they need to be successful on the test. Of course, we know that some students will continue to study and refine their skills for a future test.
+
+With that in mind, we offer students who have completed one of our classes discounted 1-on-1 tutoring hours. We don't expect that this option is appropriate for all students, but we provide it as a service in case {studentFirstName} wants to continue studying with us.
+
+**You can access discounted tutoring at [highergroundprep.com/discount]({discountLink}) by using the password BESTSCORE.**
+
+If you sign up, we'll get input from {instructorName} to make sure that {studentFirstName}'s transition from the class to live online tutoring is seamless and they don't lose any momentum with their test prep before the real test.
+
+We'll also get in touch with you and/or {studentFirstName} to make sure that the sessions are timed perfectly for whenever you need them to be.
+
+If you have any questions, feel free to respond to this email!
+
+In {studentFirstName}'s corner, as always,
+
+William
+
+[button:Get your discounted tutoring hours]({discountLink})`,
+  },
+  {
+    template_key: 'W1_WAITLIST',
+    display_name: 'W1 — Waitlist confirmation',
+    sequence_number: 'W1',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "You're on the waitlist for {className}",
+    preheader: "{studentFirstName} is #{waitlistPosition} in line — here's how this works.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+The {className} class is currently full — but {studentFirstName} is officially on the waitlist, at position **#{waitlistPosition}**.
+
+Here's how it works: spots occasionally open up (plans change, they really do), and when one does, we offer it to the next family in line. If that's you, you'll get an email with a registration link, and you'll have **48 hours** to complete registration and payment before the spot moves to the next person.
+
+Nothing to do right now — we'll be in touch the moment a spot opens. No payment has been taken and you're under no obligation.
+
+Questions in the meantime? Just reply to this email.
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'W2_SPOT_OPEN',
+    display_name: 'W2 — Waitlist spot open',
+    sequence_number: 'W2',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'A spot just opened in {className} 🎉',
+    preheader: "It's {studentFirstName}'s if you want it — you have 48 hours.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Good news — a spot just opened up in the {className} class, and {studentFirstName} is next in line.
+
+**The spot is yours if you complete registration by {claimDeadline}.** After that, we'll need to offer it to the next family on the waitlist — so don't sit on this one too long!
+
+[button:Claim {studentFirstName}'s spot]({claimLink})
+
+A quick recap: the class starts {firstSessionDate}, {classTime}. Once you register, you'll receive all the usual course information — diagnostic test access, location details, and everything else — in the days before class starts. If registration happens close to the start date, we'll send you everything you need right away.
+
+If your plans have changed and you no longer need the spot, no action needed — it'll pass to the next family automatically after the deadline.
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'SU_SCHEDULE_UPDATE',
+    display_name: 'SU — Schedule update',
+    sequence_number: 'SU',
+    audience: 'both',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Schedule update for {className}',
+    preheader: "One or two details have changed — here's the latest.",
+    footer_note: null,
+    body_markdown: `Hi {recipientFirstName},
+
+A quick update about the {className} class — some details have changed since our last email, and we want to make sure you have the latest:
+
+{changesBlock}
+
+Everything else stays the same. The full up-to-date schedule is always here:
+
+[button:View the class calendar]({calendarLink})
+
+*(And if you subscribed to the calendar, it's already updated automatically.)*
+
+Sorry for any shuffling — see you in class!
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'LR_WELCOME',
+    display_name: 'LR — Late-registration welcome',
+    sequence_number: 'LR',
+    audience: 'both',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "You're in — and here's everything you need for {className}",
+    preheader: 'Class starts {firstSessionDate}. One thing to do first.',
+    footer_note: null,
+    body_markdown: `Hi {recipientFirstName},
+
+{youre_or_name_is} registered for the {className} class — and since the class starts **{firstSessionDate}**, here's everything you need in one email.
+
+**1. The diagnostic test — this one's time-sensitive.**
+{Your_or_names} first diagnostic test is ready now. It's in two parts (Reading & Writing, then Math), best done back-to-back in one sitting. The instructor uses the results to shape the course, so please complete it **before the first class** if at all possible.
+
+To get in: click below, hit "register," and provide some quick basic info.
+
+[button:Take the diagnostic test]({synapGroupLink})
+
+**2. When and where.**
+Classes run {classTime}. {classDetailsBlock}
+
+Full schedule:
+
+[button:View the class calendar]({calendarLink})
+
+**3. Good things to know.**
+Quick answers to the most common questions — class times, what to do if {you_miss_or_name_misses} a session, the free 30-minute strategy session — are in our [FAQs](https://highergroundlearning.com/faqs#general).
+
+Any other questions, just reply to this email. See you in class — soon!
+
+Higher Ground Learning
+
+{orderSummaryBlock}
+
+{registrationDetailsBlock}`,
+  },
+]
