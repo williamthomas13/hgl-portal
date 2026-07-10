@@ -1493,6 +1493,8 @@ export async function sendOnce(opts: {
   to: string[]
   cc?: string[]
   from?: string
+  /** Feature B3: replies go to the instructor, not the sending identity. */
+  replyTo?: string
   subject: string
   html: string
   payload?: Record<string, unknown>
@@ -1570,6 +1572,7 @@ export async function sendOnce(opts: {
     from: opts.from ?? FROM,
     to: opts.to,
     cc: opts.cc,
+    replyTo: opts.replyTo,
     subject: opts.subject,
     html: opts.html,
   })

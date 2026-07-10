@@ -694,6 +694,40 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
     sections.push(`<p><strong>Open classes — full rosters:</strong></p>${classBlocks.join('')}`)
   }
 
+  // Feature B3 abuse guard: instructor class messages sent this week, so the
+  // admin always knows what went out from the portal under the HGL identity.
+  const { data: imSends } = await supabase
+    .from('email_sends')
+    .select('sender_email, subject_rendered, class_id, classes ( class_type, schools ( nickname ) )')
+    .eq('template_key', 'IM_INSTRUCTOR_MESSAGE')
+    .eq('is_test', false)
+    .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+    .gte('sent_at', new Date(weekAgo).toISOString())
+  if (imSends && imSends.length > 0) {
+    const byMessage = new Map<string, { sender: string; subject: string; label: string; n: number }>()
+    for (const row of imSends) {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const cls = (Array.isArray(row.classes) ? row.classes[0] : row.classes) as any
+      const school = cls ? (Array.isArray(cls.schools) ? cls.schools[0] : cls.schools) : null
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      const key = `${row.sender_email}|${row.subject_rendered}`
+      const entry = byMessage.get(key) ?? {
+        sender: row.sender_email ?? '—',
+        subject: row.subject_rendered ?? '—',
+        label: cls ? `${school?.nickname ?? ''} ${cls.class_type}` : '—',
+        n: 0,
+      }
+      entry.n++
+      byMessage.set(key, entry)
+    }
+    const items = [...byMessage.values()]
+      .map((m) => `<li><strong>${m.sender}</strong> → ${m.label} · "${m.subject}" (${m.n} recipients)</li>`)
+      .join('')
+    sections.push(
+      `<p><strong>Instructor messages sent from the portal this week:</strong></p><ul>${items}</ul>`
+    )
+  }
+
   // Delivery problems from the Resend webhook: hard bounces on student
   // emails (bad addresses collected at registration) and spam complaints.
   const { data: events } = await supabase

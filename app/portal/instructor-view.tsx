@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
+import MessageClass from './message-class'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 
 // Instructor view (PHASE4_SPEC §5): own classes with the session calendar,
@@ -245,6 +246,11 @@ export default async function InstructorView({
                 .sort((a: any, b: any) => a.studentName.localeCompare(b.studentName))}
               recordedBy={email}
             />
+
+            {/* Feature B3: send-from-portal class messaging + copy-emails. */}
+            {c.status !== 'cancelled' && (
+              <MessageClass classId={c.id} classLabel={label} />
+            )}
           </div>
         )
       })}
