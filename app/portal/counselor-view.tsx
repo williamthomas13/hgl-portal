@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar from '../components/SessionCalendar'
 import CopyButton from './copy-button'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
+import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 
 // Counselor view (PHASE4_SPEC §4): the school's open/upcoming classes with
 // paid/capacity, waitlist depth, and the registration link; a roster per
@@ -52,9 +53,10 @@ export default async function CounselorView({
       default_location, school_id, collateral_language,
       schools ( name, nickname, collateral_language ),
       instructors ( name, email ),
-      sessions ( session_date, start_time, end_time, location ),
+      sessions ( id, session_date, start_time, end_time, location ),
       enrollments (
         id, payment_status, enrolled_at, accommodations, waitlist_offer_expires_at,
+        attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early ),
         students ( id, first_name, last_name, grade_level, graduating_year )
       )
     `
@@ -202,6 +204,7 @@ export default async function CounselorView({
                 <th className="px-2 py-1.5">Student</th>
                 <th className="px-2 py-1.5">Grade</th>
                 <th className="px-2 py-1.5">Status</th>
+                <th className="px-2 py-1.5">Attendance</th>
                 <th className="px-2 py-1.5">Accommodations</th>
               </tr>
             </thead>
@@ -226,6 +229,21 @@ export default async function CounselorView({
                       </td>
                       <td className="px-2 py-1.5 text-gray-600">{gradeOf(st)}</td>
                       <td className="px-2 py-1.5"><StatusBadge status={e.payment_status} /></td>
+                      <td className="px-2 py-1.5 text-gray-600">
+                        {(() => {
+                          // Feature B (cross-cutting §3): sessions attended + % —
+                          // counselors see attendance for their school's students.
+                          const summary = summarizeAttendance(
+                            c.sessions ?? [],
+                            (e.attendance_records ?? []) as AttendanceRecord[],
+                            e.id
+                          )
+                          if (summary.recordedSessions === 0) return '—'
+                          return `${summary.sessionsAttended}/${summary.recordedSessions}${
+                            summary.percent != null ? ` · ${summary.percent}%` : ''
+                          }`
+                        })()}
+                      </td>
                       <td className="px-2 py-1.5 text-gray-600">{e.accommodations || '—'}</td>
                     </tr>
                   )

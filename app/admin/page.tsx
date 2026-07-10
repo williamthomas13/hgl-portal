@@ -11,6 +11,8 @@ import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-w
 import CollateralCard, { type CollateralFields } from './collateral-card'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
+import AttendancePanel from '../portal/attendance-panel'
+import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, TimeSelect, to24h } from './ui'
 
 type Session = {
@@ -38,6 +40,7 @@ type Enrollment = {
   cancellation_outcome: string | null
   enrollment_addons: { hours: number }[] | null
   qbo_sync_log: QboSyncEntry[] | null
+  attendance_records: AttendanceRecord[] | null
   students: {
     first_name: string
     last_name: string
@@ -246,6 +249,13 @@ export default function AdminDashboard() {
     if (data) setInstructors(data as Instructor[])
   }, [])
 
+  // Feature B2: signed-in staff email stamps attendance_records.recorded_by.
+  const [adminEmail, setAdminEmail] = useState('')
+  const fetchAdminEmail = useCallback(async () => {
+    const { data } = await supabase.auth.getUser()
+    if (data.user?.email) setAdminEmail(data.user.email)
+  }, [])
+
   // Phase 6: QBO connection summary — drives the QuickBooks panel and the
   // roster badges' deep links (sandbox vs production host).
   const [qboStatus, setQboStatus] = useState<QboStatus | null>(null)
@@ -282,6 +292,7 @@ export default function AdminDashboard() {
           cancellation_outcome,
           enrollment_addons ( hours ),
           qbo_sync_log ( id, kind, status, qbo_doc_id, qbo_doc_number, last_error ),
+          attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early, note ),
           students (
             first_name,
             last_name,
@@ -310,7 +321,8 @@ export default function AdminDashboard() {
     fetchRoomRequests()
     fetchAllCounselors()
     fetchQboStatus()
-  }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests, fetchAllCounselors, fetchQboStatus])
+    fetchAdminEmail()
+  }, [fetchSchools, fetchRosters, fetchInstructors, fetchRoomRequests, fetchAllCounselors, fetchQboStatus, fetchAdminEmail])
 
   // ---------------------------------------------------------------------------
   // Registration links (pasted into Squarespace "Register" buttons)
@@ -566,6 +578,25 @@ export default function AdminDashboard() {
     )
   }
 
+  // Feature B2: roster attendance summary — "3/4 · 84%" per student.
+  function attendanceSummary(c: ClassRow, en: Enrollment) {
+    if (!['Paid', 'Completed'].includes(en.payment_status)) return <span className="text-gray-300">—</span>
+    const summary = summarizeAttendance(c.sessions ?? [], en.attendance_records ?? [], en.id)
+    if (summary.pastSessions === 0) return <span className="text-gray-300">—</span>
+    if (summary.recordedSessions === 0)
+      return <span className="text-gray-400 italic text-xs">not taken</span>
+    return (
+      <span className="text-sm">
+        {summary.sessionsAttended}/{summary.recordedSessions}
+        {summary.percent != null && (
+          <span className={`ml-1 text-xs font-semibold ${summary.percent >= 80 ? 'text-green-700' : 'text-amber-700'}`}>
+            {summary.percent}%
+          </span>
+        )}
+      </span>
+    )
+  }
+
   function classCard(c: ClassRow) {
     const enrolledCount =
       c.enrollments?.filter((en) =>
@@ -775,6 +806,20 @@ export default function AdminDashboard() {
             lastSession={lastSession}
             onAdded={fetchRosters}
           />
+
+          {/* Feature B2: admin can view/edit all attendance (same panel the
+              instructor uses; staff RLS covers the writes). */}
+          <AttendancePanel
+            sessions={sortedSessions}
+            roster={(c.enrollments ?? [])
+              .filter((en) => ['Paid', 'Completed'].includes(en.payment_status))
+              .map((en) => ({
+                enrollmentId: en.id,
+                studentName: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim() || '—',
+              }))
+              .sort((a, b) => a.studentName.localeCompare(b.studentName))}
+            recordedBy={adminEmail}
+          />
         </div>
 
         {/* ROSTER — read-only source of truth about signups */}
@@ -801,6 +846,9 @@ export default function AdminDashboard() {
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                     Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                    Attendance
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                     Registered
@@ -866,6 +914,7 @@ export default function AdminDashboard() {
                           </select>
                         )}
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap">{attendanceSummary(c, en)}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                       {formatTimestampAdmin(en.enrolled_at)}
                       <a

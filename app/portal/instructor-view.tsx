@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar from '../components/SessionCalendar'
+import AttendancePanel from './attendance-panel'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 
 // Instructor view (PHASE4_SPEC §5): own classes with the session calendar,
@@ -27,7 +28,7 @@ export default async function InstructorView({
         start_date, default_location, synap_group,
         schools ( name, nickname ),
         instructors!inner ( email ),
-        sessions ( session_date, start_time, end_time, location ),
+        sessions ( id, session_date, start_time, end_time, location ),
         enrollments (
           id, payment_status, accommodations, previous_scores, notes,
           students (
@@ -227,6 +228,23 @@ export default async function InstructorView({
             ) : (
               <p className="text-sm text-gray-500">No registrations yet.</p>
             )}
+
+            {/* Feature B2: per-session attendance for paid students — phone-
+                friendly tap roster, editable after the fact. */}
+            <AttendancePanel
+              sessions={sessions}
+              roster={active
+                .filter((e: any) => e.payment_status === 'Paid' || e.payment_status === 'Completed')
+                .map((e: any) => {
+                  const st = one<any>(e.students)
+                  return {
+                    enrollmentId: e.id,
+                    studentName: st ? `${st.first_name} ${st.last_name}` : '—',
+                  }
+                })
+                .sort((a: any, b: any) => a.studentName.localeCompare(b.studentName))}
+              recordedBy={email}
+            />
           </div>
         )
       })}
