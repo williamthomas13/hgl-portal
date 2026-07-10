@@ -78,6 +78,7 @@ type ClassRow = {
   delivery_mode: string
   min_enrollment: number | null
   enrollment_deadline: string | null
+  follow_on_class_id: string | null
   schools: { name: string; nickname: string; timezone: string } | null
   instructors: { name: string | null; email: string } | null
   enrollments: Enrollment[] | null
@@ -356,6 +357,20 @@ export default function AdminDashboard() {
       .eq('id', c.id)
     if (error) {
       alert('Error updating close date: ' + error.message)
+      return
+    }
+    fetchRosters()
+  }
+
+  // Feature C3: "Part 2" pointer — the parent dashboard's follow-on card
+  // prefers this over the same-school heuristic.
+  async function handleFollowOnChange(c: ClassRow, followOnId: string) {
+    const { error } = await supabase
+      .from('classes')
+      .update({ follow_on_class_id: followOnId || null })
+      .eq('id', c.id)
+    if (error) {
+      alert('Error setting follow-on class: ' + error.message)
       return
     }
     fetchRosters()
@@ -699,6 +714,26 @@ export default function AdminDashboard() {
               >
                 edit
               </button>
+            </p>
+            <p className="text-sm text-gray-600 flex items-center gap-2">
+              <span className="font-semibold" title="Parents of this class's students see the follow-on as a 'you might be interested in' card in their portal">
+                Follow-on class:
+              </span>
+              <select
+                value={c.follow_on_class_id ?? ''}
+                onChange={(e) => handleFollowOnChange(c, e.target.value)}
+                className="border border-gray-300 rounded p-0.5 text-xs bg-white max-w-64"
+              >
+                <option value="">none</option>
+                {rosters
+                  .filter((other) => other.id !== c.id && other.status !== 'cancelled')
+                  .map((other) => (
+                    <option key={other.id} value={other.id}>
+                      {(other.schools?.nickname ?? '—') + ' ' + other.class_type} (starts{' '}
+                      {formatDateAdmin(other.start_date)})
+                    </option>
+                  ))}
+              </select>
             </p>
             {!isCancelled && (
               <div className="mt-2">
