@@ -328,7 +328,10 @@ export async function markTutoringInvoicePaid(invoiceId: string, paymentIntentId
     if (error && error.code !== '23505') {
       console.error(`QBO enqueue failed for tutoring invoice ${invoiceId}:`, error.message)
     }
-    processQboQueue().catch((e) => console.error('QBO drain after tutoring payment failed:', e))
+    // Drain synchronously — a floating promise dies with the lambda (callers
+    // are webhook handlers and sweeps; both can afford the wait, and the
+    // daily cron is the retry backstop either way).
+    await processQboQueue().catch((e) => console.error('QBO drain after tutoring payment failed:', e))
   }
 }
 
