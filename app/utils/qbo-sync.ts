@@ -23,10 +23,11 @@ const MAX_ATTEMPTS = 5
 
 type SyncRow = {
   id: string
-  enrollment_id: string
+  enrollment_id: string | null // null for tutoring rows (Phase 7c)
   enrollment_addon_id: string | null
+  tutoring_invoice_id: string | null
   stripe_payment_intent_id: string
-  kind: 'sale' | 'refund'
+  kind: 'sale' | 'refund' | 'tutoring_sale'
   amount: number | null
   attempts: number
 }
@@ -151,7 +152,86 @@ function privateNote(row: SyncRow, extra?: string) {
  * Build the receipt for one row. Returns null with a reason when the row can
  * never sync (bad data) — those go straight to failed.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Phase 7c: a paid tutoring invoice becomes a Sales Receipt with lines split
+ * by subject category — test-prep tutoring posts to the 408-1 Item, subject
+ * tutoring to 401 (spec §6.4). Credits/negative lines aggregate into the
+ * receipt's discount so the document equals the money that moved.
+ */
+async function syncTutoringRow(row: SyncRow, items: ItemMap): Promise<{ id: string; docNumber: string | null }> {
+  if (!row.tutoring_invoice_id) throw new Error('tutoring row has no invoice id')
+  const { data: invoice } = await supabase
+    .from('tutoring_invoices')
+    .select(
+      `id, period, total, paid_at,
+       families ( id, parent_first_name, parent_last_name, parent_email, qbo_customer_id ),
+       tutoring_invoice_lines ( description, amount, kind, session_id,
+         tutoring_sessions ( tutoring_engagements ( subjects ( category ) ) ) )`
+    )
+    .eq('id', row.tutoring_invoice_id)
+    .maybeSingle()
+  if (!invoice) throw new Error('tutoring invoice no longer loadable')
+
+  const testPrepItem = items.tutoring_test_prep
+  const subjectItem = items.tutoring_subject
+  const depositAccount = items.deposit_account
+  if (!testPrepItem || !subjectItem || !depositAccount) {
+    throw new Error('tutoring item mapping incomplete (map tutoring_test_prep + tutoring_subject in the QuickBooks panel)')
+  }
+
+  const docNumber = docNumberFor('sale', row.stripe_payment_intent_id)
+  const existing = await findExistingDoc('sale', docNumber)
+  if (existing) return existing
+
+  const family = one<any>(invoice.families)
+  if (!family) throw new Error('tutoring invoice has no family row')
+  let customerId = family.qbo_customer_id as string | null
+  if (!customerId) {
+    customerId = await findOrCreateCustomer({
+      parentFirstName: family.parent_first_name,
+      parentLastName: family.parent_last_name ?? '',
+      parentEmail: family.parent_email,
+    })
+    await supabase.from('families').update({ qbo_customer_id: customerId }).eq('id', family.id)
+  }
+
+  const lines: ReceiptLine[] = []
+  let credits = 0
+  for (const line of (invoice.tutoring_invoice_lines as any[]) ?? []) {
+    const amount = Number(line.amount)
+    if (amount < 0) {
+      credits += -amount // discounts/credits reduce the receipt total
+      continue
+    }
+    const category = one<any>(one<any>(one<any>(line.tutoring_sessions)?.tutoring_engagements)?.subjects)?.category
+    lines.push({
+      amount,
+      itemRef: category === 'test_prep' ? testPrepItem : subjectItem,
+      description: line.description,
+    })
+  }
+  if (lines.length === 0) throw new Error('tutoring invoice has no positive lines')
+
+  const monthTag = String(invoice.period).slice(0, 7)
+  return createSalesReceipt({
+    customerId,
+    lines,
+    discount: Number(credits.toFixed(2)),
+    txnDate: localDate(DEFAULT_TIMEZONE, invoice.paid_at ? new Date(invoice.paid_at) : new Date()),
+    depositAccount,
+    privateNote: [
+      `Stripe PaymentIntent ${row.stripe_payment_intent_id}`,
+      `HGL tutoring invoice ${monthTag} (id ${invoice.id})`,
+      ...(credits > 0 ? [`Includes $${credits.toFixed(2)} in credits/adjustments`] : []),
+    ].join(' · '),
+  })
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 async function syncRow(row: SyncRow, items: ItemMap): Promise<{ id: string; docNumber: string | null }> {
+  if (row.kind === 'tutoring_sale') return syncTutoringRow(row, items)
+  if (!row.enrollment_id) throw new Error('class row has no enrollment id')
   const detail = await loadEnrollmentDetail(row.enrollment_id)
   if (!detail || !detail.classes) throw new Error('enrollment/class no longer loadable')
   const classItem = items.group_class
@@ -306,7 +386,7 @@ export async function processQboQueue(): Promise<QboQueueResult> {
 
     const { data: rows } = await supabase
       .from('qbo_sync_log')
-      .select('id, enrollment_id, enrollment_addon_id, stripe_payment_intent_id, kind, amount, attempts')
+      .select('id, enrollment_id, enrollment_addon_id, tutoring_invoice_id, stripe_payment_intent_id, kind, amount, attempts')
       .eq('status', 'pending')
       .lte('next_attempt_at', new Date().toISOString())
       .order('created_at')
@@ -363,13 +443,14 @@ export async function processQboQueue(): Promise<QboQueueResult> {
             dedupeKey: `qbo_sync_failed:${row.id}`,
             adminEmail: ADMIN_EMAIL,
             subject: `QuickBooks sync FAILED — ${row.kind} for payment ${row.stripe_payment_intent_id}`,
-            body: `<p>After ${MAX_ATTEMPTS} attempts, the ${row.kind === 'sale' ? 'Sales Receipt' : 'Refund Receipt'}
-              for Stripe payment <code>${row.stripe_payment_intent_id}</code> (enrollment
-              <code>${row.enrollment_id}</code>) could not be created in QuickBooks.</p>
+            body: `<p>After ${MAX_ATTEMPTS} attempts, the ${row.kind === 'refund' ? 'Refund Receipt' : 'Sales Receipt'}
+              for Stripe payment <code>${row.stripe_payment_intent_id}</code>
+              (${row.tutoring_invoice_id ? `tutoring invoice <code>${row.tutoring_invoice_id}</code>` : `enrollment <code>${row.enrollment_id}</code>`})
+              could not be created in QuickBooks.</p>
               <p>Last error: <code>${message.slice(0, 500)}</code></p>
               <p>Fix the cause (see the QuickBooks panel on /admin), then hit Retry there —
               the books are missing this transaction until then.</p>`,
-            enrollmentId: row.enrollment_id,
+            enrollmentId: row.enrollment_id ?? undefined,
           }).catch((err) => console.error('QBO failure alert failed:', err))
         } else {
           result.deferred++

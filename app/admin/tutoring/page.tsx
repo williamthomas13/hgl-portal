@@ -6,6 +6,7 @@ import { CollapsibleSection } from '../ui'
 import GcalPanel from './gcal-panel'
 import TutorsPanel from './tutors-panel'
 import TimecardsPanel from './timecards-panel'
+import InvoicesPanel from './invoices-panel'
 import EngagementWizard from './engagement-wizard'
 import EngagementsPanel from './engagements-panel'
 import ScheduleView from './schedule-view'
@@ -180,6 +181,13 @@ export default function TutoringAdmin() {
                 addonHours={addonHours}
                 onChange={refresh}
               />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Billing"
+              subtitle="Monthly cycle: propose on the 20th → family confirms → invoice or autopay, due month-end"
+            >
+              <InvoicesPanel />
             </CollapsibleSection>
 
             <CollapsibleSection

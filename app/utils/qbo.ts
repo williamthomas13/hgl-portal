@@ -415,7 +415,11 @@ export async function listBankAccounts(): Promise<{ id: string; name: string }[]
 
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-export type ItemMap = Partial<Record<'group_class' | 'tutoring_addon' | 'deposit_account', QboRef>>
+// Phase 7c adds the two tutoring revenue items (§6.4): test prep → 408-1,
+// subject tutoring → 401.
+export type ItemMap = Partial<
+  Record<'group_class' | 'tutoring_addon' | 'deposit_account' | 'tutoring_test_prep' | 'tutoring_subject', QboRef>
+>
 
 export async function loadItemMap(): Promise<ItemMap> {
   const { data } = await supabase.from('qbo_item_map').select('key, qbo_id, qbo_name')

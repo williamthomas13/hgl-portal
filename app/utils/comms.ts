@@ -92,6 +92,17 @@ export function templateMetaFor(
       return { key: 'IM_INSTRUCTOR_MESSAGE', role: student ? 'student' : 'parent' }
     case 'T5_TIMECARD_READY': // Phase 7b: tutor pay-period close notice
       return { key: 'T5_TIMECARD_READY', role: 'instructor' }
+    // Phase 7c monthly billing cycle (spec §6)
+    case 'T1_MONTHLY_PROPOSAL':
+      return { key: 'T1_MONTHLY_PROPOSAL', role: 'parent' }
+    case 'T1B_PROPOSAL_NUDGE':
+      return { key: 'T1B_PROPOSAL_NUDGE', role: 'parent' }
+    case 'T2_INVOICE':
+      return { key: 'T2_INVOICE', role: 'parent' }
+    case 'T3_SCHEDULE_CHANGE':
+      return { key: 'T3_SCHEDULE_CHANGE', role: 'parent' }
+    case 'T4_PAYMENT_FAILED':
+      return { key: 'T4_PAYMENT_FAILED', role: 'parent' }
     default:
       return { key: emailType.toUpperCase(), role: 'parent' }
   }

@@ -2,6 +2,11 @@ import { NextResponse, after } from 'next/server';
 import Stripe from 'stripe';
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { processQboQueue } from '../../utils/qbo-sync';
+import {
+  completeAutopaySetup,
+  handleAutopayFailure,
+  markTutoringInvoicePaid,
+} from '../../utils/tutoring-stripe';
 import { renderEmail } from '../../utils/comms-db-render';
 import {
   lateRegistrationWelcomeEmail,
@@ -111,6 +116,19 @@ export async function POST(req: Request) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
+
+    // Phase 7c: autopay opt-in (setup-mode Checkout from /tutoring/autopay).
+    // Saves the payment method and flips families.autopay — no money moved.
+    if (session.mode === 'setup' && session.metadata?.tutoring_autopay_family) {
+      const setupIntentId =
+        typeof session.setup_intent === 'string' ? session.setup_intent : session.setup_intent?.id;
+      if (setupIntentId) {
+        await completeAutopaySetup(session.metadata.tutoring_autopay_family, setupIntentId);
+        console.log(`Autopay enabled for family ${session.metadata.tutoring_autopay_family}.`);
+      }
+      return NextResponse.json({ received: true });
+    }
+
     const enrollmentId = session.metadata?.enrollment_id;
     const packageId = session.metadata?.package_id;
     const sessionId = session.id;
@@ -385,6 +403,61 @@ export async function POST(req: Request) {
   // is either an enrollment's class payment or an addon-only purchase. The
   // portal-side status change (mark Refunded) stays a manual staff action —
   // this only keeps the books in step with the money.
+  // Phase 7c: tutoring invoice lifecycle. Hosted invoices report through
+  // invoice.paid/payment_failed; autopay PaymentIntents (notably async ACH
+  // debits) through payment_intent.succeeded/payment_failed. Every handler
+  // filters to tutoring metadata — class-checkout PIs pass straight through.
+  if (event.type === 'invoice.paid') {
+    const invoice = event.data.object as Stripe.Invoice;
+    const tutoringInvoiceId = invoice.metadata?.tutoring_invoice_id;
+    if (tutoringInvoiceId) {
+      const pi = (invoice as unknown as { payment_intent?: string | { id: string } | null }).payment_intent;
+      const paymentIntentId = typeof pi === 'string' ? pi : pi?.id ?? null;
+      await markTutoringInvoicePaid(tutoringInvoiceId, paymentIntentId);
+      console.log(`Tutoring invoice ${tutoringInvoiceId} paid (hosted invoice ${invoice.id}).`);
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === 'invoice.payment_failed') {
+    const invoice = event.data.object as Stripe.Invoice;
+    const tutoringInvoiceId = invoice.metadata?.tutoring_invoice_id;
+    if (tutoringInvoiceId) {
+      // Hosted-invoice failure (typically an ACH debit bouncing days later):
+      // the invoice stays open on Stripe's side — alert the Ops Director.
+      await sendAdminAlert({
+        dedupeKey: `tutoring_invoice_failed:${invoice.id}:${invoice.attempt_count ?? 0}`,
+        adminEmail: ADMIN_EMAIL,
+        subject: 'Tutoring invoice payment failed (family pay-by-link)',
+        body: `<p>A payment attempt on hosted invoice <code>${invoice.id}</code>
+          (portal invoice <code>${tutoringInvoiceId}</code>) failed — commonly an ACH debit
+          bouncing after a few days. The invoice link still works; the 10/30-day escalation
+          applies from the due date.</p>`,
+      }).catch((e) => console.error('alert failed:', e));
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === 'payment_intent.succeeded') {
+    const pi = event.data.object as Stripe.PaymentIntent;
+    if (pi.metadata?.tutoring_invoice_id) {
+      await markTutoringInvoicePaid(pi.metadata.tutoring_invoice_id, pi.id);
+      console.log(`Tutoring invoice ${pi.metadata.tutoring_invoice_id} paid (autopay ${pi.id}).`);
+    }
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === 'payment_intent.payment_failed') {
+    const pi = event.data.object as Stripe.PaymentIntent;
+    if (pi.metadata?.tutoring_invoice_id) {
+      await handleAutopayFailure(
+        pi.metadata.tutoring_invoice_id,
+        pi.last_payment_error?.message ?? 'payment failed'
+      );
+    }
+    return NextResponse.json({ received: true });
+  }
+
   if (event.type === 'charge.refunded') {
     const charge = event.data.object as Stripe.Charge;
     const refundPi =
@@ -411,6 +484,30 @@ export async function POST(req: Request) {
       refundEnrollmentId = byAddon?.enrollment_id ?? null;
     }
     if (!refundEnrollmentId) {
+      // Phase 7c: a tutoring payment refunded from the Stripe dashboard. The
+      // policy is reschedule-never-refund, so this is a rare discretionary
+      // call — no automatic Refund Receipt; the bookkeeper enters it by hand.
+      const { data: tutoringInv } = await supabase
+        .from('tutoring_invoices')
+        .select('id, period, families ( parent_first_name, parent_last_name, parent_email )')
+        .eq('stripe_payment_intent_id', refundPi)
+        .maybeSingle();
+      if (tutoringInv) {
+        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        const fam: any = Array.isArray(tutoringInv.families) ? tutoringInv.families[0] : tutoringInv.families;
+        await sendAdminAlert({
+          dedupeKey: `tutoring_refund:${refundPi}:${Math.round(refundedAmount * 100)}`,
+          adminEmail: ADMIN_EMAIL,
+          subject: 'Tutoring payment refunded in Stripe — manual QuickBooks entry needed',
+          body: `<p>$${refundedAmount.toFixed(2)} was refunded on the tutoring invoice for
+            <strong>${fam?.parent_first_name ?? ''} ${fam?.parent_last_name ?? ''}</strong>
+            (period ${String(tutoringInv.period).slice(0, 7)}). Tutoring refunds are discretionary
+            (policy is reschedule-not-refund), so the books entry is manual: record a Refund
+            Receipt in QuickBooks against the matching tutoring item.</p>
+            <p>If the month should not stay marked paid, adjust it on /admin/tutoring.</p>`,
+        }).catch((e) => console.error('alert failed:', e));
+        return NextResponse.json({ received: true });
+      }
       // Not a portal payment we know (e.g. pre-Phase-6 history) — note it and
       // move on; the bookkeeper handles it like before.
       console.log(`charge.refunded for unknown payment intent ${refundPi} — no QBO row enqueued.`);

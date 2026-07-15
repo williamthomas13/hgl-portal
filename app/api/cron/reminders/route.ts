@@ -3,6 +3,8 @@ import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
 import { processGcalQueue } from '../../../utils/gcal-sync'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
+import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
+import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
 import {
@@ -1176,6 +1178,34 @@ export async function GET(req: Request) {
   const tc = await sweepTimecards()
   if (tc.created > 0) counters.timecards_created = tc.created
   if (tc.t5Sent > 0) counters.timecards_t5_sent = tc.t5Sent
+
+  // Phase 7c: the monthly billing cycle (spec §6). Generation fires on the
+  // settings day (default the 20th, Denver); the proposal sweep (T1b nudge +
+  // auto-confirm) and the collection sweep (unbilled catch-up, autopay
+  // retries, 10/30-day escalation) run daily. Everything idempotent —
+  // re-runs and generation-day repeats dedupe away.
+  try {
+    const cycleSettings = await loadCycleSettings()
+    const denverDay = Number(
+      new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(8, 10)
+    )
+    if (denverDay === cycleSettings.generateDay) {
+      const gen = await generateMonthlyCycle()
+      if (gen.sessionsCreated > 0) counters.billing_sessions_generated = gen.sessionsCreated
+      if (gen.invoicesProposed > 0) counters.billing_invoices_proposed = gen.invoicesProposed
+      if (gen.t1Sent > 0) counters.billing_t1_sent = gen.t1Sent
+    }
+    const proposals = await sweepProposals()
+    if (proposals.nudged > 0) counters.billing_nudged = proposals.nudged
+    if (proposals.autoConfirmed > 0) counters.billing_auto_confirmed = proposals.autoConfirmed
+    const collections = await sweepCollections()
+    if (collections.issued > 0) counters.billing_issued = collections.issued
+    if (collections.retried > 0) counters.billing_retried = collections.retried
+    if (collections.reminders > 0) counters.billing_reminders = collections.reminders
+    if (collections.lateFeeFlags > 0) counters.billing_late_fee_flags = collections.lateFeeFlags
+  } catch (e) {
+    console.error('tutoring billing sweep failed (continuing):', e)
+  }
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })
 }

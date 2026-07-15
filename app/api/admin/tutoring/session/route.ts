@@ -4,6 +4,7 @@ import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
 import { deleteGcalEvent, loadGcalConnection } from '../../../../utils/gcal'
 import { classifyNotice } from '../../../../utils/tutoring'
+import { sendScheduleChangeNotices } from '../../../../utils/tutoring-emails'
 
 // Session actions (Phase 7a §5): one-off create, time edit, reschedule
 // (creates the replacement; auto-classifies ok/late by the 24h line,
@@ -153,7 +154,19 @@ export async function POST(req: Request) {
 
       await enqueueGcalSync(replacement.id, `reschedule (${notice})`)
       if (notice === 'late') await enqueueGcalSync(original.id, 'late reschedule — XCL original')
-      after(() => processGcalQueue())
+      const wasConfirmed = original.status === 'confirmed'
+      after(() => {
+        processGcalQueue()
+        // T3 (§6.5): confirmed-session changes notify the family + tutor.
+        if (wasConfirmed) {
+          sendScheduleChangeNotices({
+            sessionId: original.id,
+            kind: 'reschedule',
+            notice,
+            replacementId: replacement.id,
+          })
+        }
+      })
       return NextResponse.json({ ok: true, replacementId: replacement.id, notice })
     }
 
@@ -161,6 +174,11 @@ export async function POST(req: Request) {
       if (!body.id || (body.outcome !== 'forfeited' && body.outcome !== 'no_show')) {
         return NextResponse.json({ error: 'Invalid cancel request.' }, { status: 400 })
       }
+      const { data: before } = await supabase
+        .from('tutoring_sessions')
+        .select('status')
+        .eq('id', body.id)
+        .maybeSingle()
       const { data: session, error } = await supabase
         .from('tutoring_sessions')
         .update({
@@ -178,7 +196,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: error?.message ?? 'Session not in a cancellable state.' }, { status: 400 })
       }
       await enqueueGcalSync(session.id, body.outcome === 'no_show' ? 'no-show — XCL' : 'forfeit — XCL')
-      after(() => processGcalQueue())
+      const outcome = body.outcome
+      const wasLive = before?.status === 'confirmed' || before?.status === 'completed'
+      after(() => {
+        processGcalQueue()
+        if (wasLive) sendScheduleChangeNotices({ sessionId: session.id, kind: outcome })
+      })
       return NextResponse.json({ ok: true })
     }
 
