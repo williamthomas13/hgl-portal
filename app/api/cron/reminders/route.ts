@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
+import { processGcalQueue } from '../../../utils/gcal-sync'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
 import {
@@ -1157,6 +1158,13 @@ export async function GET(req: Request) {
   if (qbo.failed > 0) counters.qbo_failed = qbo.failed
   if (qbo.deferred > 0) counters.qbo_deferred = qbo.deferred
   if ((await sweepQboHealth()) === 'alerted') bump(counters, 'qbo_expired_alert')
+
+  // Phase 7a: retry/backup pass over the Google Calendar push queue (the
+  // scheduling routes' after() triggers are the fast path).
+  const gcal = await processGcalQueue()
+  if (gcal.synced > 0) counters.gcal_synced = gcal.synced
+  if (gcal.failed > 0) counters.gcal_failed = gcal.failed
+  if (gcal.deferred > 0) counters.gcal_deferred = gcal.deferred
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })
 }

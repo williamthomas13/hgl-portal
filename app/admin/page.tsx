@@ -980,6 +980,12 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-bold text-hgl-slate">HGL Admin</h1>
           <div className="flex items-center gap-4">
             <a
+              href="/admin/tutoring"
+              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
+            >
+              Tutoring
+            </a>
+            <a
               href="/admin/communications"
               className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
             >

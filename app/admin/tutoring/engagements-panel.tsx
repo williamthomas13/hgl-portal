@@ -1,0 +1,185 @@
+'use client'
+
+import { useState } from 'react'
+import { formatDateShort } from '../../utils/dates'
+import { WEEKDAYS, familyLabel, fmtDay, fmtTime, type Engagement } from './types'
+
+// The "one source of truth per family" view (Phase 7a §5): engagements
+// grouped by family, with weekly slots, next session, funding, and package
+// runway. Full family record (class history, billing prefs editing) deepens
+// in 7c/7d; this is the scheduling-side slice.
+
+export default function EngagementsPanel({
+  engagements,
+  nextSessions,
+  packageHoursUsed,
+  addonHours,
+  onChange,
+}: {
+  engagements: Engagement[]
+  /** engagement_id → next confirmed session ISO */
+  nextSessions: Record<string, string>
+  /** engagement_id → hours consumed (completed + no_show + forfeited + upcoming confirmed) */
+  packageHoursUsed: Record<string, number>
+  /** addon_id → purchased hours */
+  addonHours: Record<string, number>
+  onChange: () => void
+}) {
+  const [busyId, setBusyId] = useState('')
+  const [message, setMessage] = useState('')
+
+  // Group by family.
+  const byFamily = new Map<string, { label: string; rows: Engagement[] }>()
+  for (const e of engagements) {
+    const fam = e.students?.families ?? null
+    const key = fam?.id ?? 'unknown'
+    if (!byFamily.has(key)) byFamily.set(key, { label: familyLabel(fam), rows: [] })
+    byFamily.get(key)!.rows.push(e)
+  }
+
+  async function update(id: string, body: Record<string, unknown>, done: string) {
+    setBusyId(id)
+    const res = await fetch('/api/admin/tutoring/engagement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', id, ...body }),
+    })
+    const json = await res.json()
+    setMessage(res.ok ? done : 'Error: ' + json.error)
+    setBusyId('')
+    if (res.ok) onChange()
+  }
+
+  if (engagements.length === 0) {
+    return <p className="text-sm text-gray-500 italic">No engagements yet — create one with the wizard above.</p>
+  }
+
+  return (
+    <div className="space-y-4 text-sm">
+      {[...byFamily.entries()].map(([famId, group]) => (
+        <div key={famId} className="border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-bold text-hgl-slate">{group.label}</span>
+            <span className="text-xs text-gray-400">
+              {group.rows[0]?.students?.families?.parent_email}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {group.rows.map((e) => {
+              const next = nextSessions[e.id]
+              const tz = e.instructors?.timezone ?? 'America/Denver'
+              const purchased = e.addon_id ? addonHours[e.addon_id] : undefined
+              const used = packageHoursUsed[e.id] ?? 0
+              const remaining = purchased !== undefined ? Math.max(0, purchased - used) : undefined
+              const lowRunway =
+                e.funding === 'package' &&
+                remaining !== undefined &&
+                e.recurrence.length > 0 &&
+                remaining < 2 * (e.recurrence.reduce((s, r) => s + r.duration_minutes, 0) / 60 / e.recurrence.length)
+              return (
+                <div
+                  key={e.id}
+                  className={`flex flex-wrap items-center gap-x-4 gap-y-1 p-2 rounded ${
+                    e.status === 'active' ? 'bg-gray-50' : 'bg-gray-100 opacity-70'
+                  }`}
+                >
+                  <span className="font-semibold text-hgl-slate">
+                    {e.students?.first_name} {e.students?.last_name}
+                  </span>
+                  <span>{e.subjects?.name}</span>
+                  <span className="text-gray-500">w/ {e.instructors?.name ?? e.instructors?.email}</span>
+                  <span className="text-gray-500">
+                    {e.recurrence.length > 0
+                      ? e.recurrence
+                          .map((r) => `${WEEKDAYS[r.weekday - 1]} ${r.start_time} (${r.duration_minutes}m)`)
+                          .join(', ')
+                      : 'one-offs only'}
+                  </span>
+                  <span className="text-gray-500">${e.hourly_rate}/hr</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      e.funding === 'package' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                    }`}
+                  >
+                    {e.funding === 'package' ? 'package' : 'monthly'}
+                  </span>
+                  {remaining !== undefined && (
+                    <span className={`text-xs font-semibold ${lowRunway ? 'text-red-600' : 'text-gray-600'}`}>
+                      {remaining.toFixed(1)}h left of {purchased}h{lowRunway && ' — low! upsell/convert moment'}
+                    </span>
+                  )}
+                  {next ? (
+                    <span className="text-xs text-green-700">
+                      next: {fmtDay(next, tz)} {fmtTime(next, tz)}
+                    </span>
+                  ) : (
+                    e.status === 'active' && <span className="text-xs text-amber-600">no upcoming sessions</span>
+                  )}
+                  {e.status !== 'active' && (
+                    <span className="text-xs font-bold uppercase text-gray-500">{e.status}</span>
+                  )}
+                  {e.start_date && (
+                    <span className="text-xs text-gray-400">since {formatDateShort(e.start_date)}</span>
+                  )}
+                  <span className="ml-auto flex gap-2 text-xs">
+                    {e.status === 'active' && (
+                      <>
+                        <button
+                          disabled={busyId === e.id}
+                          onClick={() => update(e.id, { regenerate: true }, 'Future sessions regenerated from the weekly schedule.')}
+                          className="text-hgl-blue underline"
+                          title="Re-materialize future unbilled sessions from the weekly slots (use after editing the schedule)"
+                        >
+                          regenerate
+                        </button>
+                        <button
+                          disabled={busyId === e.id}
+                          onClick={() => {
+                            if (!confirm('Pause this engagement? Future unbilled sessions are removed (and taken off the Google calendar).')) return
+                            update(e.id, { status: 'paused' }, 'Engagement paused — future sessions removed.')
+                          }}
+                          className="text-gray-500 underline"
+                        >
+                          pause
+                        </button>
+                        <button
+                          disabled={busyId === e.id}
+                          onClick={() => {
+                            if (!confirm('End this engagement? Future unbilled sessions are removed. History is kept.')) return
+                            update(e.id, { status: 'ended', end_date: new Date().toISOString().slice(0, 10) }, 'Engagement ended.')
+                          }}
+                          className="text-red-600 underline"
+                        >
+                          end
+                        </button>
+                      </>
+                    )}
+                    {e.status === 'paused' && (
+                      <button
+                        disabled={busyId === e.id}
+                        onClick={() => update(e.id, { status: 'active', regenerate: true }, 'Engagement resumed — sessions regenerated.')}
+                        className="text-green-700 underline"
+                      >
+                        resume
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      {message && (
+        <div
+          className={`p-3 rounded text-center font-semibold ${
+            message.startsWith('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+          }`}
+        >
+          {message}
+        </div>
+      )}
+    </div>
+  )
+}
