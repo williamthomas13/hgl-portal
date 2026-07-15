@@ -70,6 +70,8 @@ export type SessionRow = {
   reschedule_notice: 'ok' | 'late' | null
   gcal_event_id: string | null
   cancel_note: string | null
+  reschedule_requested_at: string | null
+  reschedule_request_note: string | null
   students: { first_name: string; last_name: string } | null
   tutoring_engagements: { subjects: { name: string } | null; location: string | null } | null
 }

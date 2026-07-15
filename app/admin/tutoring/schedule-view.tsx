@@ -26,6 +26,7 @@ const STATUS_STYLES: Record<string, string> = {
 const SELECT = `
   id, engagement_id, student_id, tutor_id, starts_at, ends_at, duration_minutes,
   status, reschedule_notice, gcal_event_id, cancel_note,
+  reschedule_requested_at, reschedule_request_note,
   students ( first_name, last_name ),
   tutoring_engagements ( location, subjects ( name ) )
 `
@@ -253,6 +254,7 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
                         >
                           <span className="font-semibold">
                             {fmtTime(s.starts_at, tz)} {s.students?.first_name}
+                            {s.reschedule_requested_at && s.status === 'confirmed' && ' ⟳'}
                           </span>
                           <br />
                           {s.tutoring_engagements?.subjects?.name}
@@ -356,6 +358,14 @@ function SessionDialog({
             {session.gcal_event_id ? ' · on Google Calendar' : ' · not yet on Google Calendar'}
             {session.cancel_note && ` · note: ${session.cancel_note}`}
           </p>
+          {session.reschedule_requested_at && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
+              <span className="font-bold">Family asked to move this session</span> (
+              {new Date(session.reschedule_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              ){session.reschedule_request_note ? ` — “${session.reschedule_request_note}”` : ''}. Use
+              Reschedule below; they and the tutor get the change email automatically.
+            </p>
+          )}
         </div>
 
         {upcoming && action === 'none' && (

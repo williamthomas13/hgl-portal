@@ -110,6 +110,19 @@ export function autopayToken(familyId: string): string {
   return `${familyId}.${sig('tutoring-autopay', familyId)}`
 }
 
+/** Phase 7d: per-family tutoring calendar feed (extends the §11 ICS pattern). */
+export function tutoringIcsToken(familyId: string): string {
+  return `${familyId}.${sig('tutoring-ics', familyId)}`
+}
+
+export function verifyTutoringIcsToken(token: string): string | null {
+  const [id, given] = token.split('.')
+  if (!id || !given) return null
+  const expected = Buffer.from(sig('tutoring-ics', id))
+  const got = Buffer.from(given)
+  return expected.length === got.length && timingSafeEqual(expected, got) ? id : null
+}
+
 export function verifyAutopayToken(token: string): string | null {
   const [id, given] = token.split('.')
   if (!id || !given) return null

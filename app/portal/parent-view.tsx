@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../utils/supabase-admin'
 import { resumePaymentUrlFor } from '../utils/lifecycle'
 import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreRow } from './shared'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
+import TutoringSection from './tutoring-section'
 
 // Parent view (PHASE4_SPEC §3): one card per student, their enrollments with
 // status/instructor/location, the session calendar, receipts, and diagnostic
@@ -504,8 +505,10 @@ export default async function ParentView({
               </div>
             )}
 
-            {/* C3: tutoring package widget (stub until the TutorBird-
-                replacement phase adds hours-remaining + scheduling). */}
+            {/* C3 (un-stubbed in Phase 7d): purchased hours with no schedule
+                yet still show here; scheduled tutoring — hours remaining,
+                next session, billing — lives in the family-level
+                TutoringSection below. */}
             {(() => {
               const totalHours = (st.enrollments ?? [])
                 .filter((e: any) => ['Paid', 'Completed'].includes(e.payment_status))
@@ -517,8 +520,9 @@ export default async function ParentView({
                   <span className="font-semibold text-hgl-slate">1-on-1 tutoring:</span>{' '}
                   {totalHours} hour{totalHours === 1 ? '' : 's'} purchased
                   <span className="block text-xs text-gray-500 mt-0.5">
-                    Scheduling from the portal is coming soon — reply to any of our emails to book
-                    sessions in the meantime.
+                    Scheduled sessions, hours remaining, and billing appear in the 1-on-1 tutoring
+                    section below once your schedule is set up — or get in touch and we&apos;ll set
+                    it up together.
                   </span>
                 </div>
               )
@@ -529,6 +533,9 @@ export default async function ParentView({
           </div>
         )
       })}
+
+      {/* Phase 7d: 1-on-1 tutoring — schedule, reschedule requests, billing */}
+      <TutoringSection email={email} />
     </div>
   )
 }
