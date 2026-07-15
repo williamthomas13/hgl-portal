@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
       // does not exist" (seen in prod July 7).
       './node_modules/@sparticuz/chromium/bin/**/*',
     ],
+    // Phase 7e: agreement-acceptance PDF snapshots render in these functions
+    // (same chromium-not-traced failure seen in prod July 15).
+    '/api/agreements': ['./node_modules/@sparticuz/chromium/bin/**/*'],
+    '/api/admin/agreements': ['./node_modules/@sparticuz/chromium/bin/**/*'],
   },
 
   async redirects() {
