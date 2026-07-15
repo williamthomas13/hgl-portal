@@ -300,6 +300,27 @@ export async function handleAutopayFailure(invoiceId: string, reason: string): P
   })
 }
 
+/**
+ * Current Stripe API versions no longer expose payment_intent on the Invoice
+ * object — resolve it through the invoice's payments list (the QBO queue
+ * keys idempotency on the PI, so this must not come back null for paid
+ * hosted invoices).
+ */
+export async function resolveInvoicePaymentIntentId(stripeInvoiceId: string): Promise<string | null> {
+  try {
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const inv: any = await stripe.invoices.retrieve(stripeInvoiceId, { expand: ['payments'] })
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const payments: any[] = inv.payments?.data ?? []
+    const paid = payments.find((p) => p.status === 'paid') ?? payments[0]
+    const pi = paid?.payment?.payment_intent
+    return typeof pi === 'string' ? pi : (pi?.id ?? null)
+  } catch (e) {
+    console.error(`resolving PI for stripe invoice ${stripeInvoiceId} failed:`, e)
+    return null
+  }
+}
+
 /** Idempotent paid-marker: stamps the invoice and enqueues the Phase 6 QBO
  *  queue (kind 'tutoring_sale'); duplicate webhook deliveries conflict away
  *  on the (payment_intent, kind) unique index. */

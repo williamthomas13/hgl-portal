@@ -6,6 +6,7 @@ import {
   completeAutopaySetup,
   handleAutopayFailure,
   markTutoringInvoicePaid,
+  resolveInvoicePaymentIntentId,
 } from '../../utils/tutoring-stripe';
 import { renderEmail } from '../../utils/comms-db-render';
 import {
@@ -410,9 +411,14 @@ export async function POST(req: Request) {
   if (event.type === 'invoice.paid') {
     const invoice = event.data.object as Stripe.Invoice;
     const tutoringInvoiceId = invoice.metadata?.tutoring_invoice_id;
-    if (tutoringInvoiceId) {
+    if (tutoringInvoiceId && invoice.id) {
+      // Older API versions carried payment_intent on the invoice; current
+      // ones don't — resolve through the payments list (the QBO enqueue
+      // needs the PI for idempotency).
       const pi = (invoice as unknown as { payment_intent?: string | { id: string } | null }).payment_intent;
-      const paymentIntentId = typeof pi === 'string' ? pi : pi?.id ?? null;
+      const paymentIntentId =
+        (typeof pi === 'string' ? pi : pi?.id ?? null) ??
+        (await resolveInvoicePaymentIntentId(invoice.id));
       await markTutoringInvoicePaid(tutoringInvoiceId, paymentIntentId);
       console.log(`Tutoring invoice ${tutoringInvoiceId} paid (hosted invoice ${invoice.id}).`);
     }
