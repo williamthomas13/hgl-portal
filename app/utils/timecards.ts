@@ -133,11 +133,11 @@ export async function autoCompleteSessions(): Promise<number> {
 export async function recomputeTimecard(timecardId: string): Promise<number | null> {
   const { data: tc } = await supabase
     .from('timecards')
-    .select('id, tutor_id, period_start, period_end, status')
+    .select('id, tutor_id, period_start, period_end, status, total_hours')
     .eq('id', timecardId)
     .maybeSingle()
   if (!tc) return null
-  if (tc.status === 'approved' || tc.status === 'exported') return Number((tc as { total_hours?: number }).total_hours ?? 0)
+  if (tc.status === 'approved' || tc.status === 'exported') return Number(tc.total_hours)
   const sessions = await payableSessions(tc.tutor_id, { start: tc.period_start, end: tc.period_end })
   const ids = sessions.map((s) => s.id)
   if (ids.length > 0) {
