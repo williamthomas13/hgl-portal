@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import SessionCalendar from '../../components/SessionCalendar'
+import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
 import { formatDateOnly } from '../../utils/dates'
 
 type SessionRow = {
@@ -29,8 +30,6 @@ type ClassDetails = {
   cancelled?: boolean
   packages: TutoringPackage[]
 }
-
-const MAIN_SITE = 'https://www.highergroundlearning.com'
 
 function fmtTime(t: string | null) {
   if (!t) return null
@@ -237,25 +236,7 @@ export default function RegistrationPage() {
     setLoading(false)
   }
 
-  if (notFound) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
-        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
-          <h1 className="text-2xl font-bold text-hgl-slate mb-4">Class not found</h1>
-          <p className="text-gray-600 mb-6">
-            We couldn&apos;t find that class — the link may be out of date. Current classes and
-            registration links are on our main site.
-          </p>
-          <a
-            href={MAIN_SITE}
-            className="inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
-          >
-            Back to Higher Ground Learning
-          </a>
-        </div>
-      </div>
-    )
-  }
+  if (notFound) return <ClassNotFound />
 
   if (!classDetails) return <div className="p-10 text-center">Loading class details...</div>
 
@@ -272,21 +253,10 @@ export default function RegistrationPage() {
   // site — deliberately not a cancellation notice (PHASE4_SPEC §12).
   if (classDetails.cancelled) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
-        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
-          <h1 className="text-2xl font-bold text-hgl-slate mb-4">This class is full</h1>
-          <p className="text-gray-600 mb-6">
-            The {classLabel} class is not accepting new registrations. Upcoming classes are
-            listed on our main site.
-          </p>
-          <a
-            href={MAIN_SITE}
-            className="inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
-          >
-            Back to Higher Ground Learning
-          </a>
-        </div>
-      </div>
+      <PublicNoticeCard title="This class is full">
+        The {classLabel} class is not accepting new registrations. Upcoming classes are listed
+        on our main site.
+      </PublicNoticeCard>
     )
   }
 
@@ -296,23 +266,10 @@ export default function RegistrationPage() {
   const registrationClose = classDetails.registration_close_date ?? firstSession
   if (today > registrationClose) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
-        <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
-          <h1 className="text-2xl font-bold text-hgl-slate mb-4">
-            Registration for this class has closed
-          </h1>
-          <p className="text-gray-600 mb-6">
-            Registration for the {classLabel} class is no longer open. Upcoming classes are listed
-            on our main site.
-          </p>
-          <a
-            href={MAIN_SITE}
-            className="inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
-          >
-            Back to Higher Ground Learning
-          </a>
-        </div>
-      </div>
+      <PublicNoticeCard title="Registration for this class has closed">
+        Registration for the {classLabel} class is no longer open. Upcoming classes are listed
+        on our main site.
+      </PublicNoticeCard>
     )
   }
 

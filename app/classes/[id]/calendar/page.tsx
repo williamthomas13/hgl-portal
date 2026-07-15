@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import { ClassNotFound } from '../../../components/PublicNotice'
 
 // Per-class calendar landing page — the target of every "Download the course
 // calendar" email button. Offers Google subscription, Apple/ICS, and PDF.
@@ -53,7 +54,9 @@ export default function ClassCalendarPage() {
   }, [classId])
 
   if (loading) return <div className="p-10 text-center">Loading calendar...</div>
-  if (!info) return <div className="p-10 text-center">Class not found.</div>
+  // §12 friendly 404 — same card as the registration page (bad id, deleted
+  // class, or a non-2xx/network failure above all land here).
+  if (!info) return <ClassNotFound />
 
   const label = `${info.schools?.nickname ?? 'HGL'} — ${info.class_type}`
   const origin = typeof window !== 'undefined' ? window.location.origin : ''

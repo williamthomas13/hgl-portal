@@ -74,9 +74,39 @@ export default async function ParentView({
     )
   }
 
+  // Duplicate student rows (same kid registered twice before the family-match
+  // fix in utils/registration.ts, or seeded test data) render as ONE card
+  // with all their enrollments — mirror the registration matcher: same
+  // student email, else same name. Data stays untouched; the warn surfaces
+  // rows worth merging in the DB.
+  const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
+  const studentList: any[] = []
+  for (const st of students as any[]) {
+    const dup = studentList.find(
+      (s) =>
+        (st.student_email && norm(s.student_email) === norm(st.student_email)) ||
+        (norm(s.first_name) === norm(st.first_name) && norm(s.last_name) === norm(st.last_name))
+    )
+    if (!dup) {
+      studentList.push({ ...st })
+      continue
+    }
+    console.warn(
+      `parent-view: duplicate student rows merged for display — ${st.first_name} ${st.last_name} (${dup.id}, ${st.id})`
+    )
+    dup.enrollments = [...(dup.enrollments ?? []), ...(st.enrollments ?? [])]
+    dup.student_scores = [...(dup.student_scores ?? []), ...(st.student_scores ?? [])]
+    // Keep the more complete profile fields from whichever row has them.
+    dup.student_email ??= st.student_email
+    dup.school_id ??= st.school_id
+    dup.schools ??= st.schools
+    dup.grade_level ??= st.grade_level
+    dup.graduating_year ??= st.graduating_year
+  }
+
   // Waitlist positions need a privileged count; collect them up front.
   const positions = new Map<string, number>()
-  for (const st of students as any[]) {
+  for (const st of studentList) {
     for (const e of st.enrollments ?? []) {
       const cls = one<any>(e.classes)
       if (e.payment_status === 'Waitlisted' && cls) {
@@ -100,7 +130,7 @@ export default async function ParentView({
   // Parents can't read other classes under RLS, so this is a privileged read
   // (like the waitlist position) — sanitized to one name+link card.
   const suggestions = new Map<string, { label: string; startDate: string; href: string }>()
-  for (const st of students as any[]) {
+  for (const st of studentList) {
     const enrolledClassIds = new Set(
       (st.enrollments ?? []).map((e: any) => one<any>(e.classes)?.id).filter(Boolean)
     )
@@ -144,7 +174,7 @@ export default async function ParentView({
   // class is running; the "upcoming class" info card (mirrors email #2)
   // before session 1.
   const callouts: React.ReactNode[] = []
-  for (const st of students as any[]) {
+  for (const st of studentList) {
     for (const e of st.enrollments ?? []) {
       if (e.payment_status !== 'Paid') continue
       const cls = one<any>(e.classes)
@@ -239,23 +269,27 @@ export default async function ParentView({
   return (
     <div className="space-y-6">
       {callouts}
-      {(students as any[]).map((st) => {
+      {studentList.map((st) => {
         const school = one<any>(st.schools)
         const scores: ScoreRow[] = st.student_scores ?? []
         const enrollments = [...(st.enrollments ?? [])].sort((a: any, b: any) =>
           (b.enrolled_at ?? '').localeCompare(a.enrolled_at ?? '')
         )
+        // Subtitle only when we have something to say — never a bare "—".
+        const subtitle = [
+          school?.name,
+          st.grade_level ? `Grade ${st.grade_level}` : null,
+          st.graduating_year ? `Class of ${st.graduating_year}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
         return (
           <div key={st.id} className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-6">
             <div className="mb-4">
               <h2 className="text-xl font-bold text-hgl-slate">
                 {st.first_name} {st.last_name}
               </h2>
-              <p className="text-sm text-gray-500">
-                {school?.name ?? '—'}
-                {st.grade_level ? ` · Grade ${st.grade_level}` : ''}
-                {st.graduating_year ? ` · Class of ${st.graduating_year}` : ''}
-              </p>
+              {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
             </div>
 
             {enrollments.length === 0 && (

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "smoke:public": "node scripts/smoke-public-pages.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",
