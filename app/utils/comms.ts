@@ -103,6 +103,11 @@ export function templateMetaFor(
       return { key: 'T3_SCHEDULE_CHANGE', role: 'parent' }
     case 'T4_PAYMENT_FAILED':
       return { key: 'T4_PAYMENT_FAILED', role: 'parent' }
+    // Phase 7e intake & onboarding (spec §11)
+    case 'T7_INTAKE_REQUEST':
+      return { key: 'T7_INTAKE_REQUEST', role: 'parent' }
+    case 'T8_WELCOME_HANDOFF':
+      return { key: 'T8_WELCOME_HANDOFF', role: 'parent' }
     default:
       return { key: emailType.toUpperCase(), role: 'parent' }
   }

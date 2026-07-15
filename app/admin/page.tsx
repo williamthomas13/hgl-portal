@@ -986,6 +986,12 @@ export default function AdminDashboard() {
               Tutoring
             </a>
             <a
+              href="/admin/leads"
+              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
+            >
+              Leads
+            </a>
+            <a
               href="/admin/communications"
               className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
             >
