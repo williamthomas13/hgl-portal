@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
+import { sendWelcomeHandoff } from '../../../../utils/intake-emails'
 import { deleteGcalEvent, loadGcalConnection } from '../../../../utils/gcal'
 import {
   generateOccurrences,
@@ -190,7 +191,39 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: error?.message ?? 'Insert failed.' }, { status: 500 })
       }
       const { created } = await materializeSessions(engagement)
-      after(() => processGcalQueue())
+
+      // Phase 7e §11: the family's FIRST engagement triggers the welcome/
+      // handoff email (tutor contact, first-month schedule, agreements +
+      // autopay links). Siblings/repeat engagements don't re-send.
+      const { data: studentRow } = await supabase
+        .from('students')
+        .select('family_id')
+        .eq('id', student_id)
+        .maybeSingle()
+      let isFirstEngagement = false
+      if (studentRow?.family_id) {
+        const { data: familyStudents } = await supabase
+          .from('students')
+          .select('id')
+          .eq('family_id', studentRow.family_id)
+        const ids = (familyStudents ?? []).map((s) => s.id)
+        const { count } = await supabase
+          .from('tutoring_engagements')
+          .select('id', { count: 'exact', head: true })
+          .in('student_id', ids.length ? ids : [student_id])
+          .neq('id', engagement.id)
+        isFirstEngagement = (count ?? 0) === 0
+      }
+
+      const engagementId = engagement.id
+      after(() =>
+        Promise.allSettled([
+          processGcalQueue(),
+          ...(isFirstEngagement
+            ? [sendWelcomeHandoff(engagementId).catch((e) => console.error('T8 welcome handoff failed:', e))]
+            : []),
+        ])
+      )
       return NextResponse.json({ ok: true, id: engagement.id, sessionsCreated: created })
     }
 

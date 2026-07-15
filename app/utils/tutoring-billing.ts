@@ -222,6 +222,9 @@ export type GenerateResult = {
   sessionsCreated: number
   invoicesProposed: number
   t1Sent: number
+  /** §12 guard: families invoiced this run with NO accepted policy agreement
+   *  (warn, never block — the Ops Director chases via /admin/agreements). */
+  familiesWithoutAgreement: number
 }
 
 /**
@@ -238,7 +241,15 @@ export async function generateMonthlyCycle(
   const settings = await loadCycleSettings()
   const contact = await loadContactInfo()
   const engagements = (await loadActiveEngagements()).filter((e) => e.family && e.student && e.subject)
-  const result: GenerateResult = { month: month.period, families: 0, sessionsCreated: 0, invoicesProposed: 0, t1Sent: 0 }
+  const result: GenerateResult = {
+    month: month.period,
+    families: 0,
+    sessionsCreated: 0,
+    invoicesProposed: 0,
+    t1Sent: 0,
+    familiesWithoutAgreement: 0,
+  }
+  const unagreedFamilies: string[] = []
 
   // ---- 1. Materialize proposed sessions per engagement -------------------
   type PeriodSession = {
@@ -305,6 +316,19 @@ export async function generateMonthlyCycle(
     if (bucket.sessions.length === 0) continue
     result.families++
     const family = bucket.engagements[0].family!
+
+    // §12 guard: warn (never block) when billing a family with no accepted
+    // policy agreement — the /admin/agreements banner lists them too.
+    const { count: acceptances } = await supabase
+      .from('agreement_acceptances')
+      .select('id', { count: 'exact', head: true })
+      .eq('family_id', familyId)
+    if ((acceptances ?? 0) === 0) {
+      result.familiesWithoutAgreement++
+      unagreedFamilies.push(
+        `${family.parent_first_name} ${family.parent_last_name ?? ''} (${family.parent_email})`.trim()
+      )
+    }
 
     // Find-or-create the invoice; regeneration only touches draft/proposed.
     let { data: invoice } = await supabase
@@ -475,6 +499,18 @@ export async function generateMonthlyCycle(
         .in('status', ['draft', 'proposed'])
       result.invoicesProposed++
     }
+  }
+
+  if (unagreedFamilies.length > 0) {
+    await sendAdminAlert({
+      dedupeKey: `unagreed_families:${month.period}`,
+      adminEmail: ADMIN_EMAIL,
+      subject: `${unagreedFamilies.length} tutoring famil${unagreedFamilies.length === 1 ? 'y' : 'ies'} billed without a signed policy agreement`,
+      body: `<p>The ${month.label} cycle just proposed invoices for families with no accepted
+        scheduling &amp; billing agreement on file (§12 guard — invoicing proceeds, but chase these):</p>
+        <ul>${unagreedFamilies.map((f) => `<li>${f}</li>`).join('')}</ul>
+        <p>Send or re-send agreement links from <strong>/admin/agreements</strong>.</p>`,
+    }).catch((e) => console.error('unagreed-families alert failed:', e))
   }
   return result
 }
