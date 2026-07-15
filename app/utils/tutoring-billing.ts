@@ -615,7 +615,7 @@ export async function sweepProposals(now: Date = new Date()): Promise<ProposalSw
       const res = await confirmInvoice(inv.id, 'auto')
       if (res.ok) {
         result.autoConfirmed++
-        after7cConfirm(inv.id)
+        await after7cConfirm(inv.id)
       }
       continue
     }
@@ -661,14 +661,25 @@ export async function sweepProposals(now: Date = new Date()): Promise<ProposalSw
   return result
 }
 
-/** Fire-and-forget hook the payment leg registers to avoid an import cycle:
- *  tutoring-stripe.ts sets this to issueOrCharge + gcal drain. */
-let confirmFollowUp: ((invoiceId: string) => void) | null = null
-export function registerConfirmFollowUp(fn: (invoiceId: string) => void) {
+/** Hook the payment leg registers to avoid an import cycle (tutoring-stripe
+ *  sets this to issueOrCharge). */
+let confirmFollowUp: ((invoiceId: string) => Promise<unknown>) | null = null
+export function registerConfirmFollowUp(fn: (invoiceId: string) => Promise<unknown>) {
   confirmFollowUp = fn
 }
-export function after7cConfirm(invoiceId: string) {
-  processGcalQueue().catch((e) => console.error('gcal drain after confirm failed:', e))
-  if (confirmFollowUp) confirmFollowUp(invoiceId)
+
+/**
+ * Post-confirm work: Google push + hand-off to collection. Returns a promise
+ * on purpose — `after()` callbacks must RETURN their promises or the lambda
+ * freezes before the work completes (floating promises silently die).
+ */
+export async function after7cConfirm(invoiceId: string): Promise<void> {
+  const jobs: Promise<unknown>[] = [
+    processGcalQueue().catch((e) => console.error('gcal drain after confirm failed:', e)),
+  ]
+  if (confirmFollowUp) {
+    jobs.push(confirmFollowUp(invoiceId).catch((e) => console.error('confirm follow-up failed:', e)))
+  }
+  await Promise.allSettled(jobs)
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

@@ -1,6 +1,6 @@
 # HGL Portal — Phase 7: 1-on-1 Tutoring (TutorBird Replacement)
 
-**Status:** v1.3 — July 10, 2026. Scoped with Scarlett; all §10 open items resolved same day; onboarding/intake (§11) and policy agreements (§12) added from the OM's onboarding doc + current Google Form policies. Written for Claude Code.
+**Status:** v1.4 — July 15, 2026. Scoped with Scarlett; all §10 open items resolved July 10; onboarding/intake (§11) and policy agreements (§12) added from the Ops Director's onboarding doc + current Google Form policies; pick-from-offered-slots parent reschedule added to §8/7d (July 15). Terminology note: "OM" in this doc = **Operations Director (Ops Director)** — all UI copy uses the new title, and UI never says "engagement" (student-centric copy per July 13 decision). Written for Claude Code.
 **Companions:** `hgl-portal-master-spec.md` (v2.5), `hgl-phase6-spec.md` (QBO sync), `hgl-comms-attendance-parent-spec.md` (v1.2 — C3 tutoring widget stub), `hgl-handoff-2026-07-09.md`.
 **Depends on:** Phases 3/3.1 (auth, roles, RLS), Phase 4 (portal views), Phase 6 (QBO sync pipeline — reused for tutoring revenue).
 
@@ -138,7 +138,8 @@ Pay periods: **1st–15th (payday the 20th)** and **16th–end of month (payday 
 - **Tutoring card per engagement:** tutor first name, subject, weekly slots, next session, location/link.
 - **Schedule page:** upcoming confirmed sessions (list + calendar link — extend the §11 ICS endpoint pattern with a per-family tutoring calendar feed), monthly proposal flow (§6) when pending.
 - **Billing:** invoice history with Stripe receipt links; manage payment method / autopay opt-in (Stripe SetupIntent); billing contacts editable by staff only (v1).
-- **Reschedule request:** parent can request a change to an upcoming session from the portal; ≥24h auto-approves as a free reschedule (OM picks/confirms the replacement slot; tutor notified; GCal event moved); <24h shows the $40/hour policy and routes to OM to apply forfeit/late-reschedule.
+- **Reschedule request:** parent can request a change to an upcoming session from the portal; ≥24h auto-approves as a free reschedule (Ops Director picks/confirms the replacement slot; tutor notified; GCal event moved); <24h shows the $40/hour policy and routes to the Ops Director to apply forfeit/late-reschedule.
+- **Pick-from-offered-slots (added July 15, 2026 — build as part of 7d):** for the ≥24h case, instead of "request and wait," the portal offers the parent **2–3 candidate replacement slots** to tap, and the reschedule completes instantly (session moved, tutor notified, GCal patched, T3 sent). Mechanics: candidates are computed from the tutor's freebusy within **Ops-Director-approved offer windows** — a per-tutor weekly availability mask set in the tutors panel (e.g. "Mon–Thu 15:00–19:00"), defaulting to the tutor's existing recurring-session hours ±2h if unset. Candidates must be within the same billing month, ≥24h out, conflict-free per freebusy, and not displace another portal session. **The tutor's calendar is never exposed** — parents see only the 2–3 offered times, preserving the no-self-booking principle: the Ops Director controls the offer windows, the parent only picks among pre-approved options. If no candidate fits (or the parent wants something else), the flow falls back to the existing free-text request → Ops Director path, and per the human-help principle the offer screen always carries "none of these work? get in touch and we'll figure it out." Parent-completed reschedules appear in an Ops Director activity feed/digest so nothing happens invisibly.
 - Package families: hours purchased / remaining / next session (C3 un-stubbed).
 
 ## 9. Build order
@@ -146,7 +147,7 @@ Pay periods: **1st–15th (payday the 20th)** and **16th–end of month (payday 
 - **7a — Core scheduling:** schema, tutor records, engagements, session generation, OM scheduling UI, Google Calendar push + freebusy. *Ship when the OM schedules in the portal instead of Google Calendar.*
 - **7b — Timecards:** auto-completion, tutor view + confirm, OM approval + export. (Small; immediately kills the manual ritual.)
 - **7c — Monthly billing:** propose/confirm flow, T1–T4 emails, Stripe invoices + autopay + ACH, Phase 6 QBO hookup, credits/fees.
-- **7d — Parent surface & package integration:** parent schedule/billing pages, reschedule requests, `enrollment_addons` draw-down, C3 widget.
+- **7d — Parent surface & package integration:** parent schedule/billing pages, reschedule requests **incl. pick-from-offered-slots (§8)**, `enrollment_addons` draw-down, C3 widget.
 - **7e — Intake & agreements (§11–§12):** lead intake + onboarding pipeline, in-portal policy agreements. Independent of 7a–7d; can be built in parallel or pulled forward (it replaces the OM's pending-students spreadsheet and Google Forms today, even before scheduling moves).
 
 7a→7b delivers value even before billing changes; 7c is the big OM win; 7d closes the loop. Migration: OM enters current tutors, families, and engagements by hand (small N); first proposed month runs in parallel with one screenshot email as a safety net, then screenshots stop.

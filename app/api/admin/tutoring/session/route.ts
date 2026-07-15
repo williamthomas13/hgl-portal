@@ -155,18 +155,17 @@ export async function POST(req: Request) {
       await enqueueGcalSync(replacement.id, `reschedule (${notice})`)
       if (notice === 'late') await enqueueGcalSync(original.id, 'late reschedule — XCL original')
       const wasConfirmed = original.status === 'confirmed'
-      after(() => {
-        processGcalQueue()
-        // T3 (§6.5): confirmed-session changes notify the family + tutor.
-        if (wasConfirmed) {
-          sendScheduleChangeNotices({
-            sessionId: original.id,
-            kind: 'reschedule',
-            notice,
-            replacementId: replacement.id,
-          })
-        }
-      })
+      // after() callbacks must RETURN their promises or the work dies with
+      // the frozen lambda. T3 (§6.5): confirmed-session changes notify the
+      // family + tutor.
+      after(() =>
+        Promise.allSettled([
+          processGcalQueue(),
+          ...(wasConfirmed
+            ? [sendScheduleChangeNotices({ sessionId: original.id, kind: 'reschedule', notice, replacementId: replacement.id })]
+            : []),
+        ])
+      )
       return NextResponse.json({ ok: true, replacementId: replacement.id, notice })
     }
 
@@ -198,10 +197,12 @@ export async function POST(req: Request) {
       await enqueueGcalSync(session.id, body.outcome === 'no_show' ? 'no-show — XCL' : 'forfeit — XCL')
       const outcome = body.outcome
       const wasLive = before?.status === 'confirmed' || before?.status === 'completed'
-      after(() => {
-        processGcalQueue()
-        if (wasLive) sendScheduleChangeNotices({ sessionId: session.id, kind: outcome })
-      })
+      after(() =>
+        Promise.allSettled([
+          processGcalQueue(),
+          ...(wasLive ? [sendScheduleChangeNotices({ sessionId: session.id, kind: outcome })] : []),
+        ])
+      )
       return NextResponse.json({ ok: true })
     }
 

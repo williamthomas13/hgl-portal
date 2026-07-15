@@ -26,10 +26,11 @@ export async function POST(req: Request) {
   if (body.action === 'confirm') {
     const res = await confirmInvoice(invoiceId, 'parent')
     if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
-    after(() => {
-      after7cConfirm(invoiceId)
-      issueOrCharge(invoiceId).catch((e) => console.error('issueOrCharge after confirm failed:', e))
-    })
+    // Return the promise: after() only keeps the lambda alive for work it
+    // can see. after7cConfirm covers the gcal drain AND issueOrCharge (the
+    // registered follow-up) — importing tutoring-stripe here registers it.
+    void issueOrCharge
+    after(() => after7cConfirm(invoiceId))
     return NextResponse.json({ ok: true })
   }
 

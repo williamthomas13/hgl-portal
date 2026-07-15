@@ -114,10 +114,9 @@ export async function POST(req: Request) {
       const res = await confirmInvoice(invoice.id, 'staff')
       if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
       const invoiceId = invoice.id
-      after(() => {
-        after7cConfirm(invoiceId)
-        issueOrCharge(invoiceId).catch((e) => console.error('issueOrCharge after staff confirm failed:', e))
-      })
+      // Returned promise keeps the lambda alive; after7cConfirm covers the
+      // gcal drain + the registered issueOrCharge follow-up.
+      after(() => after7cConfirm(invoiceId))
       return NextResponse.json({ ok: true })
     }
 

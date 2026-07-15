@@ -478,7 +478,5 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
 
 // Auto-confirmed proposals flow straight into collection (no import cycle:
 // tutoring-billing exposes the hook, we register the implementation).
-registerConfirmFollowUp((invoiceId) => {
-  issueOrCharge(invoiceId).catch((e) => console.error('issueOrCharge after auto-confirm failed:', e))
-})
+registerConfirmFollowUp((invoiceId) => issueOrCharge(invoiceId))
 /* eslint-enable @typescript-eslint/no-explicit-any */
