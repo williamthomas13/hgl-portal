@@ -21,7 +21,7 @@ import { ADMIN_EMAIL } from './lifecycle'
 //   proposed                → nothing (events exist only once confirmed)
 //   confirmed / completed   → create the event, or patch it into shape
 //   forfeited / no_show     → keep the event, title prefixed "XCL- " (the
-//                             OM's long-standing calendar convention — the
+//                             Ops Director's long-standing calendar convention — the
 //                             slot stays visible because the tutor is paid)
 //   rescheduled             → the reschedule route moves gcal_event_id to the
 //                             replacement session; if one is still attached

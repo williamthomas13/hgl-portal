@@ -18,7 +18,7 @@ import {
 // New engagement wizard (Phase 7a §5): student → subject → tutor (filtered by
 // subject, matching notes visible) → weekly slots against the tutor's
 // freebusy → rate (defaults from subject) → funding → location → start date.
-// Freebusy conflicts WARN, never block — the OM's judgment wins. Reuses
+// Freebusy conflicts WARN, never block — the Ops Director's judgment wins. Reuses
 // existing student/family records; creating new families/students stays on
 // the main admin page (never duplicate a family that came through a class).
 
@@ -49,7 +49,9 @@ export default function EngagementWizard({
   const [location, setLocation] = useState('')
   const [startDate, setStartDate] = useState('')
   const [notes, setNotes] = useState('')
-  const [busyBlocks, setBusyBlocks] = useState<{ start: string; end: string }[] | null>(null)
+  const [busyBlocks, setBusyBlocks] = useState<
+    { start: string; end: string; title: string | null; private: boolean }[] | null
+  >(null)
   const [busyUnavailable, setBusyUnavailable] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -129,19 +131,24 @@ export default function EngagementWizard({
       .catch(() => setBusyUnavailable(true))
   }, [tutorId])
 
-  // Conflict preview: materialize the proposed slots over the freebusy window
-  // and intersect with busy blocks.
+  // Conflict preview: materialize the proposed slots over the two-week window
+  // and intersect with the tutor's calendar events — each hit names the
+  // conflicting event (or "busy (private event)" when Google says so).
   const conflicts = useMemo(() => {
     if (!tutor || !busyBlocks || slots.length === 0) return []
     const today = new Date().toLocaleDateString('en-CA', { timeZone: tutor.timezone })
     const to = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString('en-CA', { timeZone: tutor.timezone })
     const from = startDate && startDate > today ? startDate : today
     const occurrences = generateOccurrences(slots, from, to, tutor.timezone)
-    return occurrences.filter((o) =>
-      busyBlocks.some(
-        (b) => o.startsAt.getTime() < new Date(b.end).getTime() && o.endsAt.getTime() > new Date(b.start).getTime()
-      )
-    )
+    const out: { occ: (typeof occurrences)[number]; block: NonNullable<typeof busyBlocks>[number] }[] = []
+    for (const occ of occurrences) {
+      for (const block of busyBlocks) {
+        if (occ.startsAt.getTime() < new Date(block.end).getTime() && occ.endsAt.getTime() > new Date(block.start).getTime()) {
+          out.push({ occ, block })
+        }
+      }
+    }
+    return out
   }, [tutor, busyBlocks, slots, startDate])
 
   function addSlot() {
@@ -176,7 +183,7 @@ export default function EngagementWizard({
       setMessage('Error: ' + json.error)
     } else {
       setMessage(
-        `Engagement created — ${json.sessionsCreated} session${json.sessionsCreated === 1 ? '' : 's'} scheduled` +
+        `Student schedule created — ${json.sessionsCreated} session${json.sessionsCreated === 1 ? '' : 's'} scheduled` +
           ` and queued for the tutor's Google Calendar.`
       )
       setStudentId('')
@@ -312,11 +319,16 @@ export default function EngagementWizard({
               ⚠ {conflicts.length} conflict{conflicts.length === 1 ? '' : 's'} with {tutor?.name ?? 'the tutor'}
               &apos;s calendar in the next two weeks
             </span>{' '}
-            (busy per their Google Calendar — you can still schedule; your call):
+            (you can still schedule — your call):
             <ul className="mt-1">
               {conflicts.slice(0, 5).map((c, i) => (
                 <li key={i}>
-                  {fmtDay(c.startsAt.toISOString(), tutor!.timezone)} {fmtTime(c.startsAt.toISOString(), tutor!.timezone)}
+                  {fmtDay(c.occ.startsAt.toISOString(), tutor!.timezone)}{' '}
+                  {fmtTime(c.occ.startsAt.toISOString(), tutor!.timezone)} — conflicts with:{' '}
+                  <span className="font-semibold">
+                    {c.block.title ?? (c.block.private ? 'busy (private event)' : 'busy')}
+                  </span>
+                  , {fmtTime(c.block.start, tutor!.timezone)}–{fmtTime(c.block.end, tutor!.timezone)}
                 </li>
               ))}
               {conflicts.length > 5 && <li>… and {conflicts.length - 5} more</li>}
@@ -407,7 +419,7 @@ export default function EngagementWizard({
         disabled={!ready || saving}
         className="bg-hgl-slate text-white py-2 px-6 rounded hover:opacity-90 disabled:opacity-50"
       >
-        Create engagement{slots.length > 0 ? ' + schedule sessions' : ''}
+        Create student schedule{slots.length > 0 ? ' + sessions' : ''}
       </button>
 
       {message && (

@@ -283,11 +283,64 @@ export async function getGcalEvent(
 }
 
 // ---------------------------------------------------------------------------
-// Free/busy (spec §4: busy blocks shade the OM's slot picker; conflicts warn,
+// Free/busy (spec §4: busy blocks shade the Ops Director's slot picker; conflicts warn,
 // never block)
 // ---------------------------------------------------------------------------
 
 export type BusyBlock = { start: string; end: string }
+
+/** A busy block that knows what it is. `title` is null when the event is
+ *  marked private/confidential — render those as "busy (private event)". */
+export type TitledBusyBlock = BusyBlock & { title: string | null; private: boolean }
+
+/**
+ * Busy blocks WITH titles via events.list (same delegation; calendar.events
+ * already covers reads). Mirrors freebusy semantics: skips cancelled events
+ * and ones marked "free" (transparent). All-day events come back as date-only
+ * strings — surfaced as full-day blocks. Google's private-event flag is
+ * respected even though impersonation could read the details: the title is
+ * withheld and `private` set.
+ */
+export async function listBusyEvents(
+  key: ServiceAccountKey,
+  tutorEmail: string,
+  calendarId: string | null,
+  timeMinIso: string,
+  timeMaxIso: string
+): Promise<TitledBusyBlock[]> {
+  const cal = encodeURIComponent(calendarId || 'primary')
+  const params = new URLSearchParams({
+    timeMin: timeMinIso,
+    timeMax: timeMaxIso,
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '250',
+    fields: 'items(status,transparency,visibility,summary,start,end)',
+  })
+  const res = await gcalFetch(tutorEmail, key, `/calendars/${cal}/events?${params}`)
+  await expectOk(res, 'events list')
+  const json = (await res.json()) as {
+    items?: {
+      status?: string
+      transparency?: string
+      visibility?: string
+      summary?: string
+      start?: { dateTime?: string; date?: string }
+      end?: { dateTime?: string; date?: string }
+    }[]
+  }
+  const blocks: TitledBusyBlock[] = []
+  for (const item of json.items ?? []) {
+    if (item.status === 'cancelled') continue
+    if (item.transparency === 'transparent') continue // marked "free"
+    const start = item.start?.dateTime ?? (item.start?.date ? `${item.start.date}T00:00:00` : null)
+    const end = item.end?.dateTime ?? (item.end?.date ? `${item.end.date}T00:00:00` : null)
+    if (!start || !end) continue
+    const isPrivate = item.visibility === 'private' || item.visibility === 'confidential'
+    blocks.push({ start, end, title: isPrivate ? null : (item.summary ?? null), private: isPrivate })
+  }
+  return blocks
+}
 
 export async function freeBusy(
   key: ServiceAccountKey,

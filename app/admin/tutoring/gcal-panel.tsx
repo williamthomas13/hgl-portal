@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
+import { ConfirmAction } from './confirm'
 
 // Google Calendar connection panel (Phase 7a §4). Admin pastes the service-
 // account JSON key (encrypted server-side; never readable back out); staff
@@ -77,7 +78,6 @@ export default function GcalPanel() {
   }
 
   async function disconnect() {
-    if (!confirm('Disconnect Google Calendar? Scheduling keeps working; calendar pushes queue up until reconnected.')) return
     setBusy(true)
     await fetch('/api/gcal/disconnect', { method: 'POST' })
     setBusy(false)
@@ -149,13 +149,14 @@ export default function GcalPanel() {
               {connected ? 'Replace key' : 'Connect'}
             </button>
             {connected && (
-              <button
-                onClick={disconnect}
-                disabled={busy}
+              <ConfirmAction
+                label="Disconnect"
+                message="Disconnect? Scheduling keeps working; calendar pushes queue up until reconnected."
+                confirmLabel="Yes, disconnect"
                 className="text-red-600 py-2 px-3 rounded border border-red-200 hover:bg-red-50 disabled:opacity-60"
-              >
-                Disconnect
-              </button>
+                disabled={busy}
+                onConfirm={disconnect}
+              />
             )}
           </div>
         </div>

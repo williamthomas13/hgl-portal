@@ -90,6 +90,8 @@ export function templateMetaFor(
       return { key: 'LOGIN_LINK', role: 'parent' }
     case 'instructor_message':
       return { key: 'IM_INSTRUCTOR_MESSAGE', role: student ? 'student' : 'parent' }
+    case 'T5_TIMECARD_READY': // Phase 7b: tutor pay-period close notice
+      return { key: 'T5_TIMECARD_READY', role: 'instructor' }
     default:
       return { key: emailType.toUpperCase(), role: 'parent' }
   }

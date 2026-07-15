@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
-import { freeBusy, loadGcalConnection, GcalApiError } from '../../../utils/gcal'
+import { freeBusy, listBusyEvents, loadGcalConnection, GcalApiError } from '../../../utils/gcal'
 import { sessionRole } from '../../../utils/staff-gate'
 
-// Busy blocks for the OM's slot picker (§4: "availability read"). Staff-only.
+// Busy blocks for the Ops Director's slot picker (§4: "availability read"). Staff-only.
 // Returns busy ranges from the tutor's self-managed calendar blocking plus
 // their pushed sessions; the UI shades them behind proposed slots. A Google
 // failure degrades to "availability unknown" — conflict checks warn, never
@@ -40,9 +40,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ available: false, reason: 'not_connected', busy: [] })
   }
 
+  // events.list first so the warning can NAME the conflict ("Conflicts with:
+  // Lincoln Swenson @ HGL, 2:30–3:30"); private events keep title null. Plain
+  // freebusy is the fallback — titles degrade, shading survives.
+  try {
+    const busy = await listBusyEvents(conn.key, tutor.email, tutor.google_calendar_id, timeMin, timeMax)
+    return NextResponse.json({ available: true, busy })
+  } catch (e) {
+    const message = e instanceof GcalApiError ? e.message : e instanceof Error ? e.message : String(e)
+    console.error(`events.list failed for tutor ${tutorId}, falling back to freebusy:`, message)
+  }
   try {
     const busy = await freeBusy(conn.key, tutor.email, tutor.google_calendar_id, timeMin, timeMax)
-    return NextResponse.json({ available: true, busy })
+    return NextResponse.json({
+      available: true,
+      busy: busy.map((b) => ({ ...b, title: null, private: false })),
+    })
   } catch (e) {
     const message = e instanceof GcalApiError ? e.message : e instanceof Error ? e.message : String(e)
     console.error(`freebusy failed for tutor ${tutorId}:`, message)

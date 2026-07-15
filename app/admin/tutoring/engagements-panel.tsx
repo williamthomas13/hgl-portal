@@ -2,12 +2,14 @@
 
 import { useState } from 'react'
 import { formatDateShort } from '../../utils/dates'
+import { ConfirmAction } from './confirm'
 import { WEEKDAYS, familyLabel, fmtDay, fmtTime, type Engagement } from './types'
 
-// The "one source of truth per family" view (Phase 7a §5): engagements
-// grouped by family, with weekly slots, next session, funding, and package
-// runway. Full family record (class history, billing prefs editing) deepens
-// in 7c/7d; this is the scheduling-side slice.
+// The "one source of truth per family" view (Phase 7a §5): student schedules
+// (tutoring_engagements rows — UI copy is student-centric per Scarlett's
+// rule, schema names unchanged) grouped by family, with weekly slots, next
+// session, funding, and package runway. Full family record (class history,
+// billing prefs editing) deepens in 7c/7d; this is the scheduling-side slice.
 
 export default function EngagementsPanel({
   engagements,
@@ -51,7 +53,7 @@ export default function EngagementsPanel({
   }
 
   if (engagements.length === 0) {
-    return <p className="text-sm text-gray-500 italic">No engagements yet — create one with the wizard above.</p>
+    return <p className="text-sm text-gray-500 italic">No student schedules yet — set one up with the wizard above.</p>
   }
 
   return (
@@ -121,7 +123,7 @@ export default function EngagementsPanel({
                   {e.start_date && (
                     <span className="text-xs text-gray-400">since {formatDateShort(e.start_date)}</span>
                   )}
-                  <span className="ml-auto flex gap-2 text-xs">
+                  <span className="ml-auto flex gap-2 text-xs items-center">
                     {e.status === 'active' && (
                       <>
                         <button
@@ -132,32 +134,30 @@ export default function EngagementsPanel({
                         >
                           regenerate
                         </button>
-                        <button
-                          disabled={busyId === e.id}
-                          onClick={() => {
-                            if (!confirm('Pause this engagement? Future unbilled sessions are removed (and taken off the Google calendar).')) return
-                            update(e.id, { status: 'paused' }, 'Engagement paused — future sessions removed.')
-                          }}
+                        <ConfirmAction
+                          label="pause"
+                          message="Pause? Future unbilled sessions are removed (and taken off the Google calendar)."
+                          confirmLabel="Yes, pause"
                           className="text-gray-500 underline"
-                        >
-                          pause
-                        </button>
-                        <button
                           disabled={busyId === e.id}
-                          onClick={() => {
-                            if (!confirm('End this engagement? Future unbilled sessions are removed. History is kept.')) return
-                            update(e.id, { status: 'ended', end_date: new Date().toISOString().slice(0, 10) }, 'Engagement ended.')
-                          }}
+                          onConfirm={() => update(e.id, { status: 'paused' }, "Schedule paused — this student's future sessions removed.")}
+                        />
+                        <ConfirmAction
+                          label="end"
+                          message="End this student's schedule? Future unbilled sessions are removed; history is kept."
+                          confirmLabel="Yes, end"
                           className="text-red-600 underline"
-                        >
-                          end
-                        </button>
+                          disabled={busyId === e.id}
+                          onConfirm={() =>
+                            update(e.id, { status: 'ended', end_date: new Date().toISOString().slice(0, 10) }, "Student's schedule ended.")
+                          }
+                        />
                       </>
                     )}
                     {e.status === 'paused' && (
                       <button
                         disabled={busyId === e.id}
-                        onClick={() => update(e.id, { status: 'active', regenerate: true }, 'Engagement resumed — sessions regenerated.')}
+                        onClick={() => update(e.id, { status: 'active', regenerate: true }, 'Schedule resumed — sessions regenerated.')}
                         className="text-green-700 underline"
                       >
                         resume

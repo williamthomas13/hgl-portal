@@ -41,7 +41,7 @@ export default function TutorsPanel({
     <div className="space-y-4 text-sm">
       <p className="text-gray-500">
         Tutors are the same people as instructors — turning tutoring on here makes them schedulable
-        for 1-on-1 engagements. Their Google Workspace address is where sessions get pushed; they
+        for 1-on-1 students. Their Google Workspace address is where sessions get pushed; they
         keep blocking their availability in Google Calendar as always.
       </p>
 
@@ -215,7 +215,7 @@ function TutorEditor({
 
         <div>
           <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Default location (online link or address — prefills new engagements)
+            Default location (online link or address — prefills new student schedules)
           </label>
           <input
             type="text"

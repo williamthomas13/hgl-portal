@@ -66,7 +66,7 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
   const [tutorId, setTutorId] = useState('')
   const [anchor, setAnchor] = useState(() => new Date())
   const [sessions, setSessions] = useState<SessionRow[]>([])
-  const [busy, setBusy] = useState<{ start: string; end: string }[]>([])
+  const [busy, setBusy] = useState<{ start: string; end: string; title: string | null; private: boolean }[]>([])
   const [selected, setSelected] = useState<SessionRow | null>(null)
   const [message, setMessage] = useState('')
 
@@ -130,8 +130,8 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
     setAnchor((a) => new Date(a.getTime() + days * 86_400_000))
   }
 
-  /** Blocks (top/height px) that overlap a given calendar date in tz. */
-  function blocksForDay(dayIso: string, items: { start: string; end: string }[]) {
+  /** Blocks (top/height px + label) that overlap a given calendar date in tz. */
+  function blocksForDay(dayIso: string, items: typeof busy) {
     return items
       .filter((b) => new Date(b.start).toLocaleDateString('en-CA', { timeZone: tz }) === dayIso)
       .map((b) => {
@@ -139,7 +139,8 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
         const e = wallClock(b.end, tz)
         const top = Math.max(0, (s.hour + s.minute / 60 - DAY_START) * HOUR_PX)
         const bottom = Math.min(DAY_END - DAY_START, e.hour + e.minute / 60 - DAY_START) * HOUR_PX
-        return { top, height: Math.max(10, bottom - top) }
+        const label = b.title ?? (b.private ? 'busy (private event)' : 'busy')
+        return { top, height: Math.max(10, bottom - top), label }
       })
       .filter((b) => b.height > 0 && b.top < (DAY_END - DAY_START) * HOUR_PX)
   }
@@ -227,10 +228,14 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
                     {busyBlocks.map((b, i) => (
                       <div
                         key={`busy-${i}`}
-                        className="absolute inset-x-0 bg-gray-200/70"
+                        className="absolute inset-x-0 bg-gray-200/70 overflow-hidden px-1"
                         style={{ top: b.top, height: b.height }}
-                        title="Busy per the tutor's Google Calendar"
-                      />
+                        title={`${b.label} — per the tutor's Google Calendar`}
+                      >
+                        {b.height >= 18 && (
+                          <span className="text-[9px] text-gray-500 leading-tight">{b.label}</span>
+                        )}
+                      </div>
                     ))}
                     {colSessions.map((s) => {
                       const start = wallClock(s.starts_at, tz)
@@ -299,7 +304,7 @@ function SessionDialog({
   tz: string
   onClose: (message?: string) => void
 }) {
-  const [action, setAction] = useState<'none' | 'reschedule' | 'edit_time'>('none')
+  const [action, setAction] = useState<'none' | 'reschedule' | 'edit_time' | 'forfeit' | 'no_show' | 'delete'>('none')
   const [newDate, setNewDate] = useState('')
   const [newTime, setNewTime] = useState('')
   const [duration, setDuration] = useState(session.duration_minutes)
@@ -362,37 +367,71 @@ function SessionDialog({
               Edit time…
             </button>
             <button
-              disabled={busy}
-              onClick={() => {
-                if (!confirm(
-                  autoNotice === 'late'
-                    ? 'Forfeit this session? Inside 24 hours the prepaid slot is forfeited (tutor is still paid).'
-                    : 'Forfeit this session? The family gave notice but no reschedule is wanted — the prepaid slot is forfeited.'
-                )) return
-                call({ action: 'cancel', id: session.id, outcome: 'forfeited', note }, 'Session forfeited — calendar XCL-marked.')
-              }}
+              onClick={() => setAction('forfeit')}
               className="border border-red-200 text-red-700 rounded py-2 hover:bg-red-50"
             >
-              Forfeit
+              Forfeit…
             </button>
             <button
-              disabled={busy}
-              onClick={() => call({ action: 'cancel', id: session.id, outcome: 'no_show', note }, 'Marked no-show — calendar XCL-marked.')}
+              onClick={() => setAction('no_show')}
               className="border border-red-200 text-red-700 rounded py-2 hover:bg-red-50"
             >
-              No-show
+              No-show…
             </button>
           </div>
         )}
 
-        {session.status === 'completed' && (
+        {session.status === 'completed' && action === 'none' && (
           <button
-            disabled={busy}
-            onClick={() => call({ action: 'cancel', id: session.id, outcome: 'no_show', note }, 'Marked no-show.')}
+            onClick={() => setAction('no_show')}
             className="w-full border border-red-200 text-red-700 rounded py-2 hover:bg-red-50"
           >
-            Actually a no-show (correct the auto-completion)
+            Actually a no-show (correct the auto-completion)…
           </button>
+        )}
+
+        {(action === 'forfeit' || action === 'no_show' || action === 'delete') && (
+          <div className="space-y-2 border-t pt-3">
+            <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded p-2">
+              {action === 'forfeit' &&
+                (autoNotice === 'late'
+                  ? 'Forfeit this session? Inside 24 hours the prepaid slot is forfeited (the tutor is still paid), and the calendar event stays, XCL-marked.'
+                  : 'Forfeit this session? The family gave notice but no reschedule is wanted — the prepaid slot is forfeited and the calendar event stays, XCL-marked.')}
+              {action === 'no_show' &&
+                'Mark this session a no-show? Treated like a forfeit (tutor still paid), labeled separately for reporting; the calendar event stays, XCL-marked.'}
+              {action === 'delete' &&
+                'Delete this session entirely? Use this for entry mistakes only — policy changes are reschedules or forfeits. The calendar event is removed.'}
+            </p>
+            {action !== 'delete' && (
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Note (why, who asked)"
+                className="w-full border border-gray-300 rounded p-1.5"
+              />
+            )}
+            <div className="flex gap-2">
+              <button
+                disabled={busy}
+                onClick={() => {
+                  if (action === 'forfeit') {
+                    call({ action: 'cancel', id: session.id, outcome: 'forfeited', note }, 'Session forfeited — calendar XCL-marked.')
+                  } else if (action === 'no_show') {
+                    call({ action: 'cancel', id: session.id, outcome: 'no_show', note }, 'Marked no-show — calendar XCL-marked.')
+                  } else {
+                    call({ action: 'delete', id: session.id }, 'Session deleted.')
+                  }
+                }}
+                className="bg-red-700 text-white py-2 px-4 rounded hover:opacity-90 disabled:opacity-50"
+              >
+                {action === 'forfeit' ? 'Yes, forfeit' : action === 'no_show' ? 'Yes, mark no-show' : 'Yes, delete'}
+              </button>
+              <button onClick={() => setAction('none')} className="py-2 px-4 rounded border border-gray-300 text-gray-600">
+                Back
+              </button>
+            </div>
+          </div>
         )}
 
         {(action === 'reschedule' || action === 'edit_time') && (
@@ -420,7 +459,7 @@ function SessionDialog({
             </div>
             {action === 'reschedule' && (
               <label className="block text-xs text-gray-600">
-                Notice override (emergencies — OM discretion):{' '}
+                Notice override (emergencies — Ops Director discretion):{' '}
                 <select
                   value={noticeOverride}
                   onChange={(e) => setNoticeOverride(e.target.value as '' | 'ok' | 'late')}
@@ -471,16 +510,9 @@ function SessionDialog({
         )}
 
         <div className="flex justify-between border-t pt-3">
-          {upcoming && (
-            <button
-              disabled={busy}
-              onClick={() => {
-                if (!confirm('Delete this session entirely? Use this for OM entry mistakes only — policy changes are reschedules/forfeits.')) return
-                call({ action: 'delete', id: session.id }, 'Session deleted.')
-              }}
-              className="text-red-600 text-xs underline"
-            >
-              Delete (entry mistake)
+          {upcoming && action === 'none' && (
+            <button onClick={() => setAction('delete')} className="text-red-600 text-xs underline">
+              Delete (entry mistake)…
             </button>
           )}
           <button onClick={() => onClose()} className="ml-auto py-2 px-4 rounded border border-gray-300 text-gray-600">

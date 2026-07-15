@@ -16,7 +16,7 @@ import {
 // service-role-only) works in the same request.
 //
 // In 7a sessions are born `confirmed` — the propose/confirm cycle is 7c; the
-// OM entering a schedule here IS the confirmation for now — and each one is
+// Ops Director entering a schedule here IS the confirmation for now — and each one is
 // enqueued for the Google push, drained by after() behind the response.
 
 type CreateBody = {

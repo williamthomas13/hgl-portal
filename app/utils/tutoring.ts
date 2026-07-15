@@ -135,7 +135,7 @@ export function horizonEndIso(tz: string, now: Date = new Date()): string {
 }
 
 /** The signed policy's 24-hour line: ≥24h notice = free reschedule ('ok'),
- *  under it = 'late' ($40/hour fee territory, OM-overridable). */
+ *  under it = 'late' ($40/hour fee territory, Ops-Director-overridable). */
 export function classifyNotice(startsAt: Date, now: Date = new Date()): 'ok' | 'late' {
   return startsAt.getTime() - now.getTime() >= 24 * 3600_000 ? 'ok' : 'late'
 }

@@ -5,14 +5,15 @@ import { supabase } from '../../utils/supabase'
 import { CollapsibleSection } from '../ui'
 import GcalPanel from './gcal-panel'
 import TutorsPanel from './tutors-panel'
+import TimecardsPanel from './timecards-panel'
 import EngagementWizard from './engagement-wizard'
 import EngagementsPanel from './engagements-panel'
 import ScheduleView from './schedule-view'
 import type { Engagement, StudentOption, Subject, Tutor } from './types'
 
-// OM scheduling surface (Phase 7a, docs/PHASE7_SPEC.md §5). Reads run on the
+// Ops Director scheduling surface (Phase 7a, docs/PHASE7_SPEC.md §5). Reads run on the
 // browser client under staff RLS like the rest of /admin; mutations go
-// through /api/admin/tutoring/* and /api/gcal/*. Ship line: the OM schedules
+// through /api/admin/tutoring/* and /api/gcal/*. Ship line: the Ops Director schedules
 // here instead of typing sessions into Google Calendar.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -122,7 +123,8 @@ export default function TutoringAdmin() {
   }, [load, refreshSignal])
 
   const refresh = () => setRefreshSignal((n) => n + 1)
-  const activeCount = engagements.filter((e) => e.status === 'active').length
+  // Student-centric count (Scarlett's rule): distinct students, not rows.
+  const activeStudents = new Set(engagements.filter((e) => e.status === 'active').map((e) => e.student_id)).size
 
   return (
     <div className="min-h-screen bg-gray-50 p-10">
@@ -153,7 +155,7 @@ export default function TutoringAdmin() {
             </CollapsibleSection>
 
             <CollapsibleSection
-              title="New engagement"
+              title="New student schedule"
               subtitle="Student → subject → tutor → weekly slots → rate → go"
               accent="border-hgl-blue"
             >
@@ -167,8 +169,8 @@ export default function TutoringAdmin() {
             </CollapsibleSection>
 
             <CollapsibleSection
-              title="Families & engagements"
-              subtitle={`${activeCount} active engagement${activeCount === 1 ? '' : 's'}`}
+              title="Students"
+              subtitle={`${activeStudents} student${activeStudents === 1 ? '' : 's'} with a regular schedule`}
               defaultOpen
             >
               <EngagementsPanel
@@ -178,6 +180,13 @@ export default function TutoringAdmin() {
                 addonHours={addonHours}
                 onChange={refresh}
               />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Timecards"
+              subtitle="Semi-monthly, hours only — approve, then export for QBO Payroll"
+            >
+              <TimecardsPanel />
             </CollapsibleSection>
 
             <CollapsibleSection title="Tutors" subtitle="Who tutors, their subjects, timezone, and matching notes">

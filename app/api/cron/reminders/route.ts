@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
 import { processGcalQueue } from '../../../utils/gcal-sync'
+import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
 import {
@@ -1165,6 +1166,16 @@ export async function GET(req: Request) {
   if (gcal.synced > 0) counters.gcal_synced = gcal.synced
   if (gcal.failed > 0) counters.gcal_failed = gcal.failed
   if (gcal.deferred > 0) counters.gcal_deferred = gcal.deferred
+
+  // Phase 7b: past sessions auto-complete (tutors only correct exceptions),
+  // then the daily timecard sweep — builds cards for the last closed
+  // semi-monthly period, keeps open ones in step with late corrections, and
+  // sends T5 once per new card. All idempotent.
+  const completed = await autoCompleteSessions()
+  if (completed > 0) counters.sessions_auto_completed = completed
+  const tc = await sweepTimecards()
+  if (tc.created > 0) counters.timecards_created = tc.created
+  if (tc.t5Sent > 0) counters.timecards_t5_sent = tc.t5Sent
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })
 }

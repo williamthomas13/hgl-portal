@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '../utils/supabase-server'
 import ParentView from './parent-view'
 import CounselorView from './counselor-view'
 import InstructorView from './instructor-view'
+import TutorView from './tutor-view'
 import SignOutButton from './signout-button'
 
 // The Phase 4 portal (docs/PHASE4_SPEC.md §3–§5). One route, three views —
@@ -19,11 +20,12 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v
 }
 
-type ViewName = 'parent' | 'counselor' | 'instructor'
+type ViewName = 'parent' | 'counselor' | 'instructor' | 'tutor'
 const VIEW_LABELS: Record<ViewName, string> = {
   parent: 'My students',
   counselor: 'My school',
   instructor: 'My classes',
+  tutor: 'My tutoring',
 }
 
 export default async function PortalPage({ searchParams }: { searchParams: SearchParams }) {
@@ -39,7 +41,7 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
   // Which hats does this email wear? All four lookups run as the signed-in
   // user. Each is filtered by the email linkage explicitly — staff can read
   // every row under RLS, so "any visible row" would misdetect roles for them.
-  const [families, counselorRows, taughtClasses, profile] = await Promise.all([
+  const [families, counselorRows, taughtClasses, tutorRows, profile] = await Promise.all([
     supabase.from('families').select('id').ilike('parent_email', email).limit(1),
     supabase
       .from('school_affiliations')
@@ -52,11 +54,14 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
       .select('id, instructors!inner(email)')
       .ilike('instructors.email', email)
       .limit(1),
+    // Phase 7b: tutors are instructors with tutoring switched on.
+    supabase.from('instructors').select('id').ilike('email', email).eq('tutoring_active', true).limit(1),
     supabase.from('profiles').select('role').eq('id', user.id).single(),
   ])
 
   const views: ViewName[] = []
   if (taughtClasses.data?.length) views.push('instructor')
+  if (tutorRows.data?.length) views.push('tutor')
   if (counselorRows.data?.length) views.push('counselor')
   if (families.data?.length) views.push('parent')
   const isStaff = profile.data?.role === 'admin' || profile.data?.role === 'manager'
@@ -116,6 +121,7 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
         )}
         {active === 'counselor' && <CounselorView supabase={supabase} email={email} />}
         {active === 'instructor' && <InstructorView supabase={supabase} email={email} />}
+        {active === 'tutor' && <TutorView supabase={supabase} email={email} />}
         {!active && (
           <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-8 text-center">
             <h2 className="text-lg font-bold text-hgl-slate mb-2">Nothing here yet</h2>

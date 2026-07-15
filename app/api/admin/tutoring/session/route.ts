@@ -7,7 +7,7 @@ import { classifyNotice } from '../../../../utils/tutoring'
 
 // Session actions (Phase 7a §5): one-off create, time edit, reschedule
 // (creates the replacement; auto-classifies ok/late by the 24h line,
-// OM-overridable), cancel → forfeit/no-show, and guarded delete. The month
+// Ops-Director-overridable), cancel → forfeit/no-show, and guarded delete. The month
 // is prepaid (7c) so there is no cancel-with-refund: changes are reschedules
 // or forfeits (spec §3). Every mutation enqueues a Google push; after()
 // drains behind the response.

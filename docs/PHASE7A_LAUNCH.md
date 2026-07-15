@@ -83,7 +83,7 @@ propagating — the key is saved and pushes start once Google catches up.
 
 ## 6. Migration-period notes
 
-- The OM keeps her workflow until 7b/7c: this phase only replaces *typing
+- The Ops Director keeps her workflow until 7b/7c: this phase only replaces *typing
   sessions into Google Calendar*. Billing/timecards still run manually off
   the calendar — which now mirrors the portal exactly.
 - Deleting a Google event by hand does NOT cancel the session in the portal
