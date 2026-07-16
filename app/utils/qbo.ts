@@ -286,9 +286,14 @@ export async function getAccessToken(): Promise<{ token: string; realmId: string
 
 export class QboApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  /** Intuit's per-request transaction id (intuit_tid response header) — the
+   *  handle Intuit support uses to locate a request in their logs. Captured
+   *  on failures so it lands in qbo_sync_log.last_error for support tickets. */
+  intuitTid: string | null
+  constructor(status: number, message: string, intuitTid: string | null = null) {
     super(message)
     this.status = status
+    this.intuitTid = intuitTid
   }
 }
 
@@ -307,7 +312,13 @@ async function qboRequest<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
   if (!res.ok) {
-    throw new QboApiError(res.status, `QBO API ${res.status} on ${path}: ${(await res.text()).slice(0, 500)}`)
+    const tid = res.headers.get('intuit_tid')
+    const detail = (await res.text()).slice(0, 500)
+    throw new QboApiError(
+      res.status,
+      `QBO API ${res.status} on ${path}${tid ? ` [intuit_tid ${tid}]` : ''}: ${detail}`,
+      tid
+    )
   }
   return (await res.json()) as T
 }
