@@ -62,9 +62,49 @@ export function decryptToken(stored: string): string | null {
 // ---------------------------------------------------------------------------
 
 const OAUTH_SCOPE = 'com.intuit.quickbooks.accounting'
-const TOKEN_ENDPOINT = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
-const REVOKE_ENDPOINT = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke'
 const STATE_MAX_AGE_MS = 10 * 60 * 1000
+
+// ---------------------------------------------------------------------------
+// OAuth endpoints come from Intuit's OpenID discovery document (per their
+// production checklist), cached for a day, with the current well-known values
+// as fallback so a discovery outage can never break token refresh.
+// ---------------------------------------------------------------------------
+
+const FALLBACK_ENDPOINTS = {
+  authorization_endpoint: 'https://appcenter.intuit.com/connect/oauth2',
+  token_endpoint: 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
+  revocation_endpoint: 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke',
+}
+
+type OauthEndpoints = typeof FALLBACK_ENDPOINTS
+
+let discoveryCache: { at: number; endpoints: OauthEndpoints } | null = null
+const DISCOVERY_TTL_MS = 24 * 60 * 60 * 1000
+
+async function oauthEndpoints(): Promise<OauthEndpoints> {
+  if (discoveryCache && Date.now() - discoveryCache.at < DISCOVERY_TTL_MS) {
+    return discoveryCache.endpoints
+  }
+  const url =
+    qboEnvironment() === 'production'
+      ? 'https://developer.api.intuit.com/.well-known/openid_configuration'
+      : 'https://developer.api.intuit.com/.well-known/openid_sandbox_configuration'
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } })
+    if (!res.ok) throw new Error(`discovery ${res.status}`)
+    const doc = (await res.json()) as Partial<OauthEndpoints>
+    const endpoints: OauthEndpoints = {
+      authorization_endpoint: doc.authorization_endpoint ?? FALLBACK_ENDPOINTS.authorization_endpoint,
+      token_endpoint: doc.token_endpoint ?? FALLBACK_ENDPOINTS.token_endpoint,
+      revocation_endpoint: doc.revocation_endpoint ?? FALLBACK_ENDPOINTS.revocation_endpoint,
+    }
+    discoveryCache = { at: Date.now(), endpoints }
+    return endpoints
+  } catch (e) {
+    console.error('Intuit discovery document fetch failed — using fallback endpoints:', e)
+    return FALLBACK_ENDPOINTS
+  }
+}
 
 function redirectUri() {
   return (
@@ -94,7 +134,7 @@ export function verifyOauthState(state: string): boolean {
   return expected.length === given.length && timingSafeEqual(expected, given)
 }
 
-export function authorizeUrl(): string {
+export async function authorizeUrl(): Promise<string> {
   const params = new URLSearchParams({
     client_id: process.env.QBO_CLIENT_ID ?? '',
     response_type: 'code',
@@ -102,7 +142,7 @@ export function authorizeUrl(): string {
     redirect_uri: redirectUri(),
     state: oauthState(),
   })
-  return `https://appcenter.intuit.com/connect/oauth2?${params}`
+  return `${(await oauthEndpoints()).authorization_endpoint}?${params}`
 }
 
 function basicAuth() {
@@ -117,7 +157,7 @@ type TokenResponse = {
 }
 
 async function tokenRequest(body: URLSearchParams): Promise<TokenResponse> {
-  const res = await fetch(TOKEN_ENDPOINT, {
+  const res = await fetch((await oauthEndpoints()).token_endpoint, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${basicAuth()}`,
@@ -191,7 +231,7 @@ export async function disconnect() {
   const refresh = decryptToken(conn.refresh_token_enc)
   if (refresh) {
     // Best-effort revoke at Intuit; local status is authoritative either way.
-    await fetch(REVOKE_ENDPOINT, {
+    await fetch((await oauthEndpoints()).revocation_endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Basic ${basicAuth()}`,

@@ -13,5 +13,5 @@ export async function GET() {
       { status: 500 }
     )
   }
-  return NextResponse.redirect(authorizeUrl())
+  return NextResponse.redirect(await authorizeUrl())
 }
