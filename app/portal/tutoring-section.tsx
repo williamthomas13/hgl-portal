@@ -207,6 +207,9 @@ export default async function TutoringSection({ email }: { email: string }) {
                     sessionId={s.id}
                     startsAt={s.starts_at}
                     alreadyRequested={Boolean(s.reschedule_requested_at)}
+                    timezone={tz}
+                    contactEmail={contact.email}
+                    contactPhone={contact.phone}
                   />
                 </span>
               </li>

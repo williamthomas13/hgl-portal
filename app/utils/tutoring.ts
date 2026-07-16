@@ -29,6 +29,34 @@ export function validRecurrence(value: unknown): value is RecurrenceSlot[] {
   )
 }
 
+/** One weekly OFFER WINDOW (spec v1.4 §8, pick-from-offered-slots): a span of
+ *  the tutor's local wall clock the Ops Director has pre-approved for parent
+ *  self-serve reschedules. Same weekday convention as RecurrenceSlot. */
+export type OfferWindow = {
+  weekday: number // 1 = Monday … 7 = Sunday
+  start_time: string // 'HH:MM'
+  end_time: string // 'HH:MM', exclusive; must be after start_time
+}
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
+
+export function validOfferWindows(value: unknown): value is OfferWindow[] {
+  if (!Array.isArray(value)) return false
+  return value.every(
+    (w) =>
+      w &&
+      typeof w === 'object' &&
+      Number.isInteger(w.weekday) &&
+      w.weekday >= 1 &&
+      w.weekday <= 7 &&
+      typeof w.start_time === 'string' &&
+      HHMM.test(w.start_time) &&
+      typeof w.end_time === 'string' &&
+      HHMM.test(w.end_time) &&
+      w.end_time > w.start_time // HH:MM sorts lexicographically
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Wall-clock-in-timezone → UTC instant (no library; two-pass offset
 // resolution handles DST boundaries).
@@ -80,12 +108,12 @@ export function zonedToUtc(dateIso: string, timeHHMM: string, tz: string): Date 
 // ---------------------------------------------------------------------------
 
 /** ISO weekday (1=Mon…7=Sun) of a YYYY-MM-DD calendar date. */
-function isoWeekday(dateIso: string): number {
+export function isoWeekday(dateIso: string): number {
   const dow = new Date(dateIso + 'T12:00:00Z').getUTCDay() // 0=Sun
   return dow === 0 ? 7 : dow
 }
 
-function addDaysIso(dateIso: string, days: number): string {
+export function addDaysIso(dateIso: string, days: number): string {
   const d = new Date(dateIso + 'T12:00:00Z')
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)

@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { TimezoneSelect } from '../ui'
-import type { Subject, Tutor } from './types'
+import { WEEKDAYS } from './types'
+import type { OfferWindowUI, Subject, Tutor } from './types'
 
 // Tutor management (Phase 7a §2/§3): tutors ARE instructors — this panel
 // flips the tutoring flag on an instructors row and fills in the tutoring
@@ -49,7 +50,7 @@ export default function TutorsPanel({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
-              {['Tutor', 'Subjects', 'Timezone', 'Default location', 'Matching notes', ''].map((h) => (
+              {['Tutor', 'Subjects', 'Timezone', 'Offer windows', 'Default location', 'Matching notes', ''].map((h) => (
                 <th key={h} className="px-3 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -70,6 +71,15 @@ export default function TutorsPanel({
                   {t.subjects.length ? t.subjects.join(', ') : <span className="italic text-gray-400">none set</span>}
                 </td>
                 <td className="px-3 py-2 text-gray-600">{t.timezone}</td>
+                <td className="px-3 py-2 text-gray-600 max-w-44">
+                  {(t.offer_windows ?? []).length > 0 ? (
+                    <span className="text-xs">
+                      {t.offer_windows.map((w) => `${WEEKDAYS[w.weekday - 1]} ${w.start_time}–${w.end_time}`).join(' · ')}
+                    </span>
+                  ) : (
+                    <span className="italic text-gray-400 text-xs">session hours ±2h (default)</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-gray-600 max-w-40 truncate">{t.default_location ?? '—'}</td>
                 <td className="px-3 py-2 text-gray-600 max-w-56">
                   <span className="line-clamp-2">{notes[t.id] || <span className="italic text-gray-400">—</span>}</span>
@@ -135,11 +145,16 @@ function TutorEditor({
   const [timezone, setTimezone] = useState(tutor.timezone)
   const [calendarId, setCalendarId] = useState(tutor.google_calendar_id ?? '')
   const [location, setLocation] = useState(tutor.default_location ?? '')
+  const [windows, setWindows] = useState<OfferWindowUI[]>(tutor.offer_windows ?? [])
   const [notes, setNotes] = useState(initialNotes)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   async function save() {
+    if (windows.some((w) => !w.start_time || !w.end_time || w.end_time <= w.start_time)) {
+      setError('Each offer window needs a start time before its end time.')
+      return
+    }
     setSaving(true)
     setError('')
     const { error: e1 } = await supabase
@@ -149,6 +164,7 @@ function TutorEditor({
         timezone: timezone || 'America/Denver',
         google_calendar_id: calendarId.trim() || null,
         default_location: location.trim() || null,
+        offer_windows: windows,
       })
       .eq('id', tutor.id)
     const { error: e2 } = await supabase
@@ -211,6 +227,67 @@ function TutorEditor({
             placeholder={tutor.email}
             className="w-full border border-gray-300 rounded-md p-2"
           />
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">
+            Offer windows — when the portal may offer this tutor&apos;s open times to families
+            rescheduling a session themselves (their local time). Leave empty to default to their
+            existing session hours ±2 hours. Families only ever see the 2–3 offered times, never
+            the calendar.
+          </label>
+          <div className="space-y-1.5">
+            {windows.map((w, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <select
+                  value={w.weekday}
+                  onChange={(e) =>
+                    setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, weekday: Number(e.target.value) } : x)))
+                  }
+                  className="border border-gray-300 rounded p-1.5 text-sm"
+                >
+                  {WEEKDAYS.map((d, di) => (
+                    <option key={d} value={di + 1}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="time"
+                  value={w.start_time}
+                  onChange={(e) =>
+                    setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, start_time: e.target.value } : x)))
+                  }
+                  className="border border-gray-300 rounded p-1.5 text-sm"
+                />
+                <span className="text-gray-400 text-sm">to</span>
+                <input
+                  type="time"
+                  value={w.end_time}
+                  onChange={(e) =>
+                    setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, end_time: e.target.value } : x)))
+                  }
+                  className="border border-gray-300 rounded p-1.5 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setWindows((ws) => ws.filter((_, j) => j !== i))}
+                  className="text-xs text-gray-500 underline"
+                >
+                  remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setWindows((ws) => [...ws, { weekday: 1, start_time: '15:00', end_time: '19:00' }])
+              }
+              className="text-xs text-hgl-blue underline"
+            >
+              + add window
+            </button>
+          </div>
         </div>
 
         <div>

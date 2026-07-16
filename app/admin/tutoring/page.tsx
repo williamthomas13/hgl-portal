@@ -10,6 +10,7 @@ import InvoicesPanel from './invoices-panel'
 import EngagementWizard from './engagement-wizard'
 import EngagementsPanel from './engagements-panel'
 import ScheduleView from './schedule-view'
+import ActivityFeed from './activity-feed'
 import type { Engagement, StudentOption, Subject, Tutor } from './types'
 
 // Ops Director scheduling surface (Phase 7a, docs/PHASE7_SPEC.md §5). Reads run on the
@@ -39,7 +40,7 @@ export default function TutoringAdmin() {
     const [tutorsRes, subjectsRes, studentsRes, engagementsRes, notesRes] = await Promise.all([
       supabase
         .from('instructors')
-        .select('id, email, name, tutoring_active, subjects, timezone, google_calendar_id, default_location')
+        .select('id, email, name, tutoring_active, subjects, timezone, google_calendar_id, default_location, offer_windows')
         .order('name'),
       supabase.from('subjects').select('*').order('category').order('name'),
       supabase
@@ -153,6 +154,14 @@ export default function TutoringAdmin() {
               defaultOpen
             >
               <ScheduleView tutors={tutors} refreshSignal={refreshSignal} />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Recent parent activity"
+              subtitle="Reschedules families completed themselves in the portal — nothing happens invisibly"
+              defaultOpen
+            >
+              <ActivityFeed refreshSignal={refreshSignal} />
             </CollapsibleSection>
 
             <CollapsibleSection

@@ -8,6 +8,14 @@ export type Subject = {
   active: boolean
 }
 
+/** Weekly window the portal may offer parents for self-serve reschedules
+ *  (spec v1.4 §8) — tutor's local wall clock, weekday 1=Mon…7=Sun. */
+export type OfferWindowUI = {
+  weekday: number
+  start_time: string // 'HH:MM'
+  end_time: string // 'HH:MM'
+}
+
 export type Tutor = {
   id: string
   email: string
@@ -17,6 +25,7 @@ export type Tutor = {
   timezone: string
   google_calendar_id: string | null
   default_location: string | null
+  offer_windows: OfferWindowUI[]
 }
 
 export type FamilyRef = {
