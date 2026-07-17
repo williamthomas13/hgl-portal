@@ -334,8 +334,8 @@ We don't have that information confirmed just yet, but we'll write you again whe
 
 Are you still here? You are? Okay, here are a few regular FAQs, just for you:
 
-**I didn't receive the diagnostic test link or information. What should I do?**
-Actually we emailed this information to you very recently. Search your inbox and spam folders for an email titled "Important diagnostic test information."
+**What if I didn't get the diagnostic test information?**
+No problem — you can get to it right here: [button:Take the diagnostic test]({synapGroupLink}). It's due {diagnosticDueDate}, the day before your first class. (It also went to your inbox, so it's worth a search of your spam folder for next time.)
 
 **What is the 30-minute strategy session? And when can I schedule it?**
 Each student receives one strategy session with enrollment, during which the instructor will help you craft an individualized study and review plan, build a perfect test-day mindset, understand your diagnostic score report, or go over day-of test strategies.

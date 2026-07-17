@@ -26,7 +26,7 @@ export default async function AgreementPage({ params }: { params: Promise<{ toke
 
   const notFound = (
     <PublicNoticeCard title="We couldn't open that link">
-      The link may be out of date. Email {contact.email} or call {contact.phone} and we&apos;ll
+      The link may be out of date. Email {contact.email}{' or call '} {contact.phone}{' and '} we&apos;ll
       send you a fresh one.
     </PublicNoticeCard>
   )
@@ -51,7 +51,7 @@ export default async function AgreementPage({ params }: { params: Promise<{ toke
     return (
       <PublicNoticeCard title="Nothing to sign right now">
         There&apos;s no policy awaiting your acceptance. If you were expecting one, email{' '}
-        {contact.email} or call {contact.phone}.
+        {contact.email}{' or call '} {contact.phone}.
       </PublicNoticeCard>
     )
   }
@@ -102,7 +102,7 @@ export default async function AgreementPage({ params }: { params: Promise<{ toke
           <a href={`mailto:${contact.email}`} className="text-hgl-blue underline">
             {contact.email}
           </a>{' '}
-          or give us a call at <strong>{contact.phone}</strong> — we&apos;re happy to walk through
+          or give us a call at <strong>{contact.phone}</strong>{' — '}we&apos;re happy to walk through
           them before you accept.
         </div>
       </div>

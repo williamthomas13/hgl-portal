@@ -26,7 +26,7 @@ export default async function AutopayPage({
   if (!familyId) {
     return (
       <PublicNoticeCard title="We couldn't open that link">
-        The link may be out of date. Email {contact.email} or call {contact.phone} and we&apos;ll set
+        The link may be out of date. Email {contact.email}{' or call '} {contact.phone}{' and '} we&apos;ll set
         up autopay for you.
       </PublicNoticeCard>
     )
@@ -40,7 +40,7 @@ export default async function AutopayPage({
   if (!family) {
     return (
       <PublicNoticeCard title="We couldn't open that link">
-        Email {contact.email} or call {contact.phone} and we&apos;ll take care of it.
+        Email {contact.email}{' or call '} {contact.phone}{' and '} we&apos;ll take care of it.
       </PublicNoticeCard>
     )
   }

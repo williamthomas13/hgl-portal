@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     if (body.action === 'create') {
       const patch = pickLeadFields(body as Record<string, unknown>)
       if (!patch.contact_name && !patch.contact_email && !patch.student_name) {
-        return NextResponse.json({ error: 'Give the lead at least a name or an email.' }, { status: 400 })
+        return NextResponse.json({ error: 'Give the prospective student at least a name or an email.' }, { status: 400 })
       }
       const { data, error } = await supabase
         .from('leads')
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
         .maybeSingle()
       if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
       if (!lead.contact_email) {
-        return NextResponse.json({ error: 'The lead needs a contact email first.' }, { status: 400 })
+        return NextResponse.json({ error: 'They need a contact email first.' }, { status: 400 })
       }
       const contact = await loadContactInfo()
       const email = t7IntakeRequestEmail({
@@ -154,10 +154,10 @@ export async function POST(req: Request) {
         .maybeSingle()
       if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
       if (!lead.contact_email) {
-        return NextResponse.json({ error: 'The lead needs a contact email first.' }, { status: 400 })
+        return NextResponse.json({ error: 'They need a contact email first.' }, { status: 400 })
       }
       if (!lead.student_name?.trim()) {
-        return NextResponse.json({ error: 'The lead needs a student name first.' }, { status: 400 })
+        return NextResponse.json({ error: 'They need a student name first.' }, { status: 400 })
       }
 
       const email = lead.contact_email.trim().toLowerCase()

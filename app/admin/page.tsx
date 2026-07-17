@@ -998,7 +998,7 @@ export default function AdminDashboard() {
               href="/admin/leads"
               className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
             >
-              Leads
+              Prospective students
             </a>
             <a
               href="/admin/communications"

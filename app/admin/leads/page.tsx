@@ -609,7 +609,7 @@ export default function LeadsAdmin() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-hgl-slate">Leads &amp; intake</h1>
+            <h1 className="text-2xl font-bold text-hgl-slate">Prospective students</h1>
             <p className="text-sm text-gray-500 mt-1">
               Every inquiry in one pipeline — send the intake form, schedule the consult, and
               hand off to scheduling without a spreadsheet.
@@ -629,13 +629,13 @@ export default function LeadsAdmin() {
           <p className="text-sm text-gray-500">Loading…</p>
         ) : (
           <>
-            <CollapsibleSection title="Add a lead" accent="border-hgl-blue">
+            <CollapsibleSection title="Add a prospective student" accent="border-hgl-blue">
               <NewLeadForm onCreated={refresh} />
             </CollapsibleSection>
 
             <CollapsibleSection
               title="Pipeline"
-              subtitle={`${open.length} open lead${open.length === 1 ? '' : 's'}${
+              subtitle={`${open.length} open prospective student${open.length === 1 ? '' : 's'}${
                 staleCount > 0 ? ` · ${staleCount} untouched for ${STALE_DAYS}+ days` : ''
               }`}
               defaultOpen
@@ -646,10 +646,10 @@ export default function LeadsAdmin() {
                   checked={showClosed}
                   onChange={(e) => setShowClosed(e.target.checked)}
                 />
-                Show won &amp; lost leads
+                Show won &amp; lost
               </label>
               {open.length === 0 && !showClosed && (
-                <p className="text-sm text-gray-500 italic">No open leads — nice and quiet.</p>
+                <p className="text-sm text-gray-500 italic">No open prospective students — nice and quiet.</p>
               )}
               <div className="space-y-6">
                 {visibleStatuses.map((status) => {
@@ -670,7 +670,7 @@ export default function LeadsAdmin() {
                               onClick={() => setExpanded(expanded === lead.id ? null : lead.id)}
                             >
                               <span className="font-semibold text-hgl-slate">
-                                {lead.student_name || lead.contact_name || lead.contact_email || 'Unnamed lead'}
+                                {lead.student_name || lead.contact_name || lead.contact_email || 'Unnamed prospective student'}
                               </span>
                               {lead.student_name && lead.contact_name && (
                                 <span className="text-sm text-gray-500">{lead.contact_name}</span>
@@ -718,7 +718,7 @@ export default function LeadsAdmin() {
 
             <CollapsibleSection
               title="Offers"
-              subtitle="Promotions that can be attached to a lead — none active at launch"
+              subtitle="Promotions that can be attached to a prospective student — none active at launch"
             >
               <OffersPanel offers={offers} onChange={refresh} />
             </CollapsibleSection>

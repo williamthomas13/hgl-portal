@@ -513,6 +513,7 @@ export function synapAccessStudentEmail(ctx: EnrollmentEmailContext): Rendered {
 
 export function faqEmail(ctx: EnrollmentEmailContext, audience: Audience): Rendered {
   const isStudent = audience === 'student'
+  const synap = synapUrl(ctx)
   const examFaq = ctx.examInfo
     ? `NO. You must register for official exams through the
        <a href="${ctx.examInfo.regUrl}">${ctx.examInfo.regLabel}</a>.`
@@ -533,9 +534,11 @@ export function faqEmail(ctx: EnrollmentEmailContext, audience: Audience): Rende
       <p><strong>What's the exact location for the class?</strong><br/>
       We don't have that information confirmed just yet, but we'll write you again when we know!</p>
       <p>Are you still here? You are? Okay, here are a few regular FAQs, just for you:</p>
-      <p><strong>I didn't receive the diagnostic test link or information. What should I do?</strong><br/>
-      Actually we emailed this information to you very recently. Search your inbox and spam folders
-      for an email titled "Important diagnostic test information."</p>
+      <p><strong>What if I didn't get the diagnostic test information?</strong><br/>
+      No problem — you can get to it right here:</p>
+      ${synap ? button('Take the diagnostic test', synap) : ''}
+      <p>It's due ${formatDate(ctx.diagnosticDueDate)}, the day before your first class. (It also
+      went to your inbox, so it's worth a search of your spam folder for next time.)</p>
       <p><strong>What is the 30-minute strategy session? And when can I schedule it?</strong><br/>
       Each student receives one strategy session with enrollment, during which the instructor will
       help you craft an individualized study and review plan, build a perfect test-day mindset,

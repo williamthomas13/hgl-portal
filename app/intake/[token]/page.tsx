@@ -19,7 +19,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
 
   const notFound = (
     <PublicNoticeCard title="We couldn't open that form">
-      The link may be out of date. Email {contact.email} or call {contact.phone} and we&apos;ll
+      The link may be out of date. Email {contact.email}{' or call '} {contact.phone}{' and '} we&apos;ll
       send you a fresh one — or just take your answers over the phone.
     </PublicNoticeCard>
   )
@@ -69,7 +69,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
           {alreadyDone ? (
             <div className="mt-4 p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
               <strong>We already have your answers — thank you!</strong> Nothing more to do
-              here. If something has changed, email {contact.email} or call {contact.phone} and
+              here. If something has changed, email {contact.email}{' or call '} {contact.phone}{' and '}
               we&apos;ll update it for you.
             </div>
           ) : (
@@ -87,7 +87,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
           <a href={`mailto:${contact.email}`} className="text-hgl-blue underline">
             {contact.email}
           </a>{' '}
-          or give us a call at <strong>{contact.phone}</strong> — we&apos;ll take your answers
+          or give us a call at <strong>{contact.phone}</strong>{' — '}we&apos;ll take your answers
           directly.
         </div>
       </div>

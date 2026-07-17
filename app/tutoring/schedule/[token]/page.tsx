@@ -35,7 +35,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
 
   const notFound = (
     <PublicNoticeCard title="We couldn't find that schedule">
-      The link may be out of date. Email {contact.email} or call {contact.phone} and we&apos;ll sort
+      The link may be out of date. Email {contact.email}{' or call '} {contact.phone}{' and '} we&apos;ll sort
       it out for you.
     </PublicNoticeCard>
   )
@@ -161,7 +161,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
           <a href={`mailto:${contact.email}`} className="text-hgl-blue underline">
             {contact.email}
           </a>{' '}
-          or give us a call at <strong>{contact.phone}</strong> — we&apos;re happy to make any change
+          or give us a call at <strong>{contact.phone}</strong>{' — '}we&apos;re happy to make any change
           for you.
         </div>
       </div>

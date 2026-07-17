@@ -291,7 +291,7 @@ export default async function TutoringSection({ email }: { email: string }) {
         <a href={`mailto:${contact.email}`} className="text-hgl-blue underline">
           {contact.email}
         </a>{' '}
-        or give us a call at <strong>{contact.phone}</strong> — we&apos;re happy to do any of this for
+        or give us a call at <strong>{contact.phone}</strong>{' — '}we&apos;re happy to do any of this for
         you.
       </p>
     </div>

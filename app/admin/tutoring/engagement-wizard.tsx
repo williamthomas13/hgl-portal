@@ -424,8 +424,8 @@ export default function EngagementWizard({
           </>
         )}
         <p className="text-xs text-gray-400 mt-1">
-          New family? Add them as a lead on the{' '}
-          <a href="/admin/leads" className="text-hgl-blue underline">leads page</a> and use
+          New family? Add them as a prospective student on the{' '}
+          <a href="/admin/leads" className="text-hgl-blue underline">prospective students page</a> and use
           &ldquo;Create family + student&rdquo; there — never re-enter a family that came through a
           group class.
         </p>
