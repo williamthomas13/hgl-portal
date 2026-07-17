@@ -15,7 +15,16 @@ import RescheduleRequest from './reschedule-request'
 // §8 design requirement: the portal is the convenient path, never the only
 // path — every block offers the human alternative.
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+// PL-9: parent-facing weekly slots read "Mondays 4:00 PM", matching the
+// 12-hour style everywhere else on this surface (times are the tutor's wall
+// clock, per the "Times shown in …" note above the cards).
+const WEEKDAY_PLURALS = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays']
+
+function fmtSlotTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const hour = h % 12 === 0 ? 12 : h % 12
+  return `${hour}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function one<T>(v: T | T[] | null | undefined): T | null {
@@ -147,7 +156,7 @@ export default async function TutoringSection({ email }: { email: string }) {
               {Array.isArray(e.recurrence) && e.recurrence.length > 0 && (
                 <div className="text-xs text-gray-500 mt-1">
                   {e.recurrence
-                    .map((r: any) => `${WEEKDAYS[r.weekday - 1]}s ${r.start_time}`)
+                    .map((r: any) => `${WEEKDAY_PLURALS[r.weekday - 1]} ${fmtSlotTime(String(r.start_time).slice(0, 5))}`)
                     .join(' · ')}
                 </div>
               )}

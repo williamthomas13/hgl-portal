@@ -11,9 +11,10 @@ import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-w
 import CollateralCard, { type CollateralFields } from './collateral-card'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
+import GcalPanel from './tutoring/gcal-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
-import { CollapsibleSection, TimeSelect, to24h } from './ui'
+import { CollapsibleSection, DateHint, TimeSelect, to24h } from './ui'
 
 type Session = {
   id: string
@@ -155,6 +156,7 @@ function AddSessionForm({
           onChange={(e) => setDate(e.target.value)}
           className="mt-1 w-full border rounded p-1"
         />
+        <DateHint value={date} />
       </div>
       <div>
         <label className="block text-xs text-gray-600">Start (24h)</label>
@@ -613,10 +615,13 @@ export default function AdminDashboard() {
   }
 
   function classCard(c: ClassRow) {
-    const enrolledCount =
-      c.enrollments?.filter((en) =>
-        ['Paid', 'Pending', 'Completed'].includes(en.payment_status)
-      ).length ?? 0
+    // PL-4: the capacity gate is the PAID count (matching the instructor
+    // view); pending is shown separately instead of silently inflating it.
+    const paidCount =
+      c.enrollments?.filter((en) => ['Paid', 'Completed'].includes(en.payment_status)).length ?? 0
+    const pendingCount =
+      c.enrollments?.filter((en) => en.payment_status === 'Pending').length ?? 0
+    const enrolledCount = paidCount + pendingCount
     const waitlistCount =
       c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
     const schoolLabel = c.schools?.nickname ?? '—'
@@ -769,7 +774,7 @@ export default function AdminDashboard() {
           </div>
           <div className="flex flex-col items-end gap-1">
             <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
-              {enrolledCount} / {c.capacity} enrolled
+              {paidCount} paid{pendingCount > 0 ? ` + ${pendingCount} pending` : ''} / {c.capacity}
             </span>
             <button
               onClick={() => duplicateClass(c)}
@@ -1209,6 +1214,15 @@ export default function AdminDashboard() {
           subtitle="Stripe payments post to QuickBooks automatically — connection, item mapping, and the sync log"
         >
           <QboPanel status={qboStatus} onStatusChange={fetchQboStatus} />
+        </CollapsibleSection>
+
+        {/* PL-33: owner-level config, grouped with QuickBooks here rather
+            than cluttering the tutoring page the Ops Director works in daily. */}
+        <CollapsibleSection
+          title="Google Calendar"
+          subtitle="Service-account connection and push queue for tutoring sessions"
+        >
+          <GcalPanel />
         </CollapsibleSection>
       </div>
     </div>

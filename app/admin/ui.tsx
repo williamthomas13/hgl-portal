@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { formatDateAdmin } from '../utils/dates'
 
 // Small shared admin UI pieces (admin UX addendum): collapsible sections and
 // the 24-hour / 5-minute time picker used everywhere a session time is set.
@@ -119,6 +120,14 @@ export function TimezoneSelect({
       </select>
     </div>
   )
+}
+
+/** PL-26: native date inputs render in the browser locale (often
+ *  DD/MM/YYYY); this prints the picked date in the admin-wide format
+ *  ("17 July 2026") beside the picker so nobody has to decode it. */
+export function DateHint({ value }: { value: string }) {
+  if (!value) return null
+  return <span className="text-xs text-gray-500 ml-2 whitespace-nowrap">= {formatDateAdmin(value)}</span>
 }
 
 const HOURS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0'))

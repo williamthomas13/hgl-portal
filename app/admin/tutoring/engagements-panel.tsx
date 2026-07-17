@@ -29,10 +29,16 @@ export default function EngagementsPanel({
 }) {
   const [busyId, setBusyId] = useState('')
   const [message, setMessage] = useState('')
+  // PL-30: current (active/paused) vs past (ended) schedules.
+  const [view, setView] = useState<'current' | 'past'>('current')
+
+  const currentRows = engagements.filter((e) => e.status !== 'ended')
+  const pastRows = engagements.filter((e) => e.status === 'ended')
+  const visible = view === 'current' ? currentRows : pastRows
 
   // Group by family.
   const byFamily = new Map<string, { label: string; rows: Engagement[] }>()
-  for (const e of engagements) {
+  for (const e of visible) {
     const fam = e.students?.families ?? null
     const key = fam?.id ?? 'unknown'
     if (!byFamily.has(key)) byFamily.set(key, { label: familyLabel(fam), rows: [] })
@@ -58,6 +64,24 @@ export default function EngagementsPanel({
 
   return (
     <div className="space-y-4 text-sm">
+      <div className="flex rounded-md overflow-hidden border border-gray-300 w-fit">
+        {(['current', 'past'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`px-3 py-1.5 text-xs font-semibold ${
+              view === v ? 'bg-hgl-slate text-white' : 'bg-white text-gray-600'
+            }`}
+          >
+            {v === 'current' ? `Current (${currentRows.length})` : `Past (${pastRows.length})`}
+          </button>
+        ))}
+      </div>
+      {visible.length === 0 && (
+        <p className="text-gray-500 italic">
+          {view === 'current' ? 'No current schedules.' : 'No past schedules yet.'}
+        </p>
+      )}
       {[...byFamily.entries()].map(([famId, group]) => (
         <div key={famId} className="border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
@@ -106,8 +130,10 @@ export default function EngagementsPanel({
                     {e.funding === 'package' ? 'package' : 'monthly'}
                   </span>
                   {remaining !== undefined && (
+                    /* PL-31: read as "used so far", not "fires at hour one" */
                     <span className={`text-xs font-semibold ${lowRunway ? 'text-red-600' : 'text-gray-600'}`}>
-                      {remaining.toFixed(1)}h left of {purchased}h{lowRunway && ' — low! upsell/convert moment'}
+                      {(purchased! - remaining).toFixed(1)} of {purchased}h used — {remaining.toFixed(1)}h left
+                      {lowRunway && ' · time to talk about next steps'}
                     </span>
                   )}
                   {next ? (

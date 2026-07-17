@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
-import { CollapsibleSection } from '../ui'
+import { CollapsibleSection, DateHint } from '../ui'
 import { ConfirmAction } from '../tutoring/confirm'
 
 // Policy agreements admin (Phase 7e, docs/PHASE7_SPEC.md §12): per-family
@@ -274,6 +274,7 @@ function VersionsPanel({
                 value={effectiveDate}
                 onChange={(e) => setEffectiveDate(e.target.value)}
               />
+              <DateHint value={effectiveDate} />
             </div>
             <ConfirmAction
               label={`Publish v${(templates[0]?.version ?? 0) + 1}`}

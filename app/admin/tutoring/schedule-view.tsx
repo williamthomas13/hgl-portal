@@ -1,17 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { classifyNotice, zonedToUtc } from '../../utils/tutoring'
+import { DateHint } from '../ui'
 import { fmtTime, wallClock, type SessionRow, type Tutor } from './types'
 
 // Calendar views (Phase 7a §5): per-tutor week (with freebusy shading from
 // the tutor's own Google Calendar) and all-tutors day. Edit-dialog session
 // actions — reschedule (24h auto-classified, overridable), forfeit, no-show,
 // time edit, delete — per spec; drag-to-reschedule is explicitly later.
+//
+// PL-18: the grid spans the full 24 hours (cross-timezone tutors put real
+// sessions outside 07:00–20:00) inside a vertical scroller that opens at
+// 07:00. PL-17: day mode gets a Google-style show/hide rail per tutor.
 
-const DAY_START = 7 // grid runs 07:00–21:00 in the display timezone
-const DAY_END = 21
+const DAY_START = 0 // full 24h grid (PL-18); the scroller opens at SCROLL_TO
+const DAY_END = 24
+const SCROLL_TO = 7
 const HOUR_PX = 44
 
 const STATUS_STYLES: Record<string, string> = {
@@ -70,6 +76,13 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
   const [busy, setBusy] = useState<{ start: string; end: string; title: string | null; private: boolean }[]>([])
   const [selected, setSelected] = useState<SessionRow | null>(null)
   const [message, setMessage] = useState('')
+  // PL-17: hidden tutor calendars in day mode (Google-style show/hide).
+  const [hiddenTutorIds, setHiddenTutorIds] = useState<Set<string>>(new Set())
+  // PL-18: open the 24h scroller at a sane morning hour.
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (scrollerRef.current) scrollerRef.current.scrollTop = SCROLL_TO * HOUR_PX
+  }, [])
 
   const tutor = activeTutors.find((t) => t.id === tutorId) ?? activeTutors[0] ?? null
   const tz = mode === 'week' ? (tutor?.timezone ?? 'America/Denver') : 'America/Denver'
@@ -146,7 +159,19 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
       .filter((b) => b.height > 0 && b.top < (DAY_END - DAY_START) * HOUR_PX)
   }
 
-  const columns = mode === 'week' ? range.days : activeTutors.map((t) => t.id)
+  const columns =
+    mode === 'week'
+      ? range.days
+      : activeTutors.filter((t) => !hiddenTutorIds.has(t.id)).map((t) => t.id)
+
+  function toggleTutorVisible(id: string) {
+    setHiddenTutorIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-3 text-sm">
@@ -191,7 +216,25 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
       {activeTutors.length === 0 ? (
         <p className="text-gray-500 italic">No active tutors yet — enable tutoring on an instructor below.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="flex gap-3">
+          {/* PL-17: Google-style show/hide rail (day mode, where each tutor
+              is a column). Week mode keeps the single-tutor picker above. */}
+          {mode === 'day' && activeTutors.length > 1 && (
+            <div className="w-36 shrink-0 pt-8 space-y-1">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Tutors</p>
+              {activeTutors.map((t) => (
+                <label key={t.id} className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!hiddenTutorIds.has(t.id)}
+                    onChange={() => toggleTutorVisible(t.id)}
+                  />
+                  <span className="truncate">{t.name ?? t.email}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <div ref={scrollerRef} className="overflow-auto flex-1" style={{ maxHeight: 15 * HOUR_PX }}>
           <div className="flex min-w-full" style={{ minWidth: columns.length * 130 + 48 }}>
             {/* Hour gutter */}
             <div className="w-12 shrink-0 pt-8">
@@ -212,7 +255,7 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
               const busyBlocks = mode === 'week' ? blocksForDay(dayIso, busy) : []
               return (
                 <div key={col} className="flex-1 min-w-32 border-l border-gray-200">
-                  <div className="h-8 text-center text-xs font-semibold text-hgl-slate truncate px-1">
+                  <div className="h-8 text-center text-xs font-semibold text-hgl-slate truncate px-1 sticky top-0 bg-gray-50 z-10">
                     {mode === 'week'
                       ? new Date(dayIso + 'T12:00:00Z').toLocaleDateString('en-US', {
                           weekday: 'short',
@@ -266,6 +309,7 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
                 </div>
               )
             })}
+          </div>
           </div>
         </div>
       )}
@@ -458,8 +502,9 @@ function SessionDialog({
                 `Correct this session's time (no policy classification — use Reschedule for family-requested changes). Times in ${tz}.`
               )}
             </p>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="border border-gray-300 rounded p-1.5" />
+              <DateHint value={newDate} />
               <input type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} className="border border-gray-300 rounded p-1.5" />
               <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="border border-gray-300 rounded p-1.5 bg-white">
                 {[30, 45, 60, 90, 120, 150, 180].map((m) => (

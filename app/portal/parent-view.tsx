@@ -76,6 +76,16 @@ export default async function ParentView({
     )
   }
 
+  // PL-11: which students already have an active tutoring schedule — the
+  // add-on hours card points at the tutoring section instead of implying
+  // nothing is set up.
+  const { data: activeEngagements } = await supabase
+    .from('tutoring_engagements')
+    .select('student_id')
+    .in('student_id', (students as any[]).map((s) => s.id))
+    .eq('status', 'active')
+  const scheduledStudentIds = new Set((activeEngagements ?? []).map((e) => e.student_id))
+
   // Duplicate student rows (same kid registered twice before the family-match
   // fix in utils/registration.ts, or seeded test data) render as ONE card
   // with all their enrollments — mirror the registration matcher: same
@@ -521,9 +531,10 @@ export default async function ParentView({
                   <span className="font-semibold text-hgl-slate">1-on-1 tutoring:</span>{' '}
                   {totalHours} hour{totalHours === 1 ? '' : 's'} purchased
                   <span className="block text-xs text-gray-500 mt-0.5">
-                    Scheduled sessions, hours remaining, and billing appear in the 1-on-1 tutoring
-                    section below once your schedule is set up — or get in touch and we&apos;ll set
-                    it up together.
+                    {/* PL-11: don't imply nothing is set up when a schedule exists */}
+                    {scheduledStudentIds.has(st.id)
+                      ? 'See the sessions, hours remaining, and billing in the 1-on-1 tutoring section below.'
+                      : 'Scheduled sessions, hours remaining, and billing appear in the 1-on-1 tutoring section below once your schedule is set up — or get in touch and we’ll set it up together.'}
                   </span>
                 </div>
               )

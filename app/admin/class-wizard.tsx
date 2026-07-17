@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { supabase } from '../utils/supabase'
 import SessionCalendar from '../components/SessionCalendar'
 import { formatDateAdmin, addDays, monthYear } from '../utils/dates'
-import { TimeSelect, TimezoneSelect } from './ui'
+import { DateHint, TimeSelect, TimezoneSelect } from './ui'
 import type { Instructor } from './instructors-panel'
 
 // Class creation wizard (admin UX addendum, school-first revision):
@@ -808,12 +808,14 @@ export default function ClassWizard({
           <div>
             <label className="block text-sm font-medium text-gray-700">Enrollment deadline</label>
             <input type="date" value={enrollmentDeadline} onChange={(e) => setEnrollmentDeadline(e.target.value)} className={inputCls} />
+            <DateHint value={enrollmentDeadline} />
             <p className="text-xs text-gray-500 mt-1">Optional — min-enrollment check runs here (else 7 days before start).</p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Registration closes</label>
             <input type="date" value={registrationClose} onChange={(e) => setRegistrationClose(e.target.value)} className={inputCls} />
+            <DateHint value={registrationClose} />
             <p className="text-xs text-gray-500 mt-1">Blank = first session. Set later to allow mid-class joins.</p>
           </div>
 
@@ -900,6 +902,7 @@ export default function ClassWizard({
                 onChange={(e) => setDraft({ ...draft, session_date: e.target.value })}
                 className="mt-1 w-full border border-gray-300 rounded p-1.5"
               />
+              <DateHint value={draft.session_date} />
             </div>
             <div>
               <label className="block text-xs text-gray-600">Start (24h)</label>

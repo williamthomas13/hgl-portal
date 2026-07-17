@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
 import { flyerIntroDefault } from '../utils/collateral-shared'
+import { DateHint } from './ui'
 import type { School } from './class-wizard'
 
 // Phase 4.5 admin Collateral card (spec §7): download buttons + preview
@@ -285,6 +286,7 @@ export default function CollateralCard({
             onChange={(e) => set('promo_deadline', e.target.value)}
             className="mt-1 w-full border rounded p-1.5"
           />
+          <DateHint value={form.promo_deadline} />
         </div>
       </div>
 

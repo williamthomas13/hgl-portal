@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../utils/supabase'
-import { TimeSelect } from '../ui'
+import { DateHint, TimeSelect } from '../ui'
 import AvailabilityGrid from '../../components/AvailabilityGrid'
 import { generateOccurrences, horizonEndIso, addDaysIso } from '../../utils/tutoring'
 import { suggestWeeklySlots, type AvailabilityRange } from '../../utils/availability'
@@ -111,10 +111,14 @@ export default function EngagementWizard({
     if (subject) setRate(String(subject.hourly_rate))
   }, [subject])
 
-  // Tutor default location.
+  // PL-24: online/in-person toggle drives the location default — online pulls
+  // the tutor's saved meeting link, in person the office; both overridable
+  // in the field below (same pattern as the rate override).
+  const [locationMode, setLocationMode] = useState<'online' | 'in_person'>('online')
   useEffect(() => {
-    if (tutor?.default_location) setLocation(tutor.default_location)
-  }, [tutor])
+    if (locationMode === 'in_person') setLocation('Higher Ground Learning')
+    else setLocation(tutor?.default_location ?? '')
+  }, [tutor, locationMode])
 
   // Package options for the picked student (their enrollments' add-ons).
   useEffect(() => {
@@ -347,30 +351,71 @@ export default function EngagementWizard({
 
   const ready = studentId && subjectId && tutorId && Number(rate) > 0 && (funding !== 'package' || addonId)
 
+  // PL-27: a gray Create button must say why. The classic trap: an empty
+  // tutor subject list means no default rate ever lands, so everything looks
+  // filled while rate is 0.
+  const missing = [
+    !studentId && 'pick a student',
+    !subjectId && 'pick a subject',
+    !tutorId && 'pick a tutor',
+    !(Number(rate) > 0) && 'set an hourly rate (it defaults from the subject once one is picked)',
+    funding === 'package' && !addonId && 'pick which purchased package this draws from',
+  ].filter(Boolean) as string[]
+
   return (
     <div className="space-y-5 text-sm">
-      {/* 1. Student */}
+      {/* 1. Student — typeahead (PL-21: a plain dropdown won't scale) */}
       <div>
         <label className="block text-xs text-gray-600 font-semibold mb-1">1 · Student</label>
-        <input
-          type="text"
-          value={studentFilter}
-          onChange={(e) => setStudentFilter(e.target.value)}
-          placeholder="Search by student or parent…"
-          className="w-full border border-gray-300 rounded-md p-2 mb-1"
-        />
-        <select
-          value={studentId}
-          onChange={(e) => setStudentId(e.target.value)}
-          className="w-full border border-gray-300 rounded-md p-2 bg-white"
-        >
-          <option value="">Pick a student…</option>
-          {filteredStudents.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.first_name} {s.last_name} — {familyLabel(s.families)}
-            </option>
-          ))}
-        </select>
+        {studentId ? (
+          <div className="flex items-center gap-2 border border-gray-300 rounded-md p-2 bg-gray-50">
+            <span className="font-semibold text-hgl-slate">
+              {(() => {
+                const s = students.find((x) => x.id === studentId)
+                return s ? `${s.first_name} ${s.last_name} — ${familyLabel(s.families)}` : 'Selected student'
+              })()}
+            </span>
+            <button
+              onClick={() => {
+                setStudentId('')
+                setStudentFilter('')
+              }}
+              className="ml-auto text-xs text-hgl-blue underline"
+            >
+              change
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              type="text"
+              value={studentFilter}
+              onChange={(e) => setStudentFilter(e.target.value)}
+              placeholder="Start typing a student or parent name…"
+              className="w-full border border-gray-300 rounded-md p-2"
+            />
+            {studentFilter.trim() && (
+              <ul className="border border-gray-200 rounded-md mt-1 divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                {filteredStudents.slice(0, 8).map((s) => (
+                  <li key={s.id}>
+                    <button
+                      onClick={() => setStudentId(s.id)}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50"
+                    >
+                      <span className="font-semibold text-hgl-slate">
+                        {s.first_name} {s.last_name}
+                      </span>{' '}
+                      <span className="text-gray-500">— {familyLabel(s.families)}</span>
+                    </button>
+                  </li>
+                ))}
+                {filteredStudents.length === 0 && (
+                  <li className="px-3 py-2 text-gray-400 italic">No students match.</li>
+                )}
+              </ul>
+            )}
+          </>
+        )}
         <p className="text-xs text-gray-400 mt-1">
           New family? Add them as a lead on the{' '}
           <a href="/admin/leads" className="text-hgl-blue underline">leads page</a> and use
@@ -451,7 +496,10 @@ export default function EngagementWizard({
           {rankedTutors.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name ?? t.email}
-              {subject && !t.subjects.includes(subject.name) ? ' (subject not listed)' : ''}
+              {/* PL-25: say what "not listed" means and that it's not a block */}
+              {subject && !t.subjects.includes(subject.name)
+                ? ` — ${subject.name} isn't in their subject list (you can still assign)`
+                : ''}
             </option>
           ))}
         </select>
@@ -614,14 +662,15 @@ export default function EngagementWizard({
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">Funding</label>
+          {/* PL-23: plain English, no build-phase numbers in UI copy */}
+          <label className="block text-xs text-gray-600 font-semibold mb-1">Payment</label>
           <select
             value={funding}
             onChange={(e) => setFunding(e.target.value as 'monthly_billed' | 'package')}
             className="w-full border border-gray-300 rounded-md p-2 bg-white"
           >
-            <option value="monthly_billed">Monthly billed (invoice month in advance — 7c)</option>
-            <option value="package">Package hours (draws down a purchased add-on)</option>
+            <option value="monthly_billed">Monthly billed (invoiced a month in advance)</option>
+            <option value="package">Package hours (draws down a purchased package)</option>
           </select>
           {funding === 'package' && (
             <select
@@ -637,28 +686,59 @@ export default function EngagementWizard({
           )}
           {funding === 'package' && addons.length === 0 && studentId && (
             <p className="text-xs text-amber-700 mt-1">
-              This student has no purchased packages on file (packages currently attach to class
-              enrollments — standalone package purchase arrives with 7d).
+              This student has no purchased hour packages on file — families buy them with a class
+              registration or from their portal, or switch to monthly billing.
             </p>
           )}
         </div>
         <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">Location / meeting link</label>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">Location</label>
+          {/* PL-24: toggle sets the default; the field stays editable */}
+          <div className="flex gap-4 text-xs text-gray-600 mb-1">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="locationMode"
+                checked={locationMode === 'online'}
+                onChange={() => setLocationMode('online')}
+              />
+              Online
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                name="locationMode"
+                checked={locationMode === 'in_person'}
+                onChange={() => setLocationMode('in_person')}
+              />
+              In person
+            </label>
+          </div>
           <input
             type="text"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
+            placeholder={locationMode === 'online' ? 'Meeting link' : 'Address / room'}
             className="w-full border border-gray-300 rounded-md p-2"
           />
+          {locationMode === 'online' && tutor && !tutor.default_location && !location && (
+            <p className="text-xs text-gray-400 mt-1">
+              {tutor.name ?? 'This tutor'} has no saved meeting link — paste one here (and add a
+              default in the Tutors panel).
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-xs text-gray-600 font-semibold mb-1">Start date (blank = now)</label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full border border-gray-300 rounded-md p-2"
-          />
+          <div className="flex items-center">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full border border-gray-300 rounded-md p-2"
+            />
+            <DateHint value={startDate} />
+          </div>
         </div>
       </div>
 
@@ -679,6 +759,11 @@ export default function EngagementWizard({
       >
         Create student schedule{slots.length > 0 ? ' + sessions' : ''}
       </button>
+      {!ready && (
+        <p className="text-xs text-gray-500 -mt-2">
+          To enable Create: {missing.join(' · ')}.
+        </p>
+      )}
 
       {message && (
         <div

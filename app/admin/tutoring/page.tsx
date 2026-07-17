@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { CollapsibleSection } from '../ui'
-import GcalPanel from './gcal-panel'
 import TutorsPanel from './tutors-panel'
 import TimecardsPanel from './timecards-panel'
 import InvoicesPanel from './invoices-panel'
@@ -148,22 +147,8 @@ export default function TutoringAdmin() {
           <p className="text-sm text-gray-500">Loading…</p>
         ) : (
           <>
-            <CollapsibleSection
-              title="Schedule"
-              subtitle="Per-tutor week (with Google busy shading) and all-tutors day"
-              defaultOpen
-            >
-              <ScheduleView tutors={tutors} refreshSignal={refreshSignal} />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              title="Recent parent activity"
-              subtitle="Reschedules families completed themselves in the portal — nothing happens invisibly"
-              defaultOpen
-            >
-              <ActivityFeed refreshSignal={refreshSignal} />
-            </CollapsibleSection>
-
+            {/* PL-20: the wizard sits above the calendars — it's the "start
+                here" action when a family calls. */}
             <CollapsibleSection
               title="New student schedule"
               subtitle="Student → subject → tutor → weekly slots → rate → go"
@@ -176,6 +161,22 @@ export default function TutoringAdmin() {
                 tutorNotes={tutorNotes}
                 onCreated={refresh}
               />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Current Student Schedules"
+              subtitle="Per-tutor week (with Google busy shading) and all-tutors day"
+              defaultOpen
+            >
+              <ScheduleView tutors={tutors} refreshSignal={refreshSignal} />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Recent parent activity"
+              subtitle="Reschedules families completed themselves in the portal — nothing happens invisibly"
+              defaultOpen
+            >
+              <ActivityFeed refreshSignal={refreshSignal} />
             </CollapsibleSection>
 
             <CollapsibleSection
@@ -210,9 +211,9 @@ export default function TutoringAdmin() {
               <TutorsPanel tutors={tutors} subjects={subjects} notes={tutorNotes} onChange={refresh} />
             </CollapsibleSection>
 
-            <CollapsibleSection title="Google Calendar" subtitle="Service-account connection and push queue">
-              <GcalPanel />
-            </CollapsibleSection>
+            {/* PL-33: the Google Calendar connection card moved to the main
+                admin page, grouped with QuickBooks — owner-level config, not
+                the Ops Director's daily surface. */}
           </>
         )}
       </div>
