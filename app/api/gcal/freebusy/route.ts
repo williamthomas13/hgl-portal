@@ -30,7 +30,7 @@ export async function POST(req: Request) {
 
   const { data: tutor } = await supabase
     .from('instructors')
-    .select('email, google_calendar_id')
+    .select('email, google_calendar_id, timezone')
     .eq('id', tutorId)
     .maybeSingle()
   if (!tutor) return NextResponse.json({ error: 'Unknown tutor.' }, { status: 404 })
@@ -44,7 +44,14 @@ export async function POST(req: Request) {
   // Lincoln Swenson @ HGL, 2:30–3:30"); private events keep title null. Plain
   // freebusy is the fallback — titles degrade, shading survives.
   try {
-    const busy = await listBusyEvents(conn.key, tutor.email, tutor.google_calendar_id, timeMin, timeMax)
+    const busy = await listBusyEvents(
+      conn.key,
+      tutor.email,
+      tutor.google_calendar_id,
+      timeMin,
+      timeMax,
+      tutor.timezone ?? 'America/Denver'
+    )
     return NextResponse.json({ available: true, busy })
   } catch (e) {
     const message = e instanceof GcalApiError ? e.message : e instanceof Error ? e.message : String(e)
@@ -54,7 +61,7 @@ export async function POST(req: Request) {
     const busy = await freeBusy(conn.key, tutor.email, tutor.google_calendar_id, timeMin, timeMax)
     return NextResponse.json({
       available: true,
-      busy: busy.map((b) => ({ ...b, title: null, private: false })),
+      busy: busy.map((b) => ({ ...b, title: null, private: false, allDay: false })),
     })
   } catch (e) {
     const message = e instanceof GcalApiError ? e.message : e instanceof Error ? e.message : String(e)

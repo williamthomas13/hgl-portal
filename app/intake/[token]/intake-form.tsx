@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import AvailabilityGrid from '../../components/AvailabilityGrid'
+import type { AvailabilityRange } from '../../utils/availability'
 
 // Phase 7e intake form (spec §11): one page, clear sections, no login. The
 // §11 field list verbatim — student, guardian(s), contact preferences,
@@ -89,21 +91,34 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
     availabilityText: prefill.availabilityText,
     onlinePreference: prefill.onlinePreference,
   })
+  const [availability, setAvailability] = useState<AvailabilityRange[]>([])
+  const [availabilityTimezone, setAvailabilityTimezone] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+
+  // Default the timezone from the browser after mount (SSR has no browser
+  // zone to read, and a mismatched select would break hydration).
+  useEffect(() => {
+    setAvailabilityTimezone((tz) => tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Denver')
+  }, [])
 
   const set = (k: keyof typeof f) => (v: string) => setF((prev) => ({ ...prev, [k]: v }))
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    const badRange = availability.some((r) => r.end_time <= r.start_time)
+    if (badRange) {
+      setError('One of the availability times ends before it starts — fix or remove that row and resend.')
+      return
+    }
     setSaving(true)
     try {
       const res = await fetch('/api/intake', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, ...f }),
+        body: JSON.stringify({ token, ...f, availability, availabilityTimezone }),
       })
       const json = await res.json()
       if (!res.ok) {
@@ -268,12 +283,26 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
         hint="We match on availability first — the more you give us here, the faster we can propose times."
       />
       <div className="space-y-4">
-        <Field label="When is the student generally available?" required>
+        <div>
+          <label className={labelCls}>
+            When is {f.studentFirst.trim() || 'the student'} usually free for tutoring?
+          </label>
+          <p className="text-xs text-gray-500 mb-2">
+            Rough is fine — we&apos;ll confirm exact times with you. Skip this if you&apos;d rather
+            talk it through by phone.
+          </p>
+          <AvailabilityGrid
+            ranges={availability}
+            timezone={availabilityTimezone}
+            onChange={setAvailability}
+            onTimezoneChange={setAvailabilityTimezone}
+          />
+        </div>
+        <Field label="Anything else about scheduling?">
           <textarea
             className={inputCls}
-            rows={3}
-            required
-            placeholder={'e.g. Mon/Wed after 4pm, Thu after 6pm, weekends flexible'}
+            rows={2}
+            placeholder={'e.g. soccer practice ends in November, weekends flexible'}
             value={f.availabilityText}
             onChange={(e) => set('availabilityText')(e.target.value)}
           />

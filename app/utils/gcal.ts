@@ -1,5 +1,6 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { createHash, createCipheriv, createDecipheriv, createSign, randomBytes } from 'crypto'
+import { zonedToUtc } from './tutoring'
 
 // Google Calendar client (Phase 7a, docs/PHASE7_SPEC.md §4): service account
 // with domain-wide delegation. Principle: portal writes, Google displays;
@@ -291,22 +292,30 @@ export type BusyBlock = { start: string; end: string }
 
 /** A busy block that knows what it is. `title` is null when the event is
  *  marked private/confidential — render those as "busy (private event)". */
-export type TitledBusyBlock = BusyBlock & { title: string | null; private: boolean }
+export type TitledBusyBlock = BusyBlock & { title: string | null; private: boolean; allDay: boolean }
 
 /**
  * Busy blocks WITH titles via events.list (same delegation; calendar.events
  * already covers reads). Mirrors freebusy semantics: skips cancelled events
- * and ones marked "free" (transparent). All-day events come back as date-only
- * strings — surfaced as full-day blocks. Google's private-event flag is
+ * and ones marked "free" (transparent). Google's private-event flag is
  * respected even though impersonation could read the details: the title is
  * withheld and `private` set.
+ *
+ * All-day events (PL-28b): busy only when Google marks them Busy or
+ * Out-of-office. Google's own UI defaults all-day events to Free
+ * (transparency=transparent), so reminders and default all-day events fall
+ * out here while a multi-day "out of town" block marked Busy/OOO still
+ * conflicts. Working-location and birthday pseudo-events are never busy.
+ * Date-only boundaries become real instants on the tutor's wall clock
+ * (`timezone`) — Google's end date is already exclusive (day after).
  */
 export async function listBusyEvents(
   key: ServiceAccountKey,
   tutorEmail: string,
   calendarId: string | null,
   timeMinIso: string,
-  timeMaxIso: string
+  timeMaxIso: string,
+  timezone: string = 'America/Denver'
 ): Promise<TitledBusyBlock[]> {
   const cal = encodeURIComponent(calendarId || 'primary')
   const params = new URLSearchParams({
@@ -315,7 +324,7 @@ export async function listBusyEvents(
     singleEvents: 'true',
     orderBy: 'startTime',
     maxResults: '250',
-    fields: 'items(status,transparency,visibility,summary,start,end)',
+    fields: 'items(status,transparency,visibility,eventType,summary,start,end)',
   })
   const res = await gcalFetch(tutorEmail, key, `/calendars/${cal}/events?${params}`)
   await expectOk(res, 'events list')
@@ -324,6 +333,7 @@ export async function listBusyEvents(
       status?: string
       transparency?: string
       visibility?: string
+      eventType?: string
       summary?: string
       start?: { dateTime?: string; date?: string }
       end?: { dateTime?: string; date?: string }
@@ -332,12 +342,19 @@ export async function listBusyEvents(
   const blocks: TitledBusyBlock[] = []
   for (const item of json.items ?? []) {
     if (item.status === 'cancelled') continue
-    if (item.transparency === 'transparent') continue // marked "free"
-    const start = item.start?.dateTime ?? (item.start?.date ? `${item.start.date}T00:00:00` : null)
-    const end = item.end?.dateTime ?? (item.end?.date ? `${item.end.date}T00:00:00` : null)
+    if (item.eventType === 'workingLocation' || item.eventType === 'birthday') continue
+    // Marked "free" — except OOO, which is busy by definition.
+    if (item.transparency === 'transparent' && item.eventType !== 'outOfOffice') continue
+    const allDay = !item.start?.dateTime && !!item.start?.date
+    const start =
+      item.start?.dateTime ??
+      (item.start?.date ? zonedToUtc(item.start.date, '00:00', timezone).toISOString() : null)
+    const end =
+      item.end?.dateTime ??
+      (item.end?.date ? zonedToUtc(item.end.date, '00:00', timezone).toISOString() : null)
     if (!start || !end) continue
     const isPrivate = item.visibility === 'private' || item.visibility === 'confidential'
-    blocks.push({ start, end, title: isPrivate ? null : (item.summary ?? null), private: isPrivate })
+    blocks.push({ start, end, title: isPrivate ? null : (item.summary ?? null), private: isPrivate, allDay })
   }
   return blocks
 }

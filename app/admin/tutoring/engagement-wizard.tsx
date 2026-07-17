@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { TimeSelect } from '../ui'
-import { generateOccurrences } from '../../utils/tutoring'
+import AvailabilityGrid from '../../components/AvailabilityGrid'
+import { generateOccurrences, horizonEndIso, addDaysIso } from '../../utils/tutoring'
+import { suggestWeeklySlots, type AvailabilityRange } from '../../utils/availability'
 import {
   WEEKDAYS,
   familyLabel,
@@ -21,8 +23,24 @@ import {
 // Freebusy conflicts WARN, never block — the Ops Director's judgment wins. Reuses
 // existing student/family records; creating new families/students stays on
 // the main admin page (never duplicate a family that came through a class).
+//
+// PL-19 additions (docs/AVAILABILITY_MATCHING_SPEC.md): the student's weekly
+// availability grid (from intake, editable here mid-phone-call, saved with
+// source='staff') and ranked slot suggestions — student availability ∩ tutor
+// Google free time ∩ offer windows over the whole generated-session horizon.
+// Suggestion chips just pre-fill the slot rows; they never gate Create.
 
 type AddonOption = { id: string; hours: number; label: string }
+
+type BusyBlockUI = { start: string; end: string; title: string | null; private: boolean; allDay?: boolean }
+
+/** 'HH:MM' (24h wall clock) → "4:00 PM" for chip labels. */
+function fmtHHMM(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const am = h < 12
+  const hr = h % 12 === 0 ? 12 : h % 12
+  return `${hr}:${String(m).padStart(2, '0')} ${am ? 'AM' : 'PM'}`
+}
 
 export default function EngagementWizard({
   students,
@@ -49,12 +67,22 @@ export default function EngagementWizard({
   const [location, setLocation] = useState('')
   const [startDate, setStartDate] = useState('')
   const [notes, setNotes] = useState('')
-  const [busyBlocks, setBusyBlocks] = useState<
-    { start: string; end: string; title: string | null; private: boolean }[] | null
-  >(null)
+  const [busyBlocks, setBusyBlocks] = useState<BusyBlockUI[] | null>(null)
+  const [busyThrough, setBusyThrough] = useState<string | null>(null) // how far the calendar check reaches
   const [busyUnavailable, setBusyUnavailable] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+
+  // PL-19: the student's weekly availability (family wall clock + timezone).
+  const [availability, setAvailability] = useState<AvailabilityRange[]>([])
+  const [availabilityTz, setAvailabilityTz] = useState('America/Denver')
+  const [availabilityDirty, setAvailabilityDirty] = useState(false)
+  const [availabilitySaving, setAvailabilitySaving] = useState(false)
+  const [availabilityMsg, setAvailabilityMsg] = useState('')
+
+  // PL-19: cadence inputs feeding the suggestions (and the slot-row default).
+  const [sessionsPerWeek, setSessionsPerWeek] = useState(1)
+  const [durationMinutes, setDurationMinutes] = useState(60)
 
   const subject = subjects.find((s) => s.id === subjectId) ?? null
   const tutor = tutors.find((t) => t.id === tutorId) ?? null
@@ -110,49 +138,170 @@ export default function EngagementWizard({
       })
   }, [studentId])
 
-  // Freebusy for the next two weeks whenever the tutor changes (§4: busy
-  // blocks inform; a Google failure degrades to "availability unknown").
+  // PL-19: load the picked student's availability grid (intake rows included).
+  useEffect(() => {
+    setAvailability([])
+    setAvailabilityTz('America/Denver')
+    setAvailabilityDirty(false)
+    setAvailabilityMsg('')
+    if (!studentId) return
+    supabase
+      .from('student_availability')
+      .select('weekday, start_time, end_time, timezone')
+      .eq('student_id', studentId)
+      .order('weekday')
+      .order('start_time')
+      .then(({ data }) => {
+        const rows = data ?? []
+        setAvailability(
+          rows.map((r) => ({
+            weekday: r.weekday,
+            start_time: String(r.start_time).slice(0, 5),
+            end_time: String(r.end_time).slice(0, 5),
+          }))
+        )
+        if (rows[0]?.timezone) setAvailabilityTz(rows[0].timezone)
+      })
+  }, [studentId])
+
+  async function saveAvailability() {
+    if (!studentId) return
+    if (availability.some((r) => r.end_time <= r.start_time)) {
+      setAvailabilityMsg('Error: each range needs a start time before its end time.')
+      return
+    }
+    setAvailabilitySaving(true)
+    setAvailabilityMsg('')
+    // Staff save replaces the whole grid — the phone-call correction is the
+    // newest word, superseding whatever intake captured.
+    const del = await supabase.from('student_availability').delete().eq('student_id', studentId)
+    let error = del.error
+    if (!error && availability.length > 0) {
+      const { data: auth } = await supabase.auth.getUser()
+      const ins = await supabase.from('student_availability').insert(
+        availability.map((r) => ({
+          student_id: studentId,
+          weekday: r.weekday,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          timezone: availabilityTz,
+          source: 'staff',
+          updated_by: auth.user?.email ?? null,
+        }))
+      )
+      error = ins.error
+    }
+    if (error) setAvailabilityMsg('Error: ' + error.message)
+    else {
+      setAvailabilityDirty(false)
+      setAvailabilityMsg('Availability saved.')
+    }
+    setAvailabilitySaving(false)
+  }
+
+  // Freebusy whenever the tutor changes (§4: busy blocks inform; a Google
+  // failure degrades to "availability unknown"). PL-28a: conflicts cover the
+  // whole generated-session horizon (end of next month), not two weeks — the
+  // first two-week window lands immediately so the wizard stays responsive,
+  // then background requests extend the coverage in ≤44-day batches (the
+  // route caps a request at 45 days). busyThrough tracks real coverage so a
+  // mid-extension failure keeps partial data honest.
   useEffect(() => {
     setBusyBlocks(null)
+    setBusyThrough(null)
     setBusyUnavailable(false)
-    if (!tutorId) return
-    const timeMin = new Date().toISOString()
-    const timeMax = new Date(Date.now() + 14 * 86_400_000).toISOString()
-    fetch('/api/gcal/freebusy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tutorId, timeMin, timeMax }),
+    const tz = tutors.find((t) => t.id === tutorId)?.timezone
+    if (!tutorId || !tz) return
+    let cancelled = false
+    async function run() {
+      // Horizon end = last generated-session day + 1 (exclusive bound).
+      const horizonEnd = new Date(addDaysIso(horizonEndIso(tz!), 1) + 'T00:00:00Z').getTime()
+      const collected: BusyBlockUI[] = []
+      let cursor = Date.now()
+      let first = true
+      while (cursor < horizonEnd) {
+        const chunkEnd = Math.min(horizonEnd, cursor + (first ? 14 : 44) * 86_400_000)
+        const res = await fetch('/api/gcal/freebusy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tutorId,
+            timeMin: new Date(cursor).toISOString(),
+            timeMax: new Date(chunkEnd).toISOString(),
+          }),
+        })
+        const json = await res.json()
+        if (cancelled) return
+        if (!json.available) {
+          if (first) setBusyUnavailable(true)
+          return // keep whatever coverage we already have
+        }
+        collected.push(...(json.busy as BusyBlockUI[]))
+        setBusyBlocks([...collected])
+        setBusyThrough(new Date(chunkEnd).toISOString())
+        cursor = chunkEnd
+        first = false
+      }
+    }
+    run().catch(() => {
+      if (!cancelled) setBusyUnavailable(true)
     })
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.available) setBusyBlocks(json.busy)
-        else setBusyUnavailable(true)
-      })
-      .catch(() => setBusyUnavailable(true))
-  }, [tutorId])
+    return () => {
+      cancelled = true
+    }
+  }, [tutorId, tutors])
 
-  // Conflict preview: materialize the proposed slots over the two-week window
-  // and intersect with the tutor's calendar events — each hit names the
-  // conflicting event (or "busy (private event)" when Google says so).
+  // Conflict preview across the checked window — each hit names the
+  // conflicting event (or "busy — private event" when Google says so).
+  // PL-29: one row per (event × occurrence), deduped.
   const conflicts = useMemo(() => {
-    if (!tutor || !busyBlocks || slots.length === 0) return []
+    if (!tutor || !busyBlocks || !busyThrough || slots.length === 0) return []
     const today = new Date().toLocaleDateString('en-CA', { timeZone: tutor.timezone })
-    const to = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString('en-CA', { timeZone: tutor.timezone })
+    const to = new Date(busyThrough).toLocaleDateString('en-CA', { timeZone: tutor.timezone })
     const from = startDate && startDate > today ? startDate : today
     const occurrences = generateOccurrences(slots, from, to, tutor.timezone)
-    const out: { occ: (typeof occurrences)[number]; block: NonNullable<typeof busyBlocks>[number] }[] = []
+    const out: { occ: (typeof occurrences)[number]; block: BusyBlockUI }[] = []
+    const seen = new Set<string>()
     for (const occ of occurrences) {
       for (const block of busyBlocks) {
         if (occ.startsAt.getTime() < new Date(block.end).getTime() && occ.endsAt.getTime() > new Date(block.start).getTime()) {
+          const key = `${occ.startsAt.getTime()}|${block.start}|${block.end}|${block.title ?? ''}`
+          if (seen.has(key)) continue
+          seen.add(key)
           out.push({ occ, block })
         }
       }
     }
     return out
-  }, [tutor, busyBlocks, slots, startDate])
+  }, [tutor, busyBlocks, busyThrough, slots, startDate])
+
+  // PL-19 §4: ranked weekly-slot suggestions. Recomputes as the grid, tutor,
+  // cadence, or calendar coverage changes; chips only pre-fill the slot rows.
+  const suggestions = useMemo(() => {
+    if (!tutor || !busyBlocks || availability.length === 0) return []
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tutor.timezone })
+    const from = startDate && startDate > today ? startDate : today
+    return suggestWeeklySlots({
+      availability,
+      familyTimezone: availabilityTz,
+      busy: busyBlocks,
+      offerWindows: tutor.offer_windows ?? [],
+      tutorTimezone: tutor.timezone,
+      sessionsPerWeek,
+      durationMinutes,
+      fromIso: from,
+      toIso: horizonEndIso(tutor.timezone),
+    })
+  }, [tutor, busyBlocks, availability, availabilityTz, sessionsPerWeek, durationMinutes, startDate])
+
+  // "…through October" — the horizon month, for chip + conflict copy.
+  const horizonLabel = useMemo(() => {
+    if (!tutor) return ''
+    return new Date(horizonEndIso(tutor.timezone) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long' })
+  }, [tutor])
 
   function addSlot() {
-    setSlots((s) => [...s, { weekday: 1, start_time: '16:00', duration_minutes: 60 }])
+    setSlots((s) => [...s, { weekday: 1, start_time: '16:00', duration_minutes: durationMinutes }])
   }
   function setSlot(i: number, patch: Partial<RecurrenceSlotUI>) {
     setSlots((s) => s.map((slot, j) => (j === i ? { ...slot, ...patch } : slot)))
@@ -228,6 +377,47 @@ export default function EngagementWizard({
         </p>
       </div>
 
+      {/* 1b. Student availability (PL-19 §3): the intake grid, editable here
+          mid-phone-call. Feeds the suggestions below; saving is optional. */}
+      {studentId && (
+        <div>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">
+            When is this student usually free?{' '}
+            <span className="font-normal text-gray-400">
+              (from the intake form when the family filled it in — correct it here as you talk)
+            </span>
+          </label>
+          <AvailabilityGrid
+            ranges={availability}
+            timezone={availabilityTz}
+            onChange={(r) => {
+              setAvailability(r)
+              setAvailabilityDirty(true)
+              setAvailabilityMsg('')
+            }}
+            onTimezoneChange={(tz) => {
+              setAvailabilityTz(tz)
+              setAvailabilityDirty(true)
+              setAvailabilityMsg('')
+            }}
+          />
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              onClick={saveAvailability}
+              disabled={!availabilityDirty || availabilitySaving}
+              className="text-xs bg-hgl-slate text-white py-1.5 px-3 rounded hover:opacity-90 disabled:opacity-40"
+            >
+              Save availability
+            </button>
+            {availabilityMsg && (
+              <span className={`text-xs ${availabilityMsg.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>
+                {availabilityMsg}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 2. Subject */}
       <div>
         <label className="block text-xs text-gray-600 font-semibold mb-1">2 · Subject</label>
@@ -278,6 +468,67 @@ export default function EngagementWizard({
             (times in {tutor ? `${tutor.timezone}` : 'the tutor’s timezone'}; leave empty for one-off-only)
           </span>
         </label>
+
+        {/* PL-19 §4: cadence inputs + suggestion chips. Chips fill the slot
+            rows exactly as if typed; manual entry always works without them. */}
+        <div className="flex items-center gap-3 mb-2 text-xs text-gray-600">
+          <label className="flex items-center gap-1.5">
+            Sessions per week
+            <select
+              value={sessionsPerWeek}
+              onChange={(e) => setSessionsPerWeek(Number(e.target.value))}
+              className="border border-gray-300 rounded p-1 bg-white"
+            >
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            Session length
+            <select
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(Number(e.target.value))}
+              className="border border-gray-300 rounded p-1 bg-white"
+            >
+              {[30, 45, 60, 90, 120].map((m) => (
+                <option key={m} value={m}>{m} min</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {studentId && tutorId && availability.length === 0 && (
+          <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-2 mb-2">
+            No availability on file for this student — add it above and we&apos;ll suggest times.
+          </p>
+        )}
+        {suggestions.length > 0 && (
+          <div className="mb-2">
+            <p className="text-xs text-gray-500 mb-1">
+              Suggested times (fit the student&apos;s availability and {tutor?.name ?? 'the tutor'}&apos;s
+              calendar — tap one to fill the rows, or ignore and type your own):
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((combo, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setSlots(combo.slots.map((s) => ({ ...s })))}
+                  className="text-xs border border-hgl-blue text-hgl-blue rounded-full px-3 py-1.5 hover:bg-hgl-blue hover:text-white transition"
+                >
+                  {combo.slots
+                    .map((s) => `${WEEKDAYS[s.weekday - 1]} ${fmtHHMM(s.start_time)}`)
+                    .join(' + ')}{' '}
+                  —{' '}
+                  {combo.conflicts === 0
+                    ? `no conflicts through ${horizonLabel}`
+                    : `${combo.conflicts} conflict${combo.conflicts === 1 ? '' : 's'}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {slots.map((slot, i) => (
           <div key={i} className="flex items-center gap-2 mb-2">
             <select
@@ -317,26 +568,31 @@ export default function EngagementWizard({
           <div className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded p-2 mt-2">
             <span className="font-semibold">
               ⚠ {conflicts.length} conflict{conflicts.length === 1 ? '' : 's'} with {tutor?.name ?? 'the tutor'}
-              &apos;s calendar in the next two weeks
+              &apos;s calendar through {busyThrough ? fmtDay(busyThrough, tutor!.timezone) : 'the horizon'}
             </span>{' '}
             (you can still schedule — your call):
             <ul className="mt-1">
-              {conflicts.slice(0, 5).map((c, i) => (
+              {conflicts.slice(0, 8).map((c, i) => (
                 <li key={i}>
                   {fmtDay(c.occ.startsAt.toISOString(), tutor!.timezone)}{' '}
                   {fmtTime(c.occ.startsAt.toISOString(), tutor!.timezone)} — conflicts with:{' '}
                   <span className="font-semibold">
-                    {c.block.title ?? (c.block.private ? 'busy (private event)' : 'busy')}
+                    {c.block.title ?? (c.block.private ? 'busy — private event' : 'busy')}
                   </span>
-                  , {fmtTime(c.block.start, tutor!.timezone)}–{fmtTime(c.block.end, tutor!.timezone)}
+                  ,{' '}
+                  {c.block.allDay
+                    ? `${fmtDay(c.block.start, tutor!.timezone)} (all day)`
+                    : `${fmtTime(c.block.start, tutor!.timezone)}–${fmtTime(c.block.end, tutor!.timezone)}`}
                 </li>
               ))}
-              {conflicts.length > 5 && <li>… and {conflicts.length - 5} more</li>}
+              {conflicts.length > 8 && <li>… and {conflicts.length - 8} more</li>}
             </ul>
           </div>
         )}
-        {tutorId && busyBlocks && slots.length > 0 && conflicts.length === 0 && (
-          <p className="text-xs text-green-700 mt-2">✓ No conflicts with the tutor&apos;s calendar in the next two weeks.</p>
+        {tutorId && busyBlocks && busyThrough && slots.length > 0 && conflicts.length === 0 && (
+          <p className="text-xs text-green-700 mt-2">
+            ✓ No conflicts with the tutor&apos;s calendar through {fmtDay(busyThrough, tutor!.timezone)}.
+          </p>
         )}
       </div>
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { verifyIntakeToken, applyIntakeSubmission, type IntakeSubmission } from '../../utils/intake'
+import { validAvailabilityRanges } from '../../utils/availability'
 import { sendAdminAlert } from '../../utils/email'
 import { ADMIN_EMAIL } from '../../utils/lifecycle'
 
@@ -48,6 +49,17 @@ export async function POST(req: Request) {
   const pick = <T extends string>(v: unknown, allowed: T[]): T | null =>
     typeof v === 'string' && (allowed as string[]).includes(v) ? (v as T) : null
 
+  // PL-19 structured availability grid — optional, and malformed grid data is
+  // dropped rather than failing the submission (intake completion outranks
+  // data completeness; the free-text answer still lands on the lead).
+  const availability = validAvailabilityRanges(body.availability) ? body.availability : []
+  let availabilityTimezone = str(body.availabilityTimezone, 60) ?? 'America/Denver'
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: availabilityTimezone })
+  } catch {
+    availabilityTimezone = 'America/Denver'
+  }
+
   const submission: IntakeSubmission = {
     studentFirst,
     studentLast,
@@ -77,6 +89,8 @@ export async function POST(req: Request) {
     subjects: str(body.subjects, 500),
     availabilityText: str(body.availabilityText, 2000),
     onlinePreference,
+    availability,
+    availabilityTimezone,
   }
 
   const result = await applyIntakeSubmission(leadId, submission)

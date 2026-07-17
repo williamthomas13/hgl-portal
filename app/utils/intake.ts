@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin as supabase } from './supabase-admin'
+import type { AvailabilityRange } from './availability'
 
 // Phase 7e intake & onboarding (docs/PHASE7_SPEC.md §11): signed-link tokens
 // for the public intake form and the policy-agreement page (house HMAC
@@ -86,6 +87,10 @@ export type IntakeSubmission = {
   // Logistics
   availabilityText: string | null
   onlinePreference: 'online' | 'in_person' | 'either' | null
+  /** PL-19 structured weekly availability (validated by the route). */
+  availability: AvailabilityRange[]
+  /** Family's IANA timezone for the availability ranges. */
+  availabilityTimezone: string
 }
 
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
@@ -187,6 +192,33 @@ export async function applyIntakeSubmission(
       return { ok: false, error: 'Could not save the student record.' }
     }
     studentId = student.id
+  }
+
+  // 2b. Availability grid (PL-19): replace this student's intake-sourced rows
+  // wholesale — a re-submit is the family's newest word. Staff-entered rows
+  // are left alone, and an empty grid just clears the intake ones (empty =
+  // unknown, never "unavailable"). Failure here never sinks the submission.
+  const { error: availabilityError } = await supabase
+    .from('student_availability')
+    .delete()
+    .eq('student_id', studentId)
+    .eq('source', 'intake')
+  if (availabilityError) {
+    console.error('intake availability clear failed (submission stands):', availabilityError.message)
+  } else if (sub.availability.length > 0) {
+    const { error: insertError } = await supabase.from('student_availability').insert(
+      sub.availability.map((r) => ({
+        student_id: studentId,
+        weekday: r.weekday,
+        start_time: r.start_time,
+        end_time: r.end_time,
+        timezone: sub.availabilityTimezone,
+        source: 'intake',
+      }))
+    )
+    if (insertError) {
+      console.error('intake availability insert failed (submission stands):', insertError.message)
+    }
   }
 
   // 3. Lead: every answer verbatim in `intake`, scalars refreshed for the
