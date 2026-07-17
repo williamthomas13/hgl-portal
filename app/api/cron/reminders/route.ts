@@ -5,6 +5,7 @@ import { processGcalQueue } from '../../../utils/gcal-sync'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
+import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
 import {
@@ -1203,6 +1204,10 @@ export async function GET(req: Request) {
     if (collections.retried > 0) counters.billing_retried = collections.retried
     if (collections.reminders > 0) counters.billing_reminders = collections.reminders
     if (collections.lateFeeFlags > 0) counters.billing_late_fee_flags = collections.lateFeeFlags
+    // PL-41: schedule-approval nudges (+2d, +5d + Ops alert; never auto-approves).
+    const approvals = await runScheduleApprovalNudges()
+    if (approvals.nudged > 0) counters.schedule_approval_nudged = approvals.nudged
+    if (approvals.alerted > 0) counters.schedule_approval_alerted = approvals.alerted
   } catch (e) {
     console.error('tutoring billing sweep failed (continuing):', e)
   }

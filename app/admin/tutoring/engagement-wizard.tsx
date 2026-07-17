@@ -72,6 +72,8 @@ export default function EngagementWizard({
   const [busyUnavailable, setBusyUnavailable] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  // PL-41: default ON — the parent confirms before anything locks in.
+  const [requireApproval, setRequireApproval] = useState(true)
 
   // PL-19: the student's weekly availability (family wall clock + timezone).
   const [availability, setAvailability] = useState<AvailabilityRange[]>([])
@@ -336,6 +338,7 @@ export default function EngagementWizard({
         location: location.trim() || null,
         start_date: startDate || null,
         notes: notes.trim() || null,
+        require_approval: requireApproval,
       }),
     })
     const json = await res.json()
@@ -343,8 +346,10 @@ export default function EngagementWizard({
       setMessage('Error: ' + json.error)
     } else {
       setMessage(
-        `Student schedule created — ${json.sessionsCreated} session${json.sessionsCreated === 1 ? '' : 's'} scheduled` +
-          ` and queued for the tutor's Google Calendar.`
+        json.pendingParentConfirmation
+          ? `Schedule created and sent to the family to confirm — ${json.sessionsCreated} session${json.sessionsCreated === 1 ? '' : 's'} held until they approve (nudges go out automatically; you can set it live from the Students list any time).`
+          : `Student schedule created — ${json.sessionsCreated} session${json.sessionsCreated === 1 ? '' : 's'} scheduled` +
+              ` and queued for the tutor's Google Calendar.`
       )
       setStudentId('')
       setSubjectId('')
@@ -769,6 +774,22 @@ export default function EngagementWizard({
           onChange={(e) => setNotes(e.target.value)}
           className="w-full border border-gray-300 rounded-md p-2"
         />
+      </div>
+
+      {/* PL-41: propose → parent approves, unless Kelsie overrides */}
+      <div className="border border-gray-200 rounded-md p-3">
+        <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-gray-700">
+          <input
+            type="checkbox"
+            checked={requireApproval}
+            onChange={(e) => setRequireApproval(e.target.checked)}
+          />
+          Send the parent this schedule to confirm
+        </label>
+        <p className="text-xs text-gray-500 mt-1">
+          On: we&apos;ll email the family to confirm the times before anything&apos;s locked in.
+          Off: set it up now — use this when you&apos;ve already agreed the schedule.
+        </p>
       </div>
 
       <button

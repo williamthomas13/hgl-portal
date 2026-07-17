@@ -59,6 +59,20 @@ export default function EngagementsPanel({
     if (res.ok) onChange()
   }
 
+  /** PL-41 non-update actions (activate_now / resend_approval). */
+  async function action(id: string, act: string, done: string) {
+    setBusyId(id)
+    const res = await fetch('/api/admin/tutoring/engagement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: act, id }),
+    })
+    const json = await res.json()
+    setMessage(res.ok ? done : 'Error: ' + json.error)
+    setBusyId('')
+    if (res.ok) onChange()
+  }
+
   if (engagements.length === 0) {
     return <p className="text-sm text-gray-500 italic">No student schedules yet — set one up with the wizard above.</p>
   }
@@ -144,7 +158,12 @@ export default function EngagementsPanel({
                   ) : (
                     e.status === 'active' && <span className="text-xs text-amber-600">no upcoming sessions</span>
                   )}
-                  {e.status !== 'active' && (
+                  {e.status === 'pending_parent_confirmation' && (
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                      awaiting family confirmation
+                    </span>
+                  )}
+                  {e.status !== 'active' && e.status !== 'pending_parent_confirmation' && (
                     <span className="text-xs font-bold uppercase text-gray-500">{e.status}</span>
                   )}
                   {e.start_date && (
@@ -189,6 +208,26 @@ export default function EngagementsPanel({
                       >
                         resume
                       </button>
+                    )}
+                    {/* PL-41: the Ops override + re-send while awaiting the family */}
+                    {e.status === 'pending_parent_confirmation' && (
+                      <>
+                        <button
+                          disabled={busyId === e.id}
+                          onClick={() => action(e.id, 'resend_approval', 'Confirmation email re-sent to the family.')}
+                          className="text-hgl-blue underline"
+                        >
+                          re-send confirmation
+                        </button>
+                        <ConfirmAction
+                          label="set live now"
+                          message="Set this schedule live without the family's confirmation? Sessions push to the tutor's calendar and the family gets the all-set email."
+                          confirmLabel="Yes, set it live"
+                          className="text-green-700 underline font-semibold"
+                          disabled={busyId === e.id}
+                          onConfirm={() => action(e.id, 'activate_now', 'Schedule set live — sessions pushed and the family emailed.')}
+                        />
+                      </>
                     )}
                   </span>
                 </div>

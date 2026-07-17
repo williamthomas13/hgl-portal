@@ -818,4 +818,86 @@ Prefer not to think about invoices? [Set up autopay]({autopayLink}) and each mon
 
 {contactBlock}`,
   },
+
+  // ---------------------------------------------------------------------------
+  // PL-40/PL-41 session-setup comms (copy APPROVED July 19, 2026). These send
+  // FROM the configurable tutoring contact (PL-50) at the send site; the
+  // from_identity field here is not used for them.
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'T_SCHEDULE_CONFIRM',
+    display_name: 'Schedule confirm — approval request',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Please confirm {studentFirstName}'s tutoring schedule",
+    preheader: 'One quick tap to lock in the times.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+We'd like to set {studentFirstName} up for regular 1-on-1 tutoring with {tutorName}. Here's the schedule we have in mind:
+
+**{scheduleSummary}**
+
+If that works, just confirm and we'll lock it in and add it to your calendar:
+
+[button:Confirm this schedule]({approveLink})
+
+Prefer different times, or have a question? Reply to this email or reach us — we're happy to adjust before anything's set.
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T_SCHEDULE_CONFIRM_NUDGE',
+    display_name: 'Schedule confirm — nudge',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Still holding {studentFirstName}'s tutoring times",
+    preheader: 'Just need a quick confirm when you have a moment.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Just circling back on {studentFirstName}'s proposed tutoring schedule with {tutorName}:
+
+**{scheduleSummary}**
+
+A quick tap confirms it and we'll add it to your calendar:
+
+[button:Confirm this schedule]({approveLink})
+
+If the times don't quite work, reply and we'll find something better.
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T_SCHEDULE_SET',
+    display_name: 'Schedule set — welcome / all-set',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s tutoring schedule is all set",
+    preheader: "Here's the plan, plus calendar links so it's always in front of you.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Great news — {studentFirstName}'s 1-on-1 tutoring with {tutorName} is all set up. Here's the regular plan:
+
+**{scheduleSummary}**
+
+A couple of things to make life easier:
+
+[button:Add to your calendar]({calendarLink}) — subscribe once and every session (and any future change) shows up automatically.
+
+[button:Download the schedule (PDF)]({schedulePdfLink})
+
+You can reschedule any single session yourself from your parent portal — no need to email us for the small stuff. And if the regular time ever needs to change, just reach out and we'll take care of it.
+
+We're looking forward to working with {studentFirstName}.
+
+{contactBlock}`,
+  },
 ]

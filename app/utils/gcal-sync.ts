@@ -118,11 +118,11 @@ function eventInput(d: SessionDetail, xcl: boolean): GcalEventInput {
     startsAt: d.starts_at,
     endsAt: d.ends_at,
     timezone: d.tutor.timezone,
-    // §10.5: family attendees invited by default so Google's native invites
-    // and reminders do the no-show-reduction work; per-family opt-out flag.
-    attendees: d.inviteAttendees
-      ? [d.parentEmail, d.studentEmail].filter((e): e is string => !!e)
-      : [],
+    // PL-40 (supersedes §10.5): tutoring pushes go to the TUTOR's calendar
+    // only — no family attendees, so no per-session Google invite emails
+    // (empty attendees also means sendUpdates=none). The family gets the
+    // auto-updating ICS feed + the one warm T_SCHEDULE_SET email instead.
+    attendees: [],
   }
 }
 

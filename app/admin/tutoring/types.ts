@@ -62,7 +62,7 @@ export type Engagement = {
   addon_id: string | null
   recurrence: RecurrenceSlotUI[]
   location: string | null
-  status: 'active' | 'paused' | 'ended'
+  status: 'pending_parent_confirmation' | 'active' | 'paused' | 'ended'
   start_date: string | null
   end_date: string | null
   notes: string | null

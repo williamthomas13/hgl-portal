@@ -3,6 +3,11 @@ import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
 import { sendWelcomeHandoff } from '../../../../utils/intake-emails'
+import {
+  activatePendingEngagement,
+  sendScheduleApprovalEmail,
+  sendScheduleSetEmail,
+} from '../../../../utils/schedule-approval'
 import { deleteGcalEvent, loadGcalConnection } from '../../../../utils/gcal'
 import {
   generateOccurrences,
@@ -32,6 +37,9 @@ type CreateBody = {
   location?: string | null
   start_date?: string | null // YYYY-MM-DD; default today
   notes?: string | null
+  /** PL-41: send the parent the schedule to confirm (wizard toggle, default
+   *  ON). false = Kelsie's override — set up active immediately. */
+  require_approval?: boolean
 }
 
 type UpdateBody = {
@@ -50,7 +58,11 @@ type UpdateBody = {
   regenerate?: boolean
 }
 
-type Body = CreateBody | UpdateBody
+type Body =
+  | CreateBody
+  | UpdateBody
+  | { action: 'activate_now'; id: string } // PL-41 override: skip/settle the approval
+  | { action: 'resend_approval'; id: string }
 
 async function tutorTimezone(tutorId: string): Promise<string> {
   const { data } = await supabase
@@ -62,15 +74,20 @@ async function tutorTimezone(tutorId: string): Promise<string> {
 }
 
 /** Insert confirmed sessions for every future occurrence up to the horizon,
- *  skipping instants the engagement already has a live session for. */
-async function materializeSessions(engagement: {
-  id: string
-  student_id: string
-  tutor_id: string
-  hourly_rate: number
-  recurrence: RecurrenceSlot[]
-  start_date: string | null
-}): Promise<{ created: number }> {
+ *  skipping instants the engagement already has a live session for. PL-41:
+ *  `held` creates them as 'proposed' with NO calendar enqueue — they confirm
+ *  and push only when the parent approves (or Kelsie overrides). */
+async function materializeSessions(
+  engagement: {
+    id: string
+    student_id: string
+    tutor_id: string
+    hourly_rate: number
+    recurrence: RecurrenceSlot[]
+    start_date: string | null
+  },
+  held = false
+): Promise<{ created: number }> {
   if (!validRecurrence(engagement.recurrence) || engagement.recurrence.length === 0) {
     return { created: 0 }
   }
@@ -97,7 +114,7 @@ async function materializeSessions(engagement: {
       tutor_id: engagement.tutor_id,
       starts_at: o.startsAt.toISOString(),
       ends_at: o.endsAt.toISOString(),
-      status: 'confirmed',
+      status: held ? 'proposed' : 'confirmed',
       rate_snapshot: engagement.hourly_rate,
     }))
   if (rows.length === 0) return { created: 0 }
@@ -107,7 +124,9 @@ async function materializeSessions(engagement: {
     .insert(rows)
     .select('id')
   if (error) throw new Error(`session generation failed: ${error.message}`)
-  for (const s of inserted ?? []) await enqueueGcalSync(s.id, 'engagement schedule')
+  if (!held) {
+    for (const s of inserted ?? []) await enqueueGcalSync(s.id, 'engagement schedule')
+  }
   return { created: inserted?.length ?? 0 }
 }
 
@@ -171,6 +190,9 @@ export async function POST(req: Request) {
       if (body.funding === 'package' && !body.addon_id) {
         return NextResponse.json({ error: 'Package funding needs the package (add-on) to draw from.' }, { status: 400 })
       }
+      // PL-41: default ON — the parent confirms before anything locks in.
+      // OFF is Kelsie's explicit override (schedule already agreed by phone).
+      const requireApproval = body.require_approval !== false
       const { data: engagement, error } = await supabase
         .from('tutoring_engagements')
         .insert({
@@ -184,13 +206,15 @@ export async function POST(req: Request) {
           location: body.location ?? null,
           start_date: body.start_date ?? null,
           notes: body.notes ?? null,
+          status: requireApproval ? 'pending_parent_confirmation' : 'active',
+          approval_requested_at: requireApproval ? new Date().toISOString() : null,
         })
         .select('id, student_id, tutor_id, hourly_rate, recurrence, start_date')
         .single()
       if (error || !engagement) {
         return NextResponse.json({ error: error?.message ?? 'Insert failed.' }, { status: 500 })
       }
-      const { created } = await materializeSessions(engagement)
+      const { created } = await materializeSessions(engagement, requireApproval)
 
       // PL-10: a schedule actually existing is what "won" means — move any
       // open pipeline row for this student to Scheduled — won. Trigger is
@@ -234,9 +258,48 @@ export async function POST(req: Request) {
           ...(isFirstEngagement
             ? [sendWelcomeHandoff(engagementId).catch((e) => console.error('T8 welcome handoff failed:', e))]
             : []),
+          // PL-41: ON → ask the parent to confirm; OFF → the §4c all-set
+          // email fires right away (PL-40's one warm email either way).
+          requireApproval
+            ? sendScheduleApprovalEmail(engagementId, 'initial').catch((e) =>
+                console.error('schedule approval email failed:', e)
+              )
+            : sendScheduleSetEmail(engagementId).catch((e) =>
+                console.error('T_SCHEDULE_SET failed:', e)
+              ),
         ])
       )
-      return NextResponse.json({ ok: true, id: engagement.id, sessionsCreated: created })
+      return NextResponse.json({
+        ok: true,
+        id: engagement.id,
+        sessionsCreated: created,
+        pendingParentConfirmation: requireApproval,
+      })
+    }
+
+    if (body.action === 'activate_now') {
+      if (!body.id) return NextResponse.json({ error: 'Missing engagement id.' }, { status: 400 })
+      const result = await activatePendingEngagement(body.id, 'override')
+      if (!result.ok) return NextResponse.json({ error: result.error ?? 'Could not activate.' }, { status: 400 })
+      after(() => processGcalQueue())
+      return NextResponse.json({ ok: true, already: result.already ?? false })
+    }
+
+    if (body.action === 'resend_approval') {
+      if (!body.id) return NextResponse.json({ error: 'Missing engagement id.' }, { status: 400 })
+      // Re-stamp the ask so the nudge clock restarts from the re-send.
+      await supabase
+        .from('tutoring_engagements')
+        .update({
+          approval_requested_at: new Date().toISOString(),
+          approval_nudge_count: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', body.id)
+        .eq('status', 'pending_parent_confirmation')
+      const sent = await sendScheduleApprovalEmail(body.id, 'initial')
+      if (sent === 'failed') return NextResponse.json({ error: 'Email send failed.' }, { status: 500 })
+      return NextResponse.json({ ok: true })
     }
 
     if (body.action === 'update') {
