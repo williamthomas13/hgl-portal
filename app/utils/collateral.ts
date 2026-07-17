@@ -76,7 +76,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
       id, slug, class_type, delivery_mode, capacity, start_date,
       short_link, collateral_language, letter_blurb, letter_blurb_es,
       flyer_blurb, practice_test_count, promo_code, promo_amount, promo_deadline,
-      enrollment_deadline,
+      enrollment_deadline, registration_close_date,
       schools ( name, nickname, logo_url, accent_color, collateral_language ),
       sessions ( session_date, start_time, end_time )
     `
@@ -124,7 +124,10 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
     promo: promoComplete
       ? { code: c.promo_code, amount: formatMoney(Number(c.promo_amount)), deadline: c.promo_deadline }
       : null,
-    enrollmentDeadline: c.enrollment_deadline ?? null,
+    // PL-15: the printed deadline is the class's real registration gate.
+    // registration_close_date is what /register actually enforces; the older
+    // enrollment_deadline field only backfills classes without one.
+    enrollmentDeadline: c.registration_close_date ?? c.enrollment_deadline ?? null,
     sessions,
     firstSession,
     lastSession,

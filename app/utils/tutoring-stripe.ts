@@ -467,7 +467,7 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
           dedupeKey: `overdue10:${inv.id}`,
           adminEmail: ADMIN_EMAIL,
           subject: `Tutoring invoice 10+ days past due — ${fam.parent_first_name} ${fam.parent_last_name ?? ''}`,
-          body: `<p>${month.label}, $${Number(inv.total).toFixed(2)}, due ${String(inv.due_at).slice(0, 10)} —
+          body: `<p>${month.label}, $${Number(inv.total).toFixed(2)}, due ${new Date(inv.due_at).toLocaleDateString('en-CA', { timeZone: 'America/Denver' })} —
             reminder sent to the family. 30-day mark adds the late-fee flag.</p>`,
         }).catch(() => {})
         await supabase

@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../utils/supabase-admin'
 import { resumePaymentUrlFor } from '../utils/lifecycle'
 import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreRow } from './shared'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
+import { effectiveStartDate } from '../utils/dates'
 import TutoringSection from './tutoring-section'
 
 // Parent view (PHASE4_SPEC §3): one card per student, their enrollments with
@@ -334,7 +335,7 @@ export default async function ParentView({
                       <div>
                         <h3 className="font-bold text-hgl-slate">{label}</h3>
                         <p className="text-sm text-gray-600">
-                          Starts {formatDate(cls.start_date)}
+                          Starts {formatDate(effectiveStartDate(cls.start_date, sessions))}
                           {/* family-facing never says "TBD" (addendum §7.3) */}
                           {` · Instructor: ${one<any>(cls.instructors)?.name ?? one<any>(cls.instructors)?.email ?? 'to be announced'}`}
                         </p>

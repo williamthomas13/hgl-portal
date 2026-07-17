@@ -3,6 +3,7 @@ import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
 import MessageClass from './message-class'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
+import { effectiveStartDate } from '../utils/dates'
 
 // Instructor view (PHASE4_SPEC §5): own classes with the session calendar,
 // enrollment count vs min/capacity, Synap group link, and full-intake rosters
@@ -113,7 +114,7 @@ export default async function InstructorView({
                   )}
                 </h3>
                 <p className="text-sm text-gray-600">
-                  Starts {formatDate(c.start_date)} ·{' '}
+                  Starts {formatDate(effectiveStartDate(c.start_date, sessions))} ·{' '}
                   {c.delivery_mode === 'online' ? 'Online' : 'In person'}
                 </p>
                 <p className="text-sm text-gray-600">

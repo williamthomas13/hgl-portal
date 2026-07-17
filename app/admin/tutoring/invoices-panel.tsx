@@ -58,6 +58,12 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
  
 
+/** PL-5: timestamps like due_at (23:59 America/Denver) must be rendered in
+ *  Denver — slicing the UTC ISO string shows the next calendar day. */
+function denverDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+}
+
 function monthLabel(period: string): string {
   return new Date(period.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', {
     month: 'long',
@@ -276,8 +282,9 @@ export default function InvoicesPanel() {
                             />
                           </>
                         )}
-                        {r.due_at && <span className="text-gray-400">due {String(r.due_at).slice(0, 10)}</span>}
-                        {r.paid_at && <span className="text-green-700">paid {String(r.paid_at).slice(0, 10)}</span>}
+                        {/* PL-5: due_at is 23:59 Denver — a UTC date slice reads one day late */}
+                        {r.due_at && <span className="text-gray-400">due {denverDate(r.due_at)}</span>}
+                        {r.paid_at && <span className="text-green-700">paid {denverDate(r.paid_at)}</span>}
                       </div>
 
                       {lineForm?.id === r.id && (

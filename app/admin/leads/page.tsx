@@ -441,11 +441,30 @@ function LeadDetail({
       </div>
 
       {lead.intake && <IntakeAnswers intake={lead.intake} />}
-      {lead.family_id && (
+      {lead.family_id ? (
         <p className="text-xs text-gray-500">
           Converted: family and student records exist — schedule them from{' '}
           <a href="/admin/tutoring" className="text-hgl-blue underline">the tutoring page</a>.
         </p>
+      ) : (
+        /* PL-22: the one door for creating a family/student that didn't come
+           through a class — the schedule wizard only lists existing students. */
+        <div className="flex items-center gap-2">
+          <ConfirmAction
+            label="Create family + student"
+            message={`Create records for ${lead.contact_name ?? lead.contact_email ?? 'this family'} / ${lead.student_name ?? 'the student'}? An existing family with the same parent email is reused, never duplicated.`}
+            confirmLabel="Yes, create them"
+            className="text-hgl-blue underline font-semibold"
+            confirmClassName="text-hgl-blue font-semibold underline"
+            disabled={busy}
+            onConfirm={() =>
+              run({ action: 'create_family', id: lead.id }, 'Family and student created — schedule them from the tutoring page.')
+            }
+          />
+          <span className="text-xs text-gray-400">
+            makes them pickable in the New Student Schedule wizard
+          </span>
+        </div>
       )}
 
       {msg && <p className="text-sm text-green-700">{msg}</p>}

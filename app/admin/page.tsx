@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../utils/supabase'
-import { formatDateAdmin, formatTimestampAdmin, addDays } from '../utils/dates'
+import { formatDateAdmin, formatTimestampAdmin, addDays, effectiveStartDate } from '../utils/dates'
 import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
@@ -647,8 +647,16 @@ export default function AdminDashboard() {
               ) : (
                 <span className="italic text-amber-700">Not yet assigned</span>
               )}{' '}
-              · Starts: {formatDateAdmin(c.start_date)}
+              · Starts: {formatDateAdmin(effectiveStartDate(c.start_date, sortedSessions))}
             </p>
+            {sortedSessions.length > 0 && sortedSessions[0].session_date !== c.start_date && (
+              <p className="text-xs mt-0.5">
+                <span className="inline-block px-2 py-0.5 rounded font-semibold bg-amber-100 text-amber-800">
+                  ⚠ stored start date ({formatDateAdmin(c.start_date)}) doesn&apos;t match the first
+                  session — parents see the session date; fix the class record when you can
+                </span>
+              </p>
+            )}
             <p className="text-sm text-gray-600">
               Timezone: {c.schools?.timezone ?? '—'}{' '}
               <span className="text-xs text-gray-400">(from the school record)</span>

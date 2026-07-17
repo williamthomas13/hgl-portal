@@ -49,6 +49,21 @@ export function dateParts(iso: string): {
   }
 }
 
+/** PL-1: the class's real first day. Stored `start_date` can drift when
+ * sessions are added/moved after creation, so every "Starts …" render uses
+ * the earliest session date and falls back to `start_date` only when no
+ * sessions exist yet. */
+export function effectiveStartDate(
+  startDate: string,
+  sessions: { session_date: string }[] | null | undefined
+): string {
+  const first = (sessions ?? []).reduce<string | null>(
+    (min, s) => (min === null || s.session_date < min ? s.session_date : min),
+    null
+  )
+  return first ?? startDate
+}
+
 /** Month (1–12) and year of a calendar date, timezone-independent. */
 export function monthYear(iso: string): { month: number; year: number } {
   const d = utcAnchor(iso)

@@ -46,6 +46,7 @@ type Body =
   | ({ action: 'create' } & Record<string, unknown>)
   | ({ action: 'update'; id: string } & Record<string, unknown>)
   | { action: 'send_intake'; id: string }
+  | { action: 'create_family'; id: string }
   | { action: 'schedule_consult'; id: string; consult_at: string; consult_owner_email: string }
   | { action: 'create_offer'; name: string; kind: string; value: number; notes?: string }
   | { action: 'update_offer'; id: string; active?: boolean; name?: string; value?: number; notes?: string }
@@ -138,6 +139,88 @@ export async function POST(req: Request) {
         })
         .eq('id', lead.id)
       return NextResponse.json({ ok: true })
+    }
+
+    if (body.action === 'create_family') {
+      // PL-22: the one door for families that didn't come through a group
+      // class — the New Student Schedule wizard only lists existing students.
+      // Same dedupe rules as the intake submission: family matched by parent
+      // email (never duplicated), student matched by name inside the family.
+      if (!body.id) return NextResponse.json({ error: 'Missing lead id.' }, { status: 400 })
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('id, contact_name, contact_email, student_name, student_grade, family_id, student_id')
+        .eq('id', body.id)
+        .maybeSingle()
+      if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
+      if (!lead.contact_email) {
+        return NextResponse.json({ error: 'The lead needs a contact email first.' }, { status: 400 })
+      }
+      if (!lead.student_name?.trim()) {
+        return NextResponse.json({ error: 'The lead needs a student name first.' }, { status: 400 })
+      }
+
+      const email = lead.contact_email.trim().toLowerCase()
+      const [parentFirst, ...parentRest] = (lead.contact_name ?? '').trim().split(/\s+/)
+      const { data: existingFamily } = await supabase
+        .from('families')
+        .select('id')
+        .ilike('parent_email', email)
+        .limit(1)
+        .maybeSingle()
+      let familyId = existingFamily?.id as string | undefined
+      if (!familyId) {
+        const { data: created, error } = await supabase
+          .from('families')
+          .insert([
+            {
+              parent_first_name: parentFirst || email,
+              parent_last_name: parentRest.join(' ') || null,
+              parent_email: email,
+            },
+          ])
+          .select('id')
+          .single()
+        if (error || !created) {
+          return NextResponse.json({ error: error?.message ?? 'Could not create the family.' }, { status: 500 })
+        }
+        familyId = created.id
+      }
+
+      const [studentFirst, ...studentRest] = lead.student_name.trim().split(/\s+/)
+      const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
+      const { data: familyStudents } = await supabase
+        .from('students')
+        .select('id, first_name, last_name')
+        .eq('family_id', familyId)
+      const match = (familyStudents ?? []).find(
+        (s) => norm(s.first_name) === norm(studentFirst) && norm(s.last_name) === norm(studentRest.join(' '))
+      )
+      let studentId = match?.id as string | undefined
+      if (!studentId) {
+        const { data: student, error } = await supabase
+          .from('students')
+          .insert([
+            {
+              family_id: familyId,
+              first_name: studentFirst,
+              last_name: studentRest.join(' ') || '—',
+              grade_level: lead.student_grade ?? null,
+            },
+          ])
+          .select('id')
+          .single()
+        if (error || !student) {
+          return NextResponse.json({ error: error?.message ?? 'Could not create the student.' }, { status: 500 })
+        }
+        studentId = student.id
+      }
+
+      await supabase
+        .from('leads')
+        .update({ family_id: familyId, student_id: studentId, updated_at: new Date().toISOString() })
+        .eq('id', lead.id)
+      return NextResponse.json({ ok: true, familyId, studentId })
     }
 
     if (body.action === 'schedule_consult') {

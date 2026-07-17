@@ -21,8 +21,8 @@ import {
 // subject, matching notes visible) → weekly slots against the tutor's
 // freebusy → rate (defaults from subject) → funding → location → start date.
 // Freebusy conflicts WARN, never block — the Ops Director's judgment wins. Reuses
-// existing student/family records; creating new families/students stays on
-// the main admin page (never duplicate a family that came through a class).
+// existing student/family records; creating new families/students happens on
+// the leads page (PL-22) — never duplicate a family that came through a class.
 //
 // PL-19 additions (docs/AVAILABILITY_MATCHING_SPEC.md): the student's weekly
 // availability grid (from intake, editable here mid-phone-call, saved with
@@ -372,8 +372,10 @@ export default function EngagementWizard({
           ))}
         </select>
         <p className="text-xs text-gray-400 mt-1">
-          New family? Create the family/student on the main admin page first — never re-enter a
-          family that came through a group class.
+          New family? Add them as a lead on the{' '}
+          <a href="/admin/leads" className="text-hgl-blue underline">leads page</a> and use
+          &ldquo;Create family + student&rdquo; there — never re-enter a family that came through a
+          group class.
         </p>
       </div>
 
