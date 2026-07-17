@@ -45,3 +45,6 @@ next-env.d.ts
 
 # R console history
 .Rhistory
+
+# one-off local QA/data scripts (referenced by fixes docs, never committed)
+scripts/.tmp-*
