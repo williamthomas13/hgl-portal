@@ -5,11 +5,15 @@ import { ADMIN_EMAIL } from './lifecycle'
 import { enqueueGcalSync, processGcalQueue } from './gcal-sync'
 import { generateOccurrences, zonedToUtc, type RecurrenceSlot } from './tutoring'
 import {
+  contactBlockHtml,
   loadContactInfo,
+  money,
+  scheduleHtml,
   t1ProposalEmail,
   t1bNudgeEmail,
   type StudentScheduleBlock,
 } from './tutoring-emails'
+import { renderRegistered } from './comms-registered'
 
 // Phase 7c monthly cycle engine (spec §6): generate → propose → confirm →
 // (payment leg in tutoring-stripe.ts). Replaces the Ops Director's calendar
@@ -466,7 +470,7 @@ export async function generateMonthlyCycle(
       .select('total, status, proposal_sent_at')
       .eq('id', invoice.id)
       .single()
-    const email = t1ProposalEmail({
+    const t1Opts = {
       monthLabel: month.label,
       blocks,
       totalDue: Number(fresh?.total ?? 0),
@@ -477,7 +481,26 @@ export async function generateMonthlyCycle(
       link: `${appUrl()}/tutoring/schedule/${proposalToken(invoice.id)}`,
       autoconfirmDays: settings.autoconfirmDays,
       contact,
-    })
+    }
+    // PL-13: registry template when live; code copy otherwise.
+    const email = await renderRegistered(
+      'T1_MONTHLY_PROPOSAL',
+      { parentFirstName: family.parent_first_name ?? 'there', parentEmail: family.parent_email },
+      {
+        tutoringMonthLabel: month.label,
+        studentNames: [...new Set(blocks.map((b) => b.studentFirst))].join(' & '),
+        scheduleBlock: scheduleHtml(blocks),
+        monthTotalLine:
+          Number(fresh?.total ?? 0) > 0
+            ? `<p style="font-size:16px"><strong>Month total: ${money(Number(fresh?.total ?? 0))}</strong> — billed once you confirm, due by the end of this month.</p>`
+            : '',
+        packageNote: t1Opts.packageNote ? `<p>${t1Opts.packageNote}</p>` : '',
+        confirmLink: t1Opts.link,
+        autoconfirmDays: settings.autoconfirmDays,
+        contactBlock: contactBlockHtml(contact),
+      },
+      () => t1ProposalEmail(t1Opts)
+    )
     const sent = await sendOnce({
       dedupeKey: `t1_proposal:${invoice.id}`,
       emailType: 'T1_MONTHLY_PROPOSAL',
@@ -683,13 +706,26 @@ export async function sweepProposals(now: Date = new Date()): Promise<ProposalSw
             .filter(Boolean)
         ),
       ].join(' & ')
-      const email = t1bNudgeEmail({
+      const t1bOpts = {
         monthLabel: month.label,
         names: names || null,
         link,
         daysLeft: Math.max(1, Math.ceil(settings.autoconfirmDays - ageDays)),
         contact,
-      })
+      }
+      // PL-13: registry template when live; code copy otherwise.
+      const email = await renderRegistered(
+        'T1B_PROPOSAL_NUDGE',
+        { parentFirstName: fam.parent_first_name ?? 'there', parentEmail: fam.parent_email },
+        {
+          tutoringMonthLabel: month.label,
+          studentNames: names || 'your student',
+          confirmLink: link,
+          daysLeft: t1bOpts.daysLeft,
+          contactBlock: contactBlockHtml(contact),
+        },
+        () => t1bNudgeEmail(t1bOpts)
+      )
       const sent = await sendOnce({
         dedupeKey: `t1b_nudge:${inv.id}`,
         emailType: 'T1B_PROPOSAL_NUDGE',

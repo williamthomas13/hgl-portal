@@ -37,16 +37,41 @@ export default function TutorsPanel({
 
   const active = tutors.filter((t) => t.tutoring_active)
   const inactive = tutors.filter((t) => !t.tutoring_active)
+  // PL-42: Active/Former split with reactivate — never deletion (a tutor with
+  // session/timecard history must keep their record). "Former" also holds
+  // seeded tutors Kelsie hasn't onboarded yet; reactivate is the same flip.
+  const [view, setView] = useState<'active' | 'former'>('active')
+  const shown = view === 'active' ? active : inactive
 
   return (
     <div className="space-y-4 text-sm">
       <p className="text-gray-500">
         Tutors are the same people as instructors — turning tutoring on here makes them schedulable
         for 1-on-1 students. Their Google Workspace address is where sessions get pushed; they
-        keep blocking their availability in Google Calendar as always.
+        keep blocking their availability in Google Calendar as always. Retiring a tutor keeps
+        their whole history — reactivate any time from the Former tab.
       </p>
 
-      {active.length > 0 && (
+      <div className="flex rounded-md overflow-hidden border border-gray-300 w-fit">
+        {(['active', 'former'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`px-3 py-1.5 text-xs font-semibold ${
+              view === v ? 'bg-hgl-slate text-white' : 'bg-white text-gray-600'
+            }`}
+          >
+            {v === 'active' ? `Active (${active.length})` : `Former & not yet onboarded (${inactive.length})`}
+          </button>
+        ))}
+      </div>
+
+      {shown.length === 0 && (
+        <p className="text-gray-500 italic">
+          {view === 'active' ? 'No active tutors yet — reactivate one from the other tab.' : 'Nobody here.'}
+        </p>
+      )}
+      {shown.length > 0 && (
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
@@ -58,7 +83,7 @@ export default function TutorsPanel({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {active.map((t) => (
+            {shown.map((t) => (
               <tr key={t.id} className="hover:bg-gray-50 transition align-top">
                 <td className="px-3 py-2">
                   <div className="font-semibold text-hgl-slate">{t.name ?? '—'}</div>
@@ -98,29 +123,20 @@ export default function TutorsPanel({
                   <button onClick={() => setEditing(t)} className="text-xs text-hgl-blue underline mr-3">
                     edit
                   </button>
-                  <button onClick={() => toggleActive(t)} className="text-xs text-gray-500 underline">
-                    stop tutoring
-                  </button>
+                  {view === 'active' ? (
+                    <button onClick={() => toggleActive(t)} className="text-xs text-gray-500 underline">
+                      retire
+                    </button>
+                  ) : (
+                    <button onClick={() => toggleActive(t)} className="text-xs text-green-700 underline font-semibold">
+                      reactivate
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      )}
-
-      {inactive.length > 0 && (
-        <div className="text-xs text-gray-500">
-          Not tutoring:{' '}
-          {inactive.map((t, i) => (
-            <span key={t.id}>
-              {i > 0 && ' · '}
-              {t.name ?? t.email}{' '}
-              <button onClick={() => toggleActive(t)} className="text-hgl-blue underline">
-                enable
-              </button>
-            </span>
-          ))}
-        </div>
       )}
 
       {editing && (

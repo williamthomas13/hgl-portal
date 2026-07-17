@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
+import ScoresEntry from '../components/ScoresEntry'
 import MessageClass from './message-class'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
@@ -244,6 +245,16 @@ export default async function InstructorView({
                 })
                 .sort((a: any, b: any) => a.studentName.localeCompare(b.studentName))}
               recordedBy={email}
+            />
+
+            {/* PL-37: milestone score entry where attendance is taken. */}
+            <ScoresEntry
+              classId={c.id}
+              students={active
+                .map((e: any) => one<any>(e.students))
+                .filter(Boolean)
+                .map((st: any) => ({ id: st.id, name: `${st.first_name} ${st.last_name}` }))
+                .sort((a: any, b: any) => a.name.localeCompare(b.name))}
             />
 
             {/* Feature B3: send-from-portal class messaging + copy-emails. */}

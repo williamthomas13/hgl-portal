@@ -3,6 +3,8 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { intakeToken } from '../../../utils/intake'
 import { t7IntakeRequestEmail } from '../../../utils/intake-emails'
+import { renderRegistered } from '../../../utils/comms-registered'
+import { contactBlockHtml } from '../../../utils/tutoring-emails'
 import { loadContactInfo } from '../../../utils/tutoring-emails'
 import { sendOnce } from '../../../utils/email'
 import {
@@ -111,12 +113,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'They need a contact email first.' }, { status: 400 })
       }
       const contact = await loadContactInfo()
-      const email = t7IntakeRequestEmail({
-        contactFirst: (lead.contact_name ?? '').trim().split(/\s+/)[0] || null,
-        studentFirst: (lead.student_name ?? '').trim().split(/\s+/)[0] || null,
-        link: `${appUrl()}/intake/${intakeToken(lead.id)}`,
-        contact,
-      })
+      const contactFirst = (lead.contact_name ?? '').trim().split(/\s+/)[0] || null
+      const studentFirst = (lead.student_name ?? '').trim().split(/\s+/)[0] || null
+      const intakeLink = `${appUrl()}/intake/${intakeToken(lead.id)}`
+      // PL-13: registry template when live; code copy otherwise.
+      const email = await renderRegistered(
+        'T7_INTAKE_REQUEST',
+        {
+          parentFirstName: contactFirst ?? 'there',
+          parentEmail: lead.contact_email,
+          studentFirstName: studentFirst ?? 'your student',
+        },
+        { intakeFormLink: intakeLink, contactBlock: contactBlockHtml(contact) },
+        () => t7IntakeRequestEmail({ contactFirst, studentFirst, link: intakeLink, contact })
+      )
       // Timestamped dedupe key: re-sends are a feature ("chase the form"),
       // the email_sends log keeps the history.
       const sent = await sendOnce({

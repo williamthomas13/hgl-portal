@@ -170,6 +170,10 @@ export async function applyIntakeSubmission(
     const updates: Record<string, string> = {}
     if (sub.studentEmail && !match.student_email) updates.student_email = sub.studentEmail
     if (sub.grade && !match.grade_level) updates.grade_level = sub.grade
+    // PL-36: newest family word wins for phone + needs (these change; the
+    // family just told us the current truth).
+    if (sub.studentPhone) updates.student_phone = sub.studentPhone
+    if (sub.specialNeeds) updates.special_needs = sub.specialNeeds
     if (Object.keys(updates).length > 0) {
       await supabase.from('students').update(updates).eq('id', match.id)
     }
@@ -184,6 +188,8 @@ export async function applyIntakeSubmission(
           last_name: sub.studentLast,
           student_email: sub.studentEmail,
           grade_level: sub.grade,
+          student_phone: sub.studentPhone,
+          special_needs: sub.specialNeeds,
         },
       ])
       .select('id')
@@ -192,6 +198,26 @@ export async function applyIntakeSubmission(
       return { ok: false, error: 'Could not save the student record.' }
     }
     studentId = student.id
+  }
+
+  // PL-36: the phone + second guardian land on the family record too (fill
+  // phone only when blank — billing may have a curated value; guardian2 is
+  // family-stated truth, so it refreshes).
+  {
+    const { data: fam } = await supabase
+      .from('families')
+      .select('parent_phone')
+      .eq('id', familyId)
+      .maybeSingle()
+    const patch: Record<string, string | null> = {}
+    if (sub.guardianPhone && !fam?.parent_phone) patch.parent_phone = sub.guardianPhone
+    if (sub.guardian2Name) patch.guardian2_name = sub.guardian2Name
+    if (sub.guardian2Phone) patch.guardian2_phone = sub.guardian2Phone
+    if (sub.guardian2Email) patch.guardian2_email = sub.guardian2Email
+    if (Object.keys(patch).length > 0) {
+      const { error: famError } = await supabase.from('families').update(patch).eq('id', familyId)
+      if (famError) console.error('intake family detail update failed (submission stands):', famError.message)
+    }
   }
 
   // 2b. Availability grid (PL-19): replace this student's intake-sourced rows

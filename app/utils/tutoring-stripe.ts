@@ -9,7 +9,8 @@ import {
   currentMonthEnd,
   registerConfirmFollowUp,
 } from './tutoring-billing'
-import { loadContactInfo, t2InvoiceEmail, t4PaymentFailedEmail } from './tutoring-emails'
+import { contactBlockHtml, loadContactInfo, money as fmtMoney, t2InvoiceEmail, t4PaymentFailedEmail } from './tutoring-emails'
+import { renderRegistered } from './comms-registered'
 
 // Phase 7c payment leg (spec §6.4): Stripe is the single payment rail.
 // Autopay families get an off-session PaymentIntent against the saved
@@ -120,6 +121,32 @@ export async function issueOrCharge(invoiceId: string): Promise<{ ok: boolean; p
   }
 }
 
+
+// PL-13: registry extras for T2 — the same conditional intro/autopay pieces
+// the code renderer builds, pre-rendered as blocks.
+function t2Extras(opts: {
+  monthLabel: string
+  total: number
+  hostedUrl: string
+  dueLabel: string
+  autopayLink: string | null
+  reminder?: boolean
+}) {
+  return {
+    tutoringMonthLabel: opts.monthLabel,
+    invoiceReminderPrefix: opts.reminder ? 'Reminder: ' : '',
+    invoiceTotal: fmtMoney(opts.total),
+    invoiceDueDate: opts.dueLabel,
+    invoiceUrl: opts.hostedUrl,
+    invoiceIntroBlock: opts.reminder
+      ? `<p>Just a nudge that the ${opts.monthLabel} tutoring invoice (<strong>${fmtMoney(opts.total)}</strong>, due ${opts.dueLabel}) is still open. If it's already on its way — thank you, ignore this!</p>`
+      : `<p>Your invoice for ${opts.monthLabel} tutoring is ready: <strong>${fmtMoney(opts.total)}</strong>, due by <strong>${opts.dueLabel}</strong>.</p>`,
+    autopayBlock: opts.autopayLink
+      ? `<p style="color:#64748b;font-size:13px">Prefer not to think about this each month? <a href="${opts.autopayLink}" style="color:#00AEEE">Set up autopay</a> and future invoices charge your saved card or bank account automatically.</p>`
+      : '',
+  }
+}
+
 async function issueHostedInvoice(inv: NonNullable<Awaited<ReturnType<typeof loadInvoiceWithFamily>>>) {
   const family = inv.family!
   const customerId = await ensureStripeCustomer(family)
@@ -167,14 +194,20 @@ async function issueHostedInvoice(inv: NonNullable<Awaited<ReturnType<typeof loa
     .eq('status', 'confirmed')
 
   const contact = await loadContactInfo()
-  const email = t2InvoiceEmail({
+  const t2Opts = {
     monthLabel: month.label,
     total: Number(inv.total),
     hostedUrl: finalized.hosted_invoice_url ?? '',
     dueLabel: due.label,
     autopayLink: `${appUrl()}/tutoring/autopay/${autopayToken(family.id)}`,
     contact,
-  })
+  }
+  const email = await renderRegistered(
+    'T2_INVOICE',
+    { parentFirstName: family.parent_first_name ?? 'there', parentEmail: family.parent_email },
+    { ...t2Extras(t2Opts), contactBlock: contactBlockHtml(contact) },
+    () => t2InvoiceEmail(t2Opts)
+  )
   await sendOnce({
     // Keyed on the STRIPE invoice too: a re-issue (late fee, line edit) is a
     // new document and must re-send; plain retries of the same document dedupe.
@@ -281,7 +314,7 @@ export async function handleAutopayFailure(invoiceId: string, reason: string): P
       .eq('id', invoiceId)
   }
 
-  const email = t4PaymentFailedEmail({
+  const t4Opts = {
     monthLabel: month.label,
     total: Number(inv.total),
     attempt: attempts,
@@ -289,7 +322,24 @@ export async function handleAutopayFailure(invoiceId: string, reason: string): P
     hostedUrl: exhausted ? hostedUrl : null,
     willRetry: !exhausted,
     contact,
-  })
+  }
+  const email = await renderRegistered(
+    'T4_PAYMENT_FAILED',
+    { parentFirstName: inv.family.parent_first_name ?? 'there', parentEmail: inv.family.parent_email },
+    {
+      tutoringMonthLabel: month.label,
+      paymentFailBlock:
+        `<p>The ${fmtMoney(Number(inv.total))} charge for ${month.label} tutoring didn't go through (attempt ${attempts} of ${MAX_CHARGE_ATTEMPTS}).</p>` +
+        (t4Opts.willRetry
+          ? `<p>No action needed if this was a temporary card issue — we'll retry automatically in a couple of days.</p>`
+          : `<p><strong>We've stopped automatic retries.</strong> You can pay directly, or update your saved payment method:</p>`),
+      payButtonBlock: t4Opts.hostedUrl
+        ? `<p style="margin:24px 0"><a href="${t4Opts.hostedUrl}" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>`
+        : '',
+      contactBlock: contactBlockHtml(contact),
+    },
+    () => t4PaymentFailedEmail(t4Opts)
+  )
   await sendOnce({
     dedupeKey: `t4_failed:${invoiceId}:${attempts}`,
     emailType: 'T4_PAYMENT_FAILED',
@@ -446,7 +496,7 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
       const month = billingMonth(String(inv.period).slice(0, 7))
 
       if (overdueDays >= 10 && !inv.reminder_sent_at) {
-        const email = t2InvoiceEmail({
+        const t2rOpts = {
           monthLabel: month.label,
           total: Number(inv.total),
           hostedUrl: inv.stripe_hosted_invoice_url ?? '',
@@ -454,7 +504,13 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
           autopayLink: null,
           contact,
           reminder: true,
-        })
+        }
+        const email = await renderRegistered(
+          'T2_INVOICE',
+          { parentFirstName: fam.parent_first_name ?? 'there', parentEmail: fam.parent_email },
+          { ...t2Extras(t2rOpts), contactBlock: contactBlockHtml(contact) },
+          () => t2InvoiceEmail(t2rOpts)
+        )
         await sendOnce({
           dedupeKey: `t2_reminder:${inv.id}`,
           emailType: 'T2_INVOICE',

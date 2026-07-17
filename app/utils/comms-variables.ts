@@ -22,6 +22,59 @@ export type ExtraVars = {
   claimLink?: string
   /** LR: "instructor + room" sentence (or the not-confirmed fallback). */
   classDetailsBlock?: string
+
+  // --- PL-13 registry pass: tutoring (T-series) + cancellation (CX) ---------
+  /** T1/T1b/T2/T4: billing month, e.g. "September 2026". */
+  tutoringMonthLabel?: string
+  /** T1: distinct student first names, e.g. "Roman & Ana". */
+  studentNames?: string
+  /** Tutor's full name / first name (T8, PL-40/41). */
+  tutorName?: string
+  tutorFirstName?: string
+  /** T8: subject name, e.g. "SAT". */
+  tutoringSubject?: string
+  /** Pre-rendered per-student schedule lists (T1) or first-sessions block (T8). */
+  scheduleBlock?: string
+  /** PL-40/41: plain-English weekly summary, e.g. "Mondays at 4:00 PM…". */
+  scheduleSummary?: string
+  /** T1: "Month total: $620.00 — billed once you confirm…" or ''. */
+  monthTotalLine?: string
+  /** T1: package-covered note or ''. */
+  packageNote?: string
+  /** T1/T1b: signed proposal link. */
+  confirmLink?: string
+  /** PL-41: signed one-click approval link. */
+  approveLink?: string
+  autoconfirmDays?: number
+  daysLeft?: number
+  /** T2: first paragraph (normal vs reminder wording). */
+  invoiceIntroBlock?: string
+  /** T2 subject: '' or 'Reminder: '. */
+  invoiceReminderPrefix?: string
+  invoiceTotal?: string
+  invoiceDueDate?: string
+  invoiceUrl?: string
+  /** T2: autopay pitch paragraph or ''. */
+  autopayBlock?: string
+  /** T4: what failed + what happens next. */
+  paymentFailBlock?: string
+  /** T4: pay-now button or ''. */
+  payButtonBlock?: string
+  /** T3: before/after change list. */
+  changeListBlock?: string
+  /** CX: the offers/refund middle (options list, keep-your-hours note). */
+  cancellationOptionsBlock?: string
+  /** T7: signed intake form link. */
+  intakeFormLink?: string
+  /** T8: signed agreements + autopay links; T8 tutor/location lines. */
+  agreementsLink?: string
+  autopayLink?: string
+  tutorContactLine?: string
+  locationBlock?: string
+  /** PL-40: schedule PDF link. */
+  schedulePdfLink?: string
+  /** §8 human-help block, pre-rendered from app_settings (PL-50). */
+  contactBlock?: string
 }
 
 type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVars) => string
@@ -176,6 +229,48 @@ export const VARIABLES: Record<string, VariableDef> = {
   for_name_or_blank: {
     description: '"for Ana " on the parent send, empty on the student send (#4)',
     resolve: (c, a) => (a === 'student' ? '' : `for ${s(c)} `),
+  },
+
+  // --- PL-13: tutoring + cancellation (resolve from extras; the T/CX sends
+  // pass a tutoring stub context, so ctx-based variables above still resolve
+  // sensibly where shared, e.g. parentFirstName/studentFirstName) -----------
+  tutoringMonthLabel: { description: 'Billing month, e.g. "September 2026"', resolve: (_c, _a, e) => e.tutoringMonthLabel ?? '—' },
+  studentNames: { description: 'Student first names, e.g. "Roman & Ana"', resolve: (c, _a, e) => e.studentNames ?? c.studentFirstName },
+  tutorName: { description: "Tutor's name", resolve: (_c, _a, e) => e.tutorName ?? 'your tutor' },
+  tutorFirstName: { description: "Tutor's first name", resolve: (_c, _a, e) => e.tutorFirstName ?? e.tutorName?.split(' ')[0] ?? 'your tutor' },
+  tutoringSubject: { description: 'Tutoring subject, e.g. "SAT"', resolve: (_c, _a, e) => e.tutoringSubject ?? 'tutoring' },
+  scheduleBlock: { description: 'Pre-rendered session schedule list', block: true, resolve: (_c, _a, e) => e.scheduleBlock ?? '' },
+  scheduleSummary: { description: 'Plain-English weekly plan, e.g. "Mondays at 4:00 PM…"', resolve: (_c, _a, e) => e.scheduleSummary ?? '—' },
+  monthTotalLine: { description: 'Month total sentence (empty when package-covered)', block: true, resolve: (_c, _a, e) => e.monthTotalLine ?? '' },
+  packageNote: { description: 'Package-covered note (often empty)', block: true, resolve: (_c, _a, e) => e.packageNote ?? '' },
+  confirmLink: { description: 'Signed schedule-proposal link', resolve: (_c, _a, e) => e.confirmLink ?? '#' },
+  approveLink: { description: 'PL-41 signed one-click approval link', resolve: (_c, _a, e) => e.approveLink ?? '#' },
+  autoconfirmDays: { description: 'Days until the proposal auto-confirms', resolve: (_c, _a, e) => String(e.autoconfirmDays ?? 5) },
+  daysLeft: { description: 'Days left before auto-confirm (nudge)', resolve: (_c, _a, e) => String(e.daysLeft ?? 3) },
+  invoiceIntroBlock: { description: 'T2 first paragraph (normal vs reminder)', block: true, resolve: (_c, _a, e) => e.invoiceIntroBlock ?? '' },
+  invoiceReminderPrefix: { description: '"" or "Reminder: " (T2 subject)', resolve: (_c, _a, e) => e.invoiceReminderPrefix ?? '' },
+  invoiceTotal: { description: 'Invoice total, e.g. $620.00', resolve: (_c, _a, e) => e.invoiceTotal ?? '—' },
+  invoiceDueDate: { description: 'Due date, e.g. "August 31"', resolve: (_c, _a, e) => e.invoiceDueDate ?? '—' },
+  invoiceUrl: { description: 'Hosted invoice (view & pay) link', resolve: (_c, _a, e) => e.invoiceUrl ?? '#' },
+  autopayBlock: { description: 'Autopay pitch paragraph (may be empty)', block: true, resolve: (_c, _a, e) => e.autopayBlock ?? '' },
+  paymentFailBlock: { description: 'T4: what failed + what happens next', block: true, resolve: (_c, _a, e) => e.paymentFailBlock ?? '' },
+  payButtonBlock: { description: 'T4: pay-now button (may be empty)', block: true, resolve: (_c, _a, e) => e.payButtonBlock ?? '' },
+  changeListBlock: { description: 'T3: before/after change list', block: true, resolve: (_c, _a, e) => e.changeListBlock ?? '' },
+  cancellationOptionsBlock: {
+    description: 'CX: the options/refund middle (offers, keep-your-hours note)',
+    block: true,
+    resolve: (_c, _a, e) => e.cancellationOptionsBlock ?? '',
+  },
+  intakeFormLink: { description: 'T7 signed intake form link', resolve: (_c, _a, e) => e.intakeFormLink ?? '#' },
+  agreementsLink: { description: 'Signed policies (agreements) link', resolve: (_c, _a, e) => e.agreementsLink ?? '#' },
+  autopayLink: { description: 'Signed autopay setup link', resolve: (_c, _a, e) => e.autopayLink ?? '#' },
+  tutorContactLine: { description: 'T8 "Your tutor: … — email" line', block: true, resolve: (_c, _a, e) => e.tutorContactLine ?? '' },
+  locationBlock: { description: 'T8 where-sessions-happen line (may be empty)', block: true, resolve: (_c, _a, e) => e.locationBlock ?? '' },
+  schedulePdfLink: { description: 'PL-40 schedule PDF download link', resolve: (_c, _a, e) => e.schedulePdfLink ?? '#' },
+  contactBlock: {
+    description: 'The §8 human-help block (from the configurable contact, PL-50)',
+    block: true,
+    resolve: (_c, _a, e) => e.contactBlock ?? '',
   },
 
   // --- computed blocks ---------------------------------------------------------

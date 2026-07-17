@@ -12,7 +12,9 @@ import CollateralCard, { type CollateralFields } from './collateral-card'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import GcalPanel from './tutoring/gcal-panel'
+import ContactSettingsPanel from './contact-settings-panel'
 import AttendancePanel from '../portal/attendance-panel'
+import ScoresEntry from '../components/ScoresEntry'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h } from './ui'
 
@@ -43,6 +45,7 @@ type Enrollment = {
   qbo_sync_log: QboSyncEntry[] | null
   attendance_records: AttendanceRecord[] | null
   students: {
+    id: string
     first_name: string
     last_name: string
     student_email: string | null
@@ -297,6 +300,7 @@ export default function AdminDashboard() {
           qbo_sync_log ( id, kind, status, qbo_doc_id, qbo_doc_number, last_error ),
           attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early, note ),
           students (
+            id,
             first_name,
             last_name,
             student_email,
@@ -864,6 +868,18 @@ export default function AdminDashboard() {
               .sort((a, b) => a.studentName.localeCompare(b.studentName))}
             recordedBy={adminEmail}
           />
+
+          {/* PL-37: milestone score entry alongside attendance. */}
+          <ScoresEntry
+            classId={c.id}
+            students={(c.enrollments ?? [])
+              .filter((en) => en.students?.id)
+              .map((en) => ({
+                id: en.students!.id,
+                name: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim() || '—',
+              }))
+              .sort((a, b) => a.name.localeCompare(b.name))}
+          />
         </div>
 
         {/* ROSTER — read-only source of truth about signups */}
@@ -1220,6 +1236,9 @@ export default function AdminDashboard() {
         >
           <GcalPanel />
         </CollapsibleSection>
+
+        {/* PL-50: renders only for admins (the API 403s managers). */}
+        <ContactSettingsPanel />
       </div>
     </div>
   )

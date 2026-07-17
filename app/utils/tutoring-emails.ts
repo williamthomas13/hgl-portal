@@ -1,4 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { renderRegistered } from './comms-registered'
 import { sendOnce, wrap, footerT } from './email'
 
 // Phase 7c tutoring emails (spec §6): T1 monthly proposal, T1b nudge,
@@ -8,18 +9,29 @@ import { sendOnce, wrap, footerT } from './email'
 // of these emails or calling gets the same outcome, with the Ops Director
 // doing the action on the family's behalf.
 
-export type ContactInfo = { email: string; phone: string }
+export type ContactInfo = { name: string; email: string; phone: string }
 
+/** PL-50: the tutoring point-of-contact is a configurable app_settings
+ *  triple (name/email/phone), editable only by an admin — reassigning the
+ *  contact person updates the contact block everywhere AND the From identity
+ *  of the schedule emails at once. Fallbacks only cover a wiped settings
+ *  table; the real values are seeded. */
 export async function loadContactInfo(): Promise<ContactInfo> {
   const { data } = await supabase
     .from('app_settings')
     .select('key, value')
-    .in('key', ['contact_email', 'contact_phone'])
+    .in('key', ['contact_name', 'contact_email', 'contact_phone'])
   const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]))
   return {
+    name: map.contact_name ?? 'Kelsie Rank',
     email: map.contact_email ?? 'kelsie@highergroundlearning.com',
     phone: map.contact_phone ?? '+1 (801) 524-0817',
   }
+}
+
+/** From-identity for emails sent "by" the tutoring contact (PL-40/41). */
+export function contactFrom(c: ContactInfo): string {
+  return `${c.name} <${c.email}>`
 }
 
 /** §8 block, styled for email bodies. */
@@ -42,7 +54,7 @@ export type StudentScheduleBlock = {
   sessionLines: string[]
 }
 
-function scheduleHtml(blocks: StudentScheduleBlock[]): string {
+export function scheduleHtml(blocks: StudentScheduleBlock[]): string {
   return blocks
     .map(
       (b) => `<h3 style="color:#334155;margin:18px 0 6px">${b.studentFirst} — ${b.subjectName} with ${b.tutorFirst}</h3>
@@ -227,7 +239,7 @@ export async function sendScheduleChangeNotices(opts: {
       .from('tutoring_sessions')
       .select(
         `id, starts_at, ends_at, status,
-         students ( first_name, families ( parent_email, billing_cc_emails, timezone ) ),
+         students ( first_name, families ( parent_first_name, parent_email, billing_cc_emails, timezone ) ),
          tutoring_engagements ( subjects ( name ) ),
          instructors ( name, email, timezone )`
       )
@@ -272,7 +284,16 @@ export async function sendScheduleChangeNotices(opts: {
     }
 
     const contact = await loadContactInfo()
-    const email = t3ScheduleChangeEmail({ studentFirst: student.first_name, changeLines, contact })
+    // PL-13: registry template when live; code copy otherwise.
+    const email = await renderRegistered(
+      'T3_SCHEDULE_CHANGE',
+      { parentFirstName: family.parent_first_name ?? 'there', parentEmail: family.parent_email, studentFirstName: student.first_name },
+      {
+        changeListBlock: `<ul style="margin:0;padding-left:20px;color:#334155">${changeLines.map((l) => `<li style="margin:2px 0">${l}</li>`).join('')}</ul>`,
+        contactBlock: contactBlockHtml(contact),
+      },
+      () => t3ScheduleChangeEmail({ studentFirst: student.first_name, changeLines, contact })
+    )
     await sendOnce({
       dedupeKey: `t3_change:${opts.sessionId}:${opts.replacementId ?? opts.kind}`,
       emailType: 'T3_SCHEDULE_CHANGE',

@@ -192,6 +192,18 @@ export async function POST(req: Request) {
       }
       const { created } = await materializeSessions(engagement)
 
+      // PL-10: a schedule actually existing is what "won" means — move any
+      // open pipeline row for this student to Scheduled — won. Trigger is
+      // schedule creation, never mere family/student record creation.
+      const { error: leadAdvanceError } = await supabase
+        .from('leads')
+        .update({ status: 'scheduled', updated_at: new Date().toISOString() })
+        .eq('student_id', student_id)
+        .not('status', 'in', '("scheduled","lost")')
+      if (leadAdvanceError) {
+        console.error('PL-10 lead auto-advance failed (schedule stands):', leadAdvanceError.message)
+      }
+
       // Phase 7e §11: the family's FIRST engagement triggers the welcome/
       // handoff email (tutor contact, first-month schedule, agreements +
       // autopay links). Siblings/repeat engagements don't re-send.

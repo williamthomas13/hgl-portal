@@ -1279,12 +1279,16 @@ export type CancellationOffer = {
   savingsUsd: number
 }
 
-export function classCancellationEmail(
+/** The CX middle — options list / refund line / keep-your-hours note. Also
+ *  passed to the registry render as {cancellationOptionsBlock} (PL-13), so
+ *  the editable template and the code twin share one source of truth for
+ *  the conditional math. */
+export function cancellationOptionsHtml(
   ctx: EnrollmentEmailContext,
   audience: Audience,
   offer: CancellationOffer | null,
   creditTerm: string | null
-): Rendered {
+): string {
   const isStudent = audience === 'student'
   const s = ctx.studentFirstName
   const you = isStudent ? 'you' : s
@@ -1322,13 +1326,6 @@ export function classCancellationEmail(
     )
   }
 
-  const apology = `
-      <p>Hi ${recipientFirstName(ctx, audience)},</p>
-      <p>Unfortunately, I'm writing with a bit of bad news: we were unable to meet the minimum
-      number of students required to offer the ${ctx.className} class that ${you} signed up
-      for. As a result, we've unfortunately had to cancel the course. I understand that this
-      cancellation can be worrisome, and I sincerely apologize for the inconvenience.</p>`
-
   // Deck addendum verbatim: add-on families get this reassurance immediately
   // after the options list, regardless of which offers are on — the line is
   // written to hold for the refund-only body too.
@@ -1339,25 +1336,39 @@ export function classCancellationEmail(
         you choose — including a refund of the course fee.)</p>`
       : ''
 
-  let middle: string
   if (blocks.length === 0) {
-    middle = `
+    return `
       <p>We'll be issuing you a full refund — just reply to confirm the best way to reach you
       if any details are needed, and please accept our apologies again.</p>
       ${keepHours}`
-  } else {
-    const rendered =
-      blocks.length === 1
-        ? `<p>${blocks[0]}</p>`
-        : `<ol style="padding-left:20px">${blocks.map((b) => `<li style="margin-bottom:12px">${b}</li>`).join('')}</ol>`
-    middle = `
+  }
+  const rendered =
+    blocks.length === 1
+      ? `<p>${blocks[0]}</p>`
+      : `<ol style="padding-left:20px">${blocks.map((b) => `<li style="margin-bottom:12px">${b}</li>`).join('')}</ol>`
+  return `
       <p>However, I have a couple of other options for you:</p>
       ${rendered}
       <p>If you prefer, of course we can also offer you a <strong>full refund</strong> instead.
       <strong>Please let me know your preference by replying to this email — and reach out with
       any questions at all.</strong></p>
       ${keepHours}`
-  }
+}
+
+export function classCancellationEmail(
+  ctx: EnrollmentEmailContext,
+  audience: Audience,
+  offer: CancellationOffer | null,
+  creditTerm: string | null
+): Rendered {
+  const you = audience === 'student' ? 'you' : ctx.studentFirstName
+  const apology = `
+      <p>Hi ${recipientFirstName(ctx, audience)},</p>
+      <p>Unfortunately, I'm writing with a bit of bad news: we were unable to meet the minimum
+      number of students required to offer the ${ctx.className} class that ${you} signed up
+      for. As a result, we've unfortunately had to cancel the course. I understand that this
+      cancellation can be worrisome, and I sincerely apologize for the inconvenience.</p>`
+  const middle = cancellationOptionsHtml(ctx, audience, offer, creditTerm)
 
   return {
     from: PERSONAL_FROM,

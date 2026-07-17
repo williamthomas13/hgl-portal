@@ -609,4 +609,213 @@ Higher Ground Learning
 
 {registrationDetailsBlock}`,
   },
+
+  // ---------------------------------------------------------------------------
+  // PL-13 registry pass: cancellation (CX/CX-W) + tutoring T-series. These
+  // seed as DRAFTS (live=false) — the code-rendered twins keep sending until
+  // each is test-sent and flipped live in the editor, per the A4 ramp.
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'CX_FAMILY',
+    display_name: 'CX — Class cancellation (families)',
+    sequence_number: 'CX',
+    audience: 'both',
+    from_identity: 'billy',
+    category: 'transactional',
+    subject: 'IMPORTANT: {className} Course Cancellation',
+    footer_note: null,
+    preheader: "The class won't run — here are your options, including a full refund.",
+    body_markdown: `Hi {recipientFirstName},
+
+Unfortunately, I'm writing with a bit of bad news: we were unable to meet the minimum number of students required to offer the {className} class that {you_or_name} signed up for. As a result, we've unfortunately had to cancel the course. I understand that this cancellation can be worrisome, and I sincerely apologize for the inconvenience.
+
+{cancellationOptionsBlock}
+
+Best,
+
+William Thomas
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'CX_WAITLIST',
+    display_name: 'CX-W — Cancellation note (waitlisted families)',
+    sequence_number: 'CX-W',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Update on the {className} waitlist',
+    footer_note: null,
+    preheader: "The class won't run this term — no action needed.",
+    body_markdown: `Hi {parentFirstName},
+
+A quick update: the {className} class that {studentFirstName} was waitlisted for won't be running this term, so the waitlist is closed. No payment was ever taken and there's nothing you need to do.
+
+If the class is offered again at {schoolNickname}, registration will open through the school as usual — and if you'd like a heads-up when that happens, just reply to this email and we'll make sure you hear first.
+
+Sorry it didn't work out this time!
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'T1_MONTHLY_PROPOSAL',
+    display_name: 'T1 — Monthly schedule proposal',
+    sequence_number: 'T1',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentNames}'s tutoring schedule for {tutoringMonthLabel}",
+    footer_note: null,
+    preheader: '{tutoringMonthLabel} schedule — confirm or request changes',
+    body_markdown: `## {studentNames}'s {tutoringMonthLabel} tutoring schedule
+
+Here's the plan for {tutoringMonthLabel} — same as always unless you'd like a change:
+
+{scheduleBlock}
+
+{monthTotalLine}
+
+{packageNote}
+
+[button:Confirm schedule]({confirmLink})
+
+[Request changes →]({confirmLink})
+
+If we don't hear from you within {autoconfirmDays} days, the schedule confirms automatically and stays exactly as shown — same as our usual policy (schedule changes for the coming month need to reach us before month-end).
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T1B_PROPOSAL_NUDGE',
+    display_name: 'T1b — Proposal nudge',
+    sequence_number: 'T1b',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Reminder: {studentNames}'s {tutoringMonthLabel} tutoring schedule",
+    footer_note: null,
+    preheader: 'One click to confirm {tutoringMonthLabel}',
+    body_markdown: `## Quick reminder — {tutoringMonthLabel} schedule
+
+We sent over {studentNames}'s {tutoringMonthLabel} tutoring schedule a couple of days ago. If it looks right, one click confirms it; if not, tell us what to change.
+
+[button:Review the schedule]({confirmLink})
+
+No action needed to keep everything as-is — the schedule confirms automatically in {daysLeft} days.
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T2_INVOICE',
+    display_name: 'T2 — Monthly invoice',
+    sequence_number: 'T2',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{invoiceReminderPrefix}Your HGL tutoring invoice for {tutoringMonthLabel} — {invoiceTotal}',
+    footer_note: null,
+    preheader: '{invoiceTotal} due by {invoiceDueDate}',
+    body_markdown: `## {tutoringMonthLabel} tutoring invoice
+
+{invoiceIntroBlock}
+
+[button:View & pay invoice]({invoiceUrl})
+
+Pay by card or directly from a US bank account (ACH) — both options are on the invoice page.
+
+{autopayBlock}
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T3_SCHEDULE_CHANGE',
+    display_name: 'T3 — Schedule change confirmation',
+    sequence_number: 'T3',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s tutoring schedule changed",
+    footer_note: null,
+    preheader: "Change to {studentFirstName}'s tutoring",
+    body_markdown: `## Schedule change confirmed
+
+Here's what changed for {studentFirstName}:
+
+{changeListBlock}
+
+The tutor's calendar is already updated. If this doesn't look right, just say so and we'll fix it.
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T4_PAYMENT_FAILED',
+    display_name: 'T4 — Payment failed',
+    sequence_number: 'T4',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Payment issue — {tutoringMonthLabel} tutoring invoice',
+    footer_note: null,
+    preheader: '{tutoringMonthLabel} payment needs attention',
+    body_markdown: `## We couldn't process your payment
+
+{paymentFailBlock}
+
+{payButtonBlock}
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T7_INTAKE_REQUEST',
+    display_name: 'T7 — Intake form request',
+    sequence_number: 'T7',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "A few quick questions before {studentFirstName}'s tutoring starts",
+    footer_note: null,
+    preheader: "Five minutes, one page, no login — and you're set.",
+    body_markdown: `Hi {parentFirstName},
+
+We're excited to get started! To match {studentFirstName}'s tutor well and keep everything running smoothly, we just need a few details — the same questions we'd otherwise trade over a week of emails, all on one page.
+
+It takes about five minutes, works on a phone, and there's nothing to print, scan, or sign in to:
+
+[button:Fill out the intake form]({intakeFormLink})
+
+We'll ask about scheduling availability, what {studentFirstName} is working toward, and the practical bits (emergency contact, anything we should know). Your answers come straight to us.
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'T8_WELCOME_HANDOFF',
+    display_name: 'T8 — Welcome / handoff',
+    sequence_number: 'T8',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Welcome! {studentFirstName}'s {tutoringSubject} tutoring with {tutorFirstName}",
+    footer_note: null,
+    preheader: '{studentFirstName} + {tutorFirstName}: schedule, policies, and everything else.',
+    body_markdown: `## Welcome aboard!
+
+Hi {parentFirstName},
+
+{studentFirstName} is all set for 1-on-1 {tutoringSubject} tutoring with **{tutorName}**. Here's everything in one place.
+
+{tutorContactLine}
+
+{locationBlock}
+
+{scheduleBlock}
+
+**One thing we need:** please read and accept our scheduling & billing policies (two minutes, one click):
+
+[button:Read & accept the policies]({agreementsLink})
+
+**The one rule worth remembering:** with 24+ hours' notice, rescheduling a session is always free — inside 24 hours the prepaid session is forfeited or carries a $40/hour reschedule fee, because {tutorFirstName} is still paid for the reserved time.
+
+Prefer not to think about invoices? [Set up autopay]({autopayLink}) and each month's confirmed invoice charges your saved card or bank account automatically.
+
+{contactBlock}`,
+  },
 ]

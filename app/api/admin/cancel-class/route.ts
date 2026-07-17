@@ -3,12 +3,14 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { createSupabaseServerClient } from '../../../utils/supabase-server'
 import {
   cancellationCounselorEmail,
+  cancellationOptionsHtml,
   classCancellationEmail,
   sendOnce,
   waitlistCancellationEmail,
   type Audience,
   type CancellationOffer,
 } from '../../../utils/email'
+import { renderEmail } from '../../../utils/comms-db-render'
 import { emailContext, loadClassBundles } from '../../../utils/lifecycle'
 
 // Class cancellation (PHASE4_SPEC §12). Staff-authenticated; mutations run on
@@ -144,7 +146,15 @@ export async function POST(request: Request) {
     ]
     if (ctx.studentEmail) targets.push({ audience: 'student', to: ctx.studentEmail, tag: 's' })
     for (const t of targets) {
-      const { subject, html, from } = classCancellationEmail(ctx, t.audience, offer, creditTerm)
+      // PL-13: DB template when live; the conditional offers middle rides in
+      // as {cancellationOptionsBlock} either way.
+      const { subject, html, from } = await renderEmail(
+        'CX_FAMILY',
+        ctx,
+        t.audience,
+        { cancellationOptionsBlock: cancellationOptionsHtml(ctx, t.audience, offer, creditTerm) },
+        () => classCancellationEmail(ctx, t.audience, offer, creditTerm)
+      )
       const status = await sendOnce({
         dedupeKey: `class_cancelled_${t.tag}:${e.id}`,
         emailType: 'class_cancelled',
@@ -162,7 +172,9 @@ export async function POST(request: Request) {
   let cxwSent = 0
   for (const e of waitlisted) {
     const ctx = emailContext(bundle, e)
-    const { subject, html } = waitlistCancellationEmail(ctx)
+    const { subject, html } = await renderEmail('CX_WAITLIST', ctx, 'parent', {}, () =>
+      waitlistCancellationEmail(ctx)
+    )
     const status = await sendOnce({
       dedupeKey: `cancel_waitlist:${e.id}`,
       emailType: 'cancel_waitlist',

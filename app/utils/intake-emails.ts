@@ -3,6 +3,7 @@ import { sendOnce, wrap, footerT } from './email'
 import { loadContactInfo, contactBlockHtml, type ContactInfo } from './tutoring-emails'
 import { autopayToken } from './tutoring-billing'
 import { agreementToken } from './intake'
+import { renderRegistered } from './comms-registered'
 
 // Phase 7e intake/onboarding emails (docs/PHASE7_SPEC.md §11): T7 asks the
 // family to fill out the doctor's-office intake form; T8 is the Ops
@@ -140,7 +141,7 @@ export async function sendWelcomeHandoff(
   const agreementsLink = `${appUrl()}/agreements/${agreementToken(family.id)}`
   const autopayLink = `${appUrl()}/tutoring/autopay/${autopayToken(family.id)}`
 
-  const subject = `Welcome! ${student.first_name}'s ${subjectName} tutoring with ${tutorFirst}`
+  const codeSubject = `Welcome! ${student.first_name}'s ${subjectName} tutoring with ${tutorFirst}`
   const html = wrap(
     `<h2 style="color:#334155">Welcome aboard!</h2>
      <p>Hi ${family.parent_first_name ?? 'there'},</p>
@@ -177,13 +178,45 @@ export async function sendWelcomeHandoff(
     }
   )
 
+  // PL-13: registry template when live; the code render above is the fallback.
+  const email = await renderRegistered(
+    'T8_WELCOME_HANDOFF',
+    {
+      parentFirstName: family.parent_first_name ?? 'there',
+      parentEmail: family.parent_email,
+      studentFirstName: student.first_name,
+    },
+    {
+      tutoringSubject: subjectName,
+      tutorName: tutor.name ?? tutorFirst,
+      tutorFirstName: tutorFirst,
+      tutorContactLine: `<p><strong>Your tutor:</strong> ${tutor.name ?? tutorFirst}
+        ${tutor.email ? `— <a href="mailto:${tutor.email}" style="color:#00AEEE">${tutor.email}</a>` : ''}</p>`,
+      locationBlock: locationHtml,
+      scheduleBlock:
+        scheduleLines.length > 0
+          ? `<p><strong>The first sessions:</strong></p>
+             <ul style="margin:0;padding-left:20px;color:#334155">
+               ${scheduleLines.map((l) => `<li style="margin:2px 0">${l}</li>`).join('')}
+             </ul>
+             <p style="color:#64748b;font-size:13px">Each month you'll get the next month's
+             schedule by email to confirm or adjust — no action needed if it looks right.</p>`
+          : `<p>We'll send the session schedule shortly — each month you'll get the next
+             month's plan by email to confirm or adjust.</p>`,
+      agreementsLink,
+      autopayLink,
+      contactBlock: contactBlockHtml(contact),
+    },
+    () => ({ subject: codeSubject, html })
+  )
+
   return sendOnce({
     dedupeKey: `t8_welcome:${engagementId}`,
     emailType: 'T8_WELCOME_HANDOFF',
     to: [family.parent_email],
     cc: family.billing_cc_emails?.length ? family.billing_cc_emails : undefined,
-    subject,
-    html,
+    subject: email.subject,
+    html: email.html,
   })
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

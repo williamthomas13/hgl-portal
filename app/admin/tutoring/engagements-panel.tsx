@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { formatDateShort } from '../../utils/dates'
+import ScoresEntry from '../../components/ScoresEntry'
 import { ConfirmAction } from './confirm'
 import { WEEKDAYS, familyLabel, fmtDay, fmtTime, type Engagement } from './types'
 
@@ -196,6 +197,22 @@ export default function EngagementsPanel({
           </div>
         </div>
       ))}
+
+      {/* PL-37: milestone scores for tutoring students (class_id null) —
+          same entry the class rosters use; parents see them immediately. */}
+      {visible.length > 0 && (
+        <ScoresEntry
+          classId={null}
+          students={[
+            ...new Map(
+              visible
+                .map((e) => e.students)
+                .filter((s): s is NonNullable<typeof s> => !!s)
+                .map((s) => [s.id, { id: s.id, name: `${s.first_name} ${s.last_name}` }])
+            ).values(),
+          ].sort((a, b) => a.name.localeCompare(b.name))}
+        />
+      )}
 
       {message && (
         <div
