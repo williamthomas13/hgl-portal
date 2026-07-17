@@ -64,6 +64,19 @@ export function effectiveStartDate(
   return first ?? startDate
 }
 
+/** PL-49: sessions order by calendar date, then start time — same-date
+ * sessions (e.g. ISD's split 10:00/14:00 day) must list morning-first, and
+ * "Session N" labels derive from render order, so every sort site uses this. */
+export function bySessionStart(
+  a: { session_date: string; start_time?: string | null },
+  b: { session_date: string; start_time?: string | null }
+): number {
+  return (
+    a.session_date.localeCompare(b.session_date) ||
+    (a.start_time ?? '').localeCompare(b.start_time ?? '')
+  )
+}
+
 /** Month (1–12) and year of a calendar date, timezone-independent. */
 export function monthYear(iso: string): { month: number; year: number } {
   const d = utcAnchor(iso)

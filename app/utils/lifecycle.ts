@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { createHmac, timingSafeEqual } from 'crypto'
 import type { EnrollmentEmailContext, SessionInfo } from './email'
+import { bySessionStart } from './dates'
 
 // Shared plumbing for the email lifecycle: loads every class with its school,
 // sessions, and enrollments in one query, and provides the timezone-aware
@@ -209,9 +210,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
   return (data as any[]).map((c) => {
     const school = one<any>(c.schools)
     const instructor = one<any>(c.instructors)
-    const sessions: SessionInfo[] = [...(c.sessions ?? [])].sort((a: SessionInfo, b: SessionInfo) =>
-      a.session_date.localeCompare(b.session_date)
-    )
+    const sessions: SessionInfo[] = [...(c.sessions ?? [])].sort(bySessionStart)
     const enrollments: EnrollmentRow[] = (c.enrollments ?? [])
       .map((e: any) => {
         const student = one<any>(e.students)

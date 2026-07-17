@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../utils/supabase'
+import { bySessionStart } from '../utils/dates'
 import {
   MIN_TRACKABLE_MINUTES,
   isPastSession,
@@ -102,7 +103,7 @@ export default function AttendancePanel({
     () =>
       [...sessions]
         .filter((s) => isPastSession(s, today))
-        .sort((a, b) => b.session_date.localeCompare(a.session_date)),
+        .sort((a, b) => bySessionStart(b, a)), // newest first
     [sessions, today]
   )
 

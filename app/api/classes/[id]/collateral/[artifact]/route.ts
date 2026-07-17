@@ -12,6 +12,7 @@ import {
   loadStaticAssets,
   qrDataUrl,
   renderHtml,
+  schoolLogoDataUrl,
   signatureDataUrl,
 } from '../../../../../utils/collateral-render'
 
@@ -88,11 +89,15 @@ export async function GET(
   let stage = 'load-assets'
   let bytes: Buffer
   try {
-    const [statics, qr, signature] = await Promise.all([
+    const [statics, qr, signature, processedLogo] = await Promise.all([
       loadStaticAssets(),
       qrDataUrl(model.registerUrl),
       spec.type === 'letter' ? signatureDataUrl() : Promise.resolve(null),
+      schoolLogoDataUrl(model.schoolLogoUrl),
     ])
+    // PL-46: stale storage assets may still carry a white background — the
+    // render always uses the edge-flood-processed inline copy.
+    model.schoolLogoUrl = processedLogo
     stage = 'render'
     const assets = { ...statics, qrDataUrl: qr, signatureDataUrl: signature }
     const html =

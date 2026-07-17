@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../utils/supabase'
-import { formatDateAdmin, formatTimestampAdmin, addDays, effectiveStartDate } from '../utils/dates'
+import { formatDateAdmin, formatTimestampAdmin, addDays, bySessionStart, effectiveStartDate } from '../utils/dates'
 import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
@@ -452,9 +452,7 @@ export default function AdminDashboard() {
   // Slug, deadline, close date, school contact, and all enrollment/email/
   // Stripe state are NEVER copied — the new class is a plain new class.
   function copyClass(c: ClassRow) {
-    const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
-      a.session_date.localeCompare(b.session_date)
-    )
+    const sortedSessions = [...(c.sessions ?? [])].sort(bySessionStart)
     setWizardPrefill({
       schoolId: c.school_id ?? '',
       classType: c.class_type,
@@ -625,9 +623,7 @@ export default function AdminDashboard() {
     const waitlistCount =
       c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
     const schoolLabel = c.schools?.nickname ?? '—'
-    const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
-      a.session_date.localeCompare(b.session_date)
-    )
+    const sortedSessions = [...(c.sessions ?? [])].sort(bySessionStart)
     const lastSession = sortedSessions[sortedSessions.length - 1] ?? null
     const isCancelled = c.status === 'cancelled'
     return (

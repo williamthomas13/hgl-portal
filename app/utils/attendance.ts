@@ -1,4 +1,5 @@
 // Feature B1 attendance computation (docs/COMMS_ATTENDANCE_PARENT_SPEC.md).
+import { bySessionStart } from './dates'
 // Client-safe and pure — shared by the instructor panel, admin roster
 // summaries, the counselor view, and the parent dashboard (Feature C2).
 //
@@ -87,7 +88,7 @@ export function summarizeAttendance(
 ): AttendanceSummary {
   const past = [...sessions]
     .filter((s) => isPastSession(s, todayISO))
-    .sort((a, b) => a.session_date.localeCompare(b.session_date))
+    .sort(bySessionStart)
   const byId = new Map(
     records.filter((r) => r.enrollment_id === enrollmentId).map((r) => [r.session_id, r])
   )

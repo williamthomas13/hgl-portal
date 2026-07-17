@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import QRCode from 'qrcode'
 import { supabaseAdmin } from './supabase-admin'
+import { processLogo } from './logo-process'
 import type { Browser } from 'puppeteer-core'
 import type { StaticAssets } from './collateral-templates'
 
@@ -143,6 +144,38 @@ export function qrDataUrl(url: string): Promise<string> {
     width: 600,
     color: { dark: '#506171ff', light: '#0000' },
   })
+}
+
+// ---------------------------------------------------------------------------
+// School logo (PL-46): assets uploaded before the flood-fill route existed
+// still carry a solid white background that renders as a box on the flyer's
+// colored panel. Rather than chase stale storage objects, every render
+// re-runs the same edge-flood processing and inlines the result — already
+// transparent logos pass through unchanged (the fill only spreads from
+// near-white edges). Cached per URL for the warm lambda.
+// ---------------------------------------------------------------------------
+
+const logoCache = new Map<string, string | null>()
+
+export async function schoolLogoDataUrl(url: string | null): Promise<string | null> {
+  if (!url) return null
+  if (logoCache.has(url)) return logoCache.get(url) ?? null
+  let value: string | null = null
+  try {
+    const res = await fetch(url)
+    if (res.ok) {
+      const buf = Buffer.from(await res.arrayBuffer())
+      const processed = await processLogo(buf)
+      value = processed
+        ? `data:image/png;base64,${processed.toString('base64')}`
+        : `data:${res.headers.get('content-type') ?? 'image/png'};base64,${buf.toString('base64')}`
+    }
+  } catch (e) {
+    console.error('school logo processing failed (falling back to stored URL):', e)
+    value = url // template renders the remote image as before
+  }
+  logoCache.set(url, value)
+  return value
 }
 
 // ---------------------------------------------------------------------------

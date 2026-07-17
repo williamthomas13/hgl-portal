@@ -98,12 +98,19 @@ export default function EngagementWizard({
   }, [students, studentFilter])
 
   // Tutors offering the picked subject float up; others stay pickable.
+  // PL-35a §1a: only the READY set counts as a match — needs-prep tutors rank
+  // as a clearly-labeled middle tier and are never treated as a normal match.
+  const tutorTier = (t: Tutor): 0 | 1 | 2 => {
+    if (!subject) return 2
+    if (t.subjects.includes(subject.name)) return 2
+    if (t.subjects_with_prep.includes(subject.name)) return 1
+    return 0
+  }
   const rankedTutors = useMemo(() => {
     const active = tutors.filter((t) => t.tutoring_active)
     if (!subject) return active
-    return [...active].sort(
-      (a, b) => Number(b.subjects.includes(subject.name)) - Number(a.subjects.includes(subject.name))
-    )
+    return [...active].sort((a, b) => tutorTier(b) - tutorTier(a))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tutors, subject])
 
   // Subject default rate.
@@ -496,13 +503,25 @@ export default function EngagementWizard({
           {rankedTutors.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name ?? t.email}
-              {/* PL-25: say what "not listed" means and that it's not a block */}
-              {subject && !t.subjects.includes(subject.name)
-                ? ` — ${subject.name} isn't in their subject list (you can still assign)`
-                : ''}
+              {/* PL-25/PL-35a: say what the tier means and that neither blocks */}
+              {subject && tutorTier(t) === 1
+                ? ` — can do ${subject.name} with prep (check with them first)`
+                : subject && tutorTier(t) === 0
+                  ? ` — ${subject.name} isn't in their subject list (you can still assign)`
+                  : ''}
             </option>
           ))}
         </select>
+        {/* PL-35a: a needs-prep pick is allowed but never a silent commit */}
+        {tutor && subject && tutorTier(tutor) === 1 && (
+          <p className="text-xs text-amber-800 mt-1 bg-amber-50 border border-amber-300 rounded p-2">
+            <span className="font-semibold">
+              {tutor.name ?? 'This tutor'} can take {subject.name}, but confirm with them first
+            </span>{' '}
+            — give them a heads-up or send the material before the first session. Don&apos;t lock
+            this in without their OK.
+          </p>
+        )}
         {tutor && tutorNotes[tutor.id] && (
           <p className="text-xs text-gray-500 mt-1 bg-amber-50 border border-amber-200 rounded p-2">
             <span className="font-semibold">Matching notes:</span> {tutorNotes[tutor.id]}

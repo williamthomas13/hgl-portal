@@ -23,7 +23,7 @@ type ClassInfo = {
   sessions: Session[] | null
 }
 
-import { formatDateFull as formatDate } from '../../../utils/dates'
+import { bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
 
 function formatTime(t: string | null) {
   if (!t) return null
@@ -64,9 +64,7 @@ export default function ClassCalendarPage() {
   const icsUrl = `${origin}${icsPath}`
   const webcalUrl = icsUrl.replace(/^https?:\/\//, 'webcal://')
   const googleUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`
-  const sessions = [...(info.sessions ?? [])].sort((a, b) =>
-    a.session_date.localeCompare(b.session_date)
-  )
+  const sessions = [...(info.sessions ?? [])].sort(bySessionStart)
 
   return (
     <div className="min-h-screen bg-gray-50 p-10">

@@ -21,7 +21,11 @@ export type Tutor = {
   email: string
   name: string | null
   tutoring_active: boolean
+  /** Ready subjects — auto-matchable (PL-35a §1a). */
   subjects: string[]
+  /** Capable but confirm-with-the-tutor-first; never auto-suggested. Disjoint
+   *  from `subjects`. */
+  subjects_with_prep: string[]
   timezone: string
   google_calendar_id: string | null
   default_location: string | null

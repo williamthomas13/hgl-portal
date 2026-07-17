@@ -3,7 +3,7 @@ import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
 import MessageClass from './message-class'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
-import { effectiveStartDate } from '../utils/dates'
+import { bySessionStart, effectiveStartDate } from '../utils/dates'
 
 // Instructor view (PHASE4_SPEC §5): own classes with the session calendar,
 // enrollment count vs min/capacity, Synap group link, and full-intake rosters
@@ -73,9 +73,7 @@ export default async function InstructorView({
       {(classes as any[]).map((c) => {
         const school = one<any>(c.schools)
         const label = `${school?.nickname ?? 'HGL'} ${c.class_type}`
-        const sessions = [...(c.sessions ?? [])].sort((a: any, b: any) =>
-          a.session_date.localeCompare(b.session_date)
-        )
+        const sessions = [...(c.sessions ?? [])].sort(bySessionStart)
         const lastSession = sessions[sessions.length - 1]?.session_date ?? c.start_date
         const isPast = today > lastSession
         const active = (c.enrollments ?? []).filter(

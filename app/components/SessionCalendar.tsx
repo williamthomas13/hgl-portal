@@ -3,7 +3,7 @@
 // the Phase 4 portal views can reuse it read-only. Pure presentational: no
 // hooks, renders in server and client components alike.
 
-import { dateParts } from '../utils/dates'
+import { bySessionStart, dateParts } from '../utils/dates'
 
 export type CalendarSession = {
   session_date: string
@@ -34,7 +34,7 @@ export default function SessionCalendar({
   /** 24-hour times (admin renders 24h; public keeps AM/PM). */
   hour24?: boolean
 }) {
-  const sorted = [...sessions].sort((a, b) => a.session_date.localeCompare(b.session_date))
+  const sorted = [...sessions].sort(bySessionStart)
   if (sorted.length === 0) return null
 
   return (

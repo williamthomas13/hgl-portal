@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
 import SessionCalendar from '../components/SessionCalendar'
 import { formatDateAdmin, addDays, monthYear } from '../utils/dates'
@@ -129,6 +129,7 @@ export default function ClassWizard({
   )
   const [minEnrollment, setMinEnrollment] = useState(initial?.minEnrollment ?? '8')
   const [enrollmentDeadline, setEnrollmentDeadline] = useState('') // cohort-specific; never copied
+  const [deadlineEdited, setDeadlineEdited] = useState(false)
   const [registrationClose, setRegistrationClose] = useState('') // cohort-specific; never copied
   const [synapGroup, setSynapGroup] = useState(initial?.synapGroup ?? '')
   const [defaultLocation, setDefaultLocation] = useState(initial?.defaultLocation ?? '')
@@ -146,8 +147,26 @@ export default function ClassWizard({
   const school = schools.find((s) => s.id === schoolId) ?? null
   const instructor = instructors.find((i) => i.id === instructorId) ?? null
   const schoolContacts = contacts.filter((c) => c.school_id === schoolId)
-  const sorted = [...sessions].sort((a, b) => a.session_date.localeCompare(b.session_date))
+  const sorted = [...sessions].sort(
+    (a, b) =>
+      a.session_date.localeCompare(b.session_date) ||
+      (a.start_time ?? '').localeCompare(b.start_time ?? '')
+  )
   const startDate = sorted[0]?.session_date ?? ''
+
+  // PL-15: in-person classes are often taught on-site far away, so HGL needs
+  // an early "commit by" date (~5–6 weeks before start) to arrange instructor
+  // travel. Default it once sessions give us a start date; online classes can
+  // close near the start, so no default. Editable either way — a manual edit
+  // stops the auto-fill.
+  useEffect(() => {
+    if (deadlineEdited) return
+    if (deliveryMode === 'in_person' && startDate) {
+      setEnrollmentDeadline(addDays(startDate, -38))
+    } else if (deliveryMode === 'online') {
+      setEnrollmentDeadline('')
+    }
+  }, [deliveryMode, startDate, deadlineEdited])
 
   // -- "+ Add new" inline creators ------------------------------------------
   const [addingSchool, setAddingSchool] = useState(false)
@@ -807,9 +826,21 @@ export default function ClassWizard({
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Enrollment deadline</label>
-            <input type="date" value={enrollmentDeadline} onChange={(e) => setEnrollmentDeadline(e.target.value)} className={inputCls} />
+            <input
+              type="date"
+              value={enrollmentDeadline}
+              onChange={(e) => {
+                setDeadlineEdited(true)
+                setEnrollmentDeadline(e.target.value)
+              }}
+              className={inputCls}
+            />
             <DateHint value={enrollmentDeadline} />
-            <p className="text-xs text-gray-500 mt-1">Optional — min-enrollment check runs here (else 7 days before start).</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Your commit-by date — the flyer and letter print THIS as the urgency date, and the
+              min-enrollment check runs here (else 7 days before start). In-person classes default
+              to ~5–6 weeks before start so there&apos;s time to arrange instructor travel.
+            </p>
           </div>
 
           <div>

@@ -5,6 +5,7 @@ import {
   weekdayNumbersFromDates,
 } from './collateral-shared'
 import type { CollateralLanguage, CollateralType } from './collateral-types'
+import { bySessionStart } from './dates'
 
 // Phase 4.5 collateral data layer (docs/hgl-phase4.5-collateral-spec.md §3).
 // Loads one class into the template model both artifacts render from. All
@@ -86,9 +87,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
   if (error || !c) return null
 
   const school = one<any>(c.schools)
-  const sessions: SessionRow[] = [...((c.sessions ?? []) as SessionRow[])].sort((a, b) =>
-    a.session_date.localeCompare(b.session_date)
-  )
+  const sessions: SessionRow[] = [...((c.sessions ?? []) as SessionRow[])].sort(bySessionStart)
   const firstSession = sessions[0]?.session_date ?? c.start_date
   const lastSession = sessions[sessions.length - 1]?.session_date ?? c.start_date
 
@@ -124,10 +123,14 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
     promo: promoComplete
       ? { code: c.promo_code, amount: formatMoney(Number(c.promo_amount)), deadline: c.promo_deadline }
       : null,
-    // PL-15: the printed deadline is the class's real registration gate.
-    // registration_close_date is what /register actually enforces; the older
-    // enrollment_deadline field only backfills classes without one.
-    enrollmentDeadline: c.registration_close_date ?? c.enrollment_deadline ?? null,
+    // PL-15 (batch 2 revert): collateral deliberately prints the EARLY
+    // enrollment deadline, not the registration close date. In-person classes
+    // are often taught on-site far away (Cape Town, Cairo…), so HGL needs a
+    // "commit by" date ~5–6 weeks out to arrange instructor travel, while
+    // true registration can stay open much later. The urgency date on the
+    // flyer is that early deadline; registration_close_date only backfills
+    // classes that never set one.
+    enrollmentDeadline: c.enrollment_deadline ?? c.registration_close_date ?? null,
     sessions,
     firstSession,
     lastSession,

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import SessionCalendar from '../../components/SessionCalendar'
 import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
-import { formatDateOnly } from '../../utils/dates'
+import { bySessionStart, formatDateOnly } from '../../utils/dates'
 
 type SessionRow = {
   session_date: string
@@ -240,9 +240,7 @@ export default function RegistrationPage() {
 
   if (!classDetails) return <div className="p-10 text-center">Loading class details...</div>
 
-  const sessions = [...(classDetails.sessions ?? [])].sort((a, b) =>
-    a.session_date.localeCompare(b.session_date)
-  )
+  const sessions = [...(classDetails.sessions ?? [])].sort(bySessionStart)
   const firstSession = sessions[0]?.session_date ?? classDetails.start_date
   const classTime = classTimeOf(sessions)
   const schoolLabel = classDetails.schools?.nickname ?? 'HGL'

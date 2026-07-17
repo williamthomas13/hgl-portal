@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../utils/supabase-admin'
 import { resumePaymentUrlFor } from '../utils/lifecycle'
 import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreRow } from './shared'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
-import { effectiveStartDate } from '../utils/dates'
+import { bySessionStart, effectiveStartDate } from '../utils/dates'
 import TutoringSection from './tutoring-section'
 
 // Parent view (PHASE4_SPEC §3): one card per student, their enrollments with
@@ -191,9 +191,7 @@ export default async function ParentView({
       if (e.payment_status !== 'Paid') continue
       const cls = one<any>(e.classes)
       if (!cls || cls.status === 'cancelled') continue
-      const sessions = [...(cls.sessions ?? [])].sort((a: any, b: any) =>
-        a.session_date.localeCompare(b.session_date)
-      )
+      const sessions = [...(cls.sessions ?? [])].sort(bySessionStart)
       const next = sessions.find((s: any) => s.session_date >= today)
       if (!next) continue
       const clsSchool = one<any>(cls.schools)

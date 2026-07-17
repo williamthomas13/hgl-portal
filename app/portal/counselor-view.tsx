@@ -3,6 +3,7 @@ import SessionCalendar from '../components/SessionCalendar'
 import CopyButton from './copy-button'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
+import { bySessionStart } from '../utils/dates'
 
 // Counselor view (PHASE4_SPEC §4): the school's open/upcoming classes with
 // paid/capacity, waitlist depth, and the registration link; a roster per
@@ -82,9 +83,7 @@ export default async function CounselorView({
   const today = new Date().toLocaleDateString('en-CA')
 
   const decorated = (classes ?? []).map((c: any) => {
-    const sessions = [...(c.sessions ?? [])].sort((a: any, b: any) =>
-      a.session_date.localeCompare(b.session_date)
-    )
+    const sessions = [...(c.sessions ?? [])].sort(bySessionStart)
     const firstSession = sessions[0]?.session_date ?? c.start_date
     const registrationClose = c.registration_close_date ?? firstSession
     const enrollments = c.enrollments ?? []

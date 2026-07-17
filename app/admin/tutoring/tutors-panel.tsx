@@ -68,7 +68,17 @@ export default function TutorsPanel({
                   )}
                 </td>
                 <td className="px-3 py-2 text-gray-600 max-w-48">
-                  {t.subjects.length ? t.subjects.join(', ') : <span className="italic text-gray-400">none set</span>}
+                  {t.subjects.length ? (
+                    t.subjects.join(', ')
+                  ) : (
+                    <span className="italic text-gray-400">none set</span>
+                  )}
+                  {/* PL-35a: capable-but-confirm-first set, visually distinct */}
+                  {(t.subjects_with_prep ?? []).length > 0 && (
+                    <span className="block text-xs text-amber-700 mt-0.5">
+                      Also, with prep — confirm first: {t.subjects_with_prep.join(', ')}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-gray-600">{t.timezone}</td>
                 <td className="px-3 py-2 text-gray-600 max-w-44">
@@ -142,6 +152,7 @@ function TutorEditor({
   onClose: (changed: boolean) => void
 }) {
   const [picked, setPicked] = useState<string[]>(tutor.subjects)
+  const [pickedPrep, setPickedPrep] = useState<string[]>(tutor.subjects_with_prep ?? [])
   const [timezone, setTimezone] = useState(tutor.timezone)
   const [calendarId, setCalendarId] = useState(tutor.google_calendar_id ?? '')
   const [location, setLocation] = useState(tutor.default_location ?? '')
@@ -161,6 +172,7 @@ function TutorEditor({
       .from('instructors')
       .update({
         subjects: picked,
+        subjects_with_prep: pickedPrep,
         timezone: timezone || 'America/Denver',
         google_calendar_id: calendarId.trim() || null,
         default_location: location.trim() || null,
@@ -186,28 +198,52 @@ function TutorEditor({
         </h3>
 
         <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">Subjects</label>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">
+            Subjects{' '}
+            <span className="font-normal text-gray-400">
+              — click to cycle: <span className="font-semibold text-hgl-slate">ready</span> →{' '}
+              <span className="font-semibold text-amber-700">with prep, confirm first</span> → off.
+              Ready subjects auto-match in the wizard; with-prep ones never do.
+            </span>
+          </label>
           <div className="flex flex-wrap gap-2">
-            {subjects.map((s) => (
-              <label
-                key={s.id}
-                className={`px-2 py-1 rounded border cursor-pointer text-xs ${
-                  picked.includes(s.name)
-                    ? 'bg-hgl-slate text-white border-hgl-slate'
-                    : 'bg-white text-gray-600 border-gray-300'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="hidden"
-                  checked={picked.includes(s.name)}
-                  onChange={() =>
-                    setPicked((p) => (p.includes(s.name) ? p.filter((x) => x !== s.name) : [...p, s.name]))
+            {subjects.map((s) => {
+              const state = picked.includes(s.name) ? 'ready' : pickedPrep.includes(s.name) ? 'prep' : 'off'
+              const cycle = () => {
+                if (state === 'ready') {
+                  setPicked((p) => p.filter((x) => x !== s.name))
+                  setPickedPrep((p) => [...p, s.name])
+                } else if (state === 'prep') {
+                  setPickedPrep((p) => p.filter((x) => x !== s.name))
+                } else {
+                  setPicked((p) => [...p, s.name])
+                }
+              }
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={cycle}
+                  className={`px-2 py-1 rounded border cursor-pointer text-xs ${
+                    state === 'ready'
+                      ? 'bg-hgl-slate text-white border-hgl-slate'
+                      : state === 'prep'
+                        ? 'bg-amber-50 text-amber-800 border-amber-400'
+                        : 'bg-white text-gray-600 border-gray-300'
+                  }`}
+                  title={
+                    state === 'ready'
+                      ? 'Ready — auto-matchable'
+                      : state === 'prep'
+                        ? 'Capable with prep — confirm with the tutor first, never auto-suggested'
+                        : 'Not offered'
                   }
-                />
-                {s.name}
-              </label>
-            ))}
+                >
+                  {s.name}
+                  {state === 'prep' ? ' *' : ''}
+                </button>
+              )
+            })}
           </div>
         </div>
 

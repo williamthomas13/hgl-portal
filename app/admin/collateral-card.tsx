@@ -149,6 +149,13 @@ export default function CollateralCard({
         </button>
       </div>
 
+      {/* PL-15: the urgency date on the printed pieces is deliberately the
+          EARLY commit-by date, not when registration actually closes. */}
+      <p className="text-xs text-gray-500 mb-3">
+        The flyer prints the <strong>enrollment deadline</strong> (your commit-by date, set on the
+        class), not the registration close date — registration can stay open later.
+      </p>
+
       {showPreviews && (
         <div className="flex flex-wrap gap-3 mb-4">
           {langs.flatMap((lang) =>
