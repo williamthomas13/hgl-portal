@@ -268,12 +268,16 @@ export async function POST(req: Request) {
         const paidCount = bundle.enrollments.filter(
           (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
         ).length;
+        const pendingCount = bundle.enrollments.filter(
+          (e) => e.payment_status === 'Pending'
+        ).length;
         const note = registrationNotificationContent({
           studentName: `${enrollment.studentFirstName} ${enrollment.studentLastName}`,
           label: `${bundle.schoolLabel} ${bundle.classType}`,
           schoolName: bundle.schoolName,
           addonNames: enrollment.addons.map((a) => `${a.name} (${a.hours}h)`),
           paid: paidCount,
+          pending: pendingCount,
           minEnrollment: bundle.minEnrollment,
           capacity: bundle.capacity,
         });

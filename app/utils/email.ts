@@ -1781,14 +1781,18 @@ export function registrationNotificationContent(opts: {
   schoolName: string
   addonNames: string[] // in-checkout tutoring add-ons, [] when none
   paid: number
+  pending: number
   minEnrollment: number
   capacity: number
 }): { subject: string; body: string } {
-  const counts = `${opts.paid} paid / ${opts.minEnrollment} min / ${opts.capacity} cap`
+  // PL-57: a registration only exists because payment completed — "paid" is
+  // noise. Pending rides the count as "3 + 1 pending" only when present.
+  const taken = opts.pending > 0 ? `${opts.paid} + ${opts.pending} pending` : `${opts.paid}`
+  const counts = `${taken} / ${opts.minEnrollment} min / ${opts.capacity} cap`
   return {
-    subject: `New paid registration: ${opts.studentName} — ${opts.label} (${counts})`,
+    subject: `New registration: ${opts.studentName} — ${opts.label} (${counts})`,
     body: `
-      <p><strong>${opts.studentName}</strong> paid for <strong>${opts.label}</strong>
+      <p><strong>${opts.studentName}</strong> registered for <strong>${opts.label}</strong>
       (${opts.schoolName}).</p>
       ${
         opts.addonNames.length > 0

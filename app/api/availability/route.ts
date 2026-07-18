@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     subject: `Add-on family shared availability — ${student.first_name} ${student.last_name} is ready to schedule`,
     body: `<p><strong>${fam?.parent_first_name ?? 'A parent'}</strong> (${fam?.parent_email ?? '—'})
       shared ${student.first_name}'s availability${body.availability.length === 0 ? ' (cleared it, actually)' : ''}.</p>
-      <p>It's on the student record — the New Student Schedule wizard on /admin/tutoring will
+      <p>It's on the student record — the student-schedule wizard on /admin/tutoring will
       suggest matching times.</p>`,
   }).catch((e) => console.error('availability alert failed (rows stand):', e))
 

@@ -14,7 +14,9 @@ Sample data impersonated bugs three times in one review session: sample tutor li
 - For compose-at-send templates (T2, T4, CX, CX-W), sample the composed blocks with a worked example rather than empty — specifically include a filled T4 attempt-3 render (the highest-stakes email in the set).
 - **Footer-note field hint:** the template editor's "Footer note" input renders in the parent-visible email but sits right next to the internal "version notes" input and looks identical — an internal review note briefly went live in a footer this session. Add distinguishing helper/placeholder text, e.g. "Visible to recipients — appears above the standard footer."
 
-## PL-57 · Admin alert copy pass
+## PL-57 · Admin alert copy pass ✅
+
+> **Shipped.** Registration alert: subject "New registration: {student} — {class} ({counts})" (the [HGL Admin] prefix is added by the alert sender; the running-counts ticker stays), body "registered for", counts "3 / 8 min / 15 cap" — and pending shows as "3 + 1 pending" only when there are pending rows. Availability-shared alert body: "the student-schedule wizard" (the word "New" dropped).
 - Registration alert: drop "paid" everywhere — subject "[HGL Admin] New registration: {student} — {class}", body likewise, count "(3 / 8 min / 15 cap)". A registration only exists because payment completed; "paid" is noise (and if pending visibility is wanted, use the badge format "3 + 1 pending", still without the word "paid").
 - Availability-shared alert: drop the word "New" from the body ("it's new now, but soon it won't be").
 
