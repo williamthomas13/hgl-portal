@@ -4,7 +4,7 @@ From Scarlett's full template-review session (all 12 ramp templates read as real
 
 **Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · contact block on parent surfaces · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
 
-**Template ramp status (context, not work):** all 12 originally registered templates are now **live** (Scarlett reviewed each; T_SCHEDULE_CONFIRM v2, T_SCHEDULE_SET v3, and T7 v2 carry her edits). Still drafts by design: #8b, #8b-n (test-sent, under review) and NW (held for the PL-54 amendment below).
+**Template ramp status (context, not work):** all 12 originally registered templates are now **live** (Scarlett reviewed each; T_SCHEDULE_CONFIRM v2, T_SCHEDULE_SET v3, and T7 v2 carry her edits). Still drafts by design: #8b, #8b-n (test-sent, under review). ~~NW (held for the PL-54 amendment below)~~ → **NW flipped live** with the amendment; **WR (PL-59) registered live** too. *(All five batch-5 items shipped July 22 — see per-item notes below.)*
 
 ---
 
