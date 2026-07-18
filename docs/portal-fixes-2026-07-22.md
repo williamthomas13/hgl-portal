@@ -18,7 +18,9 @@ Sample data impersonated bugs three times in one review session: sample tutor li
 - Registration alert: drop "paid" everywhere — subject "[HGL Admin] New registration: {student} — {class}", body likewise, count "(3 / 8 min / 15 cap)". A registration only exists because payment completed; "paid" is noise (and if pending visibility is wanted, use the badge format "3 + 1 pending", still without the word "paid").
 - Availability-shared alert: drop the word "New" from the body ("it's new now, but soon it won't be").
 
-## PL-58 · Delivery-mode-aware phrasing in #0 (+ sweep)
+## PL-58 · Delivery-mode-aware phrasing in #0 (+ sweep) ✅
+
+> **Shipped.** `{classLocationPhrase}` variable added (in-person → "the classroom location" · online → "the meeting link for class"). New live versions published by patching each template's CURRENT active body (editor edits survive): **#0-P v3** (the approved sentence verbatim), **#0-S v2** and **#1 v2** (both said "classroom location" unconditionally — converted to the variable). Sweep of every live template body + code renderers + seeds found no other hedge. Verified: both modes resolve correctly and all patched versions render clean through the real preview endpoint. One observation left for Scarlett: **E5's subject** "Classroom location for {className}" also reads wrong for online classes (its *body* already resolves `{classroom}` to the meeting link) — no approved replacement wording exists, so it was left alone; editable in the template editor whenever you pick a phrasing.
 #0's "and course room location (for both in-person and online classes)" is MailerLite-era hedging — the portal knows `delivery_mode` at render time.
 - Add a variable (e.g. `{classLocationPhrase}`) resolving per class: in-person → "the classroom location" · online → "the meeting link for class". Seed #0-P/#0-S new versions using it: "This includes diagnostic test information, instructor information, and {classLocationPhrase}."
 - Sweep all live templates for the same hedge ("for both in-person and online", "location or meeting link", etc.) and convert to the variable.

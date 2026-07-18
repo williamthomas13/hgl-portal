@@ -147,6 +147,12 @@ export const VARIABLES: Record<string, VariableDef> = {
     block: true,
     resolve: (c) => classroomValue(c),
   },
+  // PL-58: the portal knows delivery_mode at render time — no more
+  // "for both in-person and online" hedging.
+  classLocationPhrase: {
+    description: 'Per delivery mode: "the classroom location" (in-person) or "the meeting link for class" (online)',
+    resolve: (c) => (c.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'),
+  },
   examName: {
     description: 'SAT / ACT / "the exam"',
     resolve: (c) => c.examInfo?.examName ?? 'the exam',

@@ -32,7 +32,7 @@ export const TEMPLATE_SEEDS: TemplateSeed[] = [
 
 Thanks for registering! Your class registration with Higher Ground Learning is confirmed.
 
-We'll be in touch with you in the days before the first day of class with all the relevant information that you'll need! This includes diagnostic test information, instructor information, and course room location (for both in-person and online classes).
+We'll be in touch with you in the days before the first day of class with all the relevant information that you'll need! This includes diagnostic test information, instructor information, and {classLocationPhrase}.
 
 {addonTutoringBlock}
 
@@ -62,7 +62,7 @@ If you do know, great! We'll teach you a lot of other things, too. 🙂
 
 **{studentFirstName}, this is just a quick note to let you know that you have been registered for the {className} class starting on {firstSessionDate}.**
 
-In the days before the course starts, you'll receive the necessary course information, such as classroom location and information to access your initial diagnostic test.
+In the days before the course starts, you'll receive the necessary course information, such as {classLocationPhrase} and information to access your initial diagnostic test.
 
 (By the way, that test is due {diagnosticDueDate}!)
 
@@ -199,7 +199,7 @@ We don't take lightly the chance to work with {studentFirstName} and to help the
 
 So here's what happens next.
 
-In the days before the course starts, you and {studentFirstName} will receive the necessary course information, such as classroom location and diagnostic test access.
+In the days before the course starts, you and {studentFirstName} will receive the necessary course information, such as {classLocationPhrase} and diagnostic test access.
 
 By the way, you might be interested in [College Prep Compass]({compassLink}), where we send out useful information to help you along in this process:
 

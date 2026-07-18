@@ -220,7 +220,7 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       <p>Thanks for registering! Your class registration with Higher Ground Learning is confirmed.</p>
       <p>We'll be in touch with you in the days before the first day of class with all the relevant
       information that you'll need! This includes diagnostic test information, instructor information,
-      and course room location (for both in-person and online classes).</p>
+      and ${classLocationPhrase(ctx)}.</p>
       ${addonTutoringBlockHtml(ctx)}
       <p>If you have any questions between now and then, you can respond to this email (but maybe
       check our <a href="https://highergroundlearning.com/faqs#general">FAQs</a> first).</p>
@@ -266,7 +266,7 @@ export function studentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered 
       <p><strong>${ctx.studentFirstName}, this is just a quick note to let you know that you have
       been registered for the ${ctx.className} class starting on ${formatDate(ctx.firstSession)}.</strong></p>
       <p>In the days before the course starts, you'll receive the necessary course information,
-      such as classroom location and information to access your initial diagnostic test.</p>
+      such as ${classLocationPhrase(ctx)} and information to access your initial diagnostic test.</p>
       <p>(By the way, that test is due ${formatDate(ctx.diagnosticDueDate)}!)</p>
       <p>Until then, you might be interested in signing up for our free
       <a href="${COMPASS_URL}">College Prep Compass</a>, which goes over:</p>
@@ -379,7 +379,7 @@ function thankYouBody(ctx: EnrollmentEmailContext) {
       score on the test. And we really appreciate your vote of confidence in us.</p>
       <p>So here's what happens next.</p>
       <p>In the days before the course starts, you and ${s} will receive the necessary course
-      information, such as classroom location and diagnostic test access.</p>
+      information, such as ${classLocationPhrase(ctx)} and diagnostic test access.</p>
       <p>By the way, you might be interested in <a href="${COMPASS_URL}">College Prep Compass</a>,
       where we send out useful information to help you along in this process:</p>
       <ul style="padding-left:20px">
@@ -628,6 +628,12 @@ export function classDetailsEmail(ctx: EnrollmentEmailContext, audience: Audienc
 // ---------------------------------------------------------------------------
 // #5 — Location Reminder · 1 day before, 11:00 · both (pronouns) · info@ · T
 // ---------------------------------------------------------------------------
+
+// PL-58: delivery-mode-aware location phrasing (twin of the registry's
+// {classLocationPhrase} variable).
+function classLocationPhrase(ctx: EnrollmentEmailContext): string {
+  return ctx.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'
+}
 
 export function locationReminderEmail(ctx: EnrollmentEmailContext, audience: Audience): Rendered {
   const isStudent = audience === 'student'
