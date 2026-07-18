@@ -31,12 +31,39 @@ import { templateMetaFor, zonedTimeToUtc } from './comms'
 
 const RELATIONSHIP_TYPES = new Set(['faq', 'second_diagnostic', 'review_request', 'tutoring_offer'])
 
-type Projected = {
+export type Projected = {
   dedupe_key: string
   email_type: string
   enrollment_id: string
   recipient_email: string
   scheduled_for: string
+}
+
+/** Insert-if-absent (history rows win via unique dedupe_key). Shared by the
+ *  full reconciliation below and PL-51's per-enrollment inline pass. */
+export async function insertScheduledRows(classId: string, projected: Projected[]): Promise<number> {
+  if (projected.length === 0) return 0
+  const rows = projected.map((p) => {
+    const meta = templateMetaFor(p.email_type, p.dedupe_key)
+    return {
+      dedupe_key: p.dedupe_key,
+      template_key: meta.key,
+      recipient_role: meta.role,
+      enrollment_id: p.enrollment_id,
+      class_id: classId,
+      recipient_email: p.recipient_email.toLowerCase(),
+      scheduled_for: p.scheduled_for,
+      status: 'scheduled',
+    }
+  })
+  const { error, count } = await supabase
+    .from('email_sends')
+    .upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true, count: 'exact' })
+  if (error) {
+    console.error(`projector insert failed for class ${classId}:`, error.message)
+    return 0
+  }
+  return count ?? rows.length
 }
 
 function hoursAfter(iso: string, hours: number): string {
@@ -139,27 +166,10 @@ export async function projectScheduledSends(
   const existingByKey = new Map((existing ?? []).map((r) => [r.dedupe_key, r]))
 
   // Insert-if-absent: history (sent/cancelled) rows win via unique dedupe_key.
-  const toInsert = projected.filter((p) => !existingByKey.has(p.dedupe_key))
-  if (toInsert.length > 0) {
-    const rows = toInsert.map((p) => {
-      const meta = templateMetaFor(p.email_type, p.dedupe_key)
-      return {
-        dedupe_key: p.dedupe_key,
-        template_key: meta.key,
-        recipient_role: meta.role,
-        enrollment_id: p.enrollment_id,
-        class_id: bundle.id,
-        recipient_email: p.recipient_email.toLowerCase(),
-        scheduled_for: p.scheduled_for,
-        status: 'scheduled',
-      }
-    })
-    const { error: insertError, count } = await supabase
-      .from('email_sends')
-      .upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true, count: 'exact' })
-    if (insertError) console.error(`projector insert failed for class ${bundle.id}:`, insertError.message)
-    else result.inserted = count ?? rows.length
-  }
+  result.inserted = await insertScheduledRows(
+    bundle.id,
+    projected.filter((p) => !existingByKey.has(p.dedupe_key))
+  )
 
   for (const row of existing ?? []) {
     const p = byKey.get(row.dedupe_key)

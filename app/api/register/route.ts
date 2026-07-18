@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { localDate, DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { upsertFamilyAndStudent } from '../../utils/registration'
+import { runEnrollmentCommsPass } from '../../utils/comms-inline'
 
 // Creates the family + student + Pending enrollment for a registration.
 // Phase 3 moved these writes out of the browser (anon has no RLS policies);
@@ -116,6 +117,16 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+
+  // PL-51: materialize this enrollment's PR rows immediately (and send
+  // anything already due) behind the response — the daily cron remains the
+  // batch backstop. Explicit catch: never a floating promise (7c rule).
+  const newEnrollmentId = enrollmentData.id
+  after(() =>
+    runEnrollmentCommsPass(newEnrollmentId).catch((e) =>
+      console.error('inline comms pass failed (cron will catch up):', e)
+    )
+  )
 
   // The admin registration notification fires from the Stripe webhook once
   // this enrollment is PAID — creation alone is silent (July 8 punch list).

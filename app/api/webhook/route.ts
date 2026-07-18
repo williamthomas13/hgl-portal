@@ -9,6 +9,7 @@ import {
   resolveInvoicePaymentIntentId,
 } from '../../utils/tutoring-stripe';
 import { renderEmail } from '../../utils/comms-db-render';
+import { runEnrollmentCommsPass } from '../../utils/comms-inline';
 import {
   lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
@@ -171,6 +172,9 @@ export async function POST(req: Request) {
         paid_at: new Date().toISOString(),
         // Real charged total (class + any add-on) for the #0-P order summary.
         amount_paid: session.amount_total != null ? session.amount_total / 100 : null,
+        // PL-52: the pending-cart marker has served its purpose.
+        pending_package_id: null,
+        pending_checkout_total: null,
       });
 
     const { data, error } = enrollmentId
@@ -397,6 +401,17 @@ export async function POST(req: Request) {
     } catch (emailErr) {
       console.error('Confirmation email failed:', emailErr);
     }
+
+    // PL-51: re-materialize this enrollment's schedule for its new Paid state
+    // (PR rows become obsolete via the cron's reconciliation; thank-you/#9/
+    // sequence rows appear now) and send anything already due — a payment
+    // days after registration releases backed-up steps immediately instead of
+    // waiting for tomorrow's cron.
+    after(() =>
+      runEnrollmentCommsPass(paidEnrollmentId).catch((e) =>
+        console.error('inline comms pass failed (cron will catch up):', e)
+      )
+    );
   }
 
   // Phase 6 (docs/PHASE6_SPEC.md §5): a refund issued in the Stripe dashboard

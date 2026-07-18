@@ -120,10 +120,18 @@ export async function POST(request: Request) {
     });
 
     // Stamp the Stripe session id onto the enrollment immediately so the
-    // webhook has a deterministic lookup key.
+    // webhook has a deterministic lookup key. PL-52: the add-on selection and
+    // the built total persist HERE, not just in the Stripe session — an
+    // abandoned checkout must not evaporate the parent's choice, and
+    // /api/resume-payment rebuilds the identical cart from these fields.
+    const builtTotal = lineItems.reduce((sum, li) => sum + li.price_data.unit_amount, 0) / 100;
     const { error: stampError } = await supabase
       .from('enrollments')
-      .update({ stripe_session_id: session.id })
+      .update({
+        stripe_session_id: session.id,
+        pending_package_id: packageId ?? null, // explicit null: "no thanks" clears an earlier pick
+        pending_checkout_total: builtTotal,
+      })
       .eq('id', enrollmentId);
 
     if (stampError) {
