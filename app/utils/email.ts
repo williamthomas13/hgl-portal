@@ -776,6 +776,38 @@ export function tutoringOfferEmail(
 }
 
 // ---------------------------------------------------------------------------
+// PL-59: waitlist release when a class COMPLETES still-full — the common case
+// CX-W never covered (the class ran; the waitlisted family simply never
+// heard). Approved copy: honest close-out + a deliberate 1-on-1 offer
+// ("someone who wanted SAT prep from us and was willing to pay — help them
+// out asap") + the same "you'll hear first" promise, backed by the PL-54
+// interest list. No pricing here — that's the scheduling conversation.
+// ---------------------------------------------------------------------------
+
+export function waitlistReleaseEmail(ctx: EnrollmentEmailContext, contactHtml: string): Rendered {
+  const s = ctx.studentFirstName
+  return {
+    subject: `An update on ${ctx.schoolNickname} ${ctx.classType} — and an option for ${s}`,
+    html: wrap(
+      `
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>An update on ${ctx.schoolNickname} ${ctx.classType}: the class stayed full, and we
+      weren't able to open up a place for ${s}. No payment was ever taken, and I'm sorry it
+      didn't work out this time.</p>
+      <p>If ${s} still wants to get ready, we can help right away with
+      <strong>1-on-1 tutoring</strong> — the same prep, tailored entirely to ${s}, scheduled
+      around your family. <a href="${ctx.availabilityUrl}" style="color:#00AEEE">Share your
+      availability</a> and we'll propose times, or just reply and we'll talk it through.</p>
+      <p>And either way, you're still on our list — the moment a new ${ctx.schoolNickname}
+      ${ctx.classType} course opens, you'll be the first to know. Nothing to do on your end.</p>
+      ${contactHtml}
+    `,
+      { preheader: "We couldn't open a spot — but we can still help right away.", footer: footerT() }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // PL-54c: the interest-list notify — "you asked us to tell you first". Sent
 // from info@ when the Ops Director confirms the admin prompt for a newly
 // opened class. Short and warm; first-come-first-served implied, not stated.

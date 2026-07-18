@@ -64,6 +64,8 @@ export function templateMetaFor(
       return { key: 'E8_ADDON_NUDGE', role: 'parent' }
     case 'next_class_open': // PL-54: interest-list notify
       return { key: 'NW_NEXT_CLASS_OPEN', role: 'parent' }
+    case 'waitlist_release': // PL-59: class completed still-full
+      return { key: 'WR_WAITLIST_RELEASE', role: 'parent' }
     case 'tutoring_upsell':
       return { key: 'E9_UPSELL', role: 'parent' }
     case 'waitlist_confirmation':
@@ -150,6 +152,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   E8_ADDON_NUDGE: '#8b-n — Add-on hours nudge',
   E9_UPSELL: '#9 — Pre-class tutoring upsell',
   NW_NEXT_CLASS_OPEN: 'NW — Next class open (interest list)',
+  WR_WAITLIST_RELEASE: 'WR — Waitlist release (class completed full)',
   W1_WAITLIST: 'W1 — Waitlist confirmation',
   W2_SPOT_OPEN: 'W2 — Waitlist spot open',
   SU_SCHEDULE_UPDATE: 'SU — Schedule update',

@@ -31,6 +31,7 @@ import {
   tutoringOfferEmail,
   tutoringUpsellEmail,
   waitlistOfferEmail,
+  waitlistReleaseEmail,
   type Audience,
   type DigestClassInfo,
   type EnrollmentEmailContext,
@@ -233,6 +234,58 @@ async function sweepCompletion(bundle: ClassBundle, c: Counters) {
       e.payment_status = 'Completed'
       bump(c, 'completed')
     }
+  }
+  await sweepWaitlistRelease(bundle, c)
+}
+
+// PL-59: when a class completes still-full, every still-Waitlisted family
+// gets a close-out — CX-W only ever covered the *cancelled*-class case; the
+// common case (class ran, spot never opened) previously sent nothing. Same
+// interest-list carry as cancellation (PL-54: the "first to know" promise is
+// real), then WR_WAITLIST_RELEASE with the tutoring offer and the family's
+// tokenized availability link. Idempotent: interest upsert ignores
+// duplicates, send is deduped per enrollment.
+async function sweepWaitlistRelease(bundle: ClassBundle, c: Counters) {
+  const waitlisted = bundle.enrollments.filter((e) => e.payment_status === 'Waitlisted')
+  if (waitlisted.length === 0) return
+
+  const { error: interestError } = await supabase.from('class_interest').upsert(
+    waitlisted.map((e) => ({
+      email: e.parentEmail.toLowerCase(),
+      parent_name: e.parentFirstName || null,
+      student_name: `${e.studentFirstName} ${e.studentLastName}`.trim() || null,
+      school_id: bundle.schoolId,
+      class_type: bundle.classType,
+      source: 'cancellation',
+    })),
+    { onConflict: 'email,school_id,class_type', ignoreDuplicates: true }
+  )
+  if (interestError) {
+    console.error('interest-list insert failed (release continues):', interestError.message)
+  }
+
+  const contact = await loadContactInfo()
+  for (const e of waitlisted) {
+    const ctx = emailContext(bundle, e)
+    const { subject, html, from, versionId } = await renderEmail(
+      'WR_WAITLIST_RELEASE',
+      ctx,
+      'parent',
+      { contactBlock: contactBlockHtml(contact) },
+      () => waitlistReleaseEmail(ctx, contactBlockHtml(contact))
+    )
+    const status = await sendOnce({
+      dedupeKey: `waitlist_release:${e.id}`,
+      emailType: 'waitlist_release',
+      enrollmentId: e.id,
+      classId: bundle.id,
+      to: [ctx.parentEmail],
+      from,
+      subject,
+      html,
+      bodySnapshotId: versionId,
+    })
+    if (status === 'sent') bump(c, 'waitlist_release')
   }
 }
 

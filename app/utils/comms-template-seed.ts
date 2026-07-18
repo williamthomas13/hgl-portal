@@ -971,4 +971,30 @@ Spots fill in order of registration, so don't wait too long.
 
 {contactBlock}`,
   },
+
+  // ---------------------------------------------------------------------------
+  // PL-59: waitlist release when a class completes still-full — the case
+  // CX-W never covered. Fires from the class-completion transition; those
+  // families also join the PL-54 interest list. From info@.
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'WR_WAITLIST_RELEASE',
+    display_name: 'WR — Waitlist release (class completed full)',
+    sequence_number: 'WR',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'An update on {schoolNickname} {classType} — and an option for {studentFirstName}',
+    preheader: "We couldn't open a spot — but we can still help right away.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+An update on {schoolNickname} {classType}: the class stayed full, and we weren't able to open up a place for {studentFirstName}. No payment was ever taken, and I'm sorry it didn't work out this time.
+
+If {studentFirstName} still wants to get ready, we can help right away with **1-on-1 tutoring** — the same prep, tailored entirely to {studentFirstName}, scheduled around your family. [Share your availability]({availabilityLink}) and we'll propose times, or just reply and we'll talk it through.
+
+And either way, you're still on our list — the moment a new {schoolNickname} {classType} course opens, you'll be the first to know. Nothing to do on your end.
+
+{contactBlock}`,
+  },
 ]
