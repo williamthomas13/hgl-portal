@@ -242,8 +242,20 @@ export default function AdminDashboard() {
     loadInterest()
   }, [loadInterest])
   const [notifying, setNotifying] = useState('')
-  async function notifyInterest(classId: string, count: number) {
-    if (!window.confirm(`Email ${count} waiting famil${count === 1 ? 'y' : 'ies'} that this class is open? Each gets the "next class open" note with the registration link.`)) return
+  async function notifyInterest(classId: string, count: number, shortLink: string | null) {
+    // PL-54 amendment: the NW button targets the class's hgl.co marketing
+    // page. A blank field means the button would deep-link the portal
+    // registration page — warn so the Ops Director fills it in first or
+    // knowingly accepts the direct link.
+    const linkNote = (shortLink ?? '').trim()
+      ? `The button points at ${shortLink!.trim()}.`
+      : `⚠ No hgl.co link on this class — the button will point at the portal registration page. Add the short link on the collateral card first if families should see the sales page.`
+    if (
+      !window.confirm(
+        `Email ${count} waiting famil${count === 1 ? 'y' : 'ies'} that this class is open? Each gets the "next class open" note.\n\n${linkNote}`
+      )
+    )
+      return
     setNotifying(classId)
     try {
       const res = await fetch('/api/admin/notify-interest', {
@@ -723,7 +735,7 @@ export default function AdminDashboard() {
                       waiting to hear about this class
                     </span>
                     <button
-                      onClick={() => notifyInterest(c.id, interestCounts[`${c.school_id}|${c.class_type}`] ?? 0)}
+                      onClick={() => notifyInterest(c.id, interestCounts[`${c.school_id}|${c.class_type}`] ?? 0, c.short_link)}
                       disabled={notifying === c.id}
                       className="text-hgl-blue underline font-semibold disabled:opacity-50"
                     >

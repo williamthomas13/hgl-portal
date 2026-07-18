@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      `id, slug, status, school_id, class_type, start_date,
+      `id, slug, status, school_id, class_type, start_date, short_link,
        schools ( nickname ),
        sessions ( session_date, start_time )`
     )
@@ -47,7 +47,17 @@ export async function POST(req: Request) {
     ((cls.sessions as { session_date: string }[]) ?? []).map((s) => s.session_date).sort()[0] ??
     cls.start_date
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const registrationLink = `${base}/register/${cls.slug ?? cls.id}?src=interest`
+  // PL-54 amendment: the button lands on the hgl.co marketing page (the
+  // Squarespace sales page), never a portal deep-link — families should see
+  // the pitch first. The portal register URL is only the fallback when no
+  // short link is on the class (the notify prompt warns about that state
+  // before the Ops Director confirms).
+  const shortLink = (cls.short_link ?? '').trim()
+  const registrationLink = shortLink
+    ? /^https?:\/\//i.test(shortLink)
+      ? shortLink
+      : `https://${shortLink}`
+    : `${base}/register/${cls.slug ?? cls.id}?src=interest`
   const classSummaryLine = `<strong>${schoolNickname} ${cls.class_type}</strong> — starts ${formatDateAdmin(firstSession)}`
 
   const { data: waiting } = await supabase
