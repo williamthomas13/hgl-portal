@@ -32,7 +32,7 @@ export default async function TutorView({
       .from('tutoring_sessions')
       .select(
         `id, starts_at, ends_at, duration_minutes, status,
-         students ( first_name, last_name ),
+         students ( id, first_name, last_name, tutoring_handoff_note, tutoring_handoff_by ),
          tutoring_engagements ( location, subjects ( name ) )`
       )
       .eq('tutor_id', tutor.id)
@@ -88,6 +88,31 @@ export default async function TutorView({
           Times in {tz}. These also live on your Google Calendar — reschedules and cancellations go
           through the office, and both places update automatically.
         </p>
+        {/* PL-53d: the class instructor's handoff, shown once per student
+            ahead of the first session — the 1-on-1 starts where class ended. */}
+        {(() => {
+          const seen = new Set<string>()
+          const handoffs = ((upcoming as any[]) ?? [])
+            .map((s) => one<any>(s.students))
+            .filter((st: any) => {
+              if (!st?.tutoring_handoff_note || seen.has(st.id)) return false
+              seen.add(st.id)
+              return true
+            })
+          if (handoffs.length === 0) return null
+          return (
+            <div className="mb-4 space-y-2">
+              {handoffs.map((st: any) => (
+                <p key={st.id} className="text-xs text-gray-700 bg-purple-50 border border-purple-200 rounded p-2">
+                  <span className="font-semibold">
+                    Handoff for {st.first_name} (from {st.tutoring_handoff_by ?? 'their class instructor'}):
+                  </span>{' '}
+                  {st.tutoring_handoff_note}
+                </p>
+              ))}
+            </div>
+          )
+        })()}
         {upcoming && upcoming.length > 0 ? (
           <ul className="divide-y divide-gray-100 text-sm">
             {(upcoming as any[]).map((s) => {

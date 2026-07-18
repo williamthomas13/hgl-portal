@@ -34,6 +34,7 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
     addons: [],
     marketingOptOut: false,
     unsubscribeUrl: `${base}/api/unsubscribe`,
+    availabilityUrl: `${base}/portal`,
     parentFirstName: stub.parentFirstName,
     parentEmail: stub.parentEmail ?? '',
     studentFirstName: stub.studentFirstName ?? 'your student',

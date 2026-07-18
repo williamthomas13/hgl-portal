@@ -58,6 +58,10 @@ export function templateMetaFor(
       return { key: 'E7_REVIEW', role: 'parent' }
     case 'tutoring_offer':
       return { key: 'E8_POSTCLASS_TUTORING', role: student ? 'student' : 'parent' }
+    case 'tutoring_addon_scheduling': // PL-53c: the has-hours fork of #8
+      return { key: 'E8_ADDON_SCHEDULING', role: 'parent' }
+    case 'tutoring_addon_nudge':
+      return { key: 'E8_ADDON_NUDGE', role: 'parent' }
     case 'tutoring_upsell':
       return { key: 'E9_UPSELL', role: 'parent' }
     case 'waitlist_confirmation':
@@ -130,6 +134,8 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   E6_DIAG2: '#6 — Second diagnostic',
   E7_REVIEW: '#7 — Review request',
   E8_POSTCLASS_TUTORING: '#8 — Post-class tutoring offer',
+  E8_ADDON_SCHEDULING: '#8b — Add-on hours: time to schedule',
+  E8_ADDON_NUDGE: '#8b-n — Add-on hours nudge',
   E9_UPSELL: '#9 — Pre-class tutoring upsell',
   W1_WAITLIST: 'W1 — Waitlist confirmation',
   W2_SPOT_OPEN: 'W2 — Waitlist spot open',

@@ -75,6 +75,12 @@ export type ExtraVars = {
   schedulePdfLink?: string
   /** §8 human-help block, pre-rendered from app_settings (PL-50). */
   contactBlock?: string
+
+  // --- PL-53c: the #8 add-on-scheduling fork --------------------------------
+  /** Unused add-on hours at send time, e.g. "5". */
+  hoursRemaining?: string
+  /** Availability ask, or the ready-to-propose variant when it's on file. */
+  schedulingCtaBlock?: string
 }
 
 type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVars) => string
@@ -273,6 +279,34 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (_c, _a, e) => e.contactBlock ?? '',
   },
 
+  // --- PL-53: add-on hours lifecycle ----------------------------------------
+  addonHours: {
+    description: "Total 1-on-1 add-on hours on this enrollment ('0' when none)",
+    resolve: (c) => String(c.addons.reduce((sum, a) => sum + a.hours, 0)),
+  },
+  availabilityLink: {
+    description: "The family's signed share-your-availability page",
+    resolve: (c) => c.availabilityUrl,
+  },
+  addonTutoringBlock: {
+    description: '#0: the your-tutoring-hours paragraph — renders EMPTY for class-only enrollments',
+    block: true,
+    resolve: (c) => {
+      const hours = c.addons.reduce((sum, a) => sum + a.hours, 0)
+      if (hours <= 0) return ''
+      return `<p><strong>Your 1-on-1 tutoring hours.</strong> Your registration includes ${hours} hours of 1-on-1 tutoring. In our experience they're most valuable <em>after</em> the class ends — that's when a tutor can zero in on exactly what your student needs next. When the class wraps up, we'll reach out to get ${c.studentFirstName} scheduled. Want to start earlier instead? <a href="${c.availabilityUrl}" style="color:#00AEEE">Share your availability</a> and we'll propose times. Not sure yet? No problem — we'll ask again once the class is done.</p>`
+    },
+  },
+  hoursRemaining: {
+    description: 'PL-53c: unused add-on hours at #8 time (pre-rendered by the sweep)',
+    resolve: (_c, _a, e) => e.hoursRemaining ?? '—',
+  },
+  schedulingCtaBlock: {
+    description: 'PL-53c: availability ask, or "we\'re ready to propose times" when it\'s on file',
+    block: true,
+    resolve: (_c, _a, e) => e.schedulingCtaBlock ?? '',
+  },
+
   // --- computed blocks ---------------------------------------------------------
   orderSummaryBlock: {
     description: '#0-P/LR order summary (class + add-ons + amount paid) — renders empty on student sends',
@@ -355,6 +389,7 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   calendarPageUrl: 'https://hgl-portal.vercel.app/classes/sample/calendar',
   resumePaymentUrl: 'https://hgl-portal.vercel.app/api/resume-payment?e=sample',
   portalUrl: 'https://hgl-portal.vercel.app/portal',
+  availabilityUrl: 'https://hgl-portal.vercel.app/availability/sample',
   diagnosticDueDate: '2026-09-04',
   addons: [{ name: '5-Hour Package', hours: 5, pricePaid: 600 }],
   marketingOptOut: false,

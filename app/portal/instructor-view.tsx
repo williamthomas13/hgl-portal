@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
+import HandoffNotes from '../components/HandoffNotes'
+import { supabaseAdmin } from '../utils/supabase-admin'
 import MessageClass from './message-class'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
@@ -34,8 +36,10 @@ export default async function InstructorView({
         sessions ( id, session_date, start_time, end_time, location ),
         enrollments (
           id, payment_status, accommodations, previous_scores, notes,
+          enrollment_addons ( hours ),
           students (
             id, first_name, last_name, student_email, grade_level, graduating_year,
+            tutoring_handoff_note,
             schools ( name, nickname )
           )
         )
@@ -46,6 +50,29 @@ export default async function InstructorView({
   ])
 
   const defaultMeetingLink = instructorRows?.[0]?.default_meeting_link ?? null
+
+  // PL-53d: which roster students continue to 1-on-1 tutoring — add-on hours
+  // present (from the enrollment join) or a tutoring schedule already exists.
+  // The schedule check needs a privileged read (instructors hold no policy on
+  // other tutors' engagements); only a boolean per student leaves it.
+  const rosterStudentIds = [
+    ...new Set(
+      ((classes as any[]) ?? [])
+        .flatMap((c) => c.enrollments ?? [])
+        .map((e: any) => one<any>(e.students)?.id)
+        .filter(Boolean)
+    ),
+  ] as string[]
+  const { data: engagedRows } = rosterStudentIds.length
+    ? await supabaseAdmin
+        .from('tutoring_engagements')
+        .select('student_id')
+        .in('student_id', rosterStudentIds)
+        .in('status', ['pending_parent_confirmation', 'active', 'paused'])
+    : { data: [] }
+  const engagedStudentIds = new Set((engagedRows ?? []).map((r: any) => r.student_id))
+  const continuesTo1on1 = (e: any) =>
+    (e.enrollment_addons ?? []).length > 0 || engagedStudentIds.has(one<any>(e.students)?.id)
 
   if (!classes || classes.length === 0) {
     return (
@@ -192,6 +219,11 @@ export default async function InstructorView({
                           <td className="px-2 py-1.5">
                             <div className="font-semibold text-hgl-slate">
                               {st ? `${st.first_name} ${st.last_name}` : '—'}
+                              {continuesTo1on1(e) && (
+                                <span className="ml-2 inline-block px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-bold align-middle">
+                                  continues to 1-on-1
+                                </span>
+                              )}
                             </div>
                             {st?.student_email && (
                               <div className="text-xs text-gray-500">{st.student_email}</div>
@@ -256,6 +288,22 @@ export default async function InstructorView({
                 .map((st: any) => ({ id: st.id, name: `${st.first_name} ${st.last_name}` }))
                 .sort((a: any, b: any) => a.name.localeCompare(b.name))}
             />
+
+            {/* PL-53d: handoff notes on the final session's attendance screen,
+                and after the class ends until written. */}
+            {new Date().toLocaleDateString('en-CA') >= lastSession && (
+              <HandoffNotes
+                students={active
+                  .filter((e: any) => continuesTo1on1(e))
+                  .map((e: any) => {
+                    const st = one<any>(e.students)
+                    return st
+                      ? { id: st.id, firstName: st.first_name, note: st.tutoring_handoff_note ?? null }
+                      : null
+                  })
+                  .filter(Boolean) as any[]}
+              />
+            )}
 
             {/* Feature B3: send-from-portal class messaging + copy-emails. */}
             {c.status !== 'cancelled' && (

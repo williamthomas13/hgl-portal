@@ -6,6 +6,7 @@ import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
+import { contactBlockHtml, contactFrom, loadContactInfo } from '../../../utils/tutoring-emails'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
 import {
@@ -35,6 +36,9 @@ import {
   type EnrollmentEmailContext,
   type Rendered,
   type ScheduleChange,
+  e8AddonSchedulingEmail,
+  e8AddonNudgeEmail,
+  schedulingCtaBlockHtml,
 } from '../../../utils/email'
 import { renderEmail, type RenderedWithVersion } from '../../../utils/comms-db-render'
 import {
@@ -349,6 +353,79 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
     const renderers = renderersFor(step.type, postPackages)
     for (const e of paid) {
       if (RELATIONSHIP_TYPES.has(step.type) && e.marketingOptOut) continue
+
+      // PL-53c: #8 is audience-aware. A family that already BOUGHT add-on
+      // hours never gets the discount pitch — they get "time to put your
+      // hours to work" instead (or nothing at all if they're already
+      // scheduling: early starters are never nagged).
+      if (step.type === 'tutoring_offer' && e.addons.length > 0) {
+        const state = await addonSchedulingState(e.id)
+        const ctx = emailContext(bundle, e)
+        if (state.hasAvailability && state.hasSchedule) {
+          await supabase
+            .from('email_sends')
+            .update({
+              status: 'cancelled',
+              cancel_reason: 'family already scheduling their add-on hours (PL-53c suppression)',
+              cancelled_by: 'system',
+              updated_at: new Date().toISOString(),
+            })
+            .in('dedupe_key', ['p', 's'].map((tag) => `tutoring_offer_${tag}:${e.id}`))
+            .in('status', ['scheduled', 'held'])
+          bump(c, 'addon_scheduling_suppressed')
+          continue
+        }
+        const contact = await loadContactInfo()
+        const rendered = await renderEmail(
+          'E8_ADDON_SCHEDULING',
+          ctx,
+          'parent',
+          {
+            hoursRemaining: String(state.hoursRemaining),
+            schedulingCtaBlock: schedulingCtaBlockHtml(ctx, state.hasAvailability),
+            contactBlock: contactBlockHtml(contact),
+          },
+          () =>
+            e8AddonSchedulingEmail(ctx, {
+              hoursRemaining: state.hoursRemaining,
+              hasAvailability: state.hasAvailability,
+              from: contactFrom(contact),
+              contactHtml: contactBlockHtml(contact),
+            })
+        )
+        // Claims the projected tutoring_offer row (same dedupe key); the
+        // student-audience twin is cancelled — this fork is parent-only.
+        await supabase
+          .from('email_sends')
+          .update({ template_key: 'E8_ADDON_SCHEDULING', updated_at: new Date().toISOString() })
+          .eq('dedupe_key', `tutoring_offer_p:${e.id}`)
+          .in('status', ['scheduled', 'held'])
+        await supabase
+          .from('email_sends')
+          .update({
+            status: 'cancelled',
+            cancel_reason: 'add-on scheduling email is parent-only (PL-53c)',
+            cancelled_by: 'system',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('dedupe_key', `tutoring_offer_s:${e.id}`)
+          .in('status', ['scheduled', 'held'])
+        const status = await sendOnce({
+          dedupeKey: `tutoring_offer_p:${e.id}`,
+          emailType: 'tutoring_addon_scheduling',
+          enrollmentId: e.id,
+          classId: bundle.id,
+          to: [e.parentEmail],
+          from: rendered.from ?? contactFrom(contact),
+          subject: rendered.subject,
+          html: rendered.html,
+          templateKey: 'E8_ADDON_SCHEDULING',
+          bodySnapshotId: (rendered as RenderedWithVersion).versionId,
+        })
+        if (status === 'sent') bump(c, 'addon_scheduling')
+        continue
+      }
+
       await sendToAudiences({
         type: step.type,
         renderers,
@@ -356,6 +433,123 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
         counters: c,
         payload: step.type === 'class_details' ? classDetailsSnapshot(bundle) : undefined,
       })
+    }
+  }
+}
+
+// PL-53c: what state is this add-on family's scheduling in?
+async function addonSchedulingState(enrollmentId: string): Promise<{
+  hoursRemaining: number
+  hasAvailability: boolean
+  hasSchedule: boolean
+}> {
+  const { data: enr } = await supabase
+    .from('enrollments')
+    .select('student_id, enrollment_addons ( id, hours )')
+    .eq('id', enrollmentId)
+    .maybeSingle()
+  const addonRows = (enr?.enrollment_addons ?? []) as { id: string; hours: number }[]
+  const purchased = addonRows.reduce((sum, a) => sum + Number(a.hours), 0)
+  const studentId = enr?.student_id as string | undefined
+  if (!studentId) return { hoursRemaining: purchased, hasAvailability: false, hasSchedule: false }
+
+  const [{ count: availabilityCount }, { data: engagements }] = await Promise.all([
+    supabase
+      .from('student_availability')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', studentId),
+    supabase.from('tutoring_engagements').select('id, addon_id').eq('student_id', studentId),
+  ])
+  let used = 0
+  let hasSchedule = false
+  const engIds = (engagements ?? []).map((g) => g.id)
+  if (engIds.length > 0) {
+    const { data: sessions } = await supabase
+      .from('tutoring_sessions')
+      .select('engagement_id, duration_minutes, status')
+      .in('engagement_id', engIds)
+      .in('status', ['proposed', 'confirmed', 'completed', 'no_show', 'forfeited'])
+    hasSchedule = (sessions ?? []).length > 0
+    const addonIds = new Set(addonRows.map((a) => a.id))
+    const packageEngIds = new Set((engagements ?? []).filter((g) => g.addon_id && addonIds.has(g.addon_id)).map((g) => g.id))
+    used = (sessions ?? [])
+      .filter((s) => packageEngIds.has(s.engagement_id) && s.status !== 'proposed')
+      .reduce((sum, s) => sum + s.duration_minutes / 60, 0)
+  }
+  return {
+    hoursRemaining: Math.max(0, Number((purchased - used).toFixed(1))),
+    hasAvailability: (availabilityCount ?? 0) > 0,
+    hasSchedule,
+  }
+}
+
+// PL-53c: one gentle nudge ~7 days after the scheduling email if the family
+// still has no availability and no schedule; at ~14 days an Ops Director
+// alert so Kelsie calls. Never escalates beyond that.
+async function sweepAddonSchedulingNudges(c: Counters) {
+  const { data: sent } = await supabase
+    .from('email_sends')
+    .select('enrollment_id, sent_at')
+    .eq('template_key', 'E8_ADDON_SCHEDULING')
+    .in('status', ['sent', 'delivered'])
+    .not('enrollment_id', 'is', null)
+    .not('sent_at', 'is', null)
+  const contact = await loadContactInfo()
+  for (const row of sent ?? []) {
+    const ageDays = (Date.now() - new Date(row.sent_at as string).getTime()) / 86_400_000
+    if (ageDays < 7) continue
+    const state = await addonSchedulingState(row.enrollment_id as string)
+    if (state.hasAvailability || state.hasSchedule) continue
+
+    const { data: enrRow } = await supabase
+      .from('enrollments')
+      .select('class_id')
+      .eq('id', row.enrollment_id as string)
+      .maybeSingle()
+    if (!enrRow?.class_id) continue
+    const [bundle] = await loadClassBundles(enrRow.class_id)
+    const enrollment = bundle?.enrollments.find((e) => e.id === row.enrollment_id)
+    if (!bundle || !enrollment) continue
+    const ctx = emailContext(bundle, enrollment)
+
+    const rendered = await renderEmail(
+      'E8_ADDON_NUDGE',
+      ctx,
+      'parent',
+      { hoursRemaining: String(state.hoursRemaining), contactBlock: contactBlockHtml(contact) },
+      () =>
+        e8AddonNudgeEmail(ctx, {
+          hoursRemaining: state.hoursRemaining,
+          from: contactFrom(contact),
+          contactHtml: contactBlockHtml(contact),
+        })
+    )
+    const status = await sendOnce({
+      dedupeKey: `addon_sched_nudge:${row.enrollment_id}`,
+      emailType: 'tutoring_addon_nudge',
+      enrollmentId: row.enrollment_id as string,
+      classId: enrRow.class_id,
+      to: [ctx.parentEmail],
+      from: rendered.from ?? contactFrom(contact),
+      subject: rendered.subject,
+      html: rendered.html,
+      templateKey: 'E8_ADDON_NUDGE',
+      bodySnapshotId: (rendered as RenderedWithVersion).versionId,
+    })
+    if (status === 'sent') bump(c, 'addon_scheduling_nudged')
+
+    if (ageDays >= 14) {
+      const alerted = await sendAdminAlert({
+        dedupeKey: `addon_sched_stalled:${row.enrollment_id}`,
+        adminEmail: ADMIN_EMAIL,
+        subject: `Add-on hours idle — ${ctx.studentFirstName} ${ctx.studentLastName} (worth a call)`,
+        body: `<p>${ctx.parentFirstName} (${ctx.parentEmail}) bought
+          ${state.hoursRemaining} tutoring hour${state.hoursRemaining === 1 ? '' : 's'} with the
+          ${ctx.className} class, got the scheduling email and one nudge, and still hasn't shared
+          availability or scheduled. No more automated emails go out — this one's a phone call.</p>`,
+        enrollmentId: row.enrollment_id as string,
+      })
+      if (alerted === 'sent') bump(c, 'addon_scheduling_alerted')
     }
   }
 }
@@ -1204,6 +1398,8 @@ export async function GET(req: Request) {
     if (collections.retried > 0) counters.billing_retried = collections.retried
     if (collections.reminders > 0) counters.billing_reminders = collections.reminders
     if (collections.lateFeeFlags > 0) counters.billing_late_fee_flags = collections.lateFeeFlags
+    // PL-53c: add-on scheduling nudge (+7d) and stall alert (+14d).
+    await sweepAddonSchedulingNudges(counters)
     // PL-41: schedule-approval nudges (+2d, +5d + Ops alert; never auto-approves).
     const approvals = await runScheduleApprovalNudges()
     if (approvals.nudged > 0) counters.schedule_approval_nudged = approvals.nudged

@@ -44,6 +44,16 @@ export function verifyAgreementToken(token: string): string | null {
   return verify('agreement', token)
 }
 
+/** /availability/{token} — HMAC over the family id (PL-53b: the add-on
+ *  family's share-your-availability page; reusable and idempotent). */
+export function availabilityToken(familyId: string): string {
+  return `${familyId}.${sig('availability', familyId)}`
+}
+
+export function verifyAvailabilityToken(token: string): string | null {
+  return verify('availability', token)
+}
+
 // ---------------------------------------------------------------------------
 // Intake submission (spec §11): creates/updates family + student, DEDUPING by
 // parent email — a family that came through a group class is matched, never

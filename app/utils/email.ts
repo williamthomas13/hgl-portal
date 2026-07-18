@@ -49,6 +49,8 @@ export type EnrollmentEmailContext = {
   addons: AddonRow[]
   marketingOptOut: boolean
   unsubscribeUrl: string
+  /** PL-53b: the family's signed share-your-availability page. */
+  availabilityUrl: string
   parentFirstName: string
   parentEmail: string
   studentFirstName: string
@@ -186,6 +188,24 @@ export type Rendered = { subject: string; html: string; from?: string }
 // #0-P — Registration Confirmation (parent) · instant · info@ · T
 // ---------------------------------------------------------------------------
 
+/** PL-53a (approved copy, July 20): the #0 tutoring paragraph renders ONLY
+ *  when the enrollment actually has an add-on — never for class-only. It
+ *  de-urgents deliberately (hours are most valuable after class) and links —
+ *  inline, not a button — to the family's availability page for early
+ *  starters. Shared by the code render and the registry's
+ *  {addonTutoringBlock} variable so both stay one source of truth. */
+export function addonTutoringBlockHtml(ctx: EnrollmentEmailContext): string {
+  const hours = ctx.addons.reduce((sum, a) => sum + a.hours, 0)
+  if (hours <= 0) return ''
+  return `<p><strong>Your 1-on-1 tutoring hours.</strong> Your registration includes ${hours} hours
+      of 1-on-1 tutoring. In our experience they're most valuable <em>after</em> the class ends —
+      that's when a tutor can zero in on exactly what your student needs next. When the class
+      wraps up, we'll reach out to get ${ctx.studentFirstName} scheduled. Want to start earlier
+      instead? <a href="${ctx.availabilityUrl}" style="color:#00AEEE">Share your availability</a>
+      and we'll propose times. Not sure yet? No problem — we'll ask again once the class is
+      done.</p>`
+}
+
 export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
   const addonLines = ctx.addons
     .map((a) => `<br/>${a.name} — 1-on-1 Tutoring — $${a.pricePaid}`)
@@ -201,11 +221,7 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       <p>We'll be in touch with you in the days before the first day of class with all the relevant
       information that you'll need! This includes diagnostic test information, instructor information,
       and course room location (for both in-person and online classes).</p>
-      <p><em>Did you register for 1-on-1 tutoring?</em> The 1-on-1 tutoring sessions are best used
-      after the group class is completed. We'll be in touch with you after the course is done in
-      order to schedule these sessions. If you'd like to schedule them now, that's okay too; just
-      reply to this email with some general time frames when you're available so that we can
-      propose a schedule.</p>
+      ${addonTutoringBlockHtml(ctx)}
       <p>If you have any questions between now and then, you can respond to this email (but maybe
       check our <a href="https://highergroundlearning.com/faqs#general">FAQs</a> first).</p>
       <h3 style="color:#334155">Order Summary</h3>
@@ -755,6 +771,77 @@ export function tutoringOfferEmail(
           `You received this email because we genuinely thought it might interest you. You could always unsubscribe.`
         ),
       }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PL-53c: the #8 fork for families who ALREADY BOUGHT add-on hours — a sales
+// pitch to them was the latent bug in the original #8. This is "time to put
+// your hours to work": hours remaining + the availability link (or the
+// ready-to-propose variant when availability is on file). Sent from the
+// configured tutoring contact (PL-50) — the caller supplies from/contactHtml
+// to avoid an email.ts ↔ tutoring-emails import cycle.
+// ---------------------------------------------------------------------------
+
+export function schedulingCtaBlockHtml(ctx: EnrollmentEmailContext, hasAvailability: boolean): string {
+  return hasAvailability
+    ? `<p>We already have your availability on file, so we're ready to propose times — expect to
+      hear from us shortly, or reply now if you'd like to get going today.</p>`
+    : `<p>To get started, just tell us when ${ctx.studentFirstName} is usually free —
+      <a href="${ctx.availabilityUrl}" style="color:#00AEEE">share your availability</a> (about a
+      minute) and we'll propose times that fit.</p>`
+}
+
+export function e8AddonSchedulingEmail(
+  ctx: EnrollmentEmailContext,
+  opts: { hoursRemaining: number; hasAvailability: boolean; from: string; contactHtml: string }
+): Rendered {
+  const s = ctx.studentFirstName
+  return {
+    from: opts.from,
+    subject: `Time to put ${s}'s tutoring hours to work`,
+    html: wrap(
+      `
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>Now that the ${ctx.className} class has wrapped up, this is the moment ${s}'s 1-on-1
+      tutoring is built for — a tutor can pick up exactly where the class left off, focused on
+      what ${s} needs next.</p>
+      <p><strong>You have ${opts.hoursRemaining} tutoring hour${opts.hoursRemaining === 1 ? '' : 's'} ready to use.</strong></p>
+      ${schedulingCtaBlockHtml(ctx, opts.hasAvailability)}
+      ${opts.contactHtml}
+    `,
+      {
+        preheader: `${opts.hoursRemaining} hour${opts.hoursRemaining === 1 ? '' : 's'} ready — let's get ${s} scheduled.`,
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
+/** PL-53c: one gentle nudge ~7 days after the scheduling email if the family
+ *  still hasn't shared availability or scheduled. Never escalates further by
+ *  email — the +14-day step is an Ops Director alert, not another send. */
+export function e8AddonNudgeEmail(
+  ctx: EnrollmentEmailContext,
+  opts: { hoursRemaining: number; from: string; contactHtml: string }
+): Rendered {
+  const s = ctx.studentFirstName
+  return {
+    from: opts.from,
+    subject: `${s}'s tutoring hours are waiting when you are`,
+    html: wrap(
+      `
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>Just a gentle reminder that ${s} still has
+      <strong>${opts.hoursRemaining} tutoring hour${opts.hoursRemaining === 1 ? '' : 's'}</strong> ready to use —
+      no rush, and they don't expire on you.</p>
+      <p>Whenever you're ready,
+      <a href="${ctx.availabilityUrl}" style="color:#00AEEE">share ${s}'s availability</a> and
+      we'll propose times — or just reply and we'll sort it out together.</p>
+      ${opts.contactHtml}
+    `,
+      { preheader: `No rush — just don't let good hours gather dust.`, footer: footerT() }
     ),
   }
 }

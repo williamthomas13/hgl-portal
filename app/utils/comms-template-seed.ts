@@ -34,7 +34,7 @@ Thanks for registering! Your class registration with Higher Ground Learning is c
 
 We'll be in touch with you in the days before the first day of class with all the relevant information that you'll need! This includes diagnostic test information, instructor information, and course room location (for both in-person and online classes).
 
-*Did you register for 1-on-1 tutoring?* The 1-on-1 tutoring sessions are best used after the group class is completed. We'll be in touch with you after the course is done in order to schedule these sessions. If you'd like to schedule them now, that's okay too; just reply to this email with some general time frames when you're available so that we can propose a schedule.
+{addonTutoringBlock}
 
 If you have any questions between now and then, you can respond to this email (but maybe check our [FAQs](https://highergroundlearning.com/faqs#general) first).
 
@@ -897,6 +897,50 @@ A couple of things to make life easier:
 You can reschedule any single session yourself from your parent portal — no need to email us for the small stuff. And if the regular time ever needs to change, just reach out and we'll take care of it.
 
 We're looking forward to working with {studentFirstName}.
+
+{contactBlock}`,
+  },
+
+  // ---------------------------------------------------------------------------
+  // PL-53c: the audience-aware #8 fork — families who already bought add-on
+  // hours get "time to put your hours to work", never the discount pitch.
+  // Sent from the configured tutoring contact (PL-50) at the send site.
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'E8_ADDON_SCHEDULING',
+    display_name: '#8b — Add-on hours: time to schedule',
+    sequence_number: '8b',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Time to put {studentFirstName}'s tutoring hours to work",
+    preheader: "{hoursRemaining} hours ready — let's get {studentFirstName} scheduled.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Now that the {className} class has wrapped up, this is the moment {studentFirstName}'s 1-on-1 tutoring is built for — a tutor can pick up exactly where the class left off, focused on what {studentFirstName} needs next.
+
+**You have {hoursRemaining} tutoring hours ready to use.**
+
+{schedulingCtaBlock}
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'E8_ADDON_NUDGE',
+    display_name: '#8b-n — Add-on hours nudge',
+    sequence_number: '8b-n',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s tutoring hours are waiting when you are",
+    preheader: "No rush — just don't let good hours gather dust.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Just a gentle reminder that {studentFirstName} still has **{hoursRemaining} tutoring hours** ready to use — no rush, and they don't expire on you.
+
+Whenever you're ready, [share {studentFirstName}'s availability]({availabilityLink}) and we'll propose times — or just reply and we'll sort it out together.
 
 {contactBlock}`,
   },

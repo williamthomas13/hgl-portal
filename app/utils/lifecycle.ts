@@ -1,5 +1,6 @@
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { createHmac, timingSafeEqual } from 'crypto'
+import { availabilityToken } from './intake'
 import type { EnrollmentEmailContext, SessionInfo } from './email'
 import { bySessionStart } from './dates'
 
@@ -309,6 +310,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     addons: e.addons,
     marketingOptOut: e.marketingOptOut,
     unsubscribeUrl: unsubscribeUrlFor(e.familyId),
+    availabilityUrl: availabilityUrlFor(e.familyId),
     parentFirstName: e.parentFirstName,
     parentEmail: e.parentEmail,
     studentFirstName: e.studentFirstName,
@@ -495,6 +497,12 @@ function unsubToken(familyId: string) {
     .update(`unsub:${familyId}`)
     .digest('hex')
     .slice(0, 32)
+}
+
+/** PL-53b: the family's signed share-your-availability page. */
+export function availabilityUrlFor(familyId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/availability/${availabilityToken(familyId)}`
 }
 
 export function unsubscribeUrlFor(familyId: string) {

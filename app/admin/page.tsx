@@ -211,6 +211,16 @@ export default function AdminDashboard() {
   // shows the source picker; a prefill snapshot renders a pre-filled wizard.
   // wizardKey remounts the wizard whenever the source (or blank reset) changes.
   const [wizardMode, setWizardMode] = useState<'blank' | 'pick'>('blank')
+  // PL-53d: students with a live tutoring schedule (marker on rosters).
+  const [tutoringStudentIds, setTutoringStudentIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    supabase
+      .from('tutoring_engagements')
+      .select('student_id')
+      .in('status', ['pending_parent_confirmation', 'active', 'paused'])
+      .then(({ data }) => setTutoringStudentIds(new Set((data ?? []).map((r) => r.student_id))))
+  }, [])
+
   const [wizardPrefill, setWizardPrefill] = useState<WizardPrefill | null>(null)
   const [wizardSourceLabel, setWizardSourceLabel] = useState('')
   const [wizardKey, setWizardKey] = useState('blank')
@@ -920,6 +930,14 @@ export default function AdminDashboard() {
                   <tr key={en.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                       {en.students?.first_name} {en.students?.last_name}
+                      {/* PL-53d: continuing to 1-on-1 (add-on bought, or a
+                          tutoring schedule already exists) */}
+                      {((en.enrollment_addons ?? []).length > 0 ||
+                        (en.students?.id && tutoringStudentIds.has(en.students.id))) && (
+                        <span className="ml-2 inline-block px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-bold align-middle">
+                          continues to 1-on-1
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                       {en.students?.student_email ?? (

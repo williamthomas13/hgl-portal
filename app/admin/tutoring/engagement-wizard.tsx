@@ -99,6 +99,11 @@ export default function EngagementWizard({
     )
   }, [students, studentFilter])
 
+  // PL-53d: the class instructor's handoff note + who taught this student
+  // (continuity hint — never a rule; the Ops Director's judgment wins).
+  const [handoffNote, setHandoffNote] = useState<{ note: string; by: string | null } | null>(null)
+  const [classInstructorIds, setClassInstructorIds] = useState<Set<string>>(new Set())
+
   // Tutors offering the picked subject float up; others stay pickable.
   // PL-35a §1a: only the READY set counts as a match — needs-prep tutors rank
   // as a clearly-labeled middle tier and are never treated as a normal match.
@@ -110,10 +115,15 @@ export default function EngagementWizard({
   }
   const rankedTutors = useMemo(() => {
     const active = tutors.filter((t) => t.tutoring_active)
-    if (!subject) return active
-    return [...active].sort((a, b) => tutorTier(b) - tutorTier(a))
+    const continuity = (t: Tutor) => Number(classInstructorIds.has(t.id))
+    if (!subject) return [...active].sort((a, b) => continuity(b) - continuity(a))
+    // PL-53d: same-tier continuity floats up — "taught their class" beats a
+    // stranger, but never beats actually offering the subject.
+    return [...active].sort(
+      (a, b) => tutorTier(b) - tutorTier(a) || continuity(b) - continuity(a)
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tutors, subject])
+  }, [tutors, subject, classInstructorIds])
 
   // Subject default rate.
   useEffect(() => {
@@ -148,6 +158,33 @@ export default function EngagementWizard({
             return { id: a.id, hours: Number(a.hours), label: `${pkg?.name ?? 'Package'} — ${a.hours}h purchased` }
           })
         )
+      })
+  }, [studentId])
+
+  useEffect(() => {
+    setHandoffNote(null)
+    setClassInstructorIds(new Set())
+    if (!studentId) return
+    supabase
+      .from('students')
+      .select('tutoring_handoff_note, tutoring_handoff_by')
+      .eq('id', studentId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.tutoring_handoff_note) {
+          setHandoffNote({ note: data.tutoring_handoff_note, by: data.tutoring_handoff_by })
+        }
+      })
+    supabase
+      .from('enrollments')
+      .select('classes ( instructor_id )')
+      .eq('student_id', studentId)
+      .then(({ data }) => {
+        const ids = (data ?? [])
+          /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+          .map((e: any) => (Array.isArray(e.classes) ? e.classes[0] : e.classes)?.instructor_id)
+          .filter(Boolean)
+        setClassInstructorIds(new Set(ids))
       })
   }, [studentId])
 
@@ -508,6 +545,7 @@ export default function EngagementWizard({
           {rankedTutors.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name ?? t.email}
+              {classInstructorIds.has(t.id) ? ' — taught their class' : ''}
               {/* PL-25/PL-35a: say what the tier means and that neither blocks */}
               {subject && tutorTier(t) === 1
                 ? ` — can do ${subject.name} with prep (check with them first)`
@@ -530,6 +568,32 @@ export default function EngagementWizard({
         {tutor && tutorNotes[tutor.id] && (
           <p className="text-xs text-gray-500 mt-1 bg-amber-50 border border-amber-200 rounded p-2">
             <span className="font-semibold">Matching notes:</span> {tutorNotes[tutor.id]}
+          </p>
+        )}
+        {/* PL-53d: continuity hint — a hint, never a rule */}
+        {subject &&
+          [...classInstructorIds].some((id) => {
+            const t = tutors.find((x) => x.id === id && x.tutoring_active)
+            return t && (t.subjects.includes(subject.name) || t.subjects_with_prep.includes(subject.name))
+          }) && (
+            <p className="text-xs text-hgl-slate mt-1 bg-blue-50 border border-blue-200 rounded p-2">
+              <span className="font-semibold">Continuity:</span>{' '}
+              {[...classInstructorIds]
+                .map((id) => tutors.find((x) => x.id === id && x.tutoring_active))
+                .filter((x): x is Tutor => !!x)
+                .map((x) => x.name ?? x.email)
+                .join(', ')}{' '}
+              taught this student&apos;s class and tutors {subject.name} — picking them keeps the
+              1-on-1 continuous with the class. Your call, as always.
+            </p>
+          )}
+        {/* PL-53d: the class instructor's handoff — shown while matching */}
+        {handoffNote && (
+          <p className="text-xs text-gray-700 mt-1 bg-purple-50 border border-purple-200 rounded p-2">
+            <span className="font-semibold">
+              Handoff from {handoffNote.by ?? 'the class instructor'}:
+            </span>{' '}
+            {handoffNote.note}
           </p>
         )}
       </div>
