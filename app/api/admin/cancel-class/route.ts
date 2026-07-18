@@ -201,7 +201,24 @@ export async function POST(request: Request) {
     }
   }
 
-  // 6. CX-W to waitlisted families (parent-only, info@).
+  // 6. CX-W to waitlisted families (parent-only, info@). PL-54: "you'll hear
+  // first" is a real mechanism now — every waitlisted family joins the
+  // interest list for the next {school} {class_type} course (deduped), which
+  // the admin notify prompt drains when one opens.
+  if (waitlisted.length > 0 && bundle.schoolId) {
+    const { error: interestError } = await supabase.from('class_interest').upsert(
+      waitlisted.map((e) => ({
+        email: e.parentEmail.toLowerCase(),
+        parent_name: e.parentFirstName || null,
+        student_name: `${e.studentFirstName} ${e.studentLastName}`.trim() || null,
+        school_id: bundle.schoolId,
+        class_type: bundle.classType,
+        source: 'cancellation',
+      })),
+      { onConflict: 'email,school_id,class_type', ignoreDuplicates: true }
+    )
+    if (interestError) console.error('interest-list insert failed (cancellation continues):', interestError.message)
+  }
   let cxwSent = 0
   for (const e of waitlisted) {
     const ctx = emailContext(bundle, e)

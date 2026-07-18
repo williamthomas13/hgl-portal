@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import SessionCalendar from '../../components/SessionCalendar'
 import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
+import InterestCapture from '../../components/InterestCapture'
 import { bySessionStart, formatDateOnly } from '../../utils/dates'
 
 type SessionRow = {
@@ -254,6 +255,8 @@ export default function RegistrationPage() {
       <PublicNoticeCard title="This class is full">
         The {classLabel} class is not accepting new registrations. Upcoming classes are listed
         on our main site.
+        {/* PL-54b: demand capture — hear first when the next one opens */}
+        <InterestCapture classId={classDetails.id} schoolNickname={schoolLabel} classType={classDetails.class_type} />
       </PublicNoticeCard>
     )
   }
@@ -267,6 +270,8 @@ export default function RegistrationPage() {
       <PublicNoticeCard title="Registration for this class has closed">
         Registration for the {classLabel} class is no longer open. Upcoming classes are listed
         on our main site.
+        {/* PL-54b: demand capture — hear first when the next one opens */}
+        <InterestCapture classId={classDetails.id} schoolNickname={schoolLabel} classType={classDetails.class_type} />
       </PublicNoticeCard>
     )
   }
@@ -377,10 +382,23 @@ export default function RegistrationPage() {
         </h1>
         {classHeader}
         {isFull && (
-          <p className="mb-6 text-sm bg-yellow-50 text-yellow-800 rounded p-3">
-            This class is currently full. Join the waitlist (no payment now) and we&apos;ll email
-            you a payment link if a spot opens — first come, first served.
-          </p>
+          <>
+            <p className="mb-2 text-sm bg-yellow-50 text-yellow-800 rounded p-3">
+              This class is currently full. Join the waitlist (no payment now) and we&apos;ll email
+              you a payment link if a spot opens — first come, first served.
+            </p>
+            {/* PL-54b: the lighter option — hear about the NEXT course instead */}
+            <div className="mb-6 border border-gray-200 rounded-md p-3">
+              <p className="text-xs text-gray-500 mb-1">
+                Not in a rush? Skip the waitlist and just hear about the next course:
+              </p>
+              <InterestCapture
+                classId={classDetails.id}
+                schoolNickname={schoolLabel}
+                classType={classDetails.class_type}
+              />
+            </div>
+          </>
         )}
 
         <form onSubmit={isFull ? handleWaitlist : handleRegister} className="space-y-6">

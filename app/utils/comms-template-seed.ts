@@ -650,7 +650,7 @@ Higher Ground Learning`,
 
 A quick update: the {className} class that {studentFirstName} was waitlisted for won't be running this term, so the waitlist is closed. No payment was ever taken and there's nothing you need to do.
 
-If the class is offered again at {schoolNickname}, registration will open through the school as usual — and if you'd like a heads-up when that happens, just reply to this email and we'll make sure you hear first.
+You're still on our list — the moment a new {schoolNickname} {classType} course opens, you'll be the first to know. Nothing to do on your end.
 
 Sorry it didn't work out this time!
 
@@ -941,6 +941,33 @@ Now that the {className} class has wrapped up, this is the moment {studentFirstN
 Just a gentle reminder that {studentFirstName} still has **{hoursRemaining} tutoring hours** ready to use — no rush, and they don't expire on you.
 
 Whenever you're ready, [share {studentFirstName}'s availability]({availabilityLink}) and we'll propose times — or just reply and we'll sort it out together.
+
+{contactBlock}`,
+  },
+
+  // ---------------------------------------------------------------------------
+  // PL-54c: interest-list notify — drained by the admin "N families are
+  // waiting" prompt when a matching class opens. From info@.
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'NW_NEXT_CLASS_OPEN',
+    display_name: 'NW — Next class open (interest list)',
+    sequence_number: 'NW',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'A new {schoolNickname} {classType} class just opened',
+    preheader: 'You asked us to tell you first — here it is.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+You asked us to let you know when the next {schoolNickname} {classType} course opened — it's open now:
+
+{classSummaryLine}
+
+[button:See details & register]({registrationLink})
+
+Spots fill in order of registration, so don't wait too long.
 
 {contactBlock}`,
   },

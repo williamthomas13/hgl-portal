@@ -776,6 +776,33 @@ export function tutoringOfferEmail(
 }
 
 // ---------------------------------------------------------------------------
+// PL-54c: the interest-list notify — "you asked us to tell you first". Sent
+// from info@ when the Ops Director confirms the admin prompt for a newly
+// opened class. Short and warm; first-come-first-served implied, not stated.
+// ---------------------------------------------------------------------------
+
+export function nextClassOpenEmail(
+  ctx: EnrollmentEmailContext,
+  opts: { classSummaryLine: string; registrationLink: string; contactHtml: string }
+): Rendered {
+  return {
+    subject: `A new ${ctx.schoolNickname} ${ctx.classType} class just opened`,
+    html: wrap(
+      `
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>You asked us to let you know when the next ${ctx.schoolNickname} ${ctx.classType}
+      course opened — it's open now:</p>
+      <p>${opts.classSummaryLine}</p>
+      ${button('See details & register', opts.registrationLink)}
+      <p>Spots fill in order of registration, so don't wait too long.</p>
+      ${opts.contactHtml}
+    `,
+      { preheader: 'You asked us to tell you first — here it is.', footer: footerT() }
+    ),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // PL-53c: the #8 fork for families who ALREADY BOUGHT add-on hours — a sales
 // pitch to them was the latent bug in the original #8. This is "time to put
 // your hours to work": hours remaining + the availability link (or the
@@ -1488,9 +1515,8 @@ export function waitlistCancellationEmail(ctx: EnrollmentEmailContext): Rendered
       <p>A quick update: the ${ctx.className} class that ${ctx.studentFirstName} was waitlisted
       for won't be running this term, so the waitlist is closed. No payment was ever taken and
       there's nothing you need to do.</p>
-      <p>If the class is offered again at ${ctx.schoolNickname}, registration will open through
-      the school as usual — and if you'd like a heads-up when that happens, just reply to this
-      email and we'll make sure you hear first.</p>
+      <p>You're still on our list — the moment a new ${ctx.schoolNickname} ${ctx.classType}
+      course opens, you'll be the first to know. Nothing to do on your end.</p>
       <p>Sorry it didn't work out this time!</p>
       <p>Higher Ground Learning</p>
     `,

@@ -20,6 +20,9 @@ export type TutoringStub = {
   /** What {calendarLink} should resolve to for this email (e.g. the family
    *  ICS landing) — defaults to the parent portal. */
   calendarPageUrl?: string
+  /** PL-54: real class identity for non-tutoring registry emails (NW). */
+  schoolNickname?: string
+  classType?: string
 }
 
 export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext {
@@ -48,9 +51,9 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
     paidAt: null,
     enrolledAt: new Date().toISOString(),
     schoolName: 'Higher Ground Learning',
-    schoolNickname: 'HGL',
-    classType: '1-on-1 Tutoring',
-    className: 'HGL 1-on-1 Tutoring',
+    schoolNickname: stub.schoolNickname ?? 'HGL',
+    classType: stub.classType ?? '1-on-1 Tutoring',
+    className: `${stub.schoolNickname ?? 'HGL'} ${stub.classType ?? '1-on-1 Tutoring'}`,
     classTime: null,
     examInfo: null,
     instructorName: null,

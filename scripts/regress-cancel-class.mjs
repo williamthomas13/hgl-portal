@@ -128,6 +128,17 @@ try {
     .in('status', ['scheduled', 'held'])
   check('schedule is populated before cancelling', (before ?? 0) > 0, `${before} scheduled rows`)
 
+  // PL-54a: a waitlisted family must join the interest list at cancellation.
+  const { data: wlFam } = await db
+    .from('families')
+    .insert([{ parent_first_name: 'QA-PL54', parent_last_name: 'Waitlister', parent_email: 'billy+pl54wl@highergroundlearning.com' }])
+    .select('id').single()
+  const { data: wlStudent } = await db
+    .from('students')
+    .insert([{ family_id: wlFam.id, first_name: 'QA-PL54', last_name: 'Student' }])
+    .select('id').single()
+  await db.from('enrollments').insert([{ student_id: wlStudent.id, class_id: cls.id, payment_status: 'Waitlisted' }])
+
   // --- act 2: cancel as a signed-in admin -----------------------------------
   const cookie = await staffCookie()
   const cancel = await fetch(`${BASE}/api/admin/cancel-class`, {
@@ -155,10 +166,27 @@ try {
   check('CX composed and attempted', (cx ?? []).length > 0, (cx ?? []).map((r) => r.status).join(','))
   check('route reported the bulk-cancel', typeof cancelJson.sendsCancelled === 'number' && cancelJson.sendsCancelled > 0,
     `sendsCancelled=${cancelJson.sendsCancelled}`)
+  // PL-54a: waitlisted family landed on the interest list, CX-W attempted.
+  const { data: interest } = await db
+    .from('class_interest')
+    .select('source, notified_at')
+    .eq('email', 'billy+pl54wl@highergroundlearning.com')
+    .eq('school_id', school.id)
+    .eq('class_type', 'SAT Prep')
+  check('waitlisted family joined the interest list', (interest ?? []).length === 1 && interest[0].source === 'cancellation')
+  check('CX-W attempted', cancelJson.emails?.cxw === 1, `cxw=${cancelJson.emails?.cxw}`)
 } finally {
   // --- cleanup ---------------------------------------------------------------
   await new Promise((r) => setTimeout(r, 1500))
   const { data: student } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL55').maybeSingle()
+  // PL-54 fixtures
+  await db.from('class_interest').delete().ilike('email', 'billy+pl54wl@%')
+  const { data: wlSt } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL54').maybeSingle()
+  if (wlSt) {
+    await db.from('enrollments').delete().eq('student_id', wlSt.id)
+    await db.from('students').delete().eq('id', wlSt.id)
+    await db.from('families').delete().eq('id', wlSt.family_id).ilike('parent_email', 'billy+pl54wl@%')
+  }
   if (enrollmentId) {
     await db.from('email_sends').delete().eq('enrollment_id', enrollmentId)
     await db.from('qbo_sync_log').delete().eq('enrollment_id', enrollmentId)

@@ -221,6 +221,45 @@ export default function AdminDashboard() {
       .then(({ data }) => setTutoringStudentIds(new Set((data ?? []).map((r) => r.student_id))))
   }, [])
 
+  // PL-54c: unnotified interest per (school, class_type) — powers the
+  // "N families are waiting — notify them?" prompt on open class cards.
+  const [interestCounts, setInterestCounts] = useState<Record<string, number>>({})
+  const loadInterest = useCallback(() => {
+    supabase
+      .from('class_interest')
+      .select('school_id, class_type')
+      .is('notified_at', null)
+      .then(({ data }) => {
+        const counts: Record<string, number> = {}
+        for (const r of data ?? []) {
+          const k = `${r.school_id}|${r.class_type}`
+          counts[k] = (counts[k] ?? 0) + 1
+        }
+        setInterestCounts(counts)
+      })
+  }, [])
+  useEffect(() => {
+    loadInterest()
+  }, [loadInterest])
+  const [notifying, setNotifying] = useState('')
+  async function notifyInterest(classId: string, count: number) {
+    if (!window.confirm(`Email ${count} waiting famil${count === 1 ? 'y' : 'ies'} that this class is open? Each gets the "next class open" note with the registration link.`)) return
+    setNotifying(classId)
+    try {
+      const res = await fetch('/api/admin/notify-interest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ classId }),
+      })
+      const json = await res.json()
+      if (!res.ok) alert('Problem: ' + (json.error ?? res.status))
+      else alert(`Done — ${json.notified} notified.`)
+    } finally {
+      setNotifying('')
+      loadInterest()
+    }
+  }
+
   const [wizardPrefill, setWizardPrefill] = useState<WizardPrefill | null>(null)
   const [wizardSourceLabel, setWizardSourceLabel] = useState('')
   const [wizardKey, setWizardKey] = useState('blank')
@@ -672,6 +711,27 @@ export default function AdminDashboard() {
                 </span>
               </p>
             )}
+            {/* PL-54c: the system remembers, the Ops Director picks the moment */}
+            {!isCancelled &&
+              c.status === 'open' &&
+              (interestCounts[`${c.school_id}|${c.class_type}`] ?? 0) > 0 && (
+                <p className="text-sm mt-1">
+                  <span className="inline-flex items-center gap-2 px-2 py-1 rounded bg-blue-50 border border-blue-200 text-hgl-slate">
+                    <span className="font-semibold">
+                      {interestCounts[`${c.school_id}|${c.class_type}`]} famil
+                      {interestCounts[`${c.school_id}|${c.class_type}`] === 1 ? 'y is' : 'ies are'}{' '}
+                      waiting to hear about this class
+                    </span>
+                    <button
+                      onClick={() => notifyInterest(c.id, interestCounts[`${c.school_id}|${c.class_type}`] ?? 0)}
+                      disabled={notifying === c.id}
+                      className="text-hgl-blue underline font-semibold disabled:opacity-50"
+                    >
+                      {notifying === c.id ? 'notifying…' : 'notify them?'}
+                    </button>
+                  </span>
+                </p>
+              )}
             <p className="text-sm text-gray-600">
               Timezone: {c.schools?.timezone ?? '—'}{' '}
               <span className="text-xs text-gray-400">(from the school record)</span>

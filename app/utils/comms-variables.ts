@@ -81,6 +81,11 @@ export type ExtraVars = {
   hoursRemaining?: string
   /** Availability ask, or the ready-to-propose variant when it's on file. */
   schedulingCtaBlock?: string
+
+  // --- PL-54c: next-class-open notify -----------------------------------------
+  /** e.g. "ISD SAT Prep — starts 13 October 2026, Tuesdays & Thursdays". */
+  classSummaryLine?: string
+  registrationLink?: string
 }
 
 type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVars) => string
@@ -305,6 +310,16 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'PL-53c: availability ask, or "we\'re ready to propose times" when it\'s on file',
     block: true,
     resolve: (_c, _a, e) => e.schedulingCtaBlock ?? '',
+  },
+
+  classSummaryLine: {
+    description: 'PL-54: one-line summary of the newly opened class',
+    block: true,
+    resolve: (_c, _a, e) => e.classSummaryLine ?? '',
+  },
+  registrationLink: {
+    description: 'PL-54: the /register link for the newly opened class',
+    resolve: (_c, _a, e) => e.registrationLink ?? '#',
   },
 
   // --- computed blocks ---------------------------------------------------------
