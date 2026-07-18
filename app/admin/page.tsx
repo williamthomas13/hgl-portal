@@ -777,6 +777,7 @@ export default function AdminDashboard() {
                     }))}
                   pendingCount={(c.enrollments ?? []).filter((en) => en.payment_status === 'Pending').length}
                   waitlistedCount={waitlistCount}
+                  hasSchoolContact={allCounselors.some((x) => x.school_id === c.school_id)}
                   onDone={fetchRosters}
                 />
               </div>

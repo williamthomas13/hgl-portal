@@ -29,6 +29,7 @@ export default function CancelClassPanel({
   paid,
   waitlistedCount,
   pendingCount,
+  hasSchoolContact,
   onDone,
 }: {
   classId: string
@@ -37,6 +38,8 @@ export default function CancelClassPanel({
   paid: PaidPreview[]
   waitlistedCount: number
   pendingCount: number
+  /** PL-55: whether the school has any contact on file — CX-C recipients. */
+  hasSchoolContact: boolean
   onDone: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -210,11 +213,25 @@ export default function CancelClassPanel({
           </ul>
         </div>
       ) : (
-        <p className="text-gray-600">No paid enrollments — only the school contact is notified.</p>
+        <p className="text-gray-600">
+          No paid enrollments —{' '}
+          {hasSchoolContact
+            ? 'only the school contact is notified.'
+            : 'and no school contact on file, so no emails go out at all.'}
+        </p>
       )}
       <p className="text-xs text-gray-500">
         Also: {pendingCount} pending expire silently · {waitlistedCount} waitlisted get the
-        release note · school contact gets a heads-up.
+        release note ·{' '}
+        {hasSchoolContact ? (
+          'school contact gets a heads-up.'
+        ) : (
+          /* PL-55: say it, don't silently skip it */
+          <span className="text-amber-700 font-semibold">
+            no school contact on file — nobody at the school gets notified.
+          </span>
+        )}{' '}
+        Every scheduled email for this class is cancelled with it.
       </p>
 
       <button

@@ -5,22 +5,28 @@ import {
   cancellationCounselorEmail,
   cancellationOptionsHtml,
   classCancellationEmail,
+  sendAdminAlert,
   sendOnce,
   waitlistCancellationEmail,
   type Audience,
   type CancellationOffer,
 } from '../../../utils/email'
 import { renderEmail } from '../../../utils/comms-db-render'
-import { emailContext, loadClassBundles } from '../../../utils/lifecycle'
+import { cancelScheduledForClass } from '../../../utils/comms-projector'
+import { ADMIN_EMAIL, emailContext, loadClassBundles } from '../../../utils/lifecycle'
 
 // Class cancellation (PHASE4_SPEC §12). Staff-authenticated; mutations run on
-// the service role so everything moves together. Suppression is atomic by
-// construction: `classes.status = 'cancelled'` is written FIRST with an
-// optimistic guard, and every scheduled send derives from that status — the
-// sweep skips cancelled classes entirely, so once the flip lands nothing
-// class-related can send. The emails after the flip are all idempotent
-// (sendOnce dedupe keys), so if this route dies halfway, re-confirming
-// finishes the job without double-sending.
+// the service role so everything moves together. `classes.status =
+// 'cancelled'` is written FIRST with an optimistic guard (the sweep skips
+// cancelled classes), and — PL-55 — the class's materialized scheduled/held
+// email_sends rows are bulk-cancelled immediately after the flip: since the
+// A2 projector, those are real DB rows the dashboard offers "Send now" on,
+// so leaving them to the daily cron's cleanup (the pre-PL-55 behavior, found
+// live in the Nido cancellation: 9 rows survived with #4 due next morning)
+// is not suppression. A cancel failure here is LOUD — alert + 500 — never
+// swallowed. The emails after the flip are all idempotent (sendOnce dedupe
+// keys), so if this route dies halfway, re-confirming finishes the job
+// without double-sending.
 
 export async function POST(request: Request) {
   // Staff gate: cookie session + role check (same rule as /admin).
@@ -86,6 +92,33 @@ export async function POST(request: Request) {
   const alreadyCancelled = !flipped || flipped.length === 0
   if (alreadyCancelled && bundle.status !== 'cancelled') {
     return NextResponse.json({ error: 'Class is not open.' }, { status: 409 })
+  }
+
+  // 1b. PL-55: every pending send for this class dies WITH the cancellation —
+  // not at the next daily cron. Verified afterwards; anything left standing
+  // is a loud failure (alert + 500), never a silent skip.
+  const sendsCancelled = await cancelScheduledForClass(classId, 'class cancelled')
+  const { count: leftover } = await supabase
+    .from('email_sends')
+    .select('id', { count: 'exact', head: true })
+    .eq('class_id', classId)
+    .in('status', ['scheduled', 'held'])
+  if ((leftover ?? 0) > 0) {
+    await sendAdminAlert({
+      dedupeKey: `cancel_sends_stuck:${classId}:${Date.now()}`,
+      adminEmail: ADMIN_EMAIL,
+      subject: 'Class cancelled but some scheduled emails could not be stopped',
+      body: `<p>${bundle.schoolLabel} ${bundle.classType} was cancelled, but
+        <strong>${leftover}</strong> scheduled/held email
+        row${(leftover ?? 0) === 1 ? '' : 's'} for it could not be cancelled. Cancel them by hand
+        on /admin/communications (bulk cancel for the class) before the next send window.</p>`,
+    }).catch((e) => console.error('cancel-sends alert failed:', e))
+    return NextResponse.json(
+      {
+        error: `Class cancelled, but ${leftover} scheduled email${(leftover ?? 0) === 1 ? '' : 's'} could not be stopped — cancel them on the Communications page now, then re-confirm here to finish the emails.`,
+      },
+      { status: 500 }
+    )
   }
 
   // Snapshot the recipient sets from the pre-flip bundle. (On a re-run after
@@ -187,8 +220,10 @@ export async function POST(request: Request) {
   }
 
   // 7. CX-C to the class's designated school contact when set, else every
-  // contact at the school (July 7 addition — matches CR/FP routing).
+  // contact at the school (July 7 addition — matches CR/FP routing). PL-55:
+  // "no contact on file" is reported, never silently skipped.
   let cxcSent = 0
+  let schoolContactCount = 0
   if (bundle.schoolId) {
     const { data: affiliations } = await supabase
       .from('school_affiliations')
@@ -206,6 +241,7 @@ export async function POST(request: Request) {
       ? allCounselors.filter((c) => c.id === bundle.counselorId)
       : []
     const counselors = chosen.length > 0 ? chosen : allCounselors
+    schoolContactCount = counselors.length
     for (const counselor of counselors ?? []) {
       const { subject, html } = cancellationCounselorEmail({
         counselorFirst: counselor.first_name,
@@ -227,6 +263,8 @@ export async function POST(request: Request) {
     ok: true,
     paidNotified: paid.length,
     expired: toExpire.length,
+    sendsCancelled,
+    schoolContactCount,
     emails: { cx: cxSent, cxw: cxwSent, cxc: cxcSent },
   })
 }

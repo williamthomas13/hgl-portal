@@ -80,6 +80,16 @@ export function templateMetaFor(
       return { key: 'FP_DEADLINE_PUSH', role: 'counselor' }
     case 'class_full_notice':
       return { key: 'FP_ALT_CLASS_FULL', role: 'counselor' }
+    // The cancel-class route emits these exact types (PL-55 alignment —
+    // they previously fell through to raw default keys, so CX history rows
+    // never matched the PL-13 registry templates). Legacy spellings kept
+    // below for the migration-era mapping.
+    case 'class_cancelled':
+      return { key: 'CX_FAMILY', role: student ? 'student' : 'parent' }
+    case 'cancel_waitlist':
+      return { key: 'CX_WAITLIST', role: 'parent' }
+    case 'cancel_counselor':
+      return { key: 'CX_C_CANCELLATION', role: 'counselor' }
     case 'class_cancellation':
       return { key: 'CX_CANCELLATION', role: student ? 'student' : 'parent' }
     case 'waitlist_cancellation':
@@ -145,8 +155,10 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   CR_CLASSROOM_REQUEST: 'CR — Classroom request',
   FP_DEADLINE_PUSH: 'FP — Final-days push',
   FP_ALT_CLASS_FULL: 'FP-alt — Class full notice',
-  CX_CANCELLATION: 'CX — Class cancellation',
-  CX_W_CANCELLATION: 'CX-W — Cancellation (waitlist)',
+  CX_FAMILY: 'CX — Class cancellation',
+  CX_WAITLIST: 'CX-W — Cancellation (waitlist)',
+  CX_CANCELLATION: 'CX — Class cancellation (legacy rows)',
+  CX_W_CANCELLATION: 'CX-W — Cancellation (waitlist, legacy rows)',
   CX_C_CANCELLATION: 'CX-C — Cancellation (counselor)',
   ADMIN_INSTRUCTOR_NUDGE: 'Internal — Instructor scheduling nudge',
   ADMIN_ALERT: 'Internal — Admin alert',
