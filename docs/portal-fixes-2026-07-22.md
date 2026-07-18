@@ -8,7 +8,9 @@ From Scarlett's full template-review session (all 12 ramp templates read as real
 
 ---
 
-## PL-56 · Realistic sample data for template previews/test-sends + footer-field hint
+## PL-56 · Realistic sample data for template previews/test-sends + footer-field hint ✅
+
+> **Shipped.** SAMPLE_EXTRA now carries the full realistic tutoring set (Billy Thomas / SAT / "Mondays at 4:00 PM, starting September 7 — one hour each week" / September 2026 / $480.00 / due September 30) plus worked composed blocks mirroring what the send code actually builds: T2 normal-issue intro + autopay pitch, **T4 as the attempt-3 render** (3 of 3, retries stopped, Pay-now button), T3 before/after change list, CX/CX-W options list, T8 tutor-contact + location lines, filled contact block, and all signed-link samples. Verified through the real preview endpoint: 12/12 — no "your tutor"-as-name, no "tutoring tutoring", T2 subject fully filled, T4 attempt-3 present. Footer-note field now says "Visible to recipients — appears above the standard footer." (amber), and the version-notes field says "Internal only — never appears in the email."
 Sample data impersonated bugs three times in one review session: sample tutor literally named "your tutor" (read as a missing variable in T8 and T_SCHEDULE_CONFIRM), sample subject literally "tutoring" (rendered "1-on-1 tutoring tutoring"), and "—" for month/total/schedule (T2's subject read "for — — —").
 - Give the tutoring-template sample set realistic values: tutor "Billy Thomas", subject "SAT", schedule "Mondays at 4:00 PM, starting September 7 — one hour each week", month "September 2026", total "$480.00", due date "September 30".
 - For compose-at-send templates (T2, T4, CX, CX-W), sample the composed blocks with a worked example rather than empty — specifically include a filled T4 attempt-3 render (the highest-stakes email in the set).

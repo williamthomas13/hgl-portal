@@ -444,6 +444,11 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   sessions: [],
 }
 
+// PL-56: previews must read like real sends — placeholder-ish samples
+// ("your tutor", "tutoring", "—") impersonated bugs during template review.
+// Composed blocks carry worked examples mirroring what the send code
+// actually builds; T4's is the attempt-3 (retries exhausted) render — the
+// highest-stakes email in the set.
 export const SAMPLE_EXTRA: ExtraVars = {
   changesBlock:
     '<p><strong>First day of class:</strong> now Saturday, 12 September 2026<br/><strong>Location:</strong> now Room 301</p>',
@@ -452,4 +457,63 @@ export const SAMPLE_EXTRA: ExtraVars = {
   waitlistPosition: 2,
   claimDeadline: 'Thursday, 3 September, 4:00 PM',
   claimLink: 'https://hgl-portal.vercel.app/api/waitlist/claim?e=sample',
+
+  // --- tutoring set ---------------------------------------------------------
+  tutorName: 'Billy Thomas',
+  tutorFirstName: 'Billy',
+  tutoringSubject: 'SAT',
+  tutoringMonthLabel: 'September 2026',
+  scheduleSummary: 'Mondays at 4:00 PM, starting September 7 — one hour each week',
+  scheduleBlock:
+    '<p><strong>Ana — September sessions</strong></p><ul><li>Monday, September 7 — 4:00 to 5:00 PM</li><li>Monday, September 14 — 4:00 to 5:00 PM</li><li>Monday, September 21 — 4:00 to 5:00 PM</li><li>Monday, September 28 — 4:00 to 5:00 PM</li></ul>',
+  monthTotalLine:
+    '<p style="font-size:16px"><strong>Month total: $480.00</strong> — billed once you confirm, due by the end of this month.</p>',
+  packageNote: '',
+  confirmLink: 'https://hgl-portal.vercel.app/tutoring/proposal/sample',
+  approveLink: 'https://hgl-portal.vercel.app/tutoring/approve/sample',
+  autoconfirmDays: 5,
+  daysLeft: 3,
+
+  // T2 (invoice) — normal issue, autopay not yet on file
+  invoiceReminderPrefix: '',
+  invoiceTotal: '$480.00',
+  invoiceDueDate: 'September 30',
+  invoiceUrl: 'https://invoice.stripe.com/i/sample',
+  invoiceIntroBlock:
+    '<p>Your invoice for September 2026 tutoring is ready: <strong>$480.00</strong>, due by <strong>September 30</strong>.</p>',
+  autopayBlock:
+    '<p style="color:#64748b;font-size:13px">Prefer not to think about this each month? <a href="https://hgl-portal.vercel.app/tutoring/autopay/sample" style="color:#00AEEE">Set up autopay</a> and future invoices charge your saved card or bank account automatically.</p>',
+
+  // T4 (payment failed) — attempt 3 of 3: retries exhausted, pay-now shown
+  paymentFailBlock:
+    "<p>The $480.00 charge for September 2026 tutoring didn't go through (attempt 3 of 3).</p><p><strong>We've stopped automatic retries.</strong> You can pay directly, or update your saved payment method:</p>",
+  payButtonBlock:
+    '<p style="margin:24px 0"><a href="https://invoice.stripe.com/i/sample" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>',
+
+  // T3 (schedule change)
+  changeListBlock:
+    '<p><strong>Monday, September 14</strong> — was 4:00 PM, now <strong>5:30 PM</strong><br/><strong>Monday, September 21</strong> — cancelled (make-up added Wednesday, September 23 at 4:00 PM)</p>',
+
+  // CX / CX-W (cancellation) — worked options list
+  cancellationOptionsBlock:
+    "<p>Here are your options:</p><ol><li><strong>Convert to 1-on-1 tutoring.</strong> Ana would receive 6 hours of 1-on-1 SAT tutoring — the $450 you paid carries over in full.</li><li><strong>Full refund.</strong> We'll return the full $450 to your original payment method — just reply and we'll take care of it.</li></ol>",
+
+  // T7/T8 links + lines
+  intakeFormLink: 'https://hgl-portal.vercel.app/intake/sample',
+  agreementsLink: 'https://hgl-portal.vercel.app/agreements/sample',
+  autopayLink: 'https://hgl-portal.vercel.app/tutoring/autopay/sample',
+  tutorContactLine:
+    '<p><strong>Your tutor: Billy Thomas</strong> — <a href="mailto:billy@highergroundlearning.com" style="color:#00AEEE">billy@highergroundlearning.com</a></p>',
+  locationBlock:
+    '<p>Sessions happen online — Billy sends the meeting link before each session.</p>',
+  schedulePdfLink: 'https://hgl-portal.vercel.app/api/tutoring/schedule-pdf/sample',
+  contactBlock:
+    '<p style="margin-top:24px;padding:12px 16px;background:#f1f5f9;border-radius:8px;color:#334155;font-size:14px">Questions, or want to handle this by hand? Email <a href="mailto:info@highergroundlearning.com" style="color:#00AEEE">info@highergroundlearning.com</a> or give us a call at <strong>+1 (505) 555-0100</strong> — replying to this email works too, and we\'ll take care of it for you.</p>',
+
+  // PL-53/54 blocks
+  hoursRemaining: '5',
+  schedulingCtaBlock:
+    '<p><a href="https://hgl-portal.vercel.app/availability/sample" style="color:#00AEEE">Share your availability</a> and we\'ll propose times that fit your family\'s schedule.</p>',
+  classSummaryLine: '<strong>SIS SAT Prep</strong> — starts 5 September 2026',
+  registrationLink: 'https://hgl.co/sis-sat-prep',
 }

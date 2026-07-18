@@ -401,8 +401,12 @@ export default function TemplateEditor() {
                       />
                     </label>
                     <label className="block">
-                      <span className="text-xs font-semibold text-gray-600">
-                        Footer note (optional line above the standard footer)
+                      <span className="text-xs font-semibold text-gray-600">Footer note</span>
+                      {/* PL-56: this field is PARENT-VISIBLE but sits next to the
+                          internal version-notes input — an internal review note
+                          once went live in a footer. Say so, loudly. */}
+                      <span className="block text-xs text-amber-700">
+                        Visible to recipients — appears above the standard footer.
                       </span>
                       <input
                         value={footerNote}
@@ -411,10 +415,14 @@ export default function TemplateEditor() {
                           setDirty(true)
                         }}
                         className="mt-1 w-full border rounded p-2"
+                        placeholder="Shown in the email itself (optional)"
                       />
                     </label>
                     <label className="block">
                       <span className="text-xs font-semibold text-gray-600">Why this change? (version notes)</span>
+                      <span className="block text-xs text-gray-500">
+                        Internal only — never appears in the email.
+                      </span>
                       <input
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
