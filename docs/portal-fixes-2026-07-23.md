@@ -37,7 +37,9 @@ From the T1 proposal flow (real August proposal for Willie's family):
 - **(c) Kind-but-firm first-send copy.** The first agreement email (and T8's policies paragraph) states plainly that sessions can't start unsigned. Approved direction (Scarlett): kind but firm — suggested line, editable in the registry: "One important note: we can't start {studentFirstName}'s sessions until this is signed — it takes about two minutes, and it protects your family as much as it protects us."
 - **Scope note:** billing enforcement stays warn-not-block (the §12 behavior is unchanged); the firmness lives in the language and the automatic chase, so a billed-unsigned family represents a slipped crack, not the normal path.
 
-## PL-64 · Physical address in the shared email footer
+## PL-64 · Physical address in the shared email footer ✅
+
+> **Shipped.** `business_address` app_setting seeded (migration applied) with the exact line incl. "USA"; both shared footers (transactional and relationship/unsubscribe) render "Higher Ground Learning · 380 W. Pierpont Ave, Salt Lake City, UT 84101, USA · highergroundlearning.com · …" from the setting (60s in-memory cache with the seeded value as the synchronous fallback — footers render sync). Verified in all three paths: registry transactional (E1), registry relationship (E9), and a code-shell render. An office move is now a settings edit.
 Add HGL's postal address to the standard footer every email renders (CAN-SPAM requires it for commercial messages — #8, #9, NW, WR are promotional in nature — and it's a mild deliverability/trust signal for everything else; include it uniformly for consistency). Footer line:
 
 > Higher Ground Learning · 380 W. Pierpont Ave, Salt Lake City, UT 84101, USA · highergroundlearning.com · questions? Just reply to this email.

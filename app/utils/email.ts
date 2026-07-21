@@ -145,15 +145,42 @@ export function calendarButton(ctx: EnrollmentEmailContext) {
 
 // Footer types per the deck. T = transactional: address block + footer text,
 // no unsubscribe. R = relationship: address block + opt-out link.
+//
+// PL-64: the postal address rides every footer (CAN-SPAM requires it for the
+// promotional sends — #8, #9, NW, WR — and it's a deliverability/trust
+// signal for the rest; uniform for consistency). It lives in app_settings
+// (business_address) so an office move is a settings edit, cached here with
+// the seeded value as the synchronous fallback — footers render sync, so the
+// cache refreshes behind the first render of a fresh lambda and every render
+// after that reads the stored value. "USA" included on purpose: many
+// recipients are international school families.
+const DEFAULT_BUSINESS_ADDRESS = '380 W. Pierpont Ave, Salt Lake City, UT 84101, USA'
+const addressCache = { value: DEFAULT_BUSINESS_ADDRESS, at: 0 }
+function businessAddress(): string {
+  if (Date.now() - addressCache.at > 60_000) {
+    addressCache.at = Date.now() // stampede guard: one refresh per minute
+    void supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'business_address')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (typeof data?.value === 'string' && data.value.trim()) addressCache.value = data.value.trim()
+      })
+  }
+  return addressCache.value
+}
+
 export function footerT(customText?: string) {
   return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
-    <p style="font-size:13px;color:#64748b">Higher Ground Learning · highergroundlearning.com ·
-    questions? Just reply to this email.</p>`
+    <p style="font-size:13px;color:#64748b">Higher Ground Learning · ${businessAddress()} ·
+    highergroundlearning.com · questions? Just reply to this email.</p>`
 }
 
 export function footerR(unsubscribeUrl: string, customText?: string) {
   return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
-    <p style="font-size:13px;color:#64748b">Higher Ground Learning · highergroundlearning.com ·
+    <p style="font-size:13px;color:#64748b">Higher Ground Learning · ${businessAddress()} ·
+    highergroundlearning.com ·
     <a href="${unsubscribeUrl}" style="color:#64748b">Unsubscribe from non-essential updates</a></p>`
 }
 
