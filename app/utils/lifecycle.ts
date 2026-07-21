@@ -262,7 +262,14 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       synapGroup: c.synap_group || null,
       price: Number(c.price),
       capacity: c.capacity,
-      minEnrollment: c.min_enrollment ?? (c.delivery_mode === 'online' ? 3 : 8),
+      // PL-61: a nonsensical stored minimum (Cape Town briefly had -1) must
+      // never drive "runs (min -1 met)" verdicts — fall back to the default.
+      minEnrollment:
+        c.min_enrollment != null && Number(c.min_enrollment) >= 1
+          ? Number(c.min_enrollment)
+          : c.delivery_mode === 'online'
+            ? 3
+            : 8,
       deliveryMode: c.delivery_mode,
       enrollmentDeadline: c.enrollment_deadline,
       registrationCloseDate: c.registration_close_date ?? null,

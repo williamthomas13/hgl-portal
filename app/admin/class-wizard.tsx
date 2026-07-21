@@ -392,6 +392,17 @@ export default function ClassWizard({
 
     // Online classes with no explicit location auto-fill the instructor's
     // default meeting link (PHASE4_SPEC §5). In-person classes left blank get
+    // PL-61: minimums are positive integers, full stop — "-1 min / 10 cap ·
+    // runs (min -1 met)" must never happen again. Blank falls back to the
+    // mode default; anything below 1 blocks the save.
+    const minRaw = minEnrollment.trim()
+    const minSanitized = minRaw === '' ? (deliveryMode === 'online' ? 3 : 8) : Math.trunc(Number(minRaw))
+    if (!Number.isFinite(minSanitized) || minSanitized < 1) {
+      setMessage('Error: minimum enrollment must be a whole number of at least 1.')
+      setSaving(false)
+      return
+    }
+
     // the classroom-request loop at 14 days out.
     let location = defaultLocation.trim() || null
     if (!location && deliveryMode === 'online' && instructor) {
@@ -409,7 +420,7 @@ export default function ClassWizard({
       default_location: location,
       synap_group: synapGroup.trim() || null,
       delivery_mode: deliveryMode,
-      min_enrollment: Number(minEnrollment) || (deliveryMode === 'online' ? 3 : 8),
+      min_enrollment: minSanitized,
       enrollment_deadline: enrollmentDeadline || null,
       registration_close_date: registrationClose || null,
       slug: slugify(`${school.nickname}-${classType}-${termFor(startDate)}`),
@@ -475,6 +486,15 @@ export default function ClassWizard({
   }
 
   // -- render ----------------------------------------------------------------
+  // PL-61: sanity warning for unusually low minimums — non-blocking ("sure?"),
+  // but a minimum below 1 blocks the save outright (Cape Town shipped as -1).
+  const minParsed = Math.trunc(Number(minEnrollment))
+  const usualMin = deliveryMode === 'online' ? 3 : 8
+  const minWarning =
+    Number.isFinite(minParsed) && minParsed >= 1 && minParsed < usualMin
+      ? `Below the usual minimum for ${deliveryMode === 'online' ? 'online' : 'in-person'} classes (${usualMin}) — you can save, but double-check it's intentional.`
+      : null
+
   const steps = ['School', 'Details', 'Sessions', 'Review'] as const
 
   return (
@@ -820,8 +840,10 @@ export default function ClassWizard({
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Minimum enrollment</label>
-            <input type="number" value={minEnrollment} onChange={(e) => setMinEnrollment(e.target.value)} className={inputCls} />
+            <input type="number" min={1} step={1} value={minEnrollment} onChange={(e) => setMinEnrollment(e.target.value)} className={inputCls} />
             <p className="text-xs text-gray-500 mt-1">Default 8 in person / 3 online — editable.</p>
+            {/* PL-61: warn (never block) below the usual minimum for the mode */}
+            {minWarning && <p className="text-xs text-amber-700 mt-1">{minWarning}</p>}
           </div>
 
           <div>
