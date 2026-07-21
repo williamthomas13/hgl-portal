@@ -80,6 +80,14 @@ export default function RegistrationPage() {
   const idOrSlug = params.id as string
 
   const [notFound, setNotFound] = useState(false)
+  // PL-60: an expired resume-payment link redirects here with ?expired=1 —
+  // greet it with an explanation instead of a bare form. (Read from
+  // window.location rather than useSearchParams to keep the page out of the
+  // Suspense-boundary requirement.)
+  const [cameFromExpiredLink, setCameFromExpiredLink] = useState(false)
+  useEffect(() => {
+    setCameFromExpiredLink(new URLSearchParams(window.location.search).get('expired') === '1')
+  }, [])
   const [classDetails, setClassDetails] = useState<ClassDetails | null>(null)
   const [isFull, setIsFull] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -380,6 +388,14 @@ export default function RegistrationPage() {
         <h1 className="text-2xl font-bold text-hgl-slate mb-4">
           {isFull ? 'Join the Waitlist' : 'Registration'}
         </h1>
+        {cameFromExpiredLink && (
+          <p className="mb-4 text-sm bg-blue-50 text-hgl-slate rounded p-3">
+            That registration link had expired, so the spot it was holding went back into the
+            pool — no payment was ever taken. No worries: you can register again right here
+            while spots remain, and if anything looks off, just reply to any of our emails and
+            a real human will sort it out.
+          </p>
+        )}
         {classHeader}
         {isFull && (
           <>

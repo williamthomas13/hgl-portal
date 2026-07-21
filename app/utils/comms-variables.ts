@@ -106,7 +106,10 @@ function classroomValue(ctx: EnrollmentEmailContext): string {
 
 function synapUrlValue(ctx: EnrollmentEmailContext): string {
   const v = ctx.synapGroup
-  if (!v) return '#'
+  // PL-60: never a dead "#" button — until the class's Synap group is set,
+  // the link lands on the parent portal (alive, explains the class) instead
+  // of anchoring the recipient to their own email.
+  if (!v) return ctx.portalUrl
   return /^https?:\/\//i.test(v) ? v : `https://${v}`
 }
 
@@ -453,7 +456,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
   changesBlock:
     '<p><strong>First day of class:</strong> now Saturday, 12 September 2026<br/><strong>Location:</strong> now Room 301</p>',
   upsellPackagesBlock:
-    '<p style="margin:8px 0"><a href="#" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">5 hours — save $150</a></p>',
+    '<p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/addons/sample" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">5 hours — save $150</a></p>',
   waitlistPosition: 2,
   claimDeadline: 'Thursday, 3 September, 4:00 PM',
   claimLink: 'https://hgl-portal.vercel.app/api/waitlist/claim?e=sample',

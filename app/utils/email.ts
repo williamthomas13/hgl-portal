@@ -1678,6 +1678,46 @@ export async function sendOnce(opts: {
     return 'failed'
   }
 
+  // PL-60: the Roman-Desmond incident. A dev-server cron run against the
+  // shared production DB emailed a REAL family — the lifecycle sweep
+  // processes every class, not just QA rows — and the links were built from
+  // the dev machine's http://localhost base, so every button was dead.
+  // Outside production (or whenever the configured link base is localhost)
+  // only QA addresses may receive mail; real-recipient sends are suppressed
+  // BEFORE any row is claimed, so the production cron still delivers them
+  // properly on its next pass. ALLOW_REAL_EMAILS=1 overrides deliberately.
+  const linkBase = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const devEnvironment =
+    process.env.NODE_ENV !== 'production' || !linkBase || /localhost|127\.0\.0\.1/.test(linkBase)
+  if (devEnvironment && process.env.ALLOW_REAL_EMAILS !== '1') {
+    const QA_RECIPIENT = /@highergroundlearning\.com$|@example\.(com|org|net)$/i
+    const real = [...opts.to, ...(opts.cc ?? [])].filter((a) => !QA_RECIPIENT.test(a.trim()))
+    if (real.length > 0) {
+      console.error(
+        `[PL-60] suppressed non-QA send from dev environment: ${opts.dedupeKey} → ${real.join(', ')}`
+      )
+      return 'suppressed'
+    }
+  }
+
+  // PL-60: no email leaves with a dead primary action. Empty, "#", relative,
+  // or unresolved-{variable} hrefs are exactly how the incident presented
+  // (a Gmail button that anchors to the message itself). Loud in production
+  // (the send still beats silence for transactional mail); fatal in dev so
+  // E2E runs catch it.
+  const badHrefs = [...opts.html.matchAll(/href="([^"]*)"/g)]
+    .map((m) => m[1])
+    .filter((h) => {
+      const raw = h.replace(/&amp;/g, '&').trim()
+      return raw === '' || raw === '#' || raw.includes('{') || !/^(https?:|mailto:|tel:)/i.test(raw)
+    })
+  if (badHrefs.length > 0) {
+    console.error(
+      `[PL-60] dead link(s) in ${opts.dedupeKey}: ${badHrefs.map((h) => JSON.stringify(h)).join(', ')}`
+    )
+    if (devEnvironment) return 'failed'
+  }
+
   const meta = templateMetaFor(opts.emailType, opts.dedupeKey)
   const nowIso = new Date().toISOString()
 

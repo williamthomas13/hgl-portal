@@ -43,8 +43,9 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${baseUrl}/success?already_paid=1`, 303)
   }
   if (enrollment.payment_status !== 'Pending') {
-    // Expired: send them back to register fresh while spots remain.
-    return NextResponse.redirect(`${baseUrl}/register/${bundle.id}?expired=1`, 303)
+    // PL-60: expired links land on a friendly restart page, never a dead
+    // button — the register page reads ?expired=1 and explains.
+    return NextResponse.redirect(`${baseUrl}/register/${bundle.slug ?? bundle.id}?expired=1`, 303)
   }
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
