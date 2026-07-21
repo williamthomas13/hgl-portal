@@ -100,6 +100,8 @@ export async function POST(req: Request) {
   await sendAdminAlert({
     dedupeKey: `intake_complete:${leadId}`,
     adminEmail: ADMIN_EMAIL,
+    templateKey: 'AL_INTAKE_COMPLETE',
+    vars: { alertStudentName: `${studentFirst} ${studentLast}` },
     subject: `Intake complete — ${studentFirst} ${studentLast}`,
     body: `<p><strong>${guardianFirst} ${guardianLast}</strong> (${guardianEmail}) completed
       the intake form for <strong>${studentFirst} ${studentLast}</strong>

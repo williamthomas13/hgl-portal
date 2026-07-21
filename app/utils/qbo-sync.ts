@@ -442,6 +442,7 @@ export async function processQboQueue(): Promise<QboQueueResult> {
           await sendAdminAlert({
             dedupeKey: `qbo_sync_failed:${row.id}`,
             adminEmail: ADMIN_EMAIL,
+            templateKey: 'AL_QBO_FAILURE',
             subject: `QuickBooks sync FAILED — ${row.kind} for payment ${row.stripe_payment_intent_id}`,
             body: `<p>After ${MAX_ATTEMPTS} attempts, the ${row.kind === 'refund' ? 'Refund Receipt' : 'Sales Receipt'}
               for Stripe payment <code>${row.stripe_payment_intent_id}</code>

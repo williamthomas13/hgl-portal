@@ -77,6 +77,8 @@ export async function POST(req: Request) {
     // Dated key: a re-share after edits alerts again, same-day repeats don't.
     dedupeKey: `availability_shared:${studentId}:${new Date().toISOString().slice(0, 10)}`,
     adminEmail: ADMIN_EMAIL,
+    templateKey: 'AL_AVAILABILITY_SHARED',
+    vars: { alertStudentName: `${student.first_name} ${student.last_name}` },
     subject: `Add-on family shared availability — ${student.first_name} ${student.last_name} is ready to schedule`,
     body: `<p><strong>${fam?.parent_first_name ?? 'A parent'}</strong> (${fam?.parent_email ?? '—'})
       shared ${student.first_name}'s availability${body.availability.length === 0 ? ' (cleared it, actually)' : ''}.</p>

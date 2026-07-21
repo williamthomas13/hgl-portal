@@ -1,5 +1,6 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { sendOnce, wrap, footerT } from './email'
+import { sendOnce, wrap, footerT, type Rendered } from './email'
+import { renderRegistered } from './comms-registered'
 
 // Phase 7b timecards (docs/PHASE7_SPEC.md §7). Semi-monthly pay periods:
 // 1st–15th (payday the 20th) and 16th–end of month (payday the 5th),
@@ -233,14 +234,13 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
         .maybeSingle()
       if (tutor?.email) {
         const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-        const status = await sendOnce({
-          dedupeKey: `t5_timecard:${tutorId}:${p.start}`,
-          emailType: 'T5_TIMECARD_READY',
-          to: [tutor.email],
+        const tutorFirst = tutor.name?.split(' ')[0] ?? 'there'
+        // PL-66: registry copy when T5 is flipped live; code twin otherwise.
+        const codeTwin = (): Rendered => ({
           subject: `Your timecard for ${p.start} – ${p.end} is ready to confirm`,
           html: wrap(
             `<h2 style="color:#334155">Timecard ready — ${p.start} to ${p.end}</h2>
-             <p>Hi ${tutor.name?.split(' ')[0] ?? 'there'},</p>
+             <p>Hi ${tutorFirst},</p>
              <p>Your sessions for the pay period are in: <strong>${total ?? 0} hours</strong>.
              The portal built this from the schedule, so usually there is nothing to fill out —
              just glance over it, correct any exception (a no-show, a session that ran a
@@ -250,6 +250,25 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
              no-shows are on the card on purpose — you're paid for reserved time.</p>`,
             { preheader: `${total ?? 0} hours for ${p.start} – ${p.end}`, footer: footerT() }
           ),
+        })
+        const email = await renderRegistered(
+          'T5_TIMECARD_READY',
+          { parentFirstName: tutorFirst, parentEmail: tutor.email },
+          {
+            tutorFirstName: tutorFirst,
+            payPeriodRange: `${p.start} – ${p.end}`,
+            timecardHours: String(total ?? 0),
+            timecardLink: `${base}/portal?view=tutor`,
+          },
+          codeTwin
+        )
+        const status = await sendOnce({
+          dedupeKey: `t5_timecard:${tutorId}:${p.start}`,
+          emailType: 'T5_TIMECARD_READY',
+          templateKey: 'T5_TIMECARD_READY',
+          to: [tutor.email],
+          subject: email.subject,
+          html: email.html,
         })
         if (status === 'sent') result.t5Sent++
       }

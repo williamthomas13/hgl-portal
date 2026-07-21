@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../utils/supabase'
 import { VARIABLES } from '../../../utils/comms-variables'
+import { TEMPLATE_GROUPS, templateGroupFor } from '../../../utils/comms'
 
 // Feature A4 template editor (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4).
 // Markdown editor + variable palette + live sample-data preview; saving
@@ -250,31 +251,46 @@ export default function TemplateEditor() {
             {templates.length === 0 ? (
               <p className="p-4 text-sm text-gray-500 italic">No templates yet — run the seed.</p>
             ) : (
-              <ul className="divide-y divide-gray-100 max-h-[75vh] overflow-y-auto">
-                {templates.map((t) => (
-                  <li key={t.template_key}>
-                    <button
-                      onClick={() => {
-                        if (dirty && !confirm('Discard unsaved changes?')) return
-                        selectTemplate(t)
-                      }}
-                      className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 ${
-                        selected?.template_key === t.template_key ? 'bg-blue-50' : ''
-                      }`}
-                    >
-                      <span className="block font-medium text-gray-800">{t.display_name}</span>
-                      <span className="text-xs text-gray-400">
-                        {t.audience} · from {t.from_identity} ·{' '}
-                        {t.live ? (
-                          <span className="text-green-700 font-semibold">live</span>
-                        ) : (
-                          <span className="text-gray-400">code copy</span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              /* PL-66: grouped headings with per-group counts; the list stays
+                 flat and scannable inside each group. */
+              <div className="max-h-[75vh] overflow-y-auto">
+                {TEMPLATE_GROUPS.map((group) => {
+                  const members = templates.filter((t) => templateGroupFor(t.template_key) === group.name)
+                  if (members.length === 0) return null
+                  return (
+                    <div key={group.name}>
+                      <div className="sticky top-0 bg-gray-50 border-y border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        {group.name} <span className="text-gray-400 font-normal">({members.length})</span>
+                      </div>
+                      <ul className="divide-y divide-gray-100">
+                        {members.map((t) => (
+                          <li key={t.template_key}>
+                            <button
+                              onClick={() => {
+                                if (dirty && !confirm('Discard unsaved changes?')) return
+                                selectTemplate(t)
+                              }}
+                              className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 ${
+                                selected?.template_key === t.template_key ? 'bg-blue-50' : ''
+                              }`}
+                            >
+                              <span className="block font-medium text-gray-800">{t.display_name}</span>
+                              <span className="text-xs text-gray-400">
+                                {t.audience} · from {t.from_identity} ·{' '}
+                                {t.live ? (
+                                  <span className="text-green-700 font-semibold">live</span>
+                                ) : (
+                                  <span className="text-gray-400">code copy</span>
+                                )}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
 

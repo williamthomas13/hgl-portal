@@ -191,6 +191,7 @@ export async function POST(req: Request) {
       await sendAdminAlert({
         dedupeKey: `webhook_failure:${sessionId}`,
         adminEmail: ADMIN_EMAIL,
+        templateKey: 'AL_WEBHOOK_FAILURE',
         subject: 'Stripe payment could not be matched to an enrollment',
         body: `<p>Stripe checkout session <code>${sessionId}</code> completed, but the
           enrollment could not be updated.</p><p>${problem}</p>
@@ -284,6 +285,16 @@ export async function POST(req: Request) {
         await sendAdminAlert({
           dedupeKey: `registration_notification:${paidEnrollmentId}`,
           adminEmail: REGISTRATION_NOTIFY_EMAIL,
+          templateKey: 'AL_REGISTRATION',
+          vars: {
+            alertStudentName: `${enrollment.studentFirstName} ${enrollment.studentLastName}`,
+            alertCounts: pendingCount > 0
+              ? `${paidCount} + ${pendingCount} pending / ${bundle.minEnrollment} min / ${bundle.capacity} cap`
+              : `${paidCount} / ${bundle.minEnrollment} min / ${bundle.capacity} cap`,
+            schoolNickname: bundle.schoolLabel,
+            classType: bundle.classType,
+            schoolName: bundle.schoolName,
+          },
           subject: note.subject,
           body: note.body,
           enrollmentId: paidEnrollmentId,

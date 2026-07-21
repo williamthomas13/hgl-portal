@@ -5,8 +5,10 @@
 // a dev-machine pipeline run built links from its localhost base. This audit
 // fails on ANY empty, "#", relative, unresolved-{variable}, or localhost
 // href in:
-//   1. every LIVE registry template, rendered exactly as the editor
-//      preview/test-send path renders it (sample context + extras), and
+//   1. EVERY registry template — live AND code-copy drafts (PL-66: drafts
+//      are pre-validated so flipping one live can't introduce a dead link) —
+//      rendered exactly as the editor preview/test-send path renders it
+//      (sample context + extras), and
 //   2. the enrollment pipeline's real render paths — every live
 //      enrollment-scoped template rendered through renderDbEmail with a REAL
 //      emailContext built from a live class bundle (registry copy), plus the
@@ -64,7 +66,7 @@ try {
   const { SAMPLE_CONTEXT, SAMPLE_EXTRA, VARIABLES } = req(path.join(buildDir, 'comms-variables.js'))
   const { loadClassBundles, emailContext } = req(path.join(buildDir, 'lifecycle.js'))
 
-  // --- 1. every live template renders with zero dead hrefs -----------------
+  // --- 1. every template (live + drafts) renders with zero dead hrefs ------
   const { data: templates } = await db
     .from('email_templates')
     .select(
@@ -72,17 +74,17 @@ try {
        version:email_template_versions!email_templates_active_version_fk
          ( subject, preheader, body_markdown, footer_note )`
     )
-    .eq('live', true)
   for (const tpl of templates ?? []) {
     if (!tpl.version) {
-      check(`${tpl.template_key}: live with active version`, false, 'no active version')
+      check(`${tpl.template_key}: has an active version`, false, 'no active version')
       continue
     }
+    const tag = tpl.live ? 'live' : 'draft'
     const r = renderVersion(tpl.version, tpl, SAMPLE_CONTEXT, 'parent', SAMPLE_EXTRA)
     const dead = deadHrefs(r.html)
     const unresolved = /\{[a-zA-Z][a-zA-Z0-9_]*\}/.test(r.subject)
     check(
-      `${tpl.template_key}: no dead hrefs (sample render)`,
+      `${tpl.template_key} (${tag}): no dead hrefs (sample render)`,
       dead.length === 0 && !unresolved,
       dead.map((h) => JSON.stringify(h)).join(', ') || (unresolved ? `subject: ${r.subject}` : '')
     )

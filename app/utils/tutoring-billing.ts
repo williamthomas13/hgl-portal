@@ -534,6 +534,8 @@ export async function generateMonthlyCycle(
     await sendAdminAlert({
       dedupeKey: `unagreed_families:${month.period}`,
       adminEmail: ADMIN_EMAIL,
+      templateKey: 'AL_UNAGREED',
+      vars: { alertCounts: String(unagreedFamilies.length) },
       subject: `${unagreedFamilies.length} tutoring famil${unagreedFamilies.length === 1 ? 'y' : 'ies'} billed without a signed policy agreement`,
       body: `<p>The ${month.label} cycle just proposed invoices for families with no accepted
         scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p>

@@ -295,6 +295,8 @@ export async function handleAutopayFailure(invoiceId: string, reason: string): P
     await sendAdminAlert({
       dedupeKey: `t4_exhausted:${invoiceId}`,
       adminEmail: ADMIN_EMAIL,
+      templateKey: 'AL_DUNNING_EXHAUSTED',
+      vars: { tutoringMonthLabel: month.label },
       subject: `Autopay failed ${MAX_CHARGE_ATTEMPTS}× — ${month.label} tutoring invoice past due`,
       body: `<p>All ${MAX_CHARGE_ATTEMPTS} automatic charges failed for
         <strong>${inv.family.parent_first_name} ${inv.family.parent_last_name ?? ''}</strong>
@@ -522,6 +524,8 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
         await sendAdminAlert({
           dedupeKey: `overdue10:${inv.id}`,
           adminEmail: ADMIN_EMAIL,
+          templateKey: 'AL_OVERDUE_10',
+          vars: { alertParentName: `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim() },
           subject: `Tutoring invoice 10+ days past due — ${fam.parent_first_name} ${fam.parent_last_name ?? ''}`,
           body: `<p>${month.label}, $${Number(inv.total).toFixed(2)}, due ${new Date(inv.due_at).toLocaleDateString('en-CA', { timeZone: 'America/Denver' })} —
             reminder sent to the family. 30-day mark adds the late-fee flag.</p>`,
@@ -541,6 +545,8 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
         await sendAdminAlert({
           dedupeKey: `overdue30:${inv.id}`,
           adminEmail: ADMIN_EMAIL,
+          templateKey: 'AL_OVERDUE_30',
+          vars: { alertParentName: `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim() },
           subject: `30+ days past due — late-fee decision needed (${fam.parent_first_name} ${fam.parent_last_name ?? ''})`,
           body: `<p>${month.label} tutoring invoice ($${Number(inv.total).toFixed(2)}) is 30+ days past due.
             Per the signed policy you MAY apply the 10% late fee — it's a button on the invoice panel

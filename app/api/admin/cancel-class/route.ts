@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
+import { renderRegistered } from '../../../utils/comms-registered'
 import { createSupabaseServerClient } from '../../../utils/supabase-server'
 import {
   cancellationCounselorEmail,
@@ -260,14 +261,29 @@ export async function POST(request: Request) {
     const counselors = chosen.length > 0 ? chosen : allCounselors
     schoolContactCount = counselors.length
     for (const counselor of counselors ?? []) {
-      const { subject, html } = cancellationCounselorEmail({
-        counselorFirst: counselor.first_name,
-        label: `${bundle.schoolLabel} ${bundle.classType}`,
-        firstSession: bundle.firstSession,
-      })
+      // PL-66: registry copy when CX-C is flipped live; code twin otherwise.
+      const { subject, html } = await renderRegistered(
+        'CX_C_CANCELLATION',
+        {
+          parentFirstName: counselor.first_name,
+          parentEmail: counselor.email,
+          schoolNickname: bundle.schoolLabel,
+          classType: bundle.classType,
+          schoolName: bundle.schoolName,
+          firstSession: bundle.firstSession,
+        },
+        { counselorFirstName: counselor.first_name },
+        () =>
+          cancellationCounselorEmail({
+            counselorFirst: counselor.first_name,
+            label: `${bundle.schoolLabel} ${bundle.classType}`,
+            firstSession: bundle.firstSession,
+          })
+      )
       const status = await sendOnce({
         dedupeKey: `cancel_counselor:${classId}:${counselor.id}`,
         emailType: 'cancel_counselor',
+        templateKey: 'CX_C_CANCELLATION',
         to: [counselor.email],
         subject,
         html,

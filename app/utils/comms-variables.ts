@@ -89,6 +89,43 @@ export type ExtraVars = {
   /** e.g. "ISD SAT Prep — starts 13 October 2026, Tuesdays & Thursdays". */
   classSummaryLine?: string
   registrationLink?: string
+
+  // --- PL-66: counselor / tutor / internal-alert registrations ---------------
+  /** Counselor's first name (CS-set greeting). */
+  counselorFirstName?: string
+  /** CS digest subject count, e.g. "12 students enrolled" or "2 classes, 17 students enrolled". */
+  digestCountSummary?: string
+  /** CS digest per-class cards (pre-rendered). */
+  digestClassListBlock?: string
+  /** CS digest frequency-choice links line (pre-rendered). */
+  digestFrequencyBlock?: string
+  /** "3 days left" / "Last day" (CS deadline push subject). */
+  deadlineCountdown?: string
+  /** "3 spots" (CS deadline push). */
+  spotsLeftPhrase?: string
+  /** "12 of 15 enrolled" (CS deadline push). */
+  enrolledCountLine?: string
+  /** Waitlist depth as text, e.g. "2" (CS class-full). */
+  waitlistDepth?: string
+  /** Signed tell-us-the-room form link (CS classroom request). */
+  classroomFormLink?: string
+  /** "September 1 – September 15" (T5 timecard). */
+  payPeriodRange?: string
+  /** "14.5" (T5 timecard hours). */
+  timecardHours?: string
+  /** Tutor portal timecard link. */
+  timecardLink?: string
+  /** Tutor-facing schedule-change sentence (pre-rendered). */
+  tutorChangeBlock?: string
+  /** Internal alerts: who/what the alert is about. */
+  alertStudentName?: string
+  alertParentName?: string
+  alertParentEmail?: string
+  /** e.g. "3 / 8 min / 15 cap" or "4 paid / 8 minimum". */
+  alertCounts?: string
+  /** The alert's composed data guts (pre-rendered HTML) — framing copy is
+   *  editable in the template; the computed details ride this block. */
+  alertDetailsBlock?: string
 }
 
 type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVars) => string
@@ -344,6 +381,37 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (_c, _a, e) => e.registrationLink ?? '#',
   },
 
+  // --- PL-66: counselor / tutor / internal-alert registrations ---------------
+  counselorFirstName: { description: "Counselor's first name (CS set)", resolve: (_c, _a, e) => e.counselorFirstName ?? 'there' },
+  digestCountSummary: { description: 'CS digest count, e.g. "12 students enrolled"', resolve: (_c, _a, e) => e.digestCountSummary ?? '—' },
+  digestClassListBlock: { description: 'CS digest per-class cards', block: true, resolve: (_c, _a, e) => e.digestClassListBlock ?? '' },
+  digestFrequencyBlock: { description: 'CS digest frequency-choice links', block: true, resolve: (_c, _a, e) => e.digestFrequencyBlock ?? '' },
+  deadlineCountdown: { description: '"3 days left" / "Last day" (CS push subject)', resolve: (_c, _a, e) => e.deadlineCountdown ?? '—' },
+  spotsLeftPhrase: { description: '"3 spots" (CS push)', resolve: (_c, _a, e) => e.spotsLeftPhrase ?? '—' },
+  enrolledCountLine: { description: '"12 of 15 enrolled" (CS push)', resolve: (_c, _a, e) => e.enrolledCountLine ?? '—' },
+  waitlistDepth: { description: 'Waitlist depth (CS class-full)', resolve: (_c, _a, e) => e.waitlistDepth ?? '0' },
+  classroomFormLink: {
+    description: 'Signed tell-us-the-room form link (CS classroom request)',
+    // PL-60 rule: URL variables never fall back to a dead "#".
+    resolve: (c, _a, e) => e.classroomFormLink ?? c.portalUrl,
+  },
+  payPeriodRange: { description: '"September 1 – September 15" (T5)', resolve: (_c, _a, e) => e.payPeriodRange ?? '—' },
+  timecardHours: { description: 'Timecard hours, e.g. "14.5" (T5)', resolve: (_c, _a, e) => e.timecardHours ?? '—' },
+  timecardLink: {
+    description: "Tutor portal timecard link (T5)",
+    resolve: (c, _a, e) => e.timecardLink ?? c.portalUrl,
+  },
+  tutorChangeBlock: { description: 'Tutor-facing schedule-change sentence', block: true, resolve: (_c, _a, e) => e.tutorChangeBlock ?? '' },
+  alertStudentName: { description: 'Alerts: student the alert is about', resolve: (_c, _a, e) => e.alertStudentName ?? '—' },
+  alertParentName: { description: 'Alerts: parent the alert is about', resolve: (_c, _a, e) => e.alertParentName ?? '—' },
+  alertParentEmail: { description: "Alerts: that parent's email", resolve: (_c, _a, e) => e.alertParentEmail ?? '—' },
+  alertCounts: { description: 'Alerts: the count string, e.g. "3 / 8 min / 15 cap"', resolve: (_c, _a, e) => e.alertCounts ?? '—' },
+  alertDetailsBlock: {
+    description: 'Alerts: the composed data details (framing is editable; these guts stay computed)',
+    block: true,
+    resolve: (_c, _a, e) => e.alertDetailsBlock ?? '',
+  },
+
   // --- computed blocks ---------------------------------------------------------
   orderSummaryBlock: {
     description: '#0-P/LR order summary (class + add-ons + amount paid) — renders empty on student sends',
@@ -533,4 +601,29 @@ export const SAMPLE_EXTRA: ExtraVars = {
     '<p><a href="https://hgl-portal.vercel.app/availability/sample" style="color:#00AEEE">Share your availability</a> and we\'ll propose times that fit your family\'s schedule.</p>',
   classSummaryLine: '<strong>SIS SAT Prep</strong> — starts 5 September 2026',
   registrationLink: 'https://hgl.co/sis-sat-prep',
+
+  // --- PL-66: counselor / tutor / alert samples (PL-56 standard: read as a
+  // real send, never as a bug) ------------------------------------------------
+  counselorFirstName: 'Marisol',
+  digestCountSummary: '12 students enrolled',
+  digestClassListBlock:
+    '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0"><p style="margin:0 0 4px"><strong>SAT Prep — starts September 5, 2026</strong></p><p style="margin:0;color:#475569">Enrolled: <strong>12 of 15</strong> (2 new since last update) · Waitlist: 1</p><p style="margin:6px 0 0;font-size:13px">Registration link to share: <a href="https://hgl-portal.vercel.app/register/sis-sat-prep-fall26">https://hgl-portal.vercel.app/register/sis-sat-prep-fall26</a></p></div>',
+  digestFrequencyBlock:
+    '<p style="font-size:13px;color:#64748b">How often do you want these? <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=weekly" style="color:#64748b">Weekly</a> · <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=biweekly" style="color:#64748b">Every 2 weeks</a> · <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=monthly" style="color:#64748b">Monthly</a> · <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=paused" style="color:#64748b">Pause</a></p>',
+  deadlineCountdown: '3 days left',
+  spotsLeftPhrase: '3 spots',
+  enrolledCountLine: '12 of 15 enrolled',
+  waitlistDepth: '2',
+  classroomFormLink: 'https://hgl-portal.vercel.app/classroom-request/sample',
+  payPeriodRange: 'September 1 – September 15',
+  timecardHours: '14.5',
+  timecardLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
+  tutorChangeBlock:
+    "<p>Ana's SAT session on <strong>Mon, Sep 14, 4:00 PM</strong> was rescheduled. Your Google Calendar is already updated.</p>",
+  alertStudentName: 'Ana García',
+  alertParentName: 'Alex García',
+  alertParentEmail: 'sample-parent@example.com',
+  alertCounts: '3 / 8 min / 15 cap',
+  alertDetailsBlock:
+    '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 / 8 min / 15 cap</strong></p>',
 }

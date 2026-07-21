@@ -70,6 +70,8 @@ export function templateMetaFor(
       return { key: 'AG_REQUEST', role: 'parent' }
     case 'agreement_nudge': // PL-63: automatic chase
       return { key: 'AG_NUDGE', role: 'parent' }
+    case 'tutor_schedule_notice': // PL-66: tutor-facing T3 sibling
+      return { key: 'T3_TUTOR_NOTICE', role: 'instructor' }
     case 'tutoring_upsell':
       return { key: 'E9_UPSELL', role: 'parent' }
     case 'waitlist_confirmation':
@@ -159,6 +161,28 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   WR_WAITLIST_RELEASE: 'WR — Waitlist release (class completed full)',
   AG_REQUEST: 'AG — Agreement request (policies)',
   AG_NUDGE: 'AG-N — Agreement nudge (automatic chase)',
+  // PL-66: classroom-request re-nudges get their own keys (CR1 history stays
+  // under CR_CLASSROOM_REQUEST); tutor T3 sibling is new
+  CR_CLASSROOM_NUDGE_2: 'CR2 — Classroom request re-nudge',
+  CR_CLASSROOM_NUDGE_3: 'CR3 — Classroom request (last call)',
+  T3_TUTOR_NOTICE: 'T3-T — Schedule change notice (tutor)',
+  // PL-66: internal [HGL Admin] alert family (subject shown WITHOUT the
+  // [HGL Admin] prefix — the sender adds it)
+  AL_REGISTRATION: 'AL — New registration',
+  AL_ROSTER_REPORT: 'AL — Roster report (weekly)',
+  AL_CLASS_DETAILS_HOLD: 'AL — #4 hold-and-alert (class details)',
+  AL_MISSING_DETAILS: 'AL — Missing class details warning',
+  AL_MIN_ENROLLMENT: 'AL — Minimum-enrollment checkpoint',
+  AL_WAITLIST_ROLLOVER: 'AL — Waitlist offer rolled over',
+  AL_NO_INSTRUCTOR: 'AL — No instructor assigned',
+  AL_WEBHOOK_FAILURE: 'AL — Stripe webhook mismatch',
+  AL_QBO_FAILURE: 'AL — QuickBooks sync failure',
+  AL_UNAGREED: 'AL — Billed without signed agreement',
+  AL_AVAILABILITY_SHARED: 'AL — Family shared availability',
+  AL_INTAKE_COMPLETE: 'AL — Intake complete',
+  AL_DUNNING_EXHAUSTED: 'AL — Autopay retries exhausted',
+  AL_OVERDUE_10: 'AL — Invoice 10+ days past due',
+  AL_OVERDUE_30: 'AL — Invoice 30+ days past due (late-fee decision)',
   W1_WAITLIST: 'W1 — Waitlist confirmation',
   W2_SPOT_OPEN: 'W2 — Waitlist spot open',
   SU_SCHEDULE_UPDATE: 'SU — Schedule update',
@@ -208,4 +232,34 @@ export function zonedTimeToUtc(dateISO: string, hour: number, tz: string): Date 
     guess += wallMs - asUtc
   }
   return new Date(guess)
+}
+
+
+// PL-66: registry organization for the templates page — grouped headings with
+// per-group counts, flat scan/search feel within each group. Templates map to
+// the FIRST matching group; anything unmatched lands in "Class sequence"
+// (the E-series + LR + SU).
+export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[] = [
+  { name: 'Class sequence', match: (k) => /^E\d|^LR_|^SU_/.test(k) && !/^E8_ADDON/.test(k) },
+  { name: 'Payment reminders', match: (k) => /^PR\d/.test(k) },
+  { name: 'Waitlist & interest', match: (k) => /^W\d|^NW_|^WR_/.test(k) },
+  { name: 'Cancellation', match: (k) => /^CX_/.test(k) && k !== 'CX_C_CANCELLATION' },
+  { name: 'Agreements', match: (k) => /^AG_/.test(k) },
+  {
+    name: 'Tutoring families',
+    match: (k) => /^T\d(?!_TUTOR)|^T1B|^T_SCHEDULE|^E8_ADDON/.test(k) && k !== 'T5_TIMECARD_READY',
+  },
+  {
+    name: 'Counselors & schools',
+    match: (k) => /^CD_|^FP_|^CR_/.test(k) || k === 'CX_C_CANCELLATION',
+  },
+  { name: 'Tutors & staff', match: (k) => k === 'T5_TIMECARD_READY' || k === 'T3_TUTOR_NOTICE' },
+  {
+    name: 'Internal admin alerts',
+    match: (k) => /^AL_|^ADMIN_/.test(k),
+  },
+]
+
+export function templateGroupFor(key: string): string {
+  return TEMPLATE_GROUPS.find((g) => g.match(key))?.name ?? 'Class sequence'
 }

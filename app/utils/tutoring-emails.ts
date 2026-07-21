@@ -307,18 +307,33 @@ export async function sendScheduleChangeNotices(opts: {
       const tutorTz = tutor.timezone ?? 'America/Denver'
       const tFmt = (iso: string) =>
         new Date(iso).toLocaleString('en-US', { timeZone: tutorTz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      // PL-66: registry copy when T3-T is flipped live; code twin otherwise.
+      const changeSentence = `<p>${student.first_name}'s ${subject} session on <strong>${tFmt(s.starts_at)}</strong>
+           ${opts.kind === 'reschedule' ? 'was rescheduled' : opts.kind === 'no_show' ? 'was a no-show' : 'was cancelled (you are still paid for the reserved slot)'}.
+           Your Google Calendar is already updated${opts.kind !== 'reschedule' ? ' (the slot stays, XCL-marked)' : ''}.</p>`
+      const tutorEmail = await renderRegistered(
+        'T3_TUTOR_NOTICE',
+        {
+          parentFirstName: tutor.name?.split(' ')[0] ?? 'there',
+          parentEmail: tutor.email,
+          studentFirstName: student.first_name,
+        },
+        { tutoringSubject: subject, tutorChangeBlock: changeSentence },
+        () => ({
+          subject: `Schedule change: ${student.first_name} — ${subject}`,
+          html: wrap(`<h2 style="color:#334155">Schedule change</h2>
+           ${changeSentence}`,
+            { preheader: `${student.first_name} — ${subject}`, footer: footerT() }
+          ),
+        })
+      )
       await sendOnce({
         dedupeKey: `t3_tutor:${opts.sessionId}:${opts.replacementId ?? opts.kind}`,
         emailType: 'tutor_schedule_notice',
+        templateKey: 'T3_TUTOR_NOTICE',
         to: [tutor.email],
-        subject: `Schedule change: ${student.first_name} — ${subject}`,
-        html: wrap(
-          `<h2 style="color:#334155">Schedule change</h2>
-           <p>${student.first_name}'s ${subject} session on <strong>${tFmt(s.starts_at)}</strong>
-           ${opts.kind === 'reschedule' ? 'was rescheduled' : opts.kind === 'no_show' ? 'was a no-show' : 'was cancelled (you are still paid for the reserved slot)'}.
-           Your Google Calendar is already updated${opts.kind !== 'reschedule' ? ' (the slot stays, XCL-marked)' : ''}.</p>`,
-          { preheader: `${student.first_name} — ${subject}`, footer: footerT() }
-        ),
+        subject: tutorEmail.subject,
+        html: tutorEmail.html,
       })
     }
   } catch (e) {

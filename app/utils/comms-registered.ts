@@ -23,6 +23,9 @@ export type TutoringStub = {
   /** PL-54: real class identity for non-tutoring registry emails (NW). */
   schoolNickname?: string
   classType?: string
+  /** PL-66: counselor/alert sends carry real school + first-session facts. */
+  schoolName?: string
+  firstSession?: string
 }
 
 export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext {
@@ -50,7 +53,7 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
     amountPaid: null,
     paidAt: null,
     enrolledAt: new Date().toISOString(),
-    schoolName: 'Higher Ground Learning',
+    schoolName: stub.schoolName ?? 'Higher Ground Learning',
     schoolNickname: stub.schoolNickname ?? 'HGL',
     classType: stub.classType ?? '1-on-1 Tutoring',
     className: `${stub.schoolNickname ?? 'HGL'} ${stub.classType ?? '1-on-1 Tutoring'}`,
@@ -60,8 +63,8 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
     defaultLocation: null,
     deliveryMode: 'online',
     synapGroup: null,
-    startDate: new Date().toISOString().slice(0, 10),
-    firstSession: new Date().toISOString().slice(0, 10),
+    startDate: stub.firstSession ?? new Date().toISOString().slice(0, 10),
+    firstSession: stub.firstSession ?? new Date().toISOString().slice(0, 10),
     lastSession: new Date().toISOString().slice(0, 10),
     price: 0,
     sessions: [],

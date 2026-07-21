@@ -1045,4 +1045,389 @@ Already accepted them? Then our systems are just catching up — you can ignore 
 
 {contactBlock}`,
   },
+
+  // ---------------------------------------------------------------------------
+  // PL-66: every remaining hardcoded outbound email joins the registry as a
+  // code-copy draft — the code twin keeps sending until each is test-sent,
+  // reviewed, and flipped live. Bodies below transcribe the code copy;
+  // composed data rides block variables (framing editable, guts computed).
+  // ---------------------------------------------------------------------------
+
+  // --- Counselors & schools --------------------------------------------------
+  {
+    template_key: 'CD_COUNSELOR_DIGEST',
+    display_name: 'CD — Counselor enrollment digest',
+    sequence_number: 'CD',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{schoolNickname} enrollment update — {digestCountSummary}',
+    preheader: "Your students' class registrations, at a glance.",
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+Here's where enrollment stands for the upcoming Higher Ground Learning classes at {schoolName}:
+
+{digestClassListBlock}
+
+Know a student who's still on the fence? Forwarding them (or their parents) the registration link is the single most helpful thing you can do — everything after the click is automatic.
+
+Questions about any student or class? Just reply to this email.
+
+Higher Ground Learning
+
+{digestFrequencyBlock}`,
+  },
+  {
+    template_key: 'FP_DEADLINE_PUSH',
+    display_name: 'FP — Final-days push (counselor)',
+    sequence_number: 'FP',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{deadlineCountdown} to register for {className}',
+    preheader: '{spotsLeftPhrase} left — a nudge from you goes a long way.',
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+Quick heads-up: registration for the {className} class closes soon ({deadlineCountdown}), and there are still **{spotsLeftPhrase}** open.
+
+This is the window where a nudge from the school makes the difference — parents who've been meaning to register usually just need one reminder, and one from you carries real weight.
+
+Here's the link, ready to forward:
+
+[{registrationLink}]({registrationLink})
+
+Current count: {enrolledCountLine}. After the deadline, late registrations may still be possible while spots remain, but the class calendar and materials go out on schedule — so sooner really is better.
+
+Thanks for the assist!
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'FP_ALT_CLASS_FULL',
+    display_name: 'FP-alt — Class full 🎉 (counselor)',
+    sequence_number: 'FP-alt',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{className} is full 🎉',
+    preheader: "Great news — and here's what to tell latecomers.",
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+Good news: the {className} class is **full** — every spot is taken. Thanks for helping spread the word!
+
+If more students ask about it, the registration page now offers a **waitlist** ({waitlistDepth} on it so far). Spots do occasionally open up, and waitlisted families are offered them automatically, first come, first served — so it's genuinely worth joining. And if the waitlist grows large enough, we'll often try to free up another instructor and open a **second section** running alongside this one — so keep sending interested families to the link; real demand is exactly what makes that happen.
+
+Same link as always: [{registrationLink}]({registrationLink})
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'CR_CLASSROOM_REQUEST',
+    display_name: 'CR1 — Classroom request',
+    sequence_number: 'CR1',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Where will {className} be held?',
+    preheader: 'One quick question — takes about 20 seconds.',
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+The {className} class starts on {firstSessionDate}, and there's exactly one thing we still need before we can send families their "here's where to go" email:
+
+**A room.**
+
+If you can reserve a space on campus and tell us where it is, we'll handle everything else — the location goes out automatically to every registered family, onto the class calendar, and into all the reminder emails.
+
+[button:Tell us the room]({classroomFormLink})
+
+It's a single question ("Room C19 in the high school" is a perfect answer) — just type it in and hit submit, and you're done.
+
+Thanks for making this class possible!
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'CR_CLASSROOM_NUDGE_2',
+    display_name: 'CR2 — Classroom request re-nudge',
+    sequence_number: 'CR2',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Still need a room for {className}',
+    preheader: 'Class starts {firstSessionDate} — 20 seconds fixes this.',
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+Just circling back — the {className} class starts {firstSessionDate}, and we still don't have a room to tell families about.
+
+We know reserving campus space sometimes takes a little legwork, so no stress if it's in progress. The moment you know, just drop it here:
+
+[button:Tell us the room]({classroomFormLink})
+
+One question, ten seconds, and we take it from there.
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'CR_CLASSROOM_NUDGE_3',
+    display_name: 'CR3 — Classroom request (last call)',
+    sequence_number: 'CR3',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Last call: room needed for {className}',
+    preheader: 'Families get their location email in a few days.',
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+Last nudge, we promise — in a few days we're scheduled to email every registered family with the class location for {className} (first day: {firstSessionDate}), and right now that email would say "location TBD" — we'd love to give them something better.
+
+[button:Tell us the room]({classroomFormLink})
+
+If there's a snag on your end — no rooms available, room reservations are handled by someone else at your school, anything — just reply to this email and one of our team will help sort it out.
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'CX_C_CANCELLATION',
+    display_name: 'CX-C — Cancellation heads-up (counselor)',
+    sequence_number: 'CX-C',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{className} has been cancelled',
+    preheader: 'Families have been notified with their options.',
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+A heads-up: the {className} class scheduled to start {firstSessionDate} didn't reach the minimum enrollment, so we've had to cancel it.
+
+All registered families have already been notified directly with their options (including a full refund), so there's nothing you need to do — though if any parents mention it, you can let them know to check their email.
+
+Thanks for your help promoting the class. If there's interest in running it again in a future term, we'd love to try — just reply to this email.
+
+Higher Ground Learning`,
+  },
+
+  // --- Tutors & staff --------------------------------------------------------
+  {
+    template_key: 'T5_TIMECARD_READY',
+    display_name: 'T5 — Timecard ready to confirm (tutor)',
+    sequence_number: 'T5',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Your timecard for {payPeriodRange} is ready to confirm',
+    preheader: '{timecardHours} hours for {payPeriodRange}',
+    footer_note: null,
+    body_markdown: `## Timecard ready — {payPeriodRange}
+
+Hi {tutorFirstName},
+
+Your sessions for the pay period are in: **{timecardHours} hours**. The portal built this from the schedule, so usually there is nothing to fill out — just glance over it, correct any exception (a no-show, a session that ran a different length), and hit **Confirm timecard**.
+
+[Review and confirm your timecard →]({timecardLink})
+
+Sessions cancelled inside 24 hours and no-shows are on the card on purpose — you're paid for reserved time.`,
+  },
+  {
+    template_key: 'T3_TUTOR_NOTICE',
+    display_name: 'T3-T — Schedule change notice (tutor)',
+    sequence_number: 'T3-T',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Schedule change: {studentFirstName} — {tutoringSubject}',
+    preheader: '{studentFirstName} — {tutoringSubject}',
+    footer_note: null,
+    body_markdown: `## Schedule change
+
+{tutorChangeBlock}`,
+  },
+
+  // --- Internal [HGL Admin] alerts (the sender adds the [HGL Admin] prefix) --
+  {
+    template_key: 'ADMIN_INSTRUCTOR_NUDGE',
+    display_name: 'AL — No instructor assigned',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'No instructor assigned: {className} (starts {firstSessionDate})',
+    preheader: 'The class runs — it needs a teacher.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_REGISTRATION',
+    display_name: 'AL — New registration',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'New registration: {alertStudentName} — {className} ({alertCounts})',
+    preheader: 'A new registration just landed.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_ROSTER_REPORT',
+    display_name: 'AL — Roster report (weekly)',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Admin roster report — classes vs. minimums & email health',
+    preheader: 'The weekly look at every live class.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_CLASS_DETAILS_HOLD',
+    display_name: 'AL — #4 hold-and-alert (class details)',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'HOLD: class details email not sent for {className}',
+    preheader: 'The #4 email is waiting on missing details.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_MISSING_DETAILS',
+    display_name: 'AL — Missing class details warning',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Missing details — {className} starts {firstSessionDate}',
+    preheader: 'Details are still blank with class approaching.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_MIN_ENROLLMENT',
+    display_name: 'AL — Minimum-enrollment checkpoint',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Enrollment checkpoint — {className}: {alertCounts}',
+    preheader: 'The class just crossed its minimum.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_WAITLIST_ROLLOVER',
+    display_name: 'AL — Waitlist offer rolled over',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Waitlist offer expired unclaimed — {className}',
+    preheader: 'The spot moved to the next family in line.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_WEBHOOK_FAILURE',
+    display_name: 'AL — Stripe webhook mismatch',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Stripe payment could not be matched to an enrollment',
+    preheader: 'A payment needs a human eye.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_QBO_FAILURE',
+    display_name: 'AL — QuickBooks sync failure',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'QuickBooks sync FAILED — needs attention',
+    preheader: 'A payment record did not reach QuickBooks.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_UNAGREED',
+    display_name: 'AL — Billed without signed agreement',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{alertCounts} tutoring families billed without a signed policy agreement',
+    preheader: 'Invoicing proceeded — chase these.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_AVAILABILITY_SHARED',
+    display_name: 'AL — Family shared availability',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Add-on family shared availability — {alertStudentName} is ready to schedule',
+    preheader: 'Ready for the schedule wizard.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_INTAKE_COMPLETE',
+    display_name: 'AL — Intake complete',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Intake complete — {alertStudentName}',
+    preheader: 'A lead finished the intake form.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_DUNNING_EXHAUSTED',
+    display_name: 'AL — Autopay retries exhausted',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Autopay failed 3× — {tutoringMonthLabel} tutoring invoice past due',
+    preheader: 'Automatic retries stopped; the family was told how to pay.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_OVERDUE_10',
+    display_name: 'AL — Invoice 10+ days past due',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Tutoring invoice 10+ days past due — {alertParentName}',
+    preheader: 'A gentle escalation may be due.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_OVERDUE_30',
+    display_name: 'AL — Invoice 30+ days past due (late-fee decision)',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '30+ days past due — late-fee decision needed ({alertParentName})',
+    preheader: 'Your call: late fee, plan, or pause.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
 ]

@@ -1165,15 +1165,11 @@ export type DigestClassInfo = {
   materialsUpdated?: boolean
 }
 
-export function counselorDigestEmail(opts: {
-  counselorFirst: string
-  schoolName: string
-  schoolNickname: string
-  classes: DigestClassInfo[]
-  frequencyUrls: { weekly: string; biweekly: string; monthly: string; paused: string }
-}): Rendered {
-  // {classListBlock}: one block per class; single-class schools render one.
-  const classListBlock = opts.classes
+// PL-66: the digest's composed pieces, exported so the registry send path can
+// pass them as block variables while the code twin renders identically.
+export function digestClassListHtml(classes: DigestClassInfo[]): string {
+  // One card per class; single-class schools render one.
+  return classes
     .map(
       (c) => `
       <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0">
@@ -1200,16 +1196,40 @@ export function counselorDigestEmail(opts: {
       </div>`
     )
     .join('')
-  // Subject count: the class's count for single-class schools; multi-class
-  // schools say "2 classes, 17 students" so the total can't read as one
-  // class's headcount.
-  const totalPaid = opts.classes.reduce((sum, c) => sum + c.paid, 0)
-  const nClasses = opts.classes.length
-  const subjectCount =
-    nClasses === 1
-      ? `${totalPaid} student${plS(totalPaid)} enrolled`
-      : `${nClasses} class${plEs(nClasses)}, ${totalPaid} student${plS(totalPaid)} enrolled`
-  const f = opts.frequencyUrls
+}
+
+export function digestSubjectCount(classes: DigestClassInfo[]): string {
+  // The class's count for single-class schools; multi-class schools say
+  // "2 classes, 17 students" so the total can't read as one class's headcount.
+  const totalPaid = classes.reduce((sum, c) => sum + c.paid, 0)
+  const nClasses = classes.length
+  return nClasses === 1
+    ? `${totalPaid} student${plS(totalPaid)} enrolled`
+    : `${nClasses} class${plEs(nClasses)}, ${totalPaid} student${plS(totalPaid)} enrolled`
+}
+
+export function digestFrequencyHtml(f: {
+  weekly: string
+  biweekly: string
+  monthly: string
+  paused: string
+}): string {
+  return `<p style="font-size:13px;color:#64748b">How often do you want these?
+          <a href="${f.weekly}" style="color:#64748b">Weekly</a> ·
+          <a href="${f.biweekly}" style="color:#64748b">Every 2 weeks</a> ·
+          <a href="${f.monthly}" style="color:#64748b">Monthly</a> ·
+          <a href="${f.paused}" style="color:#64748b">Pause</a></p>`
+}
+
+export function counselorDigestEmail(opts: {
+  counselorFirst: string
+  schoolName: string
+  schoolNickname: string
+  classes: DigestClassInfo[]
+  frequencyUrls: { weekly: string; biweekly: string; monthly: string; paused: string }
+}): Rendered {
+  const classListBlock = digestClassListHtml(opts.classes)
+  const subjectCount = digestSubjectCount(opts.classes)
   return {
     subject: `${opts.schoolNickname} enrollment update — ${subjectCount}`,
     html: wrap(
@@ -1226,11 +1246,7 @@ export function counselorDigestEmail(opts: {
     `,
       {
         preheader: `Your students' class registrations, at a glance.`,
-        footer: `<p style="font-size:13px;color:#64748b">How often do you want these?
-          <a href="${f.weekly}" style="color:#64748b">Weekly</a> ·
-          <a href="${f.biweekly}" style="color:#64748b">Every 2 weeks</a> ·
-          <a href="${f.monthly}" style="color:#64748b">Monthly</a> ·
-          <a href="${f.paused}" style="color:#64748b">Pause</a></p>
+        footer: `${digestFrequencyHtml(opts.frequencyUrls)}
           <p style="font-size:13px;color:#64748b">Higher Ground Learning · highergroundlearning.com</p>`,
       }
     ),
@@ -1879,16 +1895,66 @@ export async function sendAdminAlert(opts: {
   subject: string
   body: string
   enrollmentId?: string
+  /** PL-66: the alert's registry template (AL_*). When set AND the template
+   *  is live, the editable framing (subject/body) comes from the registry
+   *  with the composed guts riding {alertDetailsBlock}; until then the
+   *  passed subject/body send exactly as before. */
+  templateKey?: string
+  /** PL-66: scalar variables the template's subject/body may use
+   *  ({alertStudentName}, {alertCounts}, …) plus any stub overrides. */
+  vars?: import('./comms-variables').ExtraVars & {
+    schoolNickname?: string
+    classType?: string
+    schoolName?: string
+    studentFirstName?: string
+    firstSession?: string
+  }
 }) {
-  return sendOnce({
-    dedupeKey: opts.dedupeKey,
-    emailType: 'admin_alert',
-    enrollmentId: opts.enrollmentId,
-    to: [opts.adminEmail],
-    subject: `[HGL Admin] ${opts.subject}`,
+  // Code twin: exactly the pre-PL-66 render.
+  const fallback = (): Rendered => ({
+    subject: opts.subject,
     html: wrap(`<h2 style="color:#334155">${opts.subject}</h2>${opts.body}`, {
       preheader: opts.subject,
       footer: footerT(),
     }),
+  })
+
+  let rendered: Rendered = fallback()
+  if (opts.templateKey) {
+    try {
+      // Dynamic import: comms-registered depends on this module — resolving
+      // at call time keeps the cycle harmless.
+      const { renderRegistered } = await import('./comms-registered')
+      const { schoolNickname, classType, schoolName, studentFirstName, firstSession, ...extra } =
+        opts.vars ?? {}
+      rendered = await renderRegistered(
+        opts.templateKey,
+        {
+          parentFirstName: 'Ops Director',
+          parentEmail: opts.adminEmail,
+          schoolNickname,
+          classType,
+          schoolName,
+          firstSession,
+          ...(studentFirstName ? { studentFirstName } : {}),
+        },
+        { alertDetailsBlock: opts.body, ...extra },
+        fallback
+      )
+    } catch (e) {
+      console.error(`alert template render failed for ${opts.templateKey} — code copy sent:`, e)
+      rendered = fallback()
+    }
+  }
+
+  return sendOnce({
+    dedupeKey: opts.dedupeKey,
+    emailType: 'admin_alert',
+    templateKey: opts.templateKey,
+    recipientRole: 'admin',
+    enrollmentId: opts.enrollmentId,
+    to: [opts.adminEmail],
+    subject: `[HGL Admin] ${rendered.subject}`,
+    html: rendered.html,
   })
 }

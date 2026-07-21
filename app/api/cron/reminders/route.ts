@@ -15,6 +15,9 @@ import {
   classFullNoticeEmail,
   classroomRequestEmail,
   counselorDigestEmail,
+  digestClassListHtml,
+  digestFrequencyHtml,
+  digestSubjectCount,
   deadlinePushEmail,
   faqEmail,
   formatDate,
@@ -43,6 +46,7 @@ import {
   schedulingCtaBlockHtml,
 } from '../../../utils/email'
 import { renderEmail, type RenderedWithVersion } from '../../../utils/comms-db-render'
+import { renderRegistered } from '../../../utils/comms-registered'
 import {
   ADMIN_EMAIL,
   DEFAULT_TIMEZONE,
@@ -393,6 +397,8 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
       await sendAdminAlert({
         dedupeKey: `hold_alert:${bundle.id}:${localDate(bundle.timezone)}`,
         adminEmail: ADMIN_EMAIL,
+        templateKey: 'AL_CLASS_DETAILS_HOLD',
+        vars: { schoolNickname: bundle.schoolLabel, classType: bundle.classType },
         subject: `HOLD: class details email not sent for ${bundle.schoolLabel} ${bundle.classType}`,
         body: `<p>The "class details" email is due but is being held because
           ${!bundle.instructorName ? '<strong>instructor</strong> ' : ''}
@@ -719,6 +725,8 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
         await sendAdminAlert({
           dedupeKey: `offer_rollover:${e.id}`,
           adminEmail: ADMIN_EMAIL,
+          templateKey: 'AL_WAITLIST_ROLLOVER',
+          vars: { schoolNickname: bundle.schoolLabel, classType: bundle.classType },
           subject: `Waitlist offer expired unclaimed — ${bundle.schoolLabel} ${bundle.classType}`,
           body: `<p>${e.parentFirstName} (${e.parentEmail}, student ${e.studentFirstName}
             ${e.studentLastName}) did not claim their spot within ${WAITLIST_CLAIM_HOURS} hours.
@@ -790,6 +798,12 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     const status = await sendAdminAlert({
       dedupeKey: `blank_details:${bundle.id}:${today}`,
       adminEmail: ADMIN_EMAIL,
+      templateKey: 'AL_MISSING_DETAILS',
+      vars: {
+        schoolNickname: bundle.schoolLabel,
+        classType: bundle.classType,
+        firstSession: bundle.firstSession,
+      },
       subject: `Missing details — ${bundle.schoolLabel} ${bundle.classType} starts ${bundle.firstSession}`,
       body: `<p>${!bundle.instructorName ? 'Instructor is blank. ' : ''}
         ${!bundle.defaultLocation ? 'Location is blank. ' : ''}
@@ -810,6 +824,12 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     const status = await sendAdminAlert({
       dedupeKey: `min_enrollment:${bundle.id}`,
       adminEmail: ADMIN_EMAIL,
+      templateKey: 'AL_MIN_ENROLLMENT',
+      vars: {
+        schoolNickname: bundle.schoolLabel,
+        classType: bundle.classType,
+        alertCounts: `${paidCount} paid / ${bundle.minEnrollment} minimum`,
+      },
       subject: `Enrollment checkpoint — ${bundle.schoolLabel} ${bundle.classType}: ${paidCount} paid / ${bundle.minEnrollment} minimum`,
       body: `<p><strong>${paidCount}</strong> paid enrollments against a minimum of
         <strong>${bundle.minEnrollment}</strong> (${bundle.deliveryMode}, capacity ${bundle.capacity}).
@@ -846,10 +866,41 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
     adminUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/admin`,
   }
 
-  const initial = instructorNudgeEmail({ ...base, nudge: 0 })
+  // PL-66: registry copy when live (subject WITHOUT the [HGL Admin] prefix —
+  // added below); the code twin already carries the prefix.
+  const nudgeDetailsBlock = `<p><strong>${base.label}</strong> (${base.schoolName}) has
+      <strong>${paid} paid</strong> enrollments against a minimum of
+      <strong>${bundle.minEnrollment}</strong> — the class is running, and no instructor is
+      assigned yet.</p>
+      <p>First session: <strong>${formatDate(bundle.firstSession)}</strong>.</p>
+      <p><a href="${base.adminUrl}">Open the admin class view</a> and select an instructor
+      from the dropdown — or add a new one — so the class-details email can go out on
+      schedule.</p>`
+  const renderNudge = async (nudge: number) => {
+    const email = await renderRegistered(
+      'ADMIN_INSTRUCTOR_NUDGE',
+      {
+        parentFirstName: 'Ops Director',
+        parentEmail: INTERNAL_EMAIL,
+        schoolNickname: bundle.schoolLabel,
+        classType: bundle.classType,
+        schoolName: bundle.schoolName,
+        firstSession: bundle.firstSession,
+      },
+      { alertDetailsBlock: nudgeDetailsBlock },
+      () => instructorNudgeEmail({ ...base, nudge })
+    )
+    return {
+      subject: email.subject.startsWith('[HGL Admin]') ? email.subject : `[HGL Admin] ${email.subject}`,
+      html: email.html,
+    }
+  }
+
+  const initial = await renderNudge(0)
   const initialStatus = await sendOnce({
     dedupeKey: `instructor_nudge:${bundle.id}`,
     emailType: 'instructor_nudge',
+    templateKey: 'ADMIN_INSTRUCTOR_NUDGE',
     to: [INTERNAL_EMAIL],
     subject: initial.subject,
     html: initial.html,
@@ -864,10 +915,11 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
     [1, 11],
   ] as const) {
     if (today >= addDaysISO(bundle.firstSession, -days)) {
-      const { subject, html } = instructorNudgeEmail({ ...base, nudge: n })
+      const { subject, html } = await renderNudge(n)
       const status = await sendOnce({
         dedupeKey: `instructor_nudge:${bundle.id}:r${n}`,
         emailType: 'instructor_nudge',
+        templateKey: 'ADMIN_INSTRUCTOR_NUDGE',
         to: [INTERNAL_EMAIL],
         subject,
         html,
@@ -1022,6 +1074,7 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
     // can't send both the old and new report.
     dedupeKey: `weekly_digest:${today}`,
     adminEmail: REGISTRATION_NOTIFY_EMAIL,
+    templateKey: 'AL_ROSTER_REPORT',
     subject: `Admin roster report — classes vs. minimums & email health`,
     body: sections.join(''),
   })
@@ -1160,21 +1213,40 @@ async function sweepCounselorDigests(
           b.collateralChangedAt >= counselor.digest_last_sent_at,
       }))
 
-      const { subject, html } = counselorDigestEmail({
-        counselorFirst: counselor.first_name,
-        schoolName: classes[0].schoolName,
-        schoolNickname: classes[0].schoolLabel,
-        classes: infos,
-        frequencyUrls: {
-          weekly: digestFrequencyUrlFor(counselor.id, 'weekly'),
-          biweekly: digestFrequencyUrlFor(counselor.id, 'biweekly'),
-          monthly: digestFrequencyUrlFor(counselor.id, 'monthly'),
-          paused: digestFrequencyUrlFor(counselor.id, 'paused'),
+      const frequencyUrls = {
+        weekly: digestFrequencyUrlFor(counselor.id, 'weekly'),
+        biweekly: digestFrequencyUrlFor(counselor.id, 'biweekly'),
+        monthly: digestFrequencyUrlFor(counselor.id, 'monthly'),
+        paused: digestFrequencyUrlFor(counselor.id, 'paused'),
+      }
+      // PL-66: registry copy when CD is flipped live; code twin otherwise.
+      const { subject, html } = await renderRegistered(
+        'CD_COUNSELOR_DIGEST',
+        {
+          parentFirstName: counselor.first_name,
+          parentEmail: counselor.email,
+          schoolNickname: classes[0].schoolLabel,
+          schoolName: classes[0].schoolName,
         },
-      })
+        {
+          counselorFirstName: counselor.first_name,
+          digestCountSummary: digestSubjectCount(infos),
+          digestClassListBlock: digestClassListHtml(infos),
+          digestFrequencyBlock: digestFrequencyHtml(frequencyUrls),
+        },
+        () =>
+          counselorDigestEmail({
+            counselorFirst: counselor.first_name,
+            schoolName: classes[0].schoolName,
+            schoolNickname: classes[0].schoolLabel,
+            classes: infos,
+            frequencyUrls,
+          })
+      )
       const status = await sendOnce({
         dedupeKey: `counselor_digest:${counselor.id}:${today}`,
         emailType: 'counselor_digest',
+        templateKey: 'CD_COUNSELOR_DIGEST',
         to: [counselor.email],
         subject,
         html,
@@ -1226,34 +1298,70 @@ async function sweepDeadlinePush(
 
   for (const counselor of counselors) {
     if (full) {
-      const { subject, html } = classFullNoticeEmail({
-        counselorFirst: counselor.first_name,
-        label: `${bundle.schoolLabel} ${bundle.classType}`,
-        capacity: bundle.capacity,
-        waitlistDepth: waitlistDepth(bundle),
-        regUrl: registrationUrlFor(bundle),
-      })
+      const { subject, html } = await renderRegistered(
+        'FP_ALT_CLASS_FULL',
+        {
+          parentFirstName: counselor.first_name,
+          parentEmail: counselor.email,
+          schoolNickname: bundle.schoolLabel,
+          classType: bundle.classType,
+          schoolName: bundle.schoolName,
+        },
+        {
+          counselorFirstName: counselor.first_name,
+          waitlistDepth: String(waitlistDepth(bundle)),
+          registrationLink: registrationUrlFor(bundle),
+        },
+        () =>
+          classFullNoticeEmail({
+            counselorFirst: counselor.first_name,
+            label: `${bundle.schoolLabel} ${bundle.classType}`,
+            capacity: bundle.capacity,
+            waitlistDepth: waitlistDepth(bundle),
+            regUrl: registrationUrlFor(bundle),
+          })
+      )
       const status = await sendOnce({
         dedupeKey: `class_full_notice:${bundle.id}:${counselor.id}`,
         emailType: 'class_full_notice',
+        templateKey: 'FP_ALT_CLASS_FULL',
         to: [counselor.email],
         subject,
         html,
       })
       if (status === 'sent') bump(c, 'class_full_notice')
     } else {
-      const { subject, html } = deadlinePushEmail({
-        counselorFirst: counselor.first_name,
-        label: `${bundle.schoolLabel} ${bundle.classType}`,
-        spotsLeft,
-        daysToDeadline,
-        paidCount: paid,
-        capacity: bundle.capacity,
-        regUrl: registrationUrlFor(bundle),
-      })
+      const { subject, html } = await renderRegistered(
+        'FP_DEADLINE_PUSH',
+        {
+          parentFirstName: counselor.first_name,
+          parentEmail: counselor.email,
+          schoolNickname: bundle.schoolLabel,
+          classType: bundle.classType,
+          schoolName: bundle.schoolName,
+        },
+        {
+          counselorFirstName: counselor.first_name,
+          deadlineCountdown: daysToDeadline === 1 ? 'Last day' : `${daysToDeadline} days left`,
+          spotsLeftPhrase: `${spotsLeft} spot${spotsLeft === 1 ? '' : 's'}`,
+          enrolledCountLine: `${paid} of ${bundle.capacity} enrolled`,
+          registrationLink: registrationUrlFor(bundle),
+        },
+        () =>
+          deadlinePushEmail({
+            counselorFirst: counselor.first_name,
+            label: `${bundle.schoolLabel} ${bundle.classType}`,
+            spotsLeft,
+            daysToDeadline,
+            paidCount: paid,
+            capacity: bundle.capacity,
+            regUrl: registrationUrlFor(bundle),
+          })
+      )
       const status = await sendOnce({
         dedupeKey: `deadline_push:${bundle.id}:${counselor.id}:${today}`,
         emailType: 'deadline_push',
+        templateKey: 'FP_DEADLINE_PUSH',
         to: [counselor.email],
         subject,
         html,
@@ -1304,20 +1412,36 @@ async function sweepClassroomRequests(
   if (counselors.length === 0) return
   if (localHour(bundle.timezone) < 8) return
 
+  const CR_KEYS = ['CR_CLASSROOM_REQUEST', 'CR_CLASSROOM_NUDGE_2', 'CR_CLASSROOM_NUDGE_3'] as const
   const sendAsk = async (nudge: number) => {
     for (const counselor of counselors) {
-      const { subject, html } = classroomRequestEmail({
-        counselorFirst: counselor.first_name,
-        schoolNickname: bundle.schoolLabel,
-        schoolName: bundle.schoolName,
-        classType: bundle.classType,
-        firstSession: bundle.firstSession,
-        formUrl: classroomRequestUrlFor(bundle.id, counselor.email),
-        nudge,
-      })
+      const formUrl = classroomRequestUrlFor(bundle.id, counselor.email)
+      const { subject, html } = await renderRegistered(
+        CR_KEYS[nudge] ?? 'CR_CLASSROOM_REQUEST',
+        {
+          parentFirstName: counselor.first_name,
+          parentEmail: counselor.email,
+          schoolNickname: bundle.schoolLabel,
+          classType: bundle.classType,
+          schoolName: bundle.schoolName,
+          firstSession: bundle.firstSession,
+        },
+        { counselorFirstName: counselor.first_name, classroomFormLink: formUrl },
+        () =>
+          classroomRequestEmail({
+            counselorFirst: counselor.first_name,
+            schoolNickname: bundle.schoolLabel,
+            schoolName: bundle.schoolName,
+            classType: bundle.classType,
+            firstSession: bundle.firstSession,
+            formUrl,
+            nudge,
+          })
+      )
       const status = await sendOnce({
         dedupeKey: `classroom_request:${bundle.id}:${counselor.id}:${nudge}`,
         emailType: 'classroom_request',
+        templateKey: CR_KEYS[nudge] ?? 'CR_CLASSROOM_REQUEST',
         to: [counselor.email],
         subject,
         html,
