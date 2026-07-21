@@ -2,6 +2,8 @@
 
 From Scarlett's continued email-flow testing (real sends, not just previews). Continues PL-x numbering. Six items; PL-60 is a **pre-launch blocker**.
 
+**Status: ALL SIX SHIPPED July 23** — see per-item notes. Two migrations applied (`tutoring_sessions` gains a `cancelled` status; `business_address` app_setting). New live registry templates: AG_REQUEST, AG_NUDGE; new versions: T1 v2 (one-tap confirm), T8 v2 (firm policies paragraph), E5 v2 (mode-aware subject). New committed gate: `npm run regress:links` (fails on any dead href in a rendered send). Gates at ship time: tsc clean · build passes · smoke 8/8 · link audit 64/64.
+
 **Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · contact block on parent surfaces · `git push` after committing · PL-x IDs in commits · check items off here when shipped. All 12 original registry templates + NW/WR are LIVE — copy changes land as new template versions, not code edits. (#8b/#8b-n remain drafts under Scarlett's review; she just saved #8b v2.)
 
 ---
