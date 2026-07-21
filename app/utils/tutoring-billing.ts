@@ -536,7 +536,7 @@ export async function generateMonthlyCycle(
       adminEmail: ADMIN_EMAIL,
       subject: `${unagreedFamilies.length} tutoring famil${unagreedFamilies.length === 1 ? 'y' : 'ies'} billed without a signed policy agreement`,
       body: `<p>The ${month.label} cycle just proposed invoices for families with no accepted
-        scheduling &amp; billing agreement on file (§12 guard — invoicing proceeds, but chase these):</p>
+        scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p>
         <ul>${unagreedFamilies.map((f) => `<li>${f}</li>`).join('')}</ul>
         <p>Send or re-send agreement links from <strong>/admin/agreements</strong>.</p>`,
     }).catch((e) => console.error('unagreed-families alert failed:', e))

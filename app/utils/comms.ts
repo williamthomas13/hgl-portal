@@ -66,6 +66,10 @@ export function templateMetaFor(
       return { key: 'NW_NEXT_CLASS_OPEN', role: 'parent' }
     case 'waitlist_release': // PL-59: class completed still-full
       return { key: 'WR_WAITLIST_RELEASE', role: 'parent' }
+    case 'agreement_request': // PL-63: first policies ask
+      return { key: 'AG_REQUEST', role: 'parent' }
+    case 'agreement_nudge': // PL-63: automatic chase
+      return { key: 'AG_NUDGE', role: 'parent' }
     case 'tutoring_upsell':
       return { key: 'E9_UPSELL', role: 'parent' }
     case 'waitlist_confirmation':
@@ -153,6 +157,8 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   E9_UPSELL: '#9 — Pre-class tutoring upsell',
   NW_NEXT_CLASS_OPEN: 'NW — Next class open (interest list)',
   WR_WAITLIST_RELEASE: 'WR — Waitlist release (class completed full)',
+  AG_REQUEST: 'AG — Agreement request (policies)',
+  AG_NUDGE: 'AG-N — Agreement nudge (automatic chase)',
   W1_WAITLIST: 'W1 — Waitlist confirmation',
   W2_SPOT_OPEN: 'W2 — Waitlist spot open',
   SU_SCHEDULE_UPDATE: 'SU — Schedule update',

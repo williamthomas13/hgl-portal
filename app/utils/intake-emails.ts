@@ -56,6 +56,8 @@ export function t7IntakeRequestEmail(opts: {
 
 export function agreementRequestEmail(opts: {
   parentFirst: string | null
+  /** "Roman" or "Roman & Ana" — drives the PL-63 kind-but-firm line. */
+  studentNames: string
   link: string
   contact: ContactInfo
 }): { subject: string; html: string } {
@@ -66,10 +68,36 @@ export function agreementRequestEmail(opts: {
      scheduling &amp; billing policies — how monthly billing works, the 24-hour reschedule
      rule, that sort of thing. It's a two-minute read and one click to accept:</p>
      ${button('Read & accept the policies', opts.link)}
+     <p>One important note: we can't start ${opts.studentNames}'s sessions until this is
+     signed — it takes about two minutes, and it protects your family as much as it
+     protects us.</p>
      <p style="color:#64748b;font-size:13px">You'll get a copy of exactly what you accepted,
      and we keep one too — no forms to print or return.</p>
      ${contactBlockHtml(opts.contact)}`,
     { preheader: `Two-minute read, one click — and it's done.`, footer: footerT() }
+  )
+  return { subject, html }
+}
+
+// PL-63b: the automatic chase (+3d / +7d after the first ask, stops on
+// acceptance). Kind but firm — same voice as the first send.
+export function agreementNudgeEmail(opts: {
+  parentFirst: string | null
+  studentNames: string
+  link: string
+  contact: ContactInfo
+}): { subject: string; html: string } {
+  const subject = `A quick reminder: our policies still need your OK`
+  const html = wrap(
+    `<p>Hi ${opts.parentFirst ?? 'there'},</p>
+     <p>Just a nudge — our scheduling &amp; billing policies are still waiting for your OK,
+     and we can't start ${opts.studentNames}'s sessions until they're signed. It takes about
+     two minutes, and it protects your family as much as it protects us:</p>
+     ${button('Read & accept the policies', opts.link)}
+     <p style="color:#64748b;font-size:13px">Already accepted them? Then our systems are just
+     catching up — you can ignore this.</p>
+     ${contactBlockHtml(opts.contact)}`,
+    { preheader: `Two minutes, one click — then sessions can start.`, footer: footerT() }
   )
   return { subject, html }
 }
@@ -162,7 +190,8 @@ export async function sendWelcomeHandoff(
             month's plan by email to confirm or adjust.</p>`
      }
      <p><strong>One thing we need:</strong> please read and accept our scheduling &amp;
-     billing policies (two minutes, one click):</p>
+     billing policies — sessions can't start until they're signed, and they protect your
+     family as much as they protect us (two minutes, one click):</p>
      ${button('Read & accept the policies', agreementsLink)}
      <p style="color:#64748b;font-size:13px"><strong>The one rule worth remembering:</strong>
      with 24+ hours' notice, rescheduling a session is always free — inside 24 hours the

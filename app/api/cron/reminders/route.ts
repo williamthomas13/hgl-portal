@@ -6,6 +6,7 @@ import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
+import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { contactBlockHtml, contactFrom, loadContactInfo } from '../../../utils/tutoring-emails'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
@@ -1457,6 +1458,11 @@ export async function GET(req: Request) {
     const approvals = await runScheduleApprovalNudges()
     if (approvals.nudged > 0) counters.schedule_approval_nudged = approvals.nudged
     if (approvals.alerted > 0) counters.schedule_approval_alerted = approvals.alerted
+    // PL-63: automatic agreement chase (+3d, +7d + Ops alert; stops on acceptance).
+    const agreements = await runAgreementNudges()
+    if (agreements.nudged1 > 0) counters.agreement_nudged_1 = agreements.nudged1
+    if (agreements.nudged2 > 0) counters.agreement_nudged_2 = agreements.nudged2
+    if (agreements.alerted > 0) counters.agreement_alerted = agreements.alerted
   } catch (e) {
     console.error('tutoring billing sweep failed (continuing):', e)
   }

@@ -997,4 +997,52 @@ And either way, you're still on our list — the moment a new {schoolNickname} {
 
 {contactBlock}`,
   },
+
+  // ---------------------------------------------------------------------------
+  // PL-63: agreements — the first policies ask and its automatic chase.
+  // The chase runs +3d / +7d after the first ask (T8 or a manual send from
+  // /admin/agreements) and stops the moment the family accepts.
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'AG_REQUEST',
+    display_name: 'AG — Agreement request (policies)',
+    sequence_number: 'AG',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'One quick thing: our scheduling & billing policies',
+    preheader: "Two-minute read, one click — and it's done.",
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Before (or as) tutoring gets underway, we ask every family to read and accept our scheduling & billing policies — how monthly billing works, the 24-hour reschedule rule, that sort of thing. It's a two-minute read and one click to accept:
+
+[button:Read & accept the policies]({agreementsLink})
+
+One important note: we can't start {studentFirstName}'s sessions until this is signed — it takes about two minutes, and it protects your family as much as it protects us.
+
+You'll get a copy of exactly what you accepted, and we keep one too — no forms to print or return.
+
+{contactBlock}`,
+  },
+  {
+    template_key: 'AG_NUDGE',
+    display_name: 'AG-N — Agreement nudge (automatic chase)',
+    sequence_number: 'AG-N',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'A quick reminder: our policies still need your OK',
+    preheader: 'Two minutes, one click — then sessions can start.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Just a nudge — our scheduling & billing policies are still waiting for your OK, and we can't start {studentFirstName}'s sessions until they're signed. It takes about two minutes, and it protects your family as much as it protects us:
+
+[button:Read & accept the policies]({agreementsLink})
+
+Already accepted them? Then our systems are just catching up — you can ignore this.
+
+{contactBlock}`,
+  },
 ]

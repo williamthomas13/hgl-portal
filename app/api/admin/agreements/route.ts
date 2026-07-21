@@ -3,7 +3,8 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { agreementToken } from '../../../utils/intake'
 import { agreementRequestEmail } from '../../../utils/intake-emails'
-import { loadContactInfo } from '../../../utils/tutoring-emails'
+import { contactBlockHtml, loadContactInfo } from '../../../utils/tutoring-emails'
+import { renderRegistered } from '../../../utils/comms-registered'
 import { sendOnce } from '../../../utils/email'
 import { snapshotAcceptancePdf } from '../../../utils/agreement-pdf'
 
@@ -65,18 +66,36 @@ export async function POST(req: Request) {
       if (!body.family_id) return NextResponse.json({ error: 'Missing family id.' }, { status: 400 })
       const { data: family } = await supabase
         .from('families')
-        .select('id, parent_first_name, parent_email, billing_cc_emails')
+        .select('id, parent_first_name, parent_email, billing_cc_emails, students ( first_name )')
         .eq('id', body.family_id)
         .maybeSingle()
       if (!family?.parent_email) {
         return NextResponse.json({ error: 'The family has no parent email on file.' }, { status: 400 })
       }
       const contact = await loadContactInfo()
-      const email = agreementRequestEmail({
-        parentFirst: family.parent_first_name ?? null,
-        link: `${appUrl()}/agreements/${agreementToken(family.id)}`,
-        contact,
-      })
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const studentNames =
+        ((family.students as any[]) ?? []).map((s) => s.first_name).filter(Boolean).join(' & ') ||
+        'your student'
+      const link = `${appUrl()}/agreements/${agreementToken(family.id)}`
+      // PL-63c: registry copy when AG_REQUEST is live (editable, carries the
+      // kind-but-firm sessions-can't-start line); code twin otherwise.
+      const email = await renderRegistered(
+        'AG_REQUEST',
+        {
+          parentFirstName: family.parent_first_name ?? 'there',
+          parentEmail: family.parent_email,
+          studentFirstName: studentNames,
+        },
+        { agreementsLink: link, contactBlock: contactBlockHtml(contact) },
+        () =>
+          agreementRequestEmail({
+            parentFirst: family.parent_first_name ?? null,
+            studentNames,
+            link,
+            contact,
+          })
+      )
       // Timestamped dedupe key: chasing is a feature; history stays in email_sends.
       const sent = await sendOnce({
         dedupeKey: `agreement_request:${family.id}:${Date.now()}`,
