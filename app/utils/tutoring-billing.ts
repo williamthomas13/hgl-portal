@@ -277,7 +277,10 @@ export async function generateMonthlyCycle(
         .eq('engagement_id', eng.id)
         .gte('starts_at', fromIso)
         .lt('starts_at', toIso)
-        .in('status', ['proposed', 'confirmed'])
+        // PL-62: cancelled/rescheduled rows are tombstones — a slot a family
+        // vacated (moved or dropped pre-confirmation) must never be
+        // re-materialized by a cycle re-run.
+        .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled'])
       const taken = new Set((existing ?? []).map((s) => new Date(s.starts_at).getTime()))
       const rows = generateOccurrences(eng.recurrence, month.firstDay, month.lastDay, tz)
         .filter((o) => !taken.has(o.startsAt.getTime()) && o.startsAt.getTime() > now.getTime())
@@ -496,6 +499,9 @@ export async function generateMonthlyCycle(
             : '',
         packageNote: t1Opts.packageNote ? `<p>${t1Opts.packageNote}</p>` : '',
         confirmLink: t1Opts.link,
+        // PL-62: the email's Confirm button confirms in one tap (the page
+        // auto-POSTs on load); the request-changes link keeps the plain URL.
+        confirmOneTapLink: `${t1Opts.link}?confirm=1`,
         autoconfirmDays: settings.autoconfirmDays,
         contactBlock: contactBlockHtml(contact),
       },
@@ -557,6 +563,86 @@ export async function recomputeInvoiceTotals(invoiceId: string): Promise<number>
 // ---------------------------------------------------------------------------
 // Confirm / request changes (spec §6.2–6.3)
 // ---------------------------------------------------------------------------
+// PL-62: after a family moves/drops a proposed session on the proposal page,
+// the invoice's generated session lines are rebuilt with the same rules the
+// monthly cycle uses (package draw-down included) — manual adjustment/credit
+// and carried late-fee lines stay untouched — and the totals recompute.
+// ---------------------------------------------------------------------------
+
+export async function rebuildProposalInvoice(invoiceId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: invoice } = await supabase
+    .from('tutoring_invoices')
+    .select('id, family_id, period, status')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!invoice) return { ok: false, error: 'Unknown invoice.' }
+  if (!['draft', 'proposed'].includes(invoice.status)) {
+    return { ok: false, error: 'This month is already confirmed.' }
+  }
+  const month = billingMonth(String(invoice.period).slice(0, 7))
+  const engagements = (await loadActiveEngagements()).filter(
+    (e) => e.family?.id === invoice.family_id && e.student && e.subject
+  )
+
+  await supabase
+    .from('tutoring_invoice_lines')
+    .delete()
+    .eq('invoice_id', invoice.id)
+    .eq('kind', 'session')
+
+  const lines: Record<string, unknown>[] = []
+  for (const eng of engagements) {
+    const tz = eng.tutor?.timezone ?? ORG_TZ
+    const { fromIso, toIso } = engagementPeriodBounds(month, tz)
+    const { data: engSessions } = await supabase
+      .from('tutoring_sessions')
+      .select('id, starts_at, duration_minutes')
+      .eq('engagement_id', eng.id)
+      .gte('starts_at', fromIso)
+      .lt('starts_at', toIso)
+      .in('status', ['proposed', 'confirmed'])
+      .order('starts_at')
+
+    let remaining = Infinity
+    if (eng.funding === 'package' && eng.addon_id) {
+      const { data: addon } = await supabase
+        .from('enrollment_addons')
+        .select('hours')
+        .eq('id', eng.addon_id)
+        .maybeSingle()
+      remaining = Math.max(0, Number(addon?.hours ?? 0) - (await packageHoursUsedBefore(eng.id, fromIso)))
+    }
+
+    for (const s of engSessions ?? []) {
+      const hours = s.duration_minutes / 60
+      if (eng.funding === 'package' && remaining >= hours) {
+        remaining -= hours
+        continue
+      }
+      remaining = eng.funding === 'package' ? 0 : remaining
+      const when = new Date(s.starts_at).toLocaleDateString('en-US', {
+        timeZone: tz,
+        month: 'short',
+        day: 'numeric',
+      })
+      lines.push({
+        invoice_id: invoice.id,
+        session_id: s.id,
+        description: `${eng.student!.first_name} — ${eng.subject!.name} with ${eng.tutor?.name ?? 'tutor'}, ${when}`,
+        qty_hours: hours,
+        rate: eng.hourly_rate,
+        amount: Number((hours * eng.hourly_rate).toFixed(2)),
+        kind: 'session',
+      })
+    }
+  }
+  if (lines.length > 0) {
+    const { error } = await supabase.from('tutoring_invoice_lines').insert(lines)
+    if (error) return { ok: false, error: error.message }
+  }
+  await recomputeInvoiceTotals(invoice.id)
+  return { ok: true }
+}
 
 export async function confirmInvoice(
   invoiceId: string,

@@ -90,7 +90,7 @@ export function t1ProposalEmail(opts: {
      }
      ${opts.packageNote ? `<p>${opts.packageNote}</p>` : ''}
      <p style="margin:24px 0">
-       <a href="${opts.link}" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Confirm schedule</a>
+       <a href="${opts.link}?confirm=1" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Confirm schedule</a>
        &nbsp;&nbsp;<a href="${opts.link}" style="color:#00AEEE">Request changes →</a>
      </p>
      <p style="color:#64748b;font-size:13px">If we don't hear from you within ${opts.autoconfirmDays} days,

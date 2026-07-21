@@ -28,8 +28,18 @@ const STATUS_COPY: Record<string, string> = {
   void: 'This month was cancelled',
 }
 
-export default async function ProposalPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function ProposalPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>
+  searchParams: Promise<{ confirm?: string }>
+}) {
   const { token } = await params
+  // PL-62b: the email's Confirm button lands with ?confirm=1 — the client
+  // component then confirms via a JS-executed POST (prefetchers don't run
+  // JS, so a mail scanner can never silently confirm a month).
+  const { confirm } = await searchParams
   const invoiceId = verifyProposalToken(token)
   const contact = await loadContactInfo()
 
@@ -78,6 +88,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
     const e = new Date(s.ends_at)
     return {
       id: s.id,
+      status: s.status as string,
       student: one<any>(s.students)?.first_name ?? '',
       subject: one<any>(eng?.subjects)?.name ?? '',
       tutor: (one<any>(eng?.instructors)?.name ?? '').split(' ')[0],
@@ -145,7 +156,21 @@ export default async function ProposalPage({ params }: { params: Promise<{ token
           )}
 
           {pending ? (
-            <ProposalActions token={token} changeRequested={Boolean(invoice.change_requested_at)} />
+            <ProposalActions
+              token={token}
+              changeRequested={Boolean(invoice.change_requested_at)}
+              sessions={rows
+                .filter((r) => r.status === 'proposed')
+                .map(({ id, day, time, student, subject, tutor }) => ({
+                  id,
+                  day,
+                  time,
+                  student,
+                  subject,
+                  tutor,
+                }))}
+              autoConfirm={confirm === '1'}
+            />
           ) : invoice.stripe_hosted_invoice_url && ['invoiced', 'past_due'].includes(invoice.status) ? (
             <a
               href={invoice.stripe_hosted_invoice_url}

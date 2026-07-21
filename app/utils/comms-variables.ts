@@ -43,6 +43,9 @@ export type ExtraVars = {
   packageNote?: string
   /** T1/T1b: signed proposal link. */
   confirmLink?: string
+  /** PL-62: same link with ?confirm=1 — the page auto-confirms via a
+   *  JS-executed POST on load (bot-safe: prefetchers don't run JS). */
+  confirmOneTapLink?: string
   /** PL-41: signed one-click approval link. */
   approveLink?: string
   autoconfirmDays?: number
@@ -264,6 +267,10 @@ export const VARIABLES: Record<string, VariableDef> = {
   monthTotalLine: { description: 'Month total sentence (empty when package-covered)', block: true, resolve: (_c, _a, e) => e.monthTotalLine ?? '' },
   packageNote: { description: 'Package-covered note (often empty)', block: true, resolve: (_c, _a, e) => e.packageNote ?? '' },
   confirmLink: { description: 'Signed schedule-proposal link', resolve: (_c, _a, e) => e.confirmLink ?? '#' },
+  confirmOneTapLink: {
+    description: 'Proposal link that confirms in one tap on landing (PL-62)',
+    resolve: (_c, _a, e) => e.confirmOneTapLink ?? e.confirmLink ?? '#',
+  },
   approveLink: { description: 'PL-41 signed one-click approval link', resolve: (_c, _a, e) => e.approveLink ?? '#' },
   autoconfirmDays: { description: 'Days until the proposal auto-confirms', resolve: (_c, _a, e) => String(e.autoconfirmDays ?? 5) },
   daysLeft: { description: 'Days left before auto-confirm (nudge)', resolve: (_c, _a, e) => String(e.daysLeft ?? 3) },
@@ -473,6 +480,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
     '<p style="font-size:16px"><strong>Month total: $480.00</strong> — billed once you confirm, due by the end of this month.</p>',
   packageNote: '',
   confirmLink: 'https://hgl-portal.vercel.app/tutoring/proposal/sample',
+  confirmOneTapLink: 'https://hgl-portal.vercel.app/tutoring/proposal/sample?confirm=1',
   approveLink: 'https://hgl-portal.vercel.app/tutoring/approve/sample',
   autoconfirmDays: 5,
   daysLeft: 3,

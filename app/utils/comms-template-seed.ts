@@ -676,7 +676,7 @@ Here's the plan for {tutoringMonthLabel} — same as always unless you'd like a 
 
 {packageNote}
 
-[button:Confirm schedule]({confirmLink})
+[button:Confirm schedule]({confirmOneTapLink})
 
 [Request changes →]({confirmLink})
 

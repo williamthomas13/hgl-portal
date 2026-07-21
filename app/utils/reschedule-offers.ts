@@ -103,7 +103,15 @@ async function defaultWindows(tutorId: string): Promise<OfferWindow[]> {
   return out
 }
 
-export async function computeRescheduleOffers(sessionId: string): Promise<OfferComputation> {
+export async function computeRescheduleOffers(
+  sessionId: string,
+  opts?: {
+    /** PL-62: the proposal page moves still-PROPOSED sessions (nothing is
+     *  confirmed, so no fee and no 24h-notice classification) through the
+     *  same offer computation the portal uses for confirmed reschedules. */
+    allowProposed?: boolean
+  }
+): Promise<OfferComputation> {
   const { data: raw } = await supabase
     .from('tutoring_sessions')
     .select(
@@ -127,9 +135,11 @@ export async function computeRescheduleOffers(sessionId: string): Promise<OfferC
     gcal_event_id: raw.gcal_event_id,
   }
 
-  if (raw.status !== 'confirmed') return none(session, `session is ${raw.status}`)
+  const proposedOk = opts?.allowProposed && raw.status === 'proposed'
+  if (raw.status !== 'confirmed' && !proposedOk) return none(session, `session is ${raw.status}`)
   const originalStart = new Date(raw.starts_at)
-  if (classifyNotice(originalStart) !== 'ok') return none(session, 'inside 24h — $40/hr path, no self-serve offers')
+  if (!proposedOk && classifyNotice(originalStart) !== 'ok')
+    return none(session, 'inside 24h — $40/hr path, no self-serve offers')
   if (!tutor?.email) return none(session, 'tutor has no email')
 
   const tutorTz: string = tutor.timezone ?? ORG_TZ
