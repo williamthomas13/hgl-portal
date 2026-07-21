@@ -159,6 +159,12 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'Per delivery mode: "the classroom location" (in-person) or "the meeting link for class" (online)',
     resolve: (c) => (c.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'),
   },
+  // PL-65: subject-safe (title-case, no article) sibling of the above —
+  // "Classroom location for {className}" / "Meeting link for {className}".
+  locationNounTitle: {
+    description: 'Per delivery mode, subject-safe: "Classroom location" (in-person) or "Meeting link" (online)',
+    resolve: (c) => (c.deliveryMode === 'online' ? 'Meeting link' : 'Classroom location'),
+  },
   examName: {
     description: 'SAT / ACT / "the exam"',
     resolve: (c) => c.examInfo?.examName ?? 'the exam',

@@ -46,7 +46,9 @@ Add HGL's postal address to the standard footer every email renders (CAN-SPAM re
 
 Store the address as an `app_settings` value (e.g. `business_address`) next to the contact info rather than hardcoding, seeded with the address above (including "USA" — many recipients are international school families), so an office move is a settings edit. One shared-footer change; verify it renders in both the code shell and registry-rendered sends.
 
-## PL-65 · Mode-aware E5 subject (decided)
+## PL-65 · Mode-aware E5 subject (decided) ✅
+
+> **Shipped.** `{locationNounTitle}` added (in-person → "Classroom location" · online → "Meeting link"; subject-safe, no article). **E5 v2 published** with subject "{locationNounTitle} for {className}" — verified rendering both ways ("Classroom location for SIS SAT Prep" / "Meeting link for SIS SAT Prep"). Preheader had the same assumption ("where to go for class") → now "Open up to see {classLocationPhrase}." Body already resolves `{classroom}` to the room or meeting link per mode, so it needed nothing. Code twin aligned (subject + preheader both mode-aware).
 Scarlett chose fully mode-aware over a universal rewording. Add a subject-safe variable, e.g. `{locationNounTitle}`, resolving from the class's delivery mode: in-person → "Classroom location" · online → "Meeting link". Then publish E5's subject as "{locationNounTitle} for {className}" (new registry version — E5 is live). Real sends read "Classroom location for ISD SAT Prep" or "Meeting link for Nido SAT Prep". Check E5's preheader/body for the same assumption while in there.
 
 ---

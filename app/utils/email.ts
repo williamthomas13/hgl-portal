@@ -666,8 +666,11 @@ export function locationReminderEmail(ctx: EnrollmentEmailContext, audience: Aud
   const isStudent = audience === 'student'
   const s = ctx.studentFirstName
   const synap = synapUrl(ctx)
+  // PL-65: an online class's family gets "Meeting link", not "Classroom
+  // location" — the portal knows the delivery mode.
+  const noun = ctx.deliveryMode === 'online' ? 'Meeting link' : 'Classroom location'
   return {
-    subject: `Classroom location for ${ctx.className}`,
+    subject: `${noun} for ${ctx.className}`,
     html: wrap(
       `
       <h2 style="color:#334155">Class starts soon!</h2>
@@ -684,7 +687,7 @@ export function locationReminderEmail(ctx: EnrollmentEmailContext, audience: Aud
       ${synap ? `<a href="${synap}">here</a>` : `via the link in your diagnostic test email`}.</p>
     `,
       {
-        preheader: `Open up to see where to go for class.`,
+        preheader: `Open up to see ${ctx.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'}.`,
         footer: footerT(`You received this email because you signed up for a class that starts really soon and we didn't want you to miss it.`),
       }
     ),

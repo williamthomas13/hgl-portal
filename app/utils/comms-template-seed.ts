@@ -394,8 +394,8 @@ P.S. If {you_havent_or_name_hasnt} found a moment to take the diagnostic test ye
     audience: 'both',
     from_identity: 'info',
     category: 'transactional',
-    subject: 'Classroom location for {className}',
-    preheader: 'Open up to see where to go for class.',
+    subject: '{locationNounTitle} for {className}',
+    preheader: 'Open up to see {classLocationPhrase}.',
     footer_note:
       "You received this email because you signed up for a class that starts really soon and we didn't want you to miss it.",
     body_markdown: `# Class starts soon!
