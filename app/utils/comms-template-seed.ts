@@ -540,7 +540,7 @@ Good news — a spot just opened up in the {className} class, and {studentFirstN
 
 A quick recap: the class starts {firstSessionDate}, {classTime}. Once you register, you'll receive all the usual course information — diagnostic test access, location details, and everything else — in the days before class starts. If registration happens close to the start date, we'll send you everything you need right away.
 
-If your plans have changed and you no longer need the spot, no action needed — it'll pass to the next family automatically after the deadline.
+If your plans have changed and you no longer need the spot, [click here to let us know]({declineLink}). It'll also pass to the next family automatically after the deadline.
 
 Higher Ground Learning`,
   },

@@ -39,6 +39,7 @@ type Enrollment = {
   id: string
   enrolled_at: string
   payment_status: string
+  waitlist_declined_at: string | null
   class_cancelled: boolean
   cancellation_outcome: string | null
   enrollment_addons: { hours: number }[] | null
@@ -355,6 +356,7 @@ export default function AdminDashboard() {
           id,
           enrolled_at,
           payment_status,
+          waitlist_declined_at,
           class_cancelled,
           cancellation_outcome,
           enrollment_addons ( hours ),
@@ -1030,7 +1032,11 @@ export default function AdminDashboard() {
                           STATUS_STYLES[en.payment_status] ?? 'bg-yellow-100 text-yellow-800'
                         }`}
                       >
-                        {en.payment_status}
+                        {/* PL-72: an early decline reads as its own thing, not
+                            "expired unclaimed" */}
+                        {en.payment_status === 'Expired' && en.waitlist_declined_at
+                          ? 'Declined offer'
+                          : en.payment_status}
                       </span>
                       {qboBadge(en)}
                       {(en.payment_status === 'Paid' ||

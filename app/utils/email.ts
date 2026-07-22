@@ -998,7 +998,8 @@ export function waitlistConfirmationEmail(ctx: EnrollmentEmailContext, position:
 export function waitlistOfferEmail(
   ctx: EnrollmentEmailContext,
   claimUrl: string,
-  expiresAt: string
+  expiresAt: string,
+  declineUrl: string
 ): Rendered {
   const s = ctx.studentFirstName
   const deadline = new Date(expiresAt).toLocaleString('en-US', {
@@ -1019,7 +1020,8 @@ export function waitlistOfferEmail(
       Once you register, you'll receive all the usual course information — diagnostic test access,
       location details, and everything else — in the days before class starts. If registration
       happens close to the start date, we'll send you everything you need right away.</p>
-      <p>If your plans have changed and you no longer need the spot, no action needed — it'll pass
+      <p>If your plans have changed and you no longer need the spot,
+      <a href="${declineUrl}" style="color:#00AEEE">click here to let us know</a>. It'll also pass
       to the next family automatically after the deadline.</p>
       <p>Higher Ground Learning</p>
     `,

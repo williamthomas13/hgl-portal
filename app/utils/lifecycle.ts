@@ -392,6 +392,26 @@ export function verifyClaimToken(enrollmentId: string, token: string) {
   return expected.length === given.length && timingSafeEqual(expected, given)
 }
 
+// PL-72: decline links — distinct HMAC prefix so a decline token can never
+// double as a claim token (or vice versa).
+function declineToken(enrollmentId: string) {
+  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`decline:${enrollmentId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function declineUrlFor(enrollmentId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  return `${base}/waitlist/decline?e=${enrollmentId}&t=${declineToken(enrollmentId)}`
+}
+
+export function verifyDeclineToken(enrollmentId: string, token: string) {
+  const expected = Buffer.from(declineToken(enrollmentId))
+  const given = Buffer.from(token)
+  return expected.length === given.length && timingSafeEqual(expected, given)
+}
+
 /** Active tutoring packages, split by phase. All pricing comes from here. */
 export async function loadTutoringPackages(): Promise<{
   pre: TutoringPackage[]

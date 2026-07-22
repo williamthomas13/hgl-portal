@@ -20,6 +20,8 @@ export type ExtraVars = {
   /** W2 */
   claimDeadline?: string
   claimLink?: string
+  /** PL-72: signed early-decline link (confirm page; JS-POST release). */
+  declineLink?: string
   /** LR: "instructor + room" sentence (or the not-confirmed fallback). */
   classDetailsBlock?: string
 
@@ -325,6 +327,10 @@ export const VARIABLES: Record<string, VariableDef> = {
   resumePaymentLink: { description: 'Signed finish-payment link (PR emails)', resolve: (c) => c.resumePaymentUrl },
   portalLink: { description: 'Signed parent-portal deep link', resolve: (c) => c.portalUrl },
   claimLink: { description: 'W2: signed 48h claim link', resolve: (_c, _a, e) => e.claimLink ?? '#' },
+  declineLink: {
+    description: 'W2: signed decline-the-spot link (PL-72 — cascades to the next family)',
+    resolve: (c, _a, e) => e.declineLink ?? c.portalUrl,
+  },
   compassLink: { description: 'College Prep Compass', resolve: () => 'http://hgl.co/college-prep-compass' },
   reviewLink: { description: 'Google review page', resolve: () => 'https://g.page/highergroundlearning/review?gm' },
   discountLink: { description: 'Discounted tutoring page', resolve: () => 'https://highergroundprep.com/discount' },
@@ -631,6 +637,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
   waitlistPosition: 2,
   claimDeadline: 'Thursday, 3 September, 4:00 PM',
   claimLink: 'https://hgl-portal.vercel.app/test-link',
+  declineLink: 'https://hgl-portal.vercel.app/test-link',
 
   // --- tutoring set ---------------------------------------------------------
   tutorName: 'Billy Thomas',

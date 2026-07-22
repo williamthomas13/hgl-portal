@@ -40,7 +40,9 @@ Fix:
 - **(d) LR pass-along clause.** Scarlett wants LR's diagnostic instructions tailored like #2-P v2 (clear the parent doesn't have to do it themselves). Needs a parent-only clause conditional (nothing existing fits): add e.g. `{together_or_blank}` → parent: " — you can do it together or just pass this along to {studentFirstName}" · student: "" (empty). Seed **LR v3**: "To get {you_or_name} in: click below, hit "register," and provide some quick basic info{together_or_blank}."
 - Scarlett re-reviews all of these via test-send after ship.
 
-## PL-72 · W2: let a family decline the spot early so it cascades before the deadline
+## PL-72 · W2: let a family decline the spot early so it cascades before the deadline ✅
+
+> **Shipped, E2E 15/15.** New signed decline link (distinct HMAC prefix) rides W2 next to the claim button; **W2 v2 published** with your paragraph verbatim ("If your plans have changed… [click here to let us know]({declineLink}). It'll also pass to the next family automatically after the deadline."), code twin aligned, sample → `/test-link`. The GET lands on a confirm page ("Release {student}'s spot?" — mentions they stay on the list); the decline is a **JS-executed POST behind one visible tap**, verified scanner-safe (a bare GET changes nothing). On confirm: guarded flip to Expired with a `waitlist_declined_at` stamp (migration applied), interest row upserted (declining costs nothing), the Ops alert logs "Waitlist spot declined" (not expired), and the **exact cascade the deadline runs fires immediately** — the extension pass was extracted to `waitlist-offers.ts` (cron uses the same function, so the paths can't drift) and the next family's W2 arrived with a fresh 48h clock in the E2E. Idempotent: second POST returns already-done; revisiting the page shows the released state. Admin roster shows **"Declined offer"** instead of "Expired" for declined rows.
 
 Scenario (Scarlett): a parent knows they don't want the offered spot, but class starts in <48h — the next family in line shouldn't lose class days waiting for the deadline to lapse.
 

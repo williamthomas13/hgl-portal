@@ -7,6 +7,7 @@ import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../.
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
+import { extendWaitlistOffers } from '../../../utils/waitlist-offers'
 import { contactBlockHtml, contactFrom, loadContactInfo } from '../../../utils/tutoring-emails'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
@@ -737,48 +738,10 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
     }
   }
 
-  // Extend offers for however many spots are open, in join order.
-  if (registrationClosed) return
-  let open = bundle.capacity - spotsTaken(bundle)
-  for (const e of waitlisted) {
-    if (open <= 0) break
-    if (e.payment_status !== 'Waitlisted' || e.waitlist_offer_sent_at) continue
-
-    const expiresAt = new Date(now + WAITLIST_CLAIM_HOURS * 3_600_000).toISOString()
-    const ctx = emailContext(bundle, e)
-    const claimLink = claimUrlFor(e.id)
-    const claimDeadline = new Date(expiresAt).toLocaleString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })
-    const { subject, html, versionId } = await renderEmail(
-      'W2_SPOT_OPEN',
-      ctx,
-      'parent',
-      { claimLink, claimDeadline },
-      () => waitlistOfferEmail(ctx, claimLink, expiresAt)
-    )
-    const status = await sendOnce({
-      dedupeKey: `waitlist_offer:${e.id}`,
-      emailType: 'waitlist_offer',
-      enrollmentId: e.id,
-      classId: bundle.id,
-      to: [ctx.parentEmail],
-      cc: [ADMIN_EMAIL], // admin CC'd on each offer
-      subject,
-      html,
-      bodySnapshotId: versionId,
-    })
-    if (status === 'sent') {
-      await supabase
-        .from('enrollments')
-        .update({ waitlist_offer_sent_at: new Date(now).toISOString(), waitlist_offer_expires_at: expiresAt })
-        .eq('id', e.id)
-      bump(c, 'waitlist_offer')
-      open--
-    } else if (status === 'duplicate') {
-      open-- // offer already out but flags not yet stamped; still holds a spot
-    }
-  }
+  // PL-72: the extension pass lives in waitlist-offers.ts — the decline API
+  // runs the same cascade immediately on a confirmed decline.
+  const offered = await extendWaitlistOffers(bundle)
+  for (let i = 0; i < offered; i++) bump(c, 'waitlist_offer')
 }
 
 // ---------------------------------------------------------------------------
