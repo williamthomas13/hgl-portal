@@ -144,6 +144,16 @@ function classroomValue(ctx: EnrollmentEmailContext): string {
   return /^https?:\/\//i.test(loc) ? `<a href="${loc}">${loc}</a>` : loc
 }
 
+// PL-68: the sentence #4 v2 / #5 v3 render around {classroom} ("…take place
+// in {classroom}"), exported so every place the location is ENTERED (admin
+// class form, counselor classroom-request reply) can show a live
+// "Families will see:" preview from the same source as the emails. If the
+// email wording changes again, change it here and the previews follow.
+export function classLocationSentence(location: string | null | undefined): string {
+  const room = location?.trim() || 'TBD'
+  return `All classes will take place in ${room}.`
+}
+
 // PL-67: first name only for mid-sentence instructor mentions (#6 onward) —
 // the introducing emails (#4, LR) keep the full name.
 function instructorFirstValue(ctx: EnrollmentEmailContext): string {

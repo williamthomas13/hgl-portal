@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { classLocationSentence } from '../../utils/comms-variables'
 
 export default function RequestForm({
   classId,
@@ -59,6 +60,13 @@ export default function RequestForm({
           placeholder='e.g. "Room C19 in the high school"'
           className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
         />
+        {/* PL-68: live preview of the exact email sentence, so the value can
+            be worded to read naturally ("Room 204", "the library"). */}
+        {answer.trim() && (
+          <p className="text-xs text-gray-500 mt-1">
+            Families will see: &ldquo;{classLocationSentence(answer)}&rdquo;
+          </p>
+        )}
       </div>
       <button
         type="submit"

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { classLocationSentence } from '../utils/comms-variables'
 import { supabase } from '../utils/supabase'
 import SessionCalendar from '../components/SessionCalendar'
 import { formatDateAdmin, addDays, monthYear } from '../utils/dates'
@@ -881,6 +882,13 @@ export default function ClassWizard({
               placeholder={deliveryMode === 'online' ? "Blank = instructor's default meeting link" : 'Blank = counselor gets asked 14 days out'}
               className={inputCls}
             />
+            {/* PL-68: live preview of the exact email sentence — a hint, never
+                blocking; whoever types the value words it to fit. */}
+            {defaultLocation.trim() && (
+              <p className="text-xs text-gray-500 mt-1">
+                Families will see: &ldquo;{classLocationSentence(defaultLocation)}&rdquo;
+              </p>
+            )}
           </div>
 
           <div>

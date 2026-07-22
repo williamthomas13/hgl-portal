@@ -27,7 +27,9 @@ Two fixes to the same line, "I sincerely hope that {you_have_or_name_has} been t
 - Seed **#6 v2** (it's live, so a new registry version): "I sincerely hope that {takingAdvantagePhrase} to the fullest." Sample data = the ongoing-parent variant; document the ended variant in the variable description so the editor shows it.
 - No other template changes — #4 and LR stay full-name. Scarlett re-reviews via test-send after ship.
 
-## PL-68 · Live "families will see" preview where the class location is entered
+## PL-68 · Live "families will see" preview where the class location is entered ✅
+
+> **Shipped.** `classLocationSentence()` exported from the variable registry as the single source of the #4 v2/#5 v3 sentence ("All classes will take place in {classroom}.") — if the email wording changes again, change it there and both previews follow. Live preview added under **both** entry points and verified in the browser as-you-type: the admin class wizard's Default location field (typed "the library" → *Families will see: "All classes will take place in the library."*) and the counselor classroom-request reply form (typed "Room 204" → *Families will see: "All classes will take place in Room 204."*). Hint only, never blocking; hidden while the field is blank (the blank-state placeholder already explains the fallback behavior). Scarlett's #2-P v2 / #4 v2 / #5 v3 edits untouched — nothing re-seeded.
 
 #4/#5 now say "all classes will take place **in** {classroom}". "in" reads naturally for everything counselors typically supply ("in Room 204", "in the library", "in Ms. Chen's classroom") but breaks for oddballs like a street address. Decision: fix it at **entry**, not render.
 
