@@ -121,7 +121,7 @@ export type ExtraVars = {
   alertStudentName?: string
   alertParentName?: string
   alertParentEmail?: string
-  /** e.g. "3 / 8 min / 15 cap" or "4 paid / 8 minimum". */
+  /** e.g. "3 enrolled / 8 min / 15 cap" or "4 paid / 8 minimum". */
   alertCounts?: string
   /** The alert's composed data guts (pre-rendered HTML) — framing copy is
    *  editable in the template; the computed details ride this block. */
@@ -448,7 +448,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   alertStudentName: { description: 'Alerts: student the alert is about', resolve: (_c, _a, e) => e.alertStudentName ?? '—' },
   alertParentName: { description: 'Alerts: parent the alert is about', resolve: (_c, _a, e) => e.alertParentName ?? '—' },
   alertParentEmail: { description: "Alerts: that parent's email", resolve: (_c, _a, e) => e.alertParentEmail ?? '—' },
-  alertCounts: { description: 'Alerts: the count string, e.g. "3 / 8 min / 15 cap"', resolve: (_c, _a, e) => e.alertCounts ?? '—' },
+  alertCounts: { description: 'Alerts: the count string, e.g. "3 enrolled / 8 min / 15 cap"', resolve: (_c, _a, e) => e.alertCounts ?? '—' },
   alertDetailsBlock: {
     description: 'Alerts: the composed data details (framing is editable; these guts stay computed)',
     block: true,
@@ -464,7 +464,8 @@ export const VARIABLES: Record<string, VariableDef> = {
       const addonLines = c.addons
         .map((a) => `<br/>${a.name} — 1-on-1 Tutoring — $${a.pricePaid}`)
         .join('')
-      return `<h3 style="color:#334155">Order Summary</h3>
+      // PL-75: matches #0-P v4's "Enrollment Confirmed" subject.
+      return `<h3 style="color:#334155">Enrollment Summary</h3>
       <p>${c.className} — $${c.price}${addonLines}
       <br/><strong>Amount paid:</strong> ${c.amountPaid != null ? `$${c.amountPaid}` : `$${c.price}`}
       · ${c.paidAt ? fmt(c.paidAt) : ''}</p>`
@@ -666,7 +667,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
   alertStudentName: 'Ana García',
   alertParentName: 'Alex García',
   alertParentEmail: 'sample-parent@example.com',
-  alertCounts: '3 / 8 min / 15 cap',
+  alertCounts: '3 enrolled / 8 min / 15 cap',
   alertDetailsBlock:
-    '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 / 8 min / 15 cap</strong></p>',
+    '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 enrolled / 8 min / 15 cap</strong></p>',
 }

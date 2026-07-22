@@ -240,7 +240,7 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
   const detail = (label: string, value: string | null) =>
     `<br/><strong>${label}:</strong> ${value && value.trim() ? value : '—'}`
   return {
-    subject: `Order Confirmed — ${ctx.className}`,
+    subject: `Enrollment Confirmed — ${ctx.className}`,
     html: wrap(
       `
       <p>Hi ${ctx.parentFirstName},</p>
@@ -251,7 +251,7 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       ${addonTutoringBlockHtml(ctx)}
       <p>If you have any questions between now and then, you can respond to this email (but maybe
       check our <a href="https://highergroundlearning.com/faqs#general">FAQs</a> first).</p>
-      <h3 style="color:#334155">Order Summary</h3>
+      <h3 style="color:#334155">Enrollment Summary</h3>
       <p>${ctx.className} — $${ctx.price}${addonLines}
       <br/><strong>Amount paid:</strong> ${ctx.amountPaid != null ? `$${ctx.amountPaid}` : `$${ctx.price}`}
       · ${ctx.paidAt ? formatDate(ctx.paidAt.slice(0, 10)) : ''}</p>
@@ -1094,7 +1094,7 @@ export function lateRegistrationWelcomeEmail(
   const orderSummary = isStudent
     ? ''
     : `
-      <h3 style="color:#334155">Order Summary</h3>
+      <h3 style="color:#334155">Enrollment Summary</h3>
       <p>${ctx.className} — $${ctx.price}${addonLines}
       <br/><strong>Amount paid:</strong> ${ctx.amountPaid != null ? `$${ctx.amountPaid}` : `$${ctx.price}`}
       · ${ctx.paidAt ? formatDate(ctx.paidAt.slice(0, 10)) : ''}</p>
@@ -1892,7 +1892,11 @@ export function registrationNotificationContent(opts: {
 }): { subject: string; body: string } {
   // PL-57: a registration only exists because payment completed — "paid" is
   // noise. Pending rides the count as "3 + 1 pending" only when present.
-  const taken = opts.pending > 0 ? `${opts.paid} + ${opts.pending} pending` : `${opts.paid}`
+  // PL-73: label the first number — "(1 / 8 min / 10 cap)" read as a puzzle.
+  const taken =
+    opts.pending > 0
+      ? `${opts.paid} enrolled + ${opts.pending} pending`
+      : `${opts.paid} enrolled`
   const counts = `${taken} / ${opts.minEnrollment} min / ${opts.capacity} cap`
   return {
     subject: `New registration: ${opts.studentName} — ${opts.label} (${counts})`,

@@ -25,7 +25,7 @@ export const TEMPLATE_SEEDS: TemplateSeed[] = [
     audience: 'parent',
     from_identity: 'info',
     category: 'transactional',
-    subject: 'Order Confirmed — {className}',
+    subject: 'Enrollment Confirmed — {className}',
     preheader: "{studentFirstName} is registered. Here's what happens next.",
     footer_note: null,
     body_markdown: `Hi {parentFirstName},
