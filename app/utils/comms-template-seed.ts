@@ -1481,7 +1481,7 @@ You're the instructor for **{className}** — here's your setup in one email.
 
 Current enrollment: **{instructorCountsLine}**.
 
-{scheduleBlock}
+{classScheduleBlock}
 
 **Your class page** has the live count, the session calendar, and a timeline of every email your families receive (so you never have to guess what they've been told):
 

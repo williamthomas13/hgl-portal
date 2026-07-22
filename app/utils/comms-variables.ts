@@ -144,6 +144,9 @@ export type ExtraVars = {
   registrationCloseDate?: string
   /** Milestone variant line for IN_DIGEST ('' on quiet weekly sends). */
   digestMilestoneLine?: string
+  /** PL-80c: IN_WELCOME's class-session list — renamed from {scheduleBlock}
+   *  so it can never collide with the tutoring sample again. */
+  classScheduleBlock?: string
   /** IN_FYI: the family email's original subject. */
   fyiOriginalSubject?: string
   /** IN_FYI: the family email's rendered body (extracted, pre-wrapped HTML). */
@@ -588,6 +591,15 @@ export const VARIABLES: Record<string, VariableDef> = {
     block: true,
     resolve: (_c, _a, e) => e.digestMilestoneLine ?? '',
   },
+  // PL-80c: IN_WELCOME's session list gets its OWN variable — {scheduleBlock}
+  // is the tutoring list and its sample ("Ana — September sessions") rendered
+  // inside the instructor welcome. Distinct name = the collision is
+  // impossible, not just re-sampled away.
+  classScheduleBlock: {
+    description: "IN_WELCOME: the class's full session list (dates, times, room) — computed from the class calendar",
+    block: true,
+    resolve: (_c, _a, e) => e.classScheduleBlock ?? '',
+  },
   fyiOriginalSubject: {
     description: "IN_FYI: the family email's original subject",
     resolve: (_c, _a, e) => e.fyiOriginalSubject ?? '—',
@@ -818,11 +830,18 @@ export const SAMPLE_EXTRA: ExtraVars = {
   alertDetailsBlock:
     '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 enrolled / 8 min / 15 cap</strong></p>',
   creditAmount: '$899.00',
-  instructorCountsLine: '6 enrolled / 8 min / 15 cap',
+  // PL-80b: sample the min-met digest variant — the milestone line and the
+  // counts must agree (a min-met line over "6 enrolled / 8 min" reads like a
+  // bug; real sends compute both live so they can never disagree).
+  instructorCountsLine: '8 enrolled / 8 min / 15 cap',
   instructorViewLink: 'https://hgl-portal.vercel.app/portal?view=instructor',
   registrationCloseDate: 'September 4, 2026',
   digestMilestoneLine:
     '<p><strong>🎉 The class just reached its minimum — it officially runs.</strong></p>',
+  // PL-80c: class-shaped (mirrors scheduleListHtml — the SIS SAT Prep sample
+  // class's Saturday sessions), never the tutoring list.
+  classScheduleBlock:
+    '<ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Saturday, September 5, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, September 12, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, September 19, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, September 26, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 3, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 10, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 17, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 24, 2026 — 10:00–12:00 · Room 204</li></ul>',
   fyiOriginalSubject: 'Classroom location for SIS SAT Prep',
   familyEmailBlock:
     '<p>Hey Alex,</p><p>One last reminder: the first day of class is September 5, 2026 from 10:00 AM to 12:00 PM.</p><p><strong>All classes take place in Room 204</strong></p>',

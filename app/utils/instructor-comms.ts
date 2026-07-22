@@ -93,7 +93,8 @@ export async function sendInstructorWelcome(
 ): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
   const extras = {
     ...baseExtras(bundle, instructor),
-    scheduleBlock: scheduleListHtml(bundle),
+    // PL-80c: IN_WELCOME's own variable — {scheduleBlock} belongs to tutoring.
+    classScheduleBlock: scheduleListHtml(bundle),
   }
   const stub = instructorStub(bundle, instructor)
   const fallback = (): Rendered => ({
@@ -103,7 +104,7 @@ export async function sendInstructorWelcome(
        <p>You're the instructor for <strong>${bundle.schoolLabel} ${bundle.classType}</strong> — here's your setup in one email.</p>
        <p>${extras.classSummaryLine}</p>
        <p>Current enrollment: <strong>${extras.instructorCountsLine}</strong>.</p>
-       ${extras.scheduleBlock}
+       ${extras.classScheduleBlock}
        <p><strong>Your class page</strong> has the live count, the session calendar, and a timeline
        of every email your families receive (so you never have to guess what they've been told):</p>
        <p style="margin:20px 0"><a href="${extras.instructorViewLink}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your class page</a></p>

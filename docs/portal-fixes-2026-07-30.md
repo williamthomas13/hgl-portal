@@ -1,0 +1,74 @@
+# Portal fixes — batch 12 (July 2026, follows batch 11 + PL-69)
+
+One small item. Continues PL-x numbering.
+
+**Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
+
+---
+
+## PL-80 · Fourth pronoun option: "Something else / rather not say" → name-based rendering
+
+Follow-on to PL-69 (decided by Scarlett). The three pronoun sets can leave people out (neopronoun users; families who'd rather not say). Free text is rejected — typed pronouns can't drive verb agreement/possessives without asking parents for a conjugation table, and a badly conjugated guess is worse than the fallback.
+
+- **Add a fourth enum value** (suggest `name_only`) to `students.pronouns`, shown in all three capture surfaces (registration student step, tutoring intake, admin roster select) with the user-facing label **"Something else / rather not say"** — that exact wording; the storage name never appears in UI.
+- **Rendering:** `name_only` resolves every pronoun-bearing conditional to the **name-based forms that already exist** — "{studentFirstName} has been…", "{studentFirstName}'s hard work", "for {studentFirstName}", "{studentFirstName} doesn't" — i.e., the same branch the audience-conditionals' parent side used before pronouns, with the name substituted where she/he/they would go. Sentences stay grammatical for everyone; nothing renders a wrong pronoun.
+- Where a composed phrase would repeat the name awkwardly (twice in one sentence), prefer the existing they-free rephrasing only if one already exists — do NOT write new copy for this; name repetition is acceptable and warm.
+- **Unset stays unset** (they/them fallback, byte-identical guarantee from PL-69 untouched). `name_only` is an explicit choice, not the default.
+- Extend `regress:pronouns` to the five-state matrix (she/he/they/name_only/unset) including verb agreement on the name branch ("Ana has", "Ana doesn't").
+
+## PL-80c (tiny) · IN_WELCOME sample shows a tutoring student's schedule ✅
+
+> **Shipped, render-verified against the live DB.** New `{classScheduleBlock}` variable (registered, block-type) with a class-shaped sample mirroring `scheduleListHtml`'s real output — the SIS SAT Prep sample class's eight Saturday sessions, 10:00–12:00 · Room 204. The compose in `instructor-comms.ts` and the code fallback both use it; the seed source is renamed too. **IN_WELCOME reseeded as v3 = Scarlett's v2 copy with only the variable renamed** — the publish script carried an exact-string guard (exactly one `{scheduleBlock}`, refuse otherwise) and proved the body byte-identical apart from the token. Verified: preview no longer contains "Ana — September sessions", shows the Saturday list, no unresolved variables. The tutoring `{scheduleBlock}` is untouched, and the distinct name makes this collision impossible rather than re-sampled away.
+
+IN_WELCOME's `{scheduleBlock}` collides with the tutoring templates' `{scheduleBlock}` sample, so the test-send rendered "**Ana — September sessions**" (Monday 4–5 PM tutoring sample) where the class session list belongs. The real compose is correct (`scheduleListHtml(bundle)` lists the class's actual sessions — verified). Fix: rename the instructor variable to `{classScheduleBlock}` (reseed IN_WELCOME so the body uses it) and give it a class-shaped sample matching the SIS SAT Prep sample class — Saturday sessions, 10:00 AM–12:00 PM, with the room. Renaming, not just re-sampling, so the two blocks can never collide again.
+
+## PL-80b (tiny) · IN_DIGEST sample coherence ✅
+
+> **Shipped, render-verified.** Took the min-met option: `instructorCountsLine`'s sample is now "8 enrolled / 8 min / 15 cap", agreeing with the 🎉 milestone line in body AND subject. The shared sample only feeds IN_WELCOME and IN_DIGEST, and 8/8/15 reads truthfully in both ("Current enrollment: 8 enrolled / 8 min / 15 cap" in the welcome is a perfectly plausible class).
+
+The IN_DIGEST sample pairs the min-met milestone line ("The class just reached its minimum — it officially runs") with counts that contradict it ("6 enrolled / 8 min / 15 cap"). Real sends can't do this — the min-met ping fires from the webhook at the moment count reaches min, and counts are computed live at send time — but the sample flunks the PL-56 "samples read truthfully" standard and made review pause. Fix: sample the min-met variant with matching counts ("8 enrolled / 8 min / 15 cap"), or sample the weekly variant (no milestone line) with 6/8/15 — either, as long as the numbers agree with the line.
+
+## PL-81 · T3-T stays mandatory — but coalesce rapid changes so it's never ignorable
+
+Decision arc (Scarlett, final): no opt-out. T3-T is the only active signal a session moved — Google Calendar does **not** notify tutors of these changes (events live on the tutor's own calendar, edited by the delegated service account; `sendUpdates` invite mechanics only apply to attendees, and there are none). A missed reschedule is exactly how a tutor no-shows. The real risk she identified is **fatigue**: a schedule that changes five times in an afternoon = five emails = a tutor who stops reading them. Fix the fatigue, not the mandatoriness:
+
+- **(a) Coalesce per tutor — with an urgency override.** On a session change, don't send immediately — record it and arm a pending T3-T for that tutor with `send_after ≈ now + 45 min`; further changes inside the window fold into the same pending notice and slide the timer (capped at ~3h from the first change so it can never defer forever). The existing hourly sweep + the PL-51-style inline due-pass deliver it. Result: an afternoon of churn = ONE email. **Urgency override (Scarlett):** if any change in the batch touches a session whose original *or* new start time is within the next 24 hours, skip the wait — send immediately, folding in whatever else is pending for that tutor. A noon change to a 2:00 PM session can never sit in a 45-minute queue.
+- **(b) Every notice carries the current truth.** The email leads with the resulting **upcoming schedule for each affected student** (not just the delta), so reading any single notice — even after ignoring three — leaves the tutor with the correct picture. Deltas listed below the current state ("what changed: Sep 14 moved to Sep 16").
+- **(c) Subject scales with severity:** one change → "Schedule change: Ana — SAT" · several → "3 schedule changes: Ana — SAT". 
+- **(d) A gentle warning line in the email**, since this is precisely the miss-a-session failure mode: "Worth a quick glance even if you live in your calendar — your Google Calendar is already updated, but this email is the recap of what moved."
+- The calendar update itself remains instant and unconditional; only the email coalesces.
+
+## PL-82 · Every AL alert previews with the same (wrong) body — per-template samples
+
+All 15 `AL —` templates share `{alertDetailsBlock}`, and `SAMPLE_EXTRA.alertDetailsBlock` is one shared value: the new-registration example. So the "No instructor assigned" test-send (and 13 others) renders "Ana García registered for SIS SAT Prep… Add-on purchased…" under a subject about a missing instructor. Real sends are correct — each alert composes its own block at send time — but the samples make 14 of the 15 alerts unreviewable.
+
+- Add a **per-template-key sample override** mechanism (e.g. `SAMPLE_EXTRA_BY_TEMPLATE[templateKey]` merged over the shared samples) — one mechanism, then fill it for all 15 AL templates with a realistic block each, matching its own subject (PL-56 standard): no-instructor → class, start date, "no instructor on file," assign link · QBO sync failure → the failed doc + error string · waitlist rollover → family, class, new position · autopay exhausted → family, amount, attempt count · etc. Mirror each real compose's shape (grep the sendAdminAlert call sites for the true bodies).
+- The overrides must cover **subject variables too**, not just body blocks: AL_UNAGREED's subject "{alertCounts} tutoring families billed…" sampled the shared class-counts string and read "3 enrolled / 8 min / 15 cap tutoring families billed without a signed policy agreement." Its per-template sample is a plain number ("2"); same for any other alert whose subject takes {alertCounts}.
+- While in there, sanity-check the other shared-sample block variables for the same cross-template mismatch ({scheduleBlock} is already being fixed by PL-80c).
+
+## PL-83 · Family/student profile shows its full comms history (Kelsie's "what have they been told?")
+
+Reuse the PL-77 timeline machinery, scoped to a family instead of a class, embedded in the admin family/student record:
+
+- **Every email this family has received or will receive** — parent- and student-addressed both — from `email_sends` (sent/delivered/opened where webhooks say so) plus the projector's upcoming scheduled sends; cancelled sends shown as cancelled. Ordered, each row openable to the exact render (the PL-77 preview endpoint pattern, admin-scoped).
+- **Badge each row with its origin** — "automatic" (sequence/cron/webhook sends) vs "sent by hand" (compose-panel/manual) vs "test" — this is the part Scarlett called out: Kelsie needs to see at a glance which communications the system handled and which a human did, especially in the first months.
+- Covers class sequence, tutoring (T-series), payment reminders, waitlist, cancellation, agreements — everything keyed to the family's emails/enrollments. Read-only view; the compose panel stays where it is.
+
+## PL-84 · Cancellation→tutoring conversion must honor the HOURS offer, not just dollars
+
+Scarlett caught a PL-76 design gap. The cancel-class flow takes `offerHours` — the Ops Director offers the family a specific number of 1-on-1 hours for the fee they paid (varies per cancellation), and CX_FAMILY presents it in hours. But the PL-76 conversion records a **dollar** Stripe credit. If 8 promised hours price out above the paid amount, the credit runs dry early and the family gets invoiced for hours we told them were covered — and Kelsie has to re-derive the rate per family to know what was promised.
+
+- **Persist the offer at cancellation** (`offerHours` + amount paid, per enrollment) — today it's only computed into the email.
+- **Conversion creates an hours package** via the existing add-on package machinery (hours balance, package-covered sessions in monthly proposals, #8b-style "hours remaining"), sourced `cancellation_conversion`: family profile reads "Converted from {className} cancellation: **8 hours** (paid $899)" and works down like any add-on package. This is the authoritative record Scarlett asked for — no rate lookups.
+- **CX_TUTORING_START copy** states the terms: "your {className} payment converts to **{offerHours} hours** of 1-on-1 tutoring — nothing to pay until those are used." (Seed as the new version; keep the availability CTA and contact block.)
+- **Dollar credit becomes the fallback only** for conversions where no hours offer exists on the cancellation record. If a PL-76-style dollar conversion already happened for a family with an hours offer, reconcile it (QA data only so far).
+
+---
+
+## Paste-ready handoff prompt for Claude Code
+
+> Read `docs/portal-fixes-2026-07-30.md` (batch 12 — one small item, PL-80).
+>
+> Add a fourth `students.pronouns` value (`name_only`, UI label exactly "Something else / rather not say") to all three capture surfaces. It renders the existing name-based conditional forms everywhere a pronoun would appear — no new copy, name repetition is fine. Unset keeps the they/them fallback and its byte-identity guarantee. Extend regress:pronouns to the five-state matrix incl. name-branch verb agreement. Also PL-80b: make IN_DIGEST's sample self-consistent (milestone line and counts must agree — min-met with 8/8, or weekly with 6/8). And PL-80c: rename IN_WELCOME's schedule variable to {classScheduleBlock} (reseed the template) with a class-shaped sample — its current {scheduleBlock} collides with the tutoring sample and renders "Ana — September sessions" in previews. And PL-81: T3-T has no opt-out — instead coalesce rapid changes per tutor (pending notice, ~45 min sliding window capped at 3h, delivered by the hourly sweep/inline due-pass) with an urgency override: any change touching a session starting within 24h (old or new time) sends immediately, folding in the rest. Lead every notice with each affected student's current upcoming schedule with deltas below, scale the subject to the change count, and add the doc's "worth a quick glance" line. Calendar updates stay instant and unconditional. PL-82: add per-template-key sample overrides — body blocks AND subject variables ({alertCounts} → a plain number per alert) — giving each of the 15 AL templates its own realistic sample mirroring its real compose; sanity-check other shared-sample block variables. PL-83: family-scoped comms timeline on the admin family/student record reusing the PL-77 machinery — sent + upcoming + cancelled, parent and student addresses both, openable renders, each row badged automatic / sent-by-hand / test. PL-84: persist the cancellation's offerHours; conversion creates an hours package (add-on machinery, source cancellation_conversion) shown on the family profile as "Converted from {className} cancellation: N hours (paid $X)"; CX_TUTORING_START states the hours terms; dollar Stripe credit only as the no-hours-offer fallback.
+>
+> Rules: PL-x IDs in commits; `git push` after committing; check this item off here when shipped.
