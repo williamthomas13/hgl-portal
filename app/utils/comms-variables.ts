@@ -859,3 +859,117 @@ export const SAMPLE_EXTRA: ExtraVars = {
   familyEmailBlock:
     '<p>Hey Alex,</p><p>One last reminder: the first day of class is September 5, 2026 from 10:00 AM to 12:00 PM.</p><p><strong>All classes take place in Room 204</strong></p>',
 }
+
+// PL-82: per-template-key sample OVERRIDES, merged over SAMPLE_EXTRA for
+// previews and test-sends. The 15 alert templates all share
+// {alertDetailsBlock}, so one shared sample made 14 of them preview with the
+// new-registration story under an unrelated subject — unreviewable. Each
+// override mirrors its template's REAL compose (grep the sendAdminAlert /
+// renderRegistered call site named in the comment) per the PL-56 standard:
+// a sample must read as a plausible real send, never as a bug. Subject
+// variables are covered too ({alertCounts} is a plain number where the real
+// subject uses one). Real sends are untouched — they compose live.
+export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
+  // sweepInstructorNudges (cron/reminders): min met, nobody teaching yet.
+  ADMIN_INSTRUCTOR_NUDGE: {
+    alertDetailsBlock:
+      '<p><strong>SIS SAT Prep</strong> (Sample International School) has <strong>8 paid</strong> enrollments against a minimum of <strong>8</strong> — the class is running, and no instructor is assigned yet.</p><p>First session: <strong>Saturday, September 5, 2026</strong>.</p><p><a href="https://hgl-portal.vercel.app/admin">Open the admin class view</a> and select an instructor from the dropdown — or add a new one — so the class-details email can go out on schedule.</p>',
+  },
+  // registrationNotificationContent (webhook): the shared sample already IS
+  // this alert's story — pinned here so it stays right if the shared one moves.
+  AL_REGISTRATION: {
+    alertCounts: '3 enrolled / 8 min / 15 cap',
+    alertDetailsBlock:
+      '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 enrolled / 8 min / 15 cap</strong></p>',
+  },
+  // sweepAdminRosterReport (cron/reminders): under-min warning + class card.
+  AL_ROSTER_REPORT: {
+    alertDetailsBlock:
+      '<p><strong style="color:#b45309">⚠ In-person classes under minimum</strong> (travel booking waits on these):</p><ul><li><strong>SIS SAT Prep</strong> — 6 paid / 8 min, starts 2026-09-05</li></ul><p><strong>Open classes — full rosters:</strong></p><div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0"><p style="margin:0"><strong>SIS SAT Prep</strong> — starts 2026-09-05 · 6 paid / 1 pending / 0 waitlisted · 8 min / 15 cap · <span style="color:#b45309;font-weight:bold">below minimum — needs 2 more paid</span></p><ul style="margin:6px 0 0"><li>Ana García — Paid <span style="color:#0284c7;font-weight:bold">(new this week)</span></li><li>Sam Lee — Paid</li><li>Maya Ortiz — Pending</li></ul></div>',
+  },
+  // hold-and-alert (cron/reminders): #4 held on a blank detail.
+  AL_CLASS_DETAILS_HOLD: {
+    alertDetailsBlock:
+      '<p>The "class details" email is due but is being held because <strong>location</strong> is blank. Fill it in on the admin page — the email goes out on the next hourly sweep.</p>',
+  },
+  // blank-details warning (cron/reminders): raw ISO date, like the compose.
+  AL_MISSING_DETAILS: {
+    alertDetailsBlock: '<p>Instructor is blank. Location is blank. Class starts 2026-09-05.</p>',
+  },
+  // min-enrollment checkpoint (cron/reminders): subject counts use the
+  // "N paid / M minimum" shape, not the enrolled/min/cap ticker.
+  AL_MIN_ENROLLMENT: {
+    alertCounts: '6 paid / 8 minimum',
+    alertDetailsBlock:
+      '<p><strong>6</strong> paid enrollments against a minimum of <strong>8</strong> (in_person, capacity 15). Class starts 2026-09-05. Below minimum — decide whether to run, push, or cancel.</p>',
+  },
+  // expired-unclaimed variant (cron/reminders) — matches the seed subject.
+  AL_WAITLIST_ROLLOVER: {
+    alertDetailsBlock:
+      '<p>Alex (sample-parent@example.com, student Ana García) did not claim their spot within 48 hours. The offer rolls to the next family automatically.</p>',
+  },
+  // webhook route: session completed, no enrollment row matched.
+  AL_WEBHOOK_FAILURE: {
+    alertDetailsBlock:
+      '<p>Stripe checkout session <code>cs_test_a1B2c3D4e5F6g7H8</code> completed, but the enrollment could not be updated.</p><p>No enrollment matched (enrollment_id=none).</p><p>Check the Stripe dashboard and the enrollments table.</p>',
+  },
+  // qbo-sync queue: retries exhausted on a sales receipt.
+  AL_QBO_FAILURE: {
+    alertDetailsBlock:
+      '<p>After 5 attempts, the Sales Receipt for Stripe payment <code>pi_3SampleQboFail01</code> (enrollment <code>00000000-0000-4000-8000-000000000000</code>) could not be created in QuickBooks.</p><p>Last error: <code>Business Validation Error: Duplicate Document Number Error : You must specify a different number.</code></p><p>Fix the cause (see the QuickBooks panel on /admin), then hit Retry there — the books are missing this transaction until then.</p>',
+  },
+  // tutoring-billing cycle: {alertCounts} is a PLAIN NUMBER in this subject —
+  // the shared class-counts ticker read "3 enrolled / 8 min / 15 cap tutoring
+  // families billed…", which is the exact bug PL-82 exists to kill.
+  AL_UNAGREED: {
+    alertCounts: '2',
+    alertDetailsBlock:
+      '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li>Alex García (sample-parent@example.com)</li><li>Jordan Lee (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <strong>/admin/agreements</strong>.</p>',
+  },
+  // availability route: add-on family ready for the schedule wizard.
+  AL_AVAILABILITY_SHARED: {
+    alertDetailsBlock:
+      "<p><strong>Alex</strong> (sample-parent@example.com) shared Ana's availability.</p><p>It's on the student record — the student-schedule wizard on /admin/tutoring will suggest matching times.</p>",
+  },
+  // intake route: lead finished the form.
+  AL_INTAKE_COMPLETE: {
+    alertDetailsBlock:
+      '<p><strong>Alex García</strong> (sample-parent@example.com) completed the intake form for <strong>Ana García</strong> (test prep).</p><p>The lead is marked intake-complete on /admin/leads — availability and all answers are on the lead record, ready for matching.</p>',
+  },
+  // tutoring-stripe dunning: all 3 charges failed.
+  AL_DUNNING_EXHAUSTED: {
+    alertDetailsBlock:
+      '<p>All 3 automatic charges failed for <strong>Alex García</strong> (sample-parent@example.com) — September 2026, $480.00. Last error: <code>Your card was declined.</code></p><p>The family got a pay-by-link fallback. Consider a call, and the 10-day/30-day escalation applies from the due date (late fee is your call, never automatic).</p>',
+  },
+  // sweepCollections 10-day: en-CA date, like the compose.
+  AL_OVERDUE_10: {
+    alertDetailsBlock:
+      '<p>September 2026, $480.00, due 2026-09-30 — reminder sent to the family. 30-day mark adds the late-fee flag.</p>',
+  },
+  // sweepCollections 30-day: the late-fee decision.
+  AL_OVERDUE_30: {
+    alertDetailsBlock:
+      "<p>September 2026 tutoring invoice ($480.00) is 30+ days past due. Per the signed policy you MAY apply the 10% late fee — it's a button on the invoice panel (/admin/tutoring), never automatic — and consider pausing the schedule.</p>",
+  },
+  // PL-82 sanity pass on other shared block samples: {classSummaryLine} is
+  // shared by NW (admin-format date) and the IN_ set (instructor-comms
+  // composes formatDateFull + delivery mode) — same class, same story, but
+  // pin the IN shape so each previews exactly like its own compose.
+  IN_WELCOME: {
+    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person',
+  },
+  IN_DIGEST: {
+    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person',
+  },
+  IN_FYI: {
+    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person',
+  },
+}
+
+/** The editor/test-send sample set for one template: shared samples with the
+ *  template's own overrides merged on top (PL-82). */
+export function sampleExtraFor(templateKey: string | null | undefined): ExtraVars {
+  if (!templateKey) return SAMPLE_EXTRA
+  const override = SAMPLE_EXTRA_BY_TEMPLATE[templateKey]
+  return override ? { ...SAMPLE_EXTRA, ...override } : SAMPLE_EXTRA
+}

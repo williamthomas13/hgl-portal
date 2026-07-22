@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { clearTemplateCache, renderVersion } from '../../../../utils/comms-db-render'
 import { extractVariables } from '../../../../utils/comms-md'
-import { KNOWN_VARIABLE_NAMES, SAMPLE_CONTEXT, SAMPLE_EXTRA } from '../../../../utils/comms-variables'
+import { KNOWN_VARIABLE_NAMES, SAMPLE_CONTEXT, sampleExtraFor } from '../../../../utils/comms-variables'
 import { sendOnce, type Audience } from '../../../../utils/email'
 
 // Feature A4 template editor backend (docs/COMMS_ATTENDANCE_PARENT_SPEC.md).
@@ -59,7 +59,8 @@ export async function POST(req: Request) {
         template,
         SAMPLE_CONTEXT,
         body.audience ?? 'parent',
-        SAMPLE_EXTRA
+        // PL-82: per-template sample overrides (the AL set most of all).
+        sampleExtraFor(key)
       )
       const { unknown } = validateVariables([
         body.subject ?? '',
@@ -174,7 +175,7 @@ export async function POST(req: Request) {
         .maybeSingle()
       if (!version) return NextResponse.json({ error: 'Version not found.' }, { status: 404 })
       const audience: Audience = body.audience ?? 'parent'
-      const rendered = renderVersion(version, template, SAMPLE_CONTEXT, audience, SAMPLE_EXTRA)
+      const rendered = renderVersion(version, template, SAMPLE_CONTEXT, audience, sampleExtraFor(key))
       const status = await sendOnce({
         dedupeKey: `test:${key}:v${version.version_number}:${audience}:${Date.now()}`,
         emailType: 'template_test',

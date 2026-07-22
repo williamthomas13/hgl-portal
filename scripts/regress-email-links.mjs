@@ -63,7 +63,7 @@ try {
   const req = createRequire(import.meta.url)
   const { supabaseAdmin: db } = req(path.join(buildDir, 'supabase-admin.js'))
   const { renderVersion, renderDbEmail } = req(path.join(buildDir, 'comms-db-render.js'))
-  const { SAMPLE_CONTEXT, SAMPLE_EXTRA, VARIABLES } = req(path.join(buildDir, 'comms-variables.js'))
+  const { SAMPLE_CONTEXT, SAMPLE_EXTRA, VARIABLES, sampleExtraFor } = req(path.join(buildDir, 'comms-variables.js'))
   const { loadClassBundles, emailContext } = req(path.join(buildDir, 'lifecycle.js'))
 
   // --- 1. every template (live + drafts) renders with zero dead hrefs ------
@@ -80,7 +80,8 @@ try {
       continue
     }
     const tag = tpl.live ? 'live' : 'draft'
-    const r = renderVersion(tpl.version, tpl, SAMPLE_CONTEXT, 'parent', SAMPLE_EXTRA)
+    // PL-82: audit each template against ITS sample set, overrides included.
+    const r = renderVersion(tpl.version, tpl, SAMPLE_CONTEXT, 'parent', sampleExtraFor(tpl.template_key))
     const dead = deadHrefs(r.html)
     const unresolved = /\{[a-zA-Z][a-zA-Z0-9_]*\}/.test(r.subject)
     check(
