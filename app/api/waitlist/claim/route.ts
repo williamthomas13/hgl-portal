@@ -17,7 +17,8 @@ export async function GET(request: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
   if (!enrollmentId || !token || !verifyClaimToken(enrollmentId, token)) {
-    return NextResponse.json({ error: 'Invalid claim link.' }, { status: 400 })
+    // PL-70b: friendly landings for humans, never raw JSON.
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
 
   const { data: enrollment } = await supabase
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     .single()
 
   if (!enrollment) {
-    return NextResponse.json({ error: 'Enrollment not found.' }, { status: 404 })
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
   if (enrollment.payment_status === 'Paid') {
     return NextResponse.redirect(`${baseUrl}/success?already_paid=1`, 303)
@@ -37,15 +38,12 @@ export async function GET(request: Request) {
     !enrollment.waitlist_offer_expires_at ||
     new Date(enrollment.waitlist_offer_expires_at).getTime() <= Date.now()
   ) {
-    return NextResponse.json(
-      { error: 'This offer has expired. The spot has been passed to the next family in line.' },
-      { status: 410 }
-    )
+    return NextResponse.redirect(`${baseUrl}/link-help?reason=offer-expired`, 303)
   }
 
   const [bundle] = await loadClassBundles(enrollment.class_id)
   if (!bundle) {
-    return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
 
   /* eslint-disable @typescript-eslint/no-explicit-any */

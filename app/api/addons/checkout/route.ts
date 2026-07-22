@@ -19,20 +19,21 @@ export async function GET(request: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
   if (!enrollmentId || !token || !packageId || !verifyAddonToken(enrollmentId, token)) {
-    return NextResponse.json({ error: 'Invalid link.' }, { status: 400 })
+    // PL-70b: friendly landings for humans, never raw JSON.
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
 
   const bundles = await loadClassBundles()
   const bundle = bundles.find((b) => b.enrollments.some((e) => e.id === enrollmentId))
   const enrollment = bundle?.enrollments.find((e) => e.id === enrollmentId)
   if (!bundle || !enrollment) {
-    return NextResponse.json({ error: 'Enrollment not found.' }, { status: 404 })
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
   if (enrollment.addons.length > 0) {
     return NextResponse.redirect(`${baseUrl}/addons/${enrollmentId}?t=${token}`, 303)
   }
   if (localDate(bundle.timezone) >= bundle.firstSession) {
-    return NextResponse.json({ error: 'The pre-class offer has ended.' }, { status: 410 })
+    return NextResponse.redirect(`${baseUrl}/link-help?reason=addon-ended`, 303)
   }
 
   const { data: pkg } = await supabase
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
     .eq('active', true)
     .single()
   if (!pkg) {
-    return NextResponse.json({ error: 'Package not found.' }, { status: 404 })
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
 
   const session = await stripe.checkout.sessions.create({

@@ -24,14 +24,16 @@ export async function GET(request: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
   if (!enrollmentId || !token || !verifyResumeToken(enrollmentId, token)) {
-    return NextResponse.json({ error: 'Invalid link.' }, { status: 400 })
+    // PL-70b: humans hit invalid links (truncated URLs, forwards) — land
+    // them on help, never raw JSON.
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
 
   const bundles = await loadClassBundles()
   const bundle = bundles.find((b) => b.enrollments.some((e) => e.id === enrollmentId))
   const enrollment = bundle?.enrollments.find((e) => e.id === enrollmentId)
   if (!bundle || !enrollment) {
-    return NextResponse.json({ error: 'Registration not found.' }, { status: 404 })
+    return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
   if (bundle.status === 'cancelled') {
     // Cancelled class: never reopen a checkout (the enrollment was expired at

@@ -91,9 +91,9 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       classId: cls.id,
-      parentFirst: 'QA-PL55', parentLast: 'Parent',
+      parentFirst: 'QA-PL55-Parent', parentLast: 'Parent',
       parentEmail: 'billy+pl55qa@highergroundlearning.com',
-      studentFirst: 'QA-PL55', studentLast: 'Student',
+      studentFirst: 'QA-PL55-Student', studentLast: 'Student',
     }),
   })
   ;({ enrollmentId } = await reg.json())
@@ -131,11 +131,11 @@ try {
   // PL-54a: a waitlisted family must join the interest list at cancellation.
   const { data: wlFam } = await db
     .from('families')
-    .insert([{ parent_first_name: 'QA-PL54', parent_last_name: 'Waitlister', parent_email: 'billy+pl54wl@highergroundlearning.com' }])
+    .insert([{ parent_first_name: 'QA-PL54-Parent', parent_last_name: 'Waitlister', parent_email: 'billy+pl54wl@highergroundlearning.com' }])
     .select('id').single()
   const { data: wlStudent } = await db
     .from('students')
-    .insert([{ family_id: wlFam.id, first_name: 'QA-PL54', last_name: 'Student' }])
+    .insert([{ family_id: wlFam.id, first_name: 'QA-PL54-Student', last_name: 'Student' }])
     .select('id').single()
   await db.from('enrollments').insert([{ student_id: wlStudent.id, class_id: cls.id, payment_status: 'Waitlisted' }])
 
@@ -178,10 +178,10 @@ try {
 } finally {
   // --- cleanup ---------------------------------------------------------------
   await new Promise((r) => setTimeout(r, 1500))
-  const { data: student } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL55').maybeSingle()
+  const { data: student } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL55-Student').maybeSingle()
   // PL-54 fixtures
   await db.from('class_interest').delete().ilike('email', 'billy+pl54wl@%')
-  const { data: wlSt } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL54').maybeSingle()
+  const { data: wlSt } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL54-Student').maybeSingle()
   if (wlSt) {
     await db.from('enrollments').delete().eq('student_id', wlSt.id)
     await db.from('students').delete().eq('id', wlSt.id)

@@ -61,8 +61,8 @@ const reg = await fetch(`${BASE}/api/register`, {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     classId: cls.id,
-    parentFirst: 'QA-PL52', parentLast: 'Parent', parentEmail: 'qa-pl52@example.com',
-    studentFirst: 'QA-PL52', studentLast: 'Student',
+    parentFirst: 'QA-PL52-Parent', parentLast: 'Parent', parentEmail: 'qa-pl52@example.com',
+    studentFirst: 'QA-PL52-Student', studentLast: 'Student',
   }),
 })
 const { enrollmentId, error: regError } = await reg.json()
@@ -138,7 +138,7 @@ check('addon hours/price correct', addon && Number(addon.hours) === Number(pkg.h
 
 // --- cleanup ---------------------------------------------------------------
 await new Promise((r) => setTimeout(r, 2500)) // let after() work (comms pass, QBO) settle
-const { data: student } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL52').maybeSingle()
+const { data: student } = await db.from('students').select('id, family_id').ilike('first_name', 'QA-PL52-Student').maybeSingle()
 await db.from('email_sends').delete().eq('enrollment_id', enrollmentId)
 await db.from('qbo_sync_log').delete().eq('enrollment_id', enrollmentId)
 await db.from('enrollment_addons').delete().eq('enrollment_id', enrollmentId)

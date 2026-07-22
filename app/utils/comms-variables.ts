@@ -535,14 +535,14 @@ export function resolveVariables(
 export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   enrollmentId: '00000000-0000-4000-8000-000000000000',
   classId: '00000000-0000-4000-8000-000000000001',
-  calendarPageUrl: 'https://hgl-portal.vercel.app/classes/sample/calendar',
-  resumePaymentUrl: 'https://hgl-portal.vercel.app/api/resume-payment?e=sample',
+  calendarPageUrl: 'https://hgl-portal.vercel.app/test-link',
+  resumePaymentUrl: 'https://hgl-portal.vercel.app/test-link',
   portalUrl: 'https://hgl-portal.vercel.app/portal',
-  availabilityUrl: 'https://hgl-portal.vercel.app/availability/sample',
+  availabilityUrl: 'https://hgl-portal.vercel.app/test-link',
   diagnosticDueDate: '2026-09-04',
   addons: [{ name: '5-Hour Package', hours: 5, pricePaid: 600 }],
   marketingOptOut: false,
-  unsubscribeUrl: 'https://hgl-portal.vercel.app/api/unsubscribe?f=sample',
+  unsubscribeUrl: 'https://hgl-portal.vercel.app/test-link',
   parentFirstName: 'Alex',
   parentEmail: 'sample-parent@example.com',
   studentFirstName: 'Ana',
@@ -581,10 +581,10 @@ export const SAMPLE_EXTRA: ExtraVars = {
   changesBlock:
     '<p><strong>First day of class:</strong> now Saturday, 12 September 2026<br/><strong>Location:</strong> now Room 301</p>',
   upsellPackagesBlock:
-    '<p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/addons/sample" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">5 hours — save $150</a></p>',
+    '<p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">5 hours — save $50</a></p><p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">10 hours — save $250</a></p><p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">15 hours — save $525</a></p>',
   waitlistPosition: 2,
   claimDeadline: 'Thursday, 3 September, 4:00 PM',
-  claimLink: 'https://hgl-portal.vercel.app/api/waitlist/claim?e=sample',
+  claimLink: 'https://hgl-portal.vercel.app/test-link',
 
   // --- tutoring set ---------------------------------------------------------
   tutorName: 'Billy Thomas',
@@ -597,9 +597,9 @@ export const SAMPLE_EXTRA: ExtraVars = {
   monthTotalLine:
     '<p style="font-size:16px"><strong>Month total: $480.00</strong> — billed once you confirm, due by the end of this month.</p>',
   packageNote: '',
-  confirmLink: 'https://hgl-portal.vercel.app/tutoring/proposal/sample',
-  confirmOneTapLink: 'https://hgl-portal.vercel.app/tutoring/proposal/sample?confirm=1',
-  approveLink: 'https://hgl-portal.vercel.app/tutoring/approve/sample',
+  confirmLink: 'https://hgl-portal.vercel.app/test-link',
+  confirmOneTapLink: 'https://hgl-portal.vercel.app/test-link',
+  approveLink: 'https://hgl-portal.vercel.app/test-link',
   autoconfirmDays: 5,
   daysLeft: 3,
 
@@ -607,17 +607,17 @@ export const SAMPLE_EXTRA: ExtraVars = {
   invoiceReminderPrefix: '',
   invoiceTotal: '$480.00',
   invoiceDueDate: 'September 30',
-  invoiceUrl: 'https://invoice.stripe.com/i/sample',
+  invoiceUrl: 'https://hgl-portal.vercel.app/test-link',
   invoiceIntroBlock:
     '<p>Your invoice for September 2026 tutoring is ready: <strong>$480.00</strong>, due by <strong>September 30</strong>.</p>',
   autopayBlock:
-    '<p style="color:#64748b;font-size:13px">Prefer not to think about this each month? <a href="https://hgl-portal.vercel.app/tutoring/autopay/sample" style="color:#00AEEE">Set up autopay</a> and future invoices charge your saved card or bank account automatically.</p>',
+    '<p style="color:#64748b;font-size:13px">Prefer not to think about this each month? <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Set up autopay</a> and future invoices charge your saved card or bank account automatically.</p>',
 
   // T4 (payment failed) — attempt 3 of 3: retries exhausted, pay-now shown
   paymentFailBlock:
     "<p>The $480.00 charge for September 2026 tutoring didn't go through (attempt 3 of 3).</p><p><strong>We've stopped automatic retries.</strong> You can pay directly, or update your saved payment method:</p>",
   payButtonBlock:
-    '<p style="margin:24px 0"><a href="https://invoice.stripe.com/i/sample" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>',
+    '<p style="margin:24px 0"><a href="https://hgl-portal.vercel.app/test-link" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>',
 
   // T3 (schedule change)
   changeListBlock:
@@ -628,23 +628,23 @@ export const SAMPLE_EXTRA: ExtraVars = {
     "<p>Here are your options:</p><ol><li><strong>Convert to 1-on-1 tutoring.</strong> Ana would receive 6 hours of 1-on-1 SAT tutoring — the $450 you paid carries over in full.</li><li><strong>Full refund.</strong> We'll return the full $450 to your original payment method — just reply and we'll take care of it.</li></ol>",
 
   // T7/T8 links + lines
-  intakeFormLink: 'https://hgl-portal.vercel.app/intake/sample',
-  agreementsLink: 'https://hgl-portal.vercel.app/agreements/sample',
-  autopayLink: 'https://hgl-portal.vercel.app/tutoring/autopay/sample',
+  intakeFormLink: 'https://hgl-portal.vercel.app/test-link',
+  agreementsLink: 'https://hgl-portal.vercel.app/test-link',
+  autopayLink: 'https://hgl-portal.vercel.app/test-link',
   tutorContactLine:
     '<p><strong>Your tutor: Billy Thomas</strong> — <a href="mailto:billy@highergroundlearning.com" style="color:#00AEEE">billy@highergroundlearning.com</a></p>',
   locationBlock:
     '<p>Sessions happen online — Billy sends the meeting link before each session.</p>',
-  schedulePdfLink: 'https://hgl-portal.vercel.app/api/tutoring/schedule-pdf/sample',
+  schedulePdfLink: 'https://hgl-portal.vercel.app/test-link',
   contactBlock:
     '<p style="margin-top:24px;padding:12px 16px;background:#f1f5f9;border-radius:8px;color:#334155;font-size:14px">Questions, or want to handle this by hand? Email <a href="mailto:info@highergroundlearning.com" style="color:#00AEEE">info@highergroundlearning.com</a> or give us a call at <strong>+1 (505) 555-0100</strong> — replying to this email works too, and we\'ll take care of it for you.</p>',
 
   // PL-53/54 blocks
   hoursRemaining: '5',
   schedulingCtaBlock:
-    '<p><a href="https://hgl-portal.vercel.app/availability/sample" style="color:#00AEEE">Share your availability</a> and we\'ll propose times that fit your family\'s schedule.</p>',
+    '<p><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Share your availability</a> and we\'ll propose times that fit your family\'s schedule.</p>',
   classSummaryLine: '<strong>SIS SAT Prep</strong> — starts 5 September 2026',
-  registrationLink: 'https://hgl.co/sis-sat-prep',
+  registrationLink: 'https://hgl-portal.vercel.app/test-link',
 
   // --- PL-66: counselor / tutor / alert samples (PL-56 standard: read as a
   // real send, never as a bug) ------------------------------------------------
@@ -653,12 +653,12 @@ export const SAMPLE_EXTRA: ExtraVars = {
   digestClassListBlock:
     '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0"><p style="margin:0 0 4px"><strong>SAT Prep — starts September 5, 2026</strong></p><p style="margin:0;color:#475569">Enrolled: <strong>12 of 15</strong> (2 new since last update) · Waitlist: 1</p><p style="margin:6px 0 0;font-size:13px">Registration link to share: <a href="https://hgl-portal.vercel.app/register/sis-sat-prep-fall26">https://hgl-portal.vercel.app/register/sis-sat-prep-fall26</a></p></div>',
   digestFrequencyBlock:
-    '<p style="font-size:13px;color:#64748b">How often do you want these? <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=weekly" style="color:#64748b">Weekly</a> · <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=biweekly" style="color:#64748b">Every 2 weeks</a> · <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=monthly" style="color:#64748b">Monthly</a> · <a href="https://hgl-portal.vercel.app/api/digest-frequency?f=paused" style="color:#64748b">Pause</a></p>',
+    '<p style="font-size:13px;color:#64748b">How often do you want these? <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Weekly</a> · <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Every 2 weeks</a> · <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Monthly</a> · <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Pause</a></p>',
   deadlineCountdown: '3 days left',
   spotsLeftPhrase: '3 spots',
   enrolledCountLine: '12 of 15 enrolled',
   waitlistDepth: '2',
-  classroomFormLink: 'https://hgl-portal.vercel.app/classroom-request/sample',
+  classroomFormLink: 'https://hgl-portal.vercel.app/test-link',
   payPeriodRange: 'September 1 – September 15',
   timecardHours: '14.5',
   timecardLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
