@@ -44,6 +44,8 @@ type FamilyRow = {
   email: string | null
   activeTutoring: boolean
   hasTutoring: boolean
+  chaseRound: number
+  chaseRestartedAt: string | null
 }
 
 const fmtDay = (iso: string) =>
@@ -68,11 +70,13 @@ function FamilyRowView({
   acceptance,
   activeVersion,
   onChange,
+  highlighted,
 }: {
   family: FamilyRow
   acceptance: Acceptance | null
   activeVersion: number | null
   onChange: () => void
+  highlighted?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -104,7 +108,10 @@ function FamilyRowView({
     acceptance && activeVersion != null && acceptance.version != null && acceptance.version < activeVersion
 
   return (
-    <tr className="border-b border-gray-100 align-top">
+    <tr
+      id={`family-${family.id}`}
+      className={`border-b border-gray-100 align-top ${highlighted ? 'bg-amber-50' : ''}`}
+    >
       <td className="py-2 pr-3">
         <span className="font-semibold text-hgl-slate">{family.name}</span>
         {family.email && <span className="block text-xs text-gray-400">{family.email}</span>}
@@ -164,6 +171,27 @@ function FamilyRowView({
             disabled={busy}
             onConfirm={() => run({ action: 'send_link', family_id: family.id }, 'Link sent.')}
           />
+        )}
+        {/* PL-74: one click re-sends the agreement email and re-arms the
+            +3d/+7d automatic nudges; rounds are tracked so the escalation
+            can't become an infinite snooze. */}
+        {!acceptance && family.email && (
+          <ConfirmAction
+            label="Restart automatic nudges"
+            message={`Re-send the agreement to ${family.email} and re-arm the +3d/+7d chase (round ${family.chaseRound + 1})?`}
+            confirmLabel="Restart the chase"
+            className="text-amber-700 underline font-semibold"
+            confirmClassName="text-amber-700 font-semibold underline"
+            disabled={busy}
+            onConfirm={() =>
+              run({ action: 'restart_chase', family_id: family.id }, 'Chase restarted — nudges re-armed.')
+            }
+          />
+        )}
+        {family.chaseRestartedAt && (
+          <span className="block text-xs text-gray-400">
+            chase restarted {fmtDay(family.chaseRestartedAt)} (round {family.chaseRound + 1})
+          </span>
         )}
         {msg && <span className="block text-xs text-green-700">{msg}</span>}
         {err && <span className="block text-xs text-red-600">{err}</span>}
@@ -307,6 +335,18 @@ export default function AgreementsAdmin() {
   const [loaded, setLoaded] = useState(false)
   const [refreshSignal, setRefreshSignal] = useState(0)
 
+  // PL-74: the escalation alert's button deep-links here with ?family= — the
+  // row highlights and scrolls into view.
+  const [highlightFamilyId, setHighlightFamilyId] = useState<string | null>(null)
+  useEffect(() => {
+    setHighlightFamilyId(new URLSearchParams(window.location.search).get('family'))
+  }, [])
+  useEffect(() => {
+    if (!highlightFamilyId) return
+    const el = document.getElementById(`family-${highlightFamilyId}`)
+    if (el) el.scrollIntoView({ block: 'center' })
+  })
+
   const load = useCallback(async () => {
     const [tplRes, accRes, engRes] = await Promise.all([
       supabase
@@ -323,7 +363,9 @@ export default function AgreementsAdmin() {
         .order('accepted_at', { ascending: false }),
       supabase
         .from('tutoring_engagements')
-        .select('status, students!inner ( family_id, families ( id, parent_first_name, parent_last_name, parent_email ) )'),
+        .select(
+          'status, students!inner ( family_id, families ( id, parent_first_name, parent_last_name, parent_email, agreement_chase_round, agreement_chase_restarted_at ) )'
+        ),
     ])
 
     setTemplates((tplRes.data as Template[]) ?? [])
@@ -346,6 +388,8 @@ export default function AgreementsAdmin() {
         email: fam.parent_email ?? null,
         activeTutoring: false,
         hasTutoring: true,
+        chaseRound: Number(fam.agreement_chase_round ?? 0),
+        chaseRestartedAt: fam.agreement_chase_restarted_at ?? null,
       }
       if (e.status === 'active') row.activeTutoring = true
       map.set(fam.id, row)
@@ -358,7 +402,7 @@ export default function AgreementsAdmin() {
     if (orphanFamilyIds.length > 0) {
       const { data: extra } = await supabase
         .from('families')
-        .select('id, parent_first_name, parent_last_name, parent_email')
+        .select('id, parent_first_name, parent_last_name, parent_email, agreement_chase_round, agreement_chase_restarted_at')
         .in('id', orphanFamilyIds)
       for (const fam of (extra as any[]) ?? []) {
         map.set(fam.id, {
@@ -367,6 +411,8 @@ export default function AgreementsAdmin() {
           email: fam.parent_email ?? null,
           activeTutoring: false,
           hasTutoring: false,
+          chaseRound: Number(fam.agreement_chase_round ?? 0),
+          chaseRestartedAt: fam.agreement_chase_restarted_at ?? null,
         })
       }
     }
@@ -453,6 +499,7 @@ export default function AgreementsAdmin() {
                         acceptance={latestByFamily.get(f.id) ?? null}
                         activeVersion={activeVersion}
                         onChange={refresh}
+                        highlighted={f.id === highlightFamilyId}
                       />
                     ))}
                   </tbody>

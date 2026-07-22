@@ -47,6 +47,7 @@ export async function GET(req: Request) {
 
 type Body =
   | { action: 'send_link'; family_id: string }
+  | { action: 'restart_chase'; family_id: string }
   | { action: 'new_version'; body_markdown: string; effective_date?: string }
   | { action: 'retry_pdf'; acceptance_id: string }
 
@@ -62,11 +63,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    if (body.action === 'send_link') {
+    if (body.action === 'send_link' || body.action === 'restart_chase') {
       if (!body.family_id) return NextResponse.json({ error: 'Missing family id.' }, { status: 400 })
       const { data: family } = await supabase
         .from('families')
-        .select('id, parent_first_name, parent_email, billing_cc_emails, students ( first_name )')
+        .select('id, parent_first_name, parent_email, billing_cc_emails, agreement_chase_round, students ( first_name )')
         .eq('id', body.family_id)
         .maybeSingle()
       if (!family?.parent_email) {
@@ -107,6 +108,22 @@ export async function POST(req: Request) {
       })
       if (sent === 'failed') {
         return NextResponse.json({ error: 'Email send failed — check the comms dashboard.' }, { status: 500 })
+      }
+      if (body.action === 'restart_chase') {
+        // PL-74: re-arm the +3d/+7d cadence — the sweep anchors this round on
+        // the restart stamp and uses fresh :r{n} dedupe keys. Rounds are
+        // tracked so the next escalation can say plainly that another email
+        // round wasn't the answer.
+        const nextRound = Number(family.agreement_chase_round ?? 0) + 1
+        const { error: bumpError } = await supabase
+          .from('families')
+          .update({
+            agreement_chase_round: nextRound,
+            agreement_chase_restarted_at: new Date().toISOString(),
+          })
+          .eq('id', family.id)
+        if (bumpError) return NextResponse.json({ error: bumpError.message }, { status: 500 })
+        return NextResponse.json({ ok: true, round: nextRound })
       }
       return NextResponse.json({ ok: true })
     }

@@ -61,7 +61,9 @@ Scenario (Scarlett): a parent knows they don't want the offered spot, but class 
 
 The `[HGL Admin] New registration` alert's count string (`email.ts` ~line 1896: `` `${taken} / ${opts.minEnrollment} min / ${opts.capacity} cap` ``) takes a beat to parse — the first number is unlabeled. Change the compose to `"${taken} enrolled / ${opts.minEnrollment} min / ${opts.capacity} cap"`. Update everywhere that string renders (alert body/subject, roster report if it uses the same builder), the registered draft's sample data, and any golden-render fixtures. The alert is a PL-66 code-copy draft, so fix the **code twin** (that's what's on the wire) and reseed the draft to match.
 
-## PL-74 · Escalation alert: one-click "restart the chase" (decided, with guardrails)
+## PL-74 · Escalation alert: one-click "restart the chase" (decided, with guardrails) ✅
+
+> **Shipped, E2E 8/8.** The escalation alert's button now deep-links to `/admin/agreements?family={id}` (row highlights + scrolls into view) — never an in-email action. The row gains **"Restart automatic nudges"**: one click re-sends the agreement email (current AG registry copy) and re-arms the +3d/+7d cadence — rounds tracked on the family (migration applied), the sweep anchors each restarted round on its restart stamp with fresh `:r{n}` dedupe keys, and the panel shows "chase restarted {date} (round N)". If a restarted round also completes unsigned, the next alert says it plainly: **"Second automatic chase completed — this one really does need a call."** (round 3+ generalizes). No cap — the Ops Director can restart again; the alert just stops pretending. Acceptance still stops everything, verified across rounds.
 
 The `[HGL Admin] Policies still unsigned` escalation says "it's a phone-call matter now… link can be re-sent from /admin/agreements." Scarlett wants a button to restart the 3-nudge automatic chase so it doesn't *have* to become a phone call. Agreed, with two design guardrails:
 
