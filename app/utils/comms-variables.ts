@@ -128,6 +128,12 @@ export type ExtraVars = {
   /** The alert's composed data guts (pre-rendered HTML) — framing copy is
    *  editable in the template; the computed details ride this block. */
   alertDetailsBlock?: string
+
+  // --- PL-76: cancelled-class → tutoring conversion --------------------------
+  /** "$899.00" — the cancelled class's paid amount, now a tutoring credit. */
+  creditAmount?: string
+  /** Override for stub-context sends (CX-T): the family's tokenized page. */
+  availabilityLink?: string
 }
 
 type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVars) => string
@@ -443,7 +449,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   },
   availabilityLink: {
     description: "The family's signed share-your-availability page",
-    resolve: (c) => c.availabilityUrl,
+    resolve: (c, _a, e) => e.availabilityLink ?? c.availabilityUrl,
   },
   addonTutoringBlock: {
     description: '#0: the your-tutoring-hours paragraph — renders EMPTY for class-only enrollments',
@@ -503,6 +509,10 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'Alerts: the composed data details (framing is editable; these guts stay computed)',
     block: true,
     resolve: (_c, _a, e) => e.alertDetailsBlock ?? '',
+  },
+  creditAmount: {
+    description: 'PL-76: the cancelled class\'s paid amount as tutoring credit, e.g. "$899.00"',
+    resolve: (_c, _a, e) => e.creditAmount ?? '—',
   },
 
   // --- computed blocks ---------------------------------------------------------
@@ -723,4 +733,5 @@ export const SAMPLE_EXTRA: ExtraVars = {
   alertCounts: '3 enrolled / 8 min / 15 cap',
   alertDetailsBlock:
     '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 enrolled / 8 min / 15 cap</strong></p>',
+  creditAmount: '$899.00',
 }

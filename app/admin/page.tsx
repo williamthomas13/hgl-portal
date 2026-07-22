@@ -40,6 +40,8 @@ type Enrollment = {
   enrolled_at: string
   payment_status: string
   waitlist_declined_at: string | null
+  converted_to_tutoring_at: string | null
+  tutoring_credit_amount: number | null
   class_cancelled: boolean
   cancellation_outcome: string | null
   enrollment_addons: { hours: number }[] | null
@@ -357,6 +359,8 @@ export default function AdminDashboard() {
           enrolled_at,
           payment_status,
           waitlist_declined_at,
+          converted_to_tutoring_at,
+          tutoring_credit_amount,
           class_cancelled,
           cancellation_outcome,
           enrollment_addons ( hours ),
@@ -502,6 +506,26 @@ export default function AdminDashboard() {
   // Bookkeeping after a cancellation: how each paid family resolved it
   // (refunded / converted / credited) — recorded from the billy@ reply
   // thread, no Stripe automation (PHASE4_SPEC §12).
+  // PL-76: one click credits the paid amount as a Stripe customer balance
+  // and sends the CX-T availability request — the on-ramp to the standard
+  // tutoring pipeline. Idempotent server-side; a second click offers resend.
+  async function handleConvertToTutoring(en: Enrollment, studentName: string) {
+    const already = Boolean(en.converted_to_tutoring_at)
+    const msg = already
+      ? `${studentName} was already converted ($${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit). Re-send the availability email?`
+      : `Convert ${studentName} to 1-on-1 tutoring? The paid amount becomes a Stripe credit toward tutoring invoices, and the family gets the availability request email.`
+    if (!confirm(msg)) return
+    const res = await fetch('/api/admin/convert-to-tutoring', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enrollmentId: en.id, resend: already }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) alert(json.error ?? 'Conversion failed.')
+    else if (json.already && !already) alert('Already converted — nothing re-credited.')
+    fetchRosters()
+  }
+
   async function handleOutcome(enrollmentId: string, outcome: string) {
     const { error } = await supabase
       .from('enrollments')
@@ -1054,6 +1078,27 @@ export default function AdminDashboard() {
                           mark refunded
                         </button>
                       )}
+                      {en.class_cancelled &&
+                        ['Paid', 'Completed'].includes(en.payment_status) && (
+                          <button
+                            onClick={() =>
+                              handleConvertToTutoring(
+                                en,
+                                `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()
+                              )
+                            }
+                            title={
+                              en.converted_to_tutoring_at
+                                ? `Converted ${new Date(en.converted_to_tutoring_at).toLocaleDateString()} — $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit on the family's Stripe balance. Click to re-send the availability email.`
+                                : 'Credit the paid amount toward tutoring and send the availability request'
+                            }
+                            className={`ml-2 text-xs underline ${en.converted_to_tutoring_at ? 'text-emerald-700' : 'text-hgl-blue hover:text-hgl-slate'}`}
+                          >
+                            {en.converted_to_tutoring_at
+                              ? `✓ tutoring credit $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()}`
+                              : 'convert to 1-on-1 tutoring'}
+                          </button>
+                        )}
                       {en.class_cancelled &&
                         (en.payment_status === 'Paid' ||
                           en.payment_status === 'Completed' ||

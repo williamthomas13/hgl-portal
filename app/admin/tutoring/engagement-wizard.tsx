@@ -89,6 +89,30 @@ export default function EngagementWizard({
   const subject = subjects.find((s) => s.id === subjectId) ?? null
   const tutor = tutors.find((t) => t.id === tutorId) ?? null
 
+  // PL-76: surface a cancellation credit while proposing the first month —
+  // the family's cancelled-class payment rides their Stripe balance and
+  // future tutoring invoices consume it automatically.
+  const [conversionCredit, setConversionCredit] = useState<number | null>(null)
+  useEffect(() => {
+    setConversionCredit(null)
+    const familyId = students.find((x) => x.id === studentId)?.families?.id
+    if (!familyId) return
+    let stale = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('enrollments')
+        .select('tutoring_credit_amount, students!inner ( family_id )')
+        .eq('students.family_id', familyId)
+        .not('converted_to_tutoring_at', 'is', null)
+      if (stale) return
+      const total = (data ?? []).reduce((sum, r) => sum + Number(r.tutoring_credit_amount ?? 0), 0)
+      setConversionCredit(total > 0 ? total : null)
+    })()
+    return () => {
+      stale = true
+    }
+  }, [studentId, students])
+
   const filteredStudents = useMemo(() => {
     const q = studentFilter.trim().toLowerCase()
     if (!q) return students
@@ -424,6 +448,14 @@ export default function EngagementWizard({
                 return s ? `${s.first_name} ${s.last_name} — ${familyLabel(s.families)}` : 'Selected student'
               })()}
             </span>
+            {conversionCredit != null && (
+              <span
+                className="text-xs bg-emerald-100 text-emerald-800 rounded-full px-2 py-0.5 font-semibold"
+                title="Cancellation credit on the family's Stripe balance — tutoring invoices consume it automatically"
+              >
+                ${conversionCredit.toLocaleString()} cancellation credit
+              </span>
+            )}
             <button
               onClick={() => {
                 setStudentId('')

@@ -68,6 +68,35 @@ export function scheduleHtml(blocks: StudentScheduleBlock[]): string {
 const firstNames = (blocks: StudentScheduleBlock[]) =>
   [...new Set(blocks.map((b) => b.studentFirst))].join(' & ')
 
+// PL-76: the cancelled-class → 1-on-1 conversion on-ramp. Warm and short —
+// the family already chose tutoring in their CX reply; this just gets their
+// availability so the standard pipeline (wizard → approval → welcome) takes
+// over. Sent from the PL-50 configured contact.
+export function cxTutoringStartEmail(opts: {
+  parentFirst: string | null
+  studentFirst: string
+  classLabel: string
+  creditAmount: string // "$899.00"
+  availabilityLink: string
+  contact: ContactInfo
+}): { subject: string; html: string } {
+  const subject = `Let's get ${opts.studentFirst}'s 1-on-1 tutoring going`
+  const html = wrap(
+    `<p>Hi ${opts.parentFirst ?? 'there'},</p>
+     <p>Wonderful — you chose 1-on-1 tutoring for ${opts.studentFirst}. Your ${opts.classLabel}
+     payment (<strong>${opts.creditAmount}</strong>) is applied as credit toward these sessions,
+     so there's nothing to pay now.</p>
+     <p>One quick step: share when ${opts.studentFirst} is usually available, and we'll propose
+     times that fit your family.</p>
+     <p style="margin:24px 0"><a href="${opts.availabilityLink}" style="background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Share ${opts.studentFirst}'s availability</a></p>
+     <p style="color:#64748b;font-size:13px">Prefer to talk it through? Just reply — we'll set
+     everything up together.</p>
+     ${contactBlockHtml(opts.contact)}`,
+    { preheader: `Your ${opts.classLabel} payment carries over — pick times that fit.`, footer: footerT() }
+  )
+  return { subject, html }
+}
+
 export function t1ProposalEmail(opts: {
   monthLabel: string // "September 2026"
   blocks: StudentScheduleBlock[]

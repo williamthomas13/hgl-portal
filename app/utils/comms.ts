@@ -72,6 +72,8 @@ export function templateMetaFor(
       return { key: 'AG_NUDGE', role: 'parent' }
     case 'tutor_schedule_notice': // PL-66: tutor-facing T3 sibling
       return { key: 'T3_TUTOR_NOTICE', role: 'instructor' }
+    case 'cx_tutoring_start': // PL-76: cancelled-class → tutoring conversion
+      return { key: 'CX_TUTORING_START', role: 'parent' }
     case 'tutoring_upsell':
       return { key: 'E9_UPSELL', role: 'parent' }
     case 'waitlist_confirmation':
@@ -163,6 +165,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   AG_NUDGE: 'AG-N — Agreement nudge (automatic chase)',
   // PL-66: classroom-request re-nudges get their own keys (CR1 history stays
   // under CR_CLASSROOM_REQUEST); tutor T3 sibling is new
+  CX_TUTORING_START: 'CX-T — Tutoring conversion (availability request)',
   CR_CLASSROOM_NUDGE_2: 'CR2 — Classroom request re-nudge',
   CR_CLASSROOM_NUDGE_3: 'CR3 — Classroom request (last call)',
   T3_TUTOR_NOTICE: 'T3-T — Schedule change notice (tutor)',

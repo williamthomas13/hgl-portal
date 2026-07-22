@@ -1430,4 +1430,31 @@ Sessions cancelled inside 24 hours and no-shows are on the card on purpose — y
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,
   },
+
+  // ---------------------------------------------------------------------------
+  // PL-76: cancelled-class → tutoring conversion on-ramp (from the PL-50
+  // configured contact; the availability link is the PL-53 family page).
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'CX_TUTORING_START',
+    display_name: 'CX-T — Tutoring conversion (availability request)',
+    sequence_number: 'CX-T',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Let's get {studentFirstName}'s 1-on-1 tutoring going",
+    preheader: 'Your {className} payment carries over — pick times that fit.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Wonderful — you chose 1-on-1 tutoring for {studentFirstName}. Your {className} payment (**{creditAmount}**) is applied as credit toward these sessions, so there's nothing to pay now.
+
+One quick step: share when {studentFirstName} is usually available, and we'll propose times that fit your family.
+
+[button:Share {studentFirstName}'s availability]({availabilityLink})
+
+Prefer to talk it through? Just reply — we'll set everything up together.
+
+{contactBlock}`,
+  },
 ]
