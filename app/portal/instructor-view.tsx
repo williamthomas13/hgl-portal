@@ -7,6 +7,8 @@ import { supabaseAdmin } from '../utils/supabase-admin'
 import MessageClass from './message-class'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
+import CommsTimeline, { type TimelineItem } from './comms-timeline'
+import { TEMPLATE_LABELS } from '../utils/comms'
 
 // Instructor view (PHASE4_SPEC §5): own classes with the session calendar,
 // enrollment count vs min/capacity, Synap group link, and full-intake rosters
@@ -30,7 +32,7 @@ export default async function InstructorView({
       .select(
         `
         id, status, class_type, delivery_mode, capacity, min_enrollment,
-        start_date, default_location, synap_group,
+        start_date, default_location, synap_group, registration_close_date,
         schools ( name, nickname ),
         instructors!inner ( email ),
         sessions ( id, session_date, start_time, end_time, location ),
@@ -95,6 +97,47 @@ export default async function InstructorView({
     : { data: [] as ScoreRow[] }
 
   const today = new Date().toLocaleDateString('en-CA')
+
+  // PL-77: family-comms timeline — sent from email_sends, upcoming from the
+  // projector's scheduled rows (same table, status-distinguished). Grouped
+  // per email step per day so a 10-family class reads as one line per email.
+  const classIds = (classes as any[]).map((c) => c.id)
+  const { data: commsRows } = classIds.length
+    ? await supabaseAdmin
+        .from('email_sends')
+        .select('id, class_id, template_key, status, sent_at, scheduled_for, recipient_role, is_test')
+        .in('class_id', classIds)
+        .in('recipient_role', ['parent', 'student'])
+        .order('scheduled_for', { ascending: true })
+    : { data: [] as any[] }
+  const timelineByClass = new Map<string, TimelineItem[]>()
+  {
+    const groups = new Map<string, { item: TimelineItem; count: number }>()
+    for (const r of (commsRows as any[]) ?? []) {
+      if (r.is_test) continue
+      const state: TimelineItem['state'] =
+        r.status === 'cancelled' ? 'cancelled' : ['scheduled', 'held'].includes(r.status) ? 'upcoming' : 'sent'
+      const at = r.sent_at ?? r.scheduled_for
+      const day = (at ?? '').slice(0, 10)
+      const key = `${r.class_id}|${r.template_key}|${state}|${day}`
+      const label = TEMPLATE_LABELS[r.template_key] ?? r.template_key
+      const when = at
+        ? new Date(at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+          (state === 'upcoming' ? ' (scheduled)' : '')
+        : ''
+      const existing = groups.get(key)
+      if (existing) existing.count++
+      else groups.set(key, { item: { previewId: r.id, label, when, sortKey: at ?? '', state, recipients: 1 }, count: 1 })
+    }
+    for (const [key, g] of groups) {
+      const classId = key.split('|')[0]
+      g.item.recipients = g.count
+      const list = timelineByClass.get(classId) ?? []
+      list.push(g.item)
+      timelineByClass.set(classId, list)
+    }
+    for (const list of timelineByClass.values()) list.sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+  }
 
   return (
     <div className="space-y-6">
@@ -165,12 +208,23 @@ export default async function InstructorView({
                 )}
               </div>
               <div className="text-right">
+                {/* PL-77/PL-73: the live count in the house format */}
                 <div className="text-lg font-bold text-hgl-slate">
-                  {paidCount} <span className="text-gray-400 font-normal">/ {c.capacity} enrolled</span>
+                  {paidCount} enrolled{' '}
+                  <span className="text-gray-400 font-normal">
+                    / {minEnrollment} min / {c.capacity} cap
+                  </span>
                 </div>
                 <div className={`text-xs font-semibold ${paidCount >= minEnrollment ? 'text-green-700' : 'text-amber-700'}`}>
-                  minimum {minEnrollment}
+                  {paidCount >= minEnrollment ? 'minimum met' : `below minimum (${minEnrollment})`}
                 </div>
+                {(() => {
+                  const regClose =
+                    c.registration_close_date ?? sessions[0]?.session_date ?? c.start_date
+                  return today <= regClose && c.status !== 'cancelled' ? (
+                    <div className="text-xs text-gray-500">registration closes {formatDate(regClose)}</div>
+                  ) : null
+                })()}
               </div>
             </div>
 
@@ -188,6 +242,16 @@ export default async function InstructorView({
                 </div>
               </details>
             )}
+
+            {/* PL-77: what your families have been told (and what's coming) */}
+            <details className="mb-3">
+              <summary className="text-sm font-semibold text-hgl-blue cursor-pointer">
+                Family emails ({(timelineByClass.get(c.id) ?? []).length}) — sent &amp; upcoming
+              </summary>
+              <div className="mt-2">
+                <CommsTimeline items={timelineByClass.get(c.id) ?? []} />
+              </div>
+            </details>
 
             {active.length > 0 ? (
               <table className="w-full text-sm border border-gray-200 rounded">
