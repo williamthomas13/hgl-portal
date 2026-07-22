@@ -144,6 +144,12 @@ function classroomValue(ctx: EnrollmentEmailContext): string {
   return /^https?:\/\//i.test(loc) ? `<a href="${loc}">${loc}</a>` : loc
 }
 
+// PL-67: first name only for mid-sentence instructor mentions (#6 onward) —
+// the introducing emails (#4, LR) keep the full name.
+function instructorFirstValue(ctx: EnrollmentEmailContext): string {
+  return ctx.instructorName?.trim().split(/\s+/)[0] || 'the instructor'
+}
+
 function synapUrlValue(ctx: EnrollmentEmailContext): string {
   const v = ctx.synapGroup
   // PL-60: never a dead "#" button — until the class's Synap group is set,
@@ -166,6 +172,33 @@ export const VARIABLES: Record<string, VariableDef> = {
   instructorName: {
     description: 'Instructor (or "to be announced")',
     resolve: (c) => c.instructorName ?? 'to be announced',
+  },
+  // PL-67a: mid-sentence mentions read better as "Jordan" than "Jordan
+  // Rivera" — mirror of tutorFirstName.
+  instructorFirstName: {
+    description: 'Instructor first name (or "the instructor")',
+    resolve: (c) => instructorFirstValue(c),
+  },
+  // PL-67b: the #6 opening clause. The auxiliary verb shifts with BOTH the
+  // audience and whether the class is over at send time, so it is one
+  // composed variable rather than nested conditionals.
+  takingAdvantagePhrase: {
+    description:
+      '#6 clause, audience- and tense-aware: ongoing → "Ana has been taking advantage of their class time with Jordan" (student send: "you have been… your…"); once the last session is past → "Ana was able to take advantage…" / "you were able to take advantage…"',
+    resolve: (c, a) => {
+      const first = instructorFirstValue(c)
+      const ended = new Date().toISOString().slice(0, 10) > (c.lastSession ?? '')
+      const who = a === 'student' ? 'you' : c.studentFirstName
+      const poss = a === 'student' ? 'your' : 'their'
+      const verb = ended
+        ? a === 'student'
+          ? 'were able to take advantage'
+          : 'was able to take advantage'
+        : a === 'student'
+          ? 'have been taking advantage'
+          : 'has been taking advantage'
+      return `${who} ${verb} of ${poss} class time with ${first}`
+    },
   },
 
   // --- class ----------------------------------------------------------------

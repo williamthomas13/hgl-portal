@@ -426,7 +426,7 @@ P.S. If {you_still_havent_or_name_still_hasnt} taken the first diagnostic test, 
     footer_note: null,
     body_markdown: `Dear {recipientFirstName},
 
-I sincerely hope that {you_have_or_name_has} been taking advantage of {your_or_their} class time with {instructorName} to the fullest.
+I sincerely hope that {takingAdvantagePhrase} to the fullest.
 
 As a friendly reminder, there is still one more diagnostic test {for_you_or_for_name} to take!
 

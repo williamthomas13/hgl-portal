@@ -656,6 +656,27 @@ export function classDetailsEmail(ctx: EnrollmentEmailContext, audience: Audienc
 // #5 — Location Reminder · 1 day before, 11:00 · both (pronouns) · info@ · T
 // ---------------------------------------------------------------------------
 
+// PL-67: audience- and tense-aware #6 opening clause (twin of the registry's
+// {takingAdvantagePhrase} variable) — "has been taking advantage" only makes
+// sense while class time remains; after the last session it reads "was able
+// to take advantage". First name only: later mentions of the instructor
+// drop the surname (#4/LR introduce with the full name).
+function takingAdvantagePhrase(ctx: EnrollmentEmailContext, audience: Audience): string {
+  const first = ctx.instructorName?.trim().split(/\s+/)[0] || 'the instructor'
+  const ended = new Date().toISOString().slice(0, 10) > (ctx.lastSession ?? '')
+  const isStudent = audience === 'student'
+  const who = isStudent ? 'you' : ctx.studentFirstName
+  const poss = isStudent ? 'your' : 'their'
+  const verb = ended
+    ? isStudent
+      ? 'were able to take advantage'
+      : 'was able to take advantage'
+    : isStudent
+      ? 'have been taking advantage'
+      : 'has been taking advantage'
+  return `${who} ${verb} of ${poss} class time with ${first}`
+}
+
 // PL-58: delivery-mode-aware location phrasing (twin of the registry's
 // {classLocationPhrase} variable).
 function classLocationPhrase(ctx: EnrollmentEmailContext): string {
@@ -707,9 +728,7 @@ export function secondDiagnosticEmail(ctx: EnrollmentEmailContext, audience: Aud
     html: wrap(
       `
       <p>Dear ${recipientFirstName(ctx, audience)},</p>
-      <p>I sincerely hope that ${isStudent ? 'you have' : `${s} has`} been taking advantage of
-      ${isStudent ? 'your' : 'their'} class time with ${ctx.instructorName ?? 'the instructor'} to
-      the fullest.</p>
+      <p>I sincerely hope that ${takingAdvantagePhrase(ctx, audience)} to the fullest.</p>
       <p>As a friendly reminder, there is still one more diagnostic test
       ${isStudent ? 'for you' : `for ${s}`} to take!</p>
       <p>Just like before, ${isStudent ? 'you' : s} can click
