@@ -10,6 +10,7 @@ import {
 } from '../../utils/tutoring-stripe';
 import { renderEmail } from '../../utils/comms-db-render';
 import { runEnrollmentCommsPass } from '../../utils/comms-inline';
+import { sendInstructorMilestones } from '../../utils/instructor-comms';
 import {
   lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
@@ -299,6 +300,15 @@ export async function POST(req: Request) {
           body: note.body,
           enrollmentId: paidEnrollmentId,
         });
+
+        // PL-78: instant milestone pings (min met / class full) the moment a
+        // payment crosses the line — PL-51 event-driven pattern; dedupe keys
+        // make webhook retries no-ops. Gated on comms_enabled inside.
+        after(() =>
+          sendInstructorMilestones(bundle).catch((e) =>
+            console.error('instructor milestone ping failed (cron backstop):', e)
+          )
+        );
 
         // Late registration test: would the pre-start emails (#2/#3) already
         // have fired? If so, the LR welcome replaces the whole confirmation

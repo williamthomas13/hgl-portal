@@ -1457,4 +1457,70 @@ Prefer to talk it through? Just reply — we'll set everything up together.
 
 {contactBlock}`,
   },
+
+  // ---------------------------------------------------------------------------
+  // PL-78: instructors stop being out of the loop. Three sends, all gated on
+  // the instructor's comms_enabled switch (nothing sends while it's off);
+  // code-copy drafts like every registration — twins send until flipped.
+  // ---------------------------------------------------------------------------
+  {
+    template_key: 'IN_WELCOME',
+    display_name: 'IN — Instructor class assignment welcome',
+    sequence_number: 'IN-W',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "You're teaching {className} — everything about it lives here",
+    preheader: 'Count, calendar, and what families have been told — one page.',
+    footer_note: null,
+    body_markdown: `Hi {tutorFirstName},
+
+You're the instructor for **{className}** — here's your setup in one email.
+
+{classSummaryLine}
+
+Current enrollment: **{instructorCountsLine}**.
+
+{scheduleBlock}
+
+**Your class page** has the live count, the session calendar, and a timeline of every email your families receive (so you never have to guess what they've been told):
+
+[button:Open your class page]({instructorViewLink})
+
+Want the sessions in your own calendar? They're already being added for you — and the [subscribe link]({calendarLink}) works in any calendar app as a backup.
+
+One line on what to expect: you'll get a weekly enrollment update while registration is open, and an FYI copy whenever we send your families logistics emails. Nothing in those needs a reply — they're there so you're never out of the loop.`,
+  },
+  {
+    template_key: 'IN_DIGEST',
+    display_name: 'IN — Instructor enrollment digest / milestone ping',
+    sequence_number: 'IN-D',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{className}: {instructorCountsLine}',
+    preheader: 'Your weekly enrollment picture.',
+    footer_note: null,
+    body_markdown: `Hi {tutorFirstName},
+
+{digestMilestoneLine}
+
+**{className}**: {instructorCountsLine} · registration closes {registrationCloseDate} · first session {firstSessionDate}.
+
+[button:Open your class page]({instructorViewLink})`,
+  },
+  {
+    template_key: 'IN_FYI',
+    display_name: 'IN — Instructor FYI copy (family logistics email)',
+    sequence_number: 'IN-F',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'FYI: {fyiOriginalSubject}',
+    preheader: 'Copy of what your families just received — nothing to do.',
+    footer_note: null,
+    body_markdown: `**FYI — this was just sent to your {className} families. Nothing for you to do.**
+
+{familyEmailBlock}`,
+  },
 ]

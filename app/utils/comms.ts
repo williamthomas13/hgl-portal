@@ -74,6 +74,12 @@ export function templateMetaFor(
       return { key: 'T3_TUTOR_NOTICE', role: 'instructor' }
     case 'cx_tutoring_start': // PL-76: cancelled-class → tutoring conversion
       return { key: 'CX_TUTORING_START', role: 'parent' }
+    case 'instructor_welcome': // PL-78
+      return { key: 'IN_WELCOME', role: 'instructor' }
+    case 'instructor_digest':
+      return { key: 'IN_DIGEST', role: 'instructor' }
+    case 'instructor_fyi':
+      return { key: 'IN_FYI', role: 'instructor' }
     case 'tutoring_upsell':
       return { key: 'E9_UPSELL', role: 'parent' }
     case 'waitlist_confirmation':
@@ -169,6 +175,9 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   CR_CLASSROOM_NUDGE_2: 'CR2 — Classroom request re-nudge',
   CR_CLASSROOM_NUDGE_3: 'CR3 — Classroom request (last call)',
   T3_TUTOR_NOTICE: 'T3-T — Schedule change notice (tutor)',
+  IN_WELCOME: 'IN — Instructor class assignment welcome',
+  IN_DIGEST: 'IN — Instructor enrollment digest / milestone ping',
+  IN_FYI: 'IN — Instructor FYI copy (family logistics email)',
   // PL-66: internal [HGL Admin] alert family (subject shown WITHOUT the
   // [HGL Admin] prefix — the sender adds it)
   AL_REGISTRATION: 'AL — New registration',
@@ -256,7 +265,10 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
     name: 'Counselors & schools',
     match: (k) => /^CD_|^FP_|^CR_/.test(k) || k === 'CX_C_CANCELLATION',
   },
-  { name: 'Tutors & staff', match: (k) => k === 'T5_TIMECARD_READY' || k === 'T3_TUTOR_NOTICE' },
+  {
+    name: 'Tutors & staff',
+    match: (k) => k === 'T5_TIMECARD_READY' || k === 'T3_TUTOR_NOTICE' || /^IN_/.test(k),
+  },
   {
     name: 'Internal admin alerts',
     match: (k) => /^AL_|^ADMIN_/.test(k),

@@ -8,6 +8,11 @@ import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers } from '../../../utils/waitlist-offers'
+import {
+  maybeSendInstructorFyi,
+  sweepInstructorComms,
+  syncInstructorClassCalendar,
+} from '../../../utils/instructor-comms'
 import { contactBlockHtml, contactFrom, loadContactInfo } from '../../../utils/tutoring-emails'
 import { cancelScheduledForClass, projectScheduledSends } from '../../../utils/comms-projector'
 import { createHash } from 'crypto'
@@ -150,6 +155,9 @@ async function sendToAudiences(opts: {
   counters: Counters
   payload?: Record<string, unknown>
   dedupeSuffix?: string
+  /** PL-78: when set, the assigned instructor gets ONE FYI copy of this
+   *  step's parent render (per-class-per-day dedupe makes it one per batch). */
+  fyi?: { bundle: ClassBundle; templateKey: string }
 }) {
   const { type, renderers, ctx, counters } = opts
   const suffix = opts.dedupeSuffix ? `:${opts.dedupeSuffix}` : ''
@@ -172,7 +180,12 @@ async function sendToAudiences(opts: {
       payload: opts.payload,
       bodySnapshotId: versionId,
     })
-    if (status === 'sent') bump(counters, type)
+    if (status === 'sent') {
+      bump(counters, type)
+      if (opts.fyi && t.audience === 'parent') {
+        await maybeSendInstructorFyi(opts.fyi.bundle, opts.fyi.templateKey, subject, html)
+      }
+    }
   }
 }
 
@@ -493,6 +506,14 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
         ctx: emailContext(bundle, e),
         counters: c,
         payload: step.type === 'class_details' ? classDetailsSnapshot(bundle) : undefined,
+        // PL-78: logistics-only FYI copies (Scarlett's pick — #4 and #5 here;
+        // SU and CX hook at their own send sites).
+        fyi:
+          step.type === 'class_details'
+            ? { bundle, templateKey: 'E4_CLASS_DETAILS' }
+            : step.type === 'location_reminder'
+              ? { bundle, templateKey: 'E5_LOCATION' }
+              : undefined,
       })
     }
   }
@@ -685,6 +706,7 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
       ctx: emailContext(bundle, e),
       counters: c,
       dedupeSuffix: hash,
+      fyi: { bundle, templateKey: 'SU_SCHEDULE_UPDATE' },
     })
   }
 
@@ -1476,6 +1498,13 @@ export async function GET(req: Request) {
     if (proj.cancelled > 0) counters.comms_cancelled = (counters.comms_cancelled ?? 0) + proj.cancelled
 
     await sweepPaymentReminders(bundle, counters)
+    // PL-78/79: welcome backfill, Monday digest, closed ping, calendar
+    // converge — everything gated on instructors.comms_enabled and deduped,
+    // so the hourly re-run IS the backfill mechanism.
+    const inres = await sweepInstructorComms(bundle)
+    if (inres.welcomed > 0) counters.instructor_welcomed = (counters.instructor_welcomed ?? 0) + inres.welcomed
+    if (inres.digested > 0) counters.instructor_digested = (counters.instructor_digested ?? 0) + inres.digested
+    await syncInstructorClassCalendar(bundle)
     await sweepCompletion(bundle, counters)
     await sweepThankYou(bundle, counters)
     await sweepUpsell(bundle, counters, packages.pre)

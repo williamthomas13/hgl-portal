@@ -134,6 +134,20 @@ export type ExtraVars = {
   creditAmount?: string
   /** Override for stub-context sends (CX-T): the family's tokenized page. */
   availabilityLink?: string
+
+  // --- PL-78: instructor emails (IN_WELCOME / IN_DIGEST / IN_FYI) -------------
+  /** PL-73 format: "6 enrolled / 8 min / 15 cap". */
+  instructorCountsLine?: string
+  /** The instructor's own class page in the portal. */
+  instructorViewLink?: string
+  /** "August 20, 2026" — while the registration window is open. */
+  registrationCloseDate?: string
+  /** Milestone variant line for IN_DIGEST ('' on quiet weekly sends). */
+  digestMilestoneLine?: string
+  /** IN_FYI: the family email's original subject. */
+  fyiOriginalSubject?: string
+  /** IN_FYI: the family email's rendered body (extracted, pre-wrapped HTML). */
+  familyEmailBlock?: string
 }
 
 type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVars) => string
@@ -514,6 +528,33 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'PL-76: the cancelled class\'s paid amount as tutoring credit, e.g. "$899.00"',
     resolve: (_c, _a, e) => e.creditAmount ?? '—',
   },
+  // --- PL-78: instructor emails ---------------------------------------------
+  instructorCountsLine: {
+    description: 'Live count, PL-73 format: "6 enrolled / 8 min / 15 cap"',
+    resolve: (_c, _a, e) => e.instructorCountsLine ?? '—',
+  },
+  instructorViewLink: {
+    description: "The instructor's class page in the portal",
+    resolve: (c, _a, e) => e.instructorViewLink ?? c.portalUrl,
+  },
+  registrationCloseDate: {
+    description: 'When the registration window closes, written out',
+    resolve: (_c, _a, e) => e.registrationCloseDate ?? '—',
+  },
+  digestMilestoneLine: {
+    description: 'IN_DIGEST milestone: "" weekly · minimum-met / class-full / registration-closed lines on the instant pings',
+    block: true,
+    resolve: (_c, _a, e) => e.digestMilestoneLine ?? '',
+  },
+  fyiOriginalSubject: {
+    description: "IN_FYI: the family email's original subject",
+    resolve: (_c, _a, e) => e.fyiOriginalSubject ?? '—',
+  },
+  familyEmailBlock: {
+    description: "IN_FYI: the family email's rendered content (computed — exactly what families received)",
+    block: true,
+    resolve: (_c, _a, e) => e.familyEmailBlock ?? '',
+  },
 
   // --- computed blocks ---------------------------------------------------------
   orderSummaryBlock: {
@@ -734,4 +775,12 @@ export const SAMPLE_EXTRA: ExtraVars = {
   alertDetailsBlock:
     '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 enrolled / 8 min / 15 cap</strong></p>',
   creditAmount: '$899.00',
+  instructorCountsLine: '6 enrolled / 8 min / 15 cap',
+  instructorViewLink: 'https://hgl-portal.vercel.app/portal?view=instructor',
+  registrationCloseDate: 'September 4, 2026',
+  digestMilestoneLine:
+    '<p><strong>🎉 The class just reached its minimum — it officially runs.</strong></p>',
+  fyiOriginalSubject: 'Classroom location for SIS SAT Prep',
+  familyEmailBlock:
+    '<p>Hey Alex,</p><p>One last reminder: the first day of class is September 5, 2026 from 10:00 AM to 12:00 PM.</p><p><strong>All classes take place in Room 204</strong></p>',
 }

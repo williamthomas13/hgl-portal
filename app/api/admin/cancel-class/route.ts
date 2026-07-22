@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { renderRegistered } from '../../../utils/comms-registered'
+import { maybeSendInstructorFyi } from '../../../utils/instructor-comms'
 import { createSupabaseServerClient } from '../../../utils/supabase-server'
 import {
   cancellationCounselorEmail,
@@ -198,7 +199,14 @@ export async function POST(request: Request) {
         subject,
         html,
       })
-      if (status === 'sent') cxSent++
+      if (status === 'sent') {
+        cxSent++
+        // PL-78: the instructor gets ONE FYI copy of the cancellation batch
+        // (per-class-per-day dedupe inside; gated on comms_enabled).
+        if (t.audience === 'parent') {
+          await maybeSendInstructorFyi(bundle, 'CX_FAMILY', subject, html)
+        }
+      }
     }
   }
 

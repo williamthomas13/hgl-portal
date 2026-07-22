@@ -13,6 +13,7 @@ export type Instructor = {
   email: string
   name: string | null
   default_meeting_link: string | null
+  comms_enabled: boolean
 }
 
 export default function InstructorsPanel({
@@ -63,6 +64,26 @@ export default function InstructorsPanel({
     else onChange()
   }
 
+  // PL-78: the explicit opt-in switch — flipping ON backfills the welcome
+  // email + calendar events for current assignments (server-side, idempotent).
+  async function handleCommsToggle(i: Instructor) {
+    const enabling = !i.comms_enabled
+    const msg = enabling
+      ? `Turn ON class emails + calendar for ${i.name ?? i.email}? They'll get the welcome email for current classes now, weekly enrollment updates, FYI copies of family logistics emails, and sessions on their Google Calendar.`
+      : `Turn OFF class emails + calendar for ${i.name ?? i.email}? Future sends stop and their upcoming session events are removed.`
+    if (!confirm(msg)) return
+    const res = await fetch('/api/admin/instructor-comms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instructorId: i.id, enabled: enabling }),
+    })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      alert(json.error ?? 'Update failed.')
+    }
+    onChange()
+  }
+
   async function handleRemove(i: Instructor) {
     if (!confirm(`Remove instructor ${i.name ?? i.email}?\n\nExisting classes keep their own locations; only the stored default link goes away.`)) return
     const { error } = await supabase.from('instructors').delete().eq('id', i.id)
@@ -82,7 +103,7 @@ export default function InstructorsPanel({
         <table className="min-w-full divide-y divide-gray-200 mb-6">
           <thead className="bg-gray-100">
             <tr>
-              {['Name', 'Email', 'Default meeting link', ''].map((h) => (
+              {['Name', 'Email', 'Default meeting link', 'Class emails', ''].map((h) => (
                 <th key={h} className="px-4 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -103,6 +124,17 @@ export default function InstructorsPanel({
                     className="ml-2 text-xs text-gray-500 underline hover:text-hgl-blue"
                   >
                     edit
+                  </button>
+                </td>
+                <td className="px-4 py-2">
+                  <button
+                    onClick={() => handleCommsToggle(i)}
+                    title="PL-78: weekly enrollment digest, milestone pings, FYI copies of family logistics emails, and sessions on their Google Calendar"
+                    className={`text-xs font-bold px-2 py-1 rounded ${
+                      i.comms_enabled ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {i.comms_enabled ? 'on' : 'off'}
                   </button>
                 </td>
                 <td className="px-4 py-2 text-right">
