@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "smoke:public": "node scripts/smoke-public-pages.mjs",
-    "regress:links": "node scripts/regress-email-links.mjs"
+    "regress:links": "node scripts/regress-email-links.mjs",
+    "regress:pronouns": "node scripts/regress-pronouns.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

@@ -18,6 +18,8 @@ export type RegistrantInput = {
   studentEmail: string | null
   schoolId: string | null
   graduatingYear: string | null
+  /** PL-69: 'she_her' | 'he_him' | 'they_them' | null — always optional. */
+  pronouns?: string | null
 }
 
 export async function upsertFamilyAndStudent(
@@ -64,7 +66,7 @@ export async function upsertFamilyAndStudent(
   // student email, else by name); otherwise create a sibling.
   const { data: familyStudents } = await supabase
     .from('students')
-    .select('id, first_name, last_name, student_email, school_id, graduating_year')
+    .select('id, first_name, last_name, student_email, school_id, graduating_year, pronouns')
     .eq('family_id', familyId)
 
   const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
@@ -82,6 +84,8 @@ export async function upsertFamilyAndStudent(
     if (input.schoolId && !match.school_id) updates.school_id = input.schoolId
     if (input.graduatingYear && !match.graduating_year)
       updates.graduating_year = input.graduatingYear
+    // PL-69: fill in pronouns when newly learned; never erase what we had.
+    if (input.pronouns && !match.pronouns) updates.pronouns = input.pronouns
     if (Object.keys(updates).length > 0) {
       await supabase.from('students').update(updates).eq('id', match.id)
     }
@@ -98,6 +102,7 @@ export async function upsertFamilyAndStudent(
         student_email: input.studentEmail,
         school_id: input.schoolId,
         graduating_year: input.graduatingYear,
+        pronouns: input.pronouns ?? null,
       },
     ])
     .select('id')

@@ -58,6 +58,7 @@ export type EnrollmentRow = {
   waitlist_offer_sent_at: string | null
   waitlist_offer_expires_at: string | null
   familyId: string
+  pronouns: string | null
   marketingOptOut: boolean
   parentFirstName: string
   parentEmail: string
@@ -194,7 +195,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       waitlist_offer_sent_at, waitlist_offer_expires_at,
       enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
       students (
-        first_name, last_name, student_email, graduating_year,
+        first_name, last_name, student_email, graduating_year, pronouns,
         families ( id, parent_first_name, parent_email, marketing_opt_out )
       )
     )
@@ -235,6 +236,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           waitlist_offer_sent_at: e.waitlist_offer_sent_at,
           waitlist_offer_expires_at: e.waitlist_offer_expires_at,
           familyId: family.id,
+          pronouns: student.pronouns ?? null,
           marketingOptOut: family.marketing_opt_out ?? false,
           parentFirstName: family.parent_first_name,
           parentEmail: family.parent_email,
@@ -323,6 +325,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     studentFirstName: e.studentFirstName,
     studentLastName: e.studentLastName,
     studentEmail: e.studentEmail,
+    studentPronouns: e.pronouns,
     graduatingYear: e.graduatingYear,
     accommodations: e.accommodations,
     previousScores: e.previousScores,

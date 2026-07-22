@@ -63,6 +63,7 @@ function SectionTitle({ n, title, hint }: { n: number; title: string; hint?: str
 export default function IntakeForm({ token, prefill }: { token: string; prefill: IntakePrefill }) {
   const [f, setF] = useState({
     studentFirst: prefill.studentFirst,
+    pronouns: '',
     studentLast: prefill.studentLast,
     studentPhone: '',
     studentEmail: '',
@@ -164,6 +165,15 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
         </Field>
         <Field label="Grade">
           <input className={inputCls} placeholder="e.g. 11th" value={f.grade} onChange={(e) => set('grade')(e.target.value)} />
+        </Field>
+        {/* PL-69: optional, no explanatory text; unset keeps neutral wording. */}
+        <Field label={`${f.studentFirst.trim() || "Student"}'s pronouns`}>
+          <select className={inputCls} value={f.pronouns} onChange={(e) => set('pronouns')(e.target.value)}>
+            <option value=""></option>
+            <option value="she_her">she/her</option>
+            <option value="he_him">he/him</option>
+            <option value="they_them">they/them</option>
+          </select>
         </Field>
       </div>
 

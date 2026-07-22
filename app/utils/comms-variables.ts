@@ -160,6 +160,20 @@ type VariableDef = {
 
 const s = (ctx: EnrollmentEmailContext) => ctx.studentFirstName
 
+// PL-69: the one student-pronoun source (mirrors studentPronounSet in
+// email.ts for the code twins). Unset resolves to exactly the they/them copy
+// every email used before pronouns existed. Verb agreement rides along.
+function pn(ctx: EnrollmentEmailContext) {
+  switch (ctx.studentPronouns) {
+    case 'she_her':
+      return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't" }
+    case 'he_him':
+      return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't" }
+    default:
+      return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't" }
+  }
+}
+
 function classroomValue(ctx: EnrollmentEmailContext): string {
   const loc = ctx.defaultLocation
   if (!loc) return 'TBD'
@@ -256,7 +270,8 @@ export const VARIABLES: Record<string, VariableDef> = {
       const first = instructorFirstValue(c)
       const ended = new Date().toISOString().slice(0, 10) > (c.lastSession ?? '')
       const who = a === 'student' ? 'you' : c.studentFirstName
-      const poss = a === 'student' ? 'your' : 'their'
+      // PL-69: possessive follows the student's pronouns (unset → their).
+      const poss = a === 'student' ? 'your' : pn(c).poss
       const verb = ended
         ? a === 'student'
           ? 'were able to take advantage'
@@ -367,8 +382,14 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: `"your" ↔ "Ana's"`,
     resolve: (c, a) => (a === 'student' ? 'your' : `${s(c)}'s`),
   },
-  you_or_they: { description: '"you" ↔ "they"', resolve: (_c, a) => (a === 'student' ? 'you' : 'they') },
-  your_or_their: { description: '"your" ↔ "their"', resolve: (_c, a) => (a === 'student' ? 'your' : 'their') },
+  you_or_they: {
+    description: '"you" ↔ the student\'s pronoun (she / he / they; unset → they)',
+    resolve: (c, a) => (a === 'student' ? 'you' : pn(c).subj),
+  },
+  your_or_their: {
+    description: '"your" ↔ the student\'s possessive (her / his / their; unset → their)',
+    resolve: (c, a) => (a === 'student' ? 'your' : pn(c).poss),
+  },
   youre_or_name_is: {
     description: `"You're" ↔ "Ana is"`,
     resolve: (c, a) => (a === 'student' ? "You're" : `${s(c)} is`),
@@ -378,8 +399,29 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (c, a) => (a === 'student' ? 'you have' : `${s(c)} has`),
   },
   you_have_or_they_have: {
-    description: '"you have" ↔ "they have" (when the student was already named)',
-    resolve: (_c, a) => (a === 'student' ? 'you have' : 'they have'),
+    description: '"you have" ↔ "she has / he has / they have" (verb agrees; unset → they have)',
+    resolve: (c, a) => (a === 'student' ? 'you have' : `${pn(c).subj} ${pn(c).have}`),
+  },
+  you_need_or_they_need: {
+    description: '"you need" ↔ "she needs / he needs / they need" (verb agrees; unset → they need)',
+    resolve: (c, a) => (a === 'student' ? 'you need' : `${pn(c).subj} ${pn(c).need}`),
+  },
+  you_dont_or_they_dont: {
+    description: `"you don't" ↔ "she doesn't / he doesn't / they don't" (verb agrees; unset → they don't)`,
+    resolve: (c, a) => (a === 'student' ? "you don't" : `${pn(c).subj} ${pn(c).dont}`),
+  },
+  // PL-69: standalone pronoun variables (student's, regardless of audience).
+  she_he_they: {
+    description: "The student's subject pronoun: she / he / they (unset → they)",
+    resolve: (c) => pn(c).subj,
+  },
+  her_him_them: {
+    description: "The student's object pronoun: her / him / them (unset → them)",
+    resolve: (c) => pn(c).obj,
+  },
+  her_his_their: {
+    description: "The student's possessive: her / his / their (unset → their)",
+    resolve: (c) => pn(c).poss,
   },
   Your_or_names: {
     description: `Sentence-start "Your" ↔ "Ana's"`,
@@ -650,6 +692,7 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   parentEmail: 'sample-parent@example.com',
   studentFirstName: 'Ana',
   studentLastName: 'García',
+  studentPronouns: 'she_her',
   studentEmail: 'sample-student@example.com',
   graduatingYear: '2028',
   accommodations: 'Extended time (approved)',

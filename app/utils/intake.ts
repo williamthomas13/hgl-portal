@@ -68,6 +68,8 @@ export type IntakeSubmission = {
   studentEmail: string | null
   school: string | null
   grade: string | null
+  /** PL-69: 'she_her' | 'he_him' | 'they_them' | null — always optional. */
+  pronouns: string | null
   // Guardian(s)
   guardianFirst: string
   guardianLast: string
@@ -166,7 +168,7 @@ export async function applyIntakeSubmission(
   // learned without erasing what we had.
   const { data: familyStudents } = await supabase
     .from('students')
-    .select('id, first_name, last_name, student_email, grade_level')
+    .select('id, first_name, last_name, student_email, grade_level, pronouns')
     .eq('family_id', familyId)
 
   const match = (familyStudents ?? []).find(
@@ -180,6 +182,7 @@ export async function applyIntakeSubmission(
     const updates: Record<string, string> = {}
     if (sub.studentEmail && !match.student_email) updates.student_email = sub.studentEmail
     if (sub.grade && !match.grade_level) updates.grade_level = sub.grade
+    if (sub.pronouns && !match.pronouns) updates.pronouns = sub.pronouns
     // PL-36: newest family word wins for phone + needs (these change; the
     // family just told us the current truth).
     if (sub.studentPhone) updates.student_phone = sub.studentPhone
@@ -198,6 +201,7 @@ export async function applyIntakeSubmission(
           last_name: sub.studentLast,
           student_email: sub.studentEmail,
           grade_level: sub.grade,
+          pronouns: sub.pronouns,
           student_phone: sub.studentPhone,
           special_needs: sub.specialNeeds,
         },

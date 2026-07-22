@@ -17,6 +17,8 @@ export type TutoringStub = {
   parentEmail?: string
   studentFirstName?: string
   studentLastName?: string
+  /** PL-69: she_her | he_him | they_them (unset → they/them copy). */
+  studentPronouns?: string | null
   /** What {calendarLink} should resolve to for this email (e.g. the family
    *  ICS landing) — defaults to the parent portal. */
   calendarPageUrl?: string
@@ -46,6 +48,7 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
     studentFirstName: stub.studentFirstName ?? 'your student',
     studentLastName: stub.studentLastName ?? '',
     studentEmail: null,
+    studentPronouns: stub.studentPronouns ?? null,
     graduatingYear: null,
     accommodations: null,
     previousScores: null,

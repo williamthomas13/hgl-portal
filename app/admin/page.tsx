@@ -52,6 +52,7 @@ type Enrollment = {
     first_name: string
     last_name: string
     student_email: string | null
+    pronouns: string | null
     families: {
       parent_email: string
       parent_first_name: string
@@ -371,6 +372,7 @@ export default function AdminDashboard() {
             first_name,
             last_name,
             student_email,
+            pronouns,
             families ( parent_email, parent_first_name, parent_last_name )
           )
         )
@@ -524,6 +526,17 @@ export default function AdminDashboard() {
     if (!res.ok) alert(json.error ?? 'Conversion failed.')
     else if (json.already && !already) alert('Already converted — nothing re-credited.')
     fetchRosters()
+  }
+
+  // PL-69: the Ops Director sets pronouns when she learns them (on a call,
+  // in a reply). Optional; unset keeps the neutral they/them email copy.
+  async function handlePronouns(studentId: string, value: string) {
+    const { error } = await supabase
+      .from('students')
+      .update({ pronouns: value || null })
+      .eq('id', studentId)
+    if (error) alert('Error saving pronouns: ' + error.message)
+    else fetchRosters()
   }
 
   async function handleOutcome(enrollmentId: string, outcome: string) {
@@ -1029,6 +1042,19 @@ export default function AdminDashboard() {
                   <tr key={en.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                       {en.students?.first_name} {en.students?.last_name}
+                      {en.students?.id && (
+                        <select
+                          value={en.students.pronouns ?? ''}
+                          onChange={(e) => handlePronouns(en.students!.id, e.target.value)}
+                          title={`${en.students.first_name}'s pronouns — used in family emails; blank keeps the neutral wording`}
+                          className="ml-2 border border-gray-200 rounded text-[11px] text-gray-500 bg-white px-1 py-0.5 align-middle"
+                        >
+                          <option value="">pronouns…</option>
+                          <option value="she_her">she/her</option>
+                          <option value="he_him">he/him</option>
+                          <option value="they_them">they/them</option>
+                        </select>
+                      )}
                       {/* PL-53d: continuing to 1-on-1 (add-on bought, or a
                           tutoring schedule already exists) */}
                       {((en.enrollment_addons ?? []).length > 0 ||

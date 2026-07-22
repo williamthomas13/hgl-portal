@@ -57,6 +57,8 @@ export type EnrollmentEmailContext = {
   studentFirstName: string
   studentLastName: string
   studentEmail: string | null
+  /** PL-69: she_her | he_him | they_them | null (unset → they/them). */
+  studentPronouns: string | null
   graduatingYear: string | null
   accommodations: string | null
   previousScores: string | null
@@ -212,6 +214,27 @@ export function wrap(body: string, opts: WrapOpts) {
 
 export type Rendered = { subject: string; html: string; from?: string }
 
+// PL-69: the one student-pronoun source. Unset resolves to exactly the
+// they/them copy every email used before pronouns existed — nothing ever
+// blocks on the field. Verb agreement rides along (she has / they have).
+export function studentPronounSet(ctx: Pick<EnrollmentEmailContext, 'studentPronouns'>): {
+  subj: string
+  obj: string
+  poss: string
+  have: string
+  need: string
+  dont: string
+} {
+  switch (ctx.studentPronouns) {
+    case 'she_her':
+      return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't" }
+    case 'he_him':
+      return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't" }
+    default:
+      return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't" }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // #0-P — Registration Confirmation (parent) · instant · info@ · T
 // ---------------------------------------------------------------------------
@@ -335,13 +358,13 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
   const preheader =
     n === 4
       ? `After ${expiryDate}, the spot returns to the pool.`
-      : 'Complete your payment to save their place in class'
+      : `Complete your payment to save ${studentPronounSet(ctx).poss} place in class`
 
   const bodies: Record<number, string> = {
     1: `
       <p>Hi ${ctx.parentFirstName},</p>
       <p>We saw that you filled out the registration form for ${ctx.studentFirstName} for the
-      ${ctx.className} class but didn't proceed to complete payment and confirm their registration.
+      ${ctx.className} class but didn't proceed to complete payment and confirm ${studentPronounSet(ctx).poss} registration.
       If that was on purpose, no worries – ${ctx.studentFirstName} is welcome to register any time
       until the upcoming registration deadline if you change your mind.</p>
       <p>If you <em>did</em> intend to register for the class, we'd like to kindly ask you to
@@ -397,13 +420,13 @@ function thankYouBody(ctx: EnrollmentEmailContext) {
       <p>There are a lot of ways that you can choose to invest in ${s}'s future, and we're really
       honored that you've chosen Higher Ground Learning as one of them.</p>
       <p>Getting ready for university can be a challenging time for students, so by registering
-      ${s} for our class you've given them one less thing to worry about.</p>
+      ${s} for our class you've given ${studentPronounSet(ctx).obj} one less thing to worry about.</p>
       <p>I know that, personally, I never would have even gone to university if it weren't for one
       person...</p>
       <p>My amazing mom.</p>
       <p>I certainly wouldn't have gone on to earn a Master's degree and definitely wouldn't be
       here right now, writing you this email.</p>
-      <p>We don't take lightly the chance to work with ${s} and to help them achieve their best
+      <p>We don't take lightly the chance to work with ${s} and to help ${studentPronounSet(ctx).obj} achieve ${studentPronounSet(ctx).poss} best
       score on the test. And we really appreciate your vote of confidence in us.</p>
       <p>So here's what happens next.</p>
       <p>In the days before the course starts, you and ${s} will receive the necessary course
@@ -640,8 +663,8 @@ export function classDetailsEmail(ctx: EnrollmentEmailContext, audience: Audienc
       <p>All the best,</p>
       <p>Higher Ground Learning</p>
       <p>P.S. If ${isStudent ? "you haven't" : `${s} hasn't`} found a moment to take the diagnostic
-      test yet, ${isStudent ? 'you' : 'they'} can still do so by clicking below. If
-      ${isStudent ? 'you have' : 'they have'} already completed the test, no need to let us know.
+      test yet, ${isStudent ? 'you' : studentPronounSet(ctx).subj} can still do so by clicking below. If
+      ${isStudent ? 'you have' : `${studentPronounSet(ctx).subj} ${studentPronounSet(ctx).have}`} already completed the test, no need to let us know.
       We surely have it.</p>
       ${synap ? button('Access Diagnostic Tests', synap) : ''}
     `,
@@ -667,7 +690,7 @@ function takingAdvantagePhrase(ctx: EnrollmentEmailContext, audience: Audience):
   const ended = new Date().toISOString().slice(0, 10) > (ctx.lastSession ?? '')
   const isStudent = audience === 'student'
   const who = isStudent ? 'you' : ctx.studentFirstName
-  const poss = isStudent ? 'your' : 'their'
+  const poss = isStudent ? 'your' : studentPronounSet(ctx).poss
   const verb = ended
     ? isStudent
       ? 'were able to take advantage'
@@ -759,8 +782,8 @@ export function reviewRequestEmail(ctx: EnrollmentEmailContext): Rendered {
       `
       <p>Hi again ${ctx.parentFirstName},</p>
       <p>Now that the ${ctx.className} class has wrapped up, ${s} should be feeling a lot more
-      confident and ready to do their best on the exam!</p>
-      <p>Congrats to ${s} for their hard work and commitment to improvement.</p>
+      confident and ready to do ${studentPronounSet(ctx).poss} best on the exam!</p>
+      <p>Congrats to ${s} for ${studentPronounSet(ctx).poss} hard work and commitment to improvement.</p>
       <p>${ctx.parentFirstName}, I know it's a lot to ask, but if you have something nice to say
       and you don't mind publicly sharing it, we'd be really grateful if you could leave us a
       review here:</p>
@@ -801,7 +824,7 @@ export function tutoringOfferEmail(
       <p>Hello again ${recipientFirstName(ctx, audience)}!</p>
       <p>I hope that the recent ${ctx.classType} class with ${instructor} was useful for ${s}
       (and maybe even a little bit fun).</p>
-      <p>The idea behind our classes is that ${s} should now have the tools they need to be
+      <p>The idea behind our classes is that ${s} should now have the tools ${studentPronounSet(ctx).subj} ${studentPronounSet(ctx).need} to be
       successful on the test. Of course, we know that some students will continue to study and
       refine their skills for a future test.</p>
       <p>With that in mind, we offer students who have completed one of our classes discounted
@@ -811,8 +834,8 @@ export function tutoringOfferEmail(
       <a href="${DISCOUNT_URL}">highergroundprep.com/discount</a> by using the password
       BESTSCORE.</strong></p>
       <p>If you sign up, we'll get input from ${instructor} to make sure that ${s}'s transition
-      from the class to live online tutoring is seamless and they don't lose any momentum with
-      their test prep before the real test.</p>
+      from the class to live online tutoring is seamless and ${studentPronounSet(ctx).subj} ${studentPronounSet(ctx).dont} lose any momentum with
+      ${studentPronounSet(ctx).poss} test prep before the real test.</p>
       <p>We'll also get in touch with you and/or ${s} to make sure that the sessions are timed
       perfectly for whenever you need them to be.</p>
       <p>If you have any questions, feel free to respond to this email!</p>

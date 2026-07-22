@@ -93,6 +93,8 @@ export default function RegistrationPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null)
+  // PL-69: live label — "Ana's pronouns" once the name is typed.
+  const [studentFirstTyped, setStudentFirstTyped] = useState('')
   // Add-on step: shown between the form and Stripe checkout.
   const [packages, setPackages] = useState<TutoringPackage[]>([])
   const [pendingCheckout, setPendingCheckout] = useState<{
@@ -142,6 +144,7 @@ export default function RegistrationPage() {
           studentFirst: formData.get('studentFirst'),
           studentLast: formData.get('studentLast'),
           studentEmail: formData.get('studentEmail'),
+          pronouns: formData.get('pronouns'),
           graduatingYear: formData.get('graduatingYear'),
           accommodations: formData.get('accommodations'),
           previousScores: formData.get('previousScores'),
@@ -226,6 +229,7 @@ export default function RegistrationPage() {
           studentFirst: formData.get('studentFirst'),
           studentLast: formData.get('studentLast'),
           studentEmail: formData.get('studentEmail'),
+          pronouns: formData.get('pronouns'),
           graduatingYear: formData.get('graduatingYear'),
           accommodations: formData.get('accommodations'),
           previousScores: formData.get('previousScores'),
@@ -443,7 +447,7 @@ export default function RegistrationPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-gray-600">First Name</label>
-                <input type="text" name="studentFirst" required className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                <input type="text" name="studentFirst" required onChange={(e) => setStudentFirstTyped(e.target.value)} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
               </div>
               <div>
                 <label className="block text-sm text-gray-600">Last Name</label>
@@ -454,6 +458,24 @@ export default function RegistrationPage() {
                   Student Email <span className="text-gray-400">(for class reminders & Synap access)</span>
                 </label>
                 <input type="email" name="studentEmail" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+              </div>
+              <div className="col-span-2">
+                {/* PL-69: optional, no explanatory text — unset simply keeps
+                    the neutral wording in emails. */}
+                <label className="block text-sm text-gray-600">
+                  {studentFirstTyped.trim() ? `${studentFirstTyped.trim()}'s pronouns` : "Student's pronouns"}{' '}
+                  <span className="text-gray-400">(optional)</span>
+                </label>
+                <select
+                  name="pronouns"
+                  defaultValue=""
+                  className="mt-1 w-full border border-gray-300 rounded p-2 bg-white focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
+                >
+                  <option value=""></option>
+                  <option value="she_her">she/her</option>
+                  <option value="he_him">he/him</option>
+                  <option value="they_them">they/them</option>
+                </select>
               </div>
               <div className="col-span-2">
                 <label className="block text-sm text-gray-600">

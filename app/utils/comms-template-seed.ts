@@ -97,11 +97,11 @@ P.S. Here's what other students have had to say about the class:
     from_identity: 'info',
     category: 'transactional',
     subject: "{studentFirstName}'s registration for {className} isn't confirmed yet",
-    preheader: 'Complete your payment to save their place in class',
+    preheader: 'Complete your payment to save {her_his_their} place in class',
     footer_note: null,
     body_markdown: `Hi {parentFirstName},
 
-We saw that you filled out the registration form for {studentFirstName} for the {className} class but didn't proceed to complete payment and confirm their registration. If that was on purpose, no worries – {studentFirstName} is welcome to register any time until the upcoming registration deadline if you change your mind.
+We saw that you filled out the registration form for {studentFirstName} for the {className} class but didn't proceed to complete payment and confirm {her_his_their} registration. If that was on purpose, no worries – {studentFirstName} is welcome to register any time until the upcoming registration deadline if you change your mind.
 
 If you *did* intend to register for the class, we'd like to kindly ask you to complete the registration by making the payment here:
 
@@ -119,7 +119,7 @@ P.S. Do you have a question about the class? It's probably answered in our FAQs 
     from_identity: 'info',
     category: 'transactional',
     subject: "{studentFirstName}'s registration for {className} isn't confirmed yet",
-    preheader: 'Complete your payment to save their place in class',
+    preheader: 'Complete your payment to save {her_his_their} place in class',
     footer_note: null,
     body_markdown: `Hi {parentFirstName},
 
@@ -141,7 +141,7 @@ P.S. FAQs: {faqLinks}`,
     from_identity: 'info',
     category: 'transactional',
     subject: "{studentFirstName}'s registration for {className} isn't confirmed yet",
-    preheader: 'Complete your payment to save their place in class',
+    preheader: 'Complete your payment to save {her_his_their} place in class',
     footer_note: null,
     body_markdown: `Hi {parentFirstName},
 
@@ -187,7 +187,7 @@ You registered {studentFirstName} for the {className} class and I just wanted to
 
 There are a lot of ways that you can choose to invest in {studentFirstName}'s future, and we're really honored that you've chosen Higher Ground Learning as one of them.
 
-Getting ready for university can be a challenging time for students, so by registering {studentFirstName} for our class you've given them one less thing to worry about.
+Getting ready for university can be a challenging time for students, so by registering {studentFirstName} for our class you've given {her_him_them} one less thing to worry about.
 
 I know that, personally, I never would have even gone to university if it weren't for one person...
 
@@ -195,7 +195,7 @@ My amazing mom.
 
 I certainly wouldn't have gone on to earn a Master's degree and definitely wouldn't be here right now, writing you this email.
 
-We don't take lightly the chance to work with {studentFirstName} and to help them achieve their best score on the test. And we really appreciate your vote of confidence in us.
+We don't take lightly the chance to work with {studentFirstName} and to help {her_him_them} achieve {her_his_their} best score on the test. And we really appreciate your vote of confidence in us.
 
 So here's what happens next.
 
@@ -449,9 +449,9 @@ Higher Ground Learning`,
       "...we're a small company and we have a theory that a nice review from someone like you could really help us to help more students.",
     body_markdown: `Hi again {parentFirstName},
 
-Now that the {className} class has wrapped up, {studentFirstName} should be feeling a lot more confident and ready to do their best on the exam!
+Now that the {className} class has wrapped up, {studentFirstName} should be feeling a lot more confident and ready to do {her_his_their} best on the exam!
 
-Congrats to {studentFirstName} for their hard work and commitment to improvement.
+Congrats to {studentFirstName} for {her_his_their} hard work and commitment to improvement.
 
 {parentFirstName}, I know it's a lot to ask, but if you have something nice to say and you don't mind publicly sharing it, we'd be really grateful if you could leave us a review here:
 
@@ -480,13 +480,13 @@ William Thomas
 
 I hope that the recent {classType} class with {instructorName} was useful for {studentFirstName} (and maybe even a little bit fun).
 
-The idea behind our classes is that {studentFirstName} should now have the tools they need to be successful on the test. Of course, we know that some students will continue to study and refine their skills for a future test.
+The idea behind our classes is that {studentFirstName} should now have the tools {you_need_or_they_need} to be successful on the test. Of course, we know that some students will continue to study and refine their skills for a future test.
 
 With that in mind, we offer students who have completed one of our classes discounted 1-on-1 tutoring hours. We don't expect that this option is appropriate for all students, but we provide it as a service in case {studentFirstName} wants to continue studying with us.
 
 **You can access discounted tutoring at [highergroundprep.com/discount]({discountLink}) by using the password BESTSCORE.**
 
-If you sign up, we'll get input from {instructorName} to make sure that {studentFirstName}'s transition from the class to live online tutoring is seamless and they don't lose any momentum with their test prep before the real test.
+If you sign up, we'll get input from {instructorName} to make sure that {studentFirstName}'s transition from the class to live online tutoring is seamless and {you_dont_or_they_dont} lose any momentum with {your_or_their} test prep before the real test.
 
 We'll also get in touch with you and/or {studentFirstName} to make sure that the sessions are timed perfectly for whenever you need them to be.
 
