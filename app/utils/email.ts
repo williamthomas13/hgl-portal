@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { classLocationTailText } from './comms-variables'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 import { templateMetaFor, type RecipientRole } from './comms'
@@ -634,7 +635,7 @@ export function classDetailsEmail(ctx: EnrollmentEmailContext, audience: Audienc
       <p>The ${ctx.className} class ${isStudent ? '' : `for ${s} `}is coming up soon! (The first
       day is ${formatDate(ctx.firstSession)} from ${classTimeHtml(ctx)}.)</p>
       <p>The instructor will be ${ctx.instructorName}, and <strong>all classes will take place
-      here: ${classroomHtml(ctx)}</strong>.</p>
+      ${classLocationTailText(ctx.defaultLocation, ctx.deliveryMode)}</strong>.</p>
       <p>We're looking forward to seeing ${isStudent ? 'you' : s} in class!</p>
       <p>All the best,</p>
       <p>Higher Ground Learning</p>
@@ -701,7 +702,7 @@ export function locationReminderEmail(ctx: EnrollmentEmailContext, audience: Aud
       ${isStudent ? "you don't" : `${s} doesn't`} miss the first day of ${ctx.className}!</p>
       <p>So here you go...one last reminder: the first day of class is
       ${formatDate(ctx.firstSession)} from ${classTimeHtml(ctx)}.</p>
-      <p><strong>All classes take place here: ${classroomHtml(ctx)}</strong></p>
+      <p><strong>All classes take place ${classLocationTailText(ctx.defaultLocation, ctx.deliveryMode)}</strong></p>
       <p>Looking forward to seeing ${isStudent ? 'you' : s} in class!</p>
       <p>P.S. If ${isStudent ? "you still haven't" : `${s} still hasn't`} taken the first
       diagnostic test, don't worry. It's still available
@@ -1083,7 +1084,7 @@ export function lateRegistrationWelcomeEmail(
 
   const classDetailsBlock =
     ctx.instructorName && ctx.defaultLocation
-      ? `The instructor will be ${ctx.instructorName}, and classes take place at ${classroomHtml(ctx)}.`
+      ? `The instructor will be ${ctx.instructorName}, and classes take place ${classLocationTailText(ctx.defaultLocation, ctx.deliveryMode)}.`
       : `We'll send classroom and instructor details as soon as they're confirmed.`
 
   const addonLines = ctx.addons
@@ -1120,7 +1121,8 @@ export function lateRegistrationWelcomeEmail(
       (Reading &amp; Writing, then Math), best done back-to-back in one sitting. The instructor
       uses the results to shape the course, so please complete it <strong>before the first
       class</strong> if at all possible.</p>
-      <p>To get in: click below, hit "register," and provide some quick basic info.</p>
+      <p>To get ${isStudent ? 'you' : s} in: click below, hit "register," and provide some quick
+      basic info${isStudent ? '' : ` — you can do it together or just pass this along to ${s}`}.</p>
       ${synap ? button('Take the diagnostic test', synap) : ''}
       <p><strong>2. When and where.</strong><br/>
       Classes run ${classTimeHtml(ctx)}. ${classDetailsBlock}</p>

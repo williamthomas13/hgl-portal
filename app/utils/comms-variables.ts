@@ -144,14 +144,41 @@ function classroomValue(ctx: EnrollmentEmailContext): string {
   return /^https?:\/\//i.test(loc) ? `<a href="${loc}">${loc}</a>` : loc
 }
 
-// PL-68: the sentence #4 v2 / #5 v3 render around {classroom} ("…take place
-// in {classroom}"), exported so every place the location is ENTERED (admin
-// class form, counselor classroom-request reply) can show a live
-// "Families will see:" preview from the same source as the emails. If the
-// email wording changes again, change it here and the previews follow.
-export function classLocationSentence(location: string | null | undefined): string {
-  const room = location?.trim() || 'TBD'
-  return `All classes will take place in ${room}.`
+// PL-68/PL-71: the ONE mode-aware "where classes happen" builder — #4 v3,
+// #5 v4, LR's {classDetailsBlock}, and the entry previews all render from
+// here, so the wording can never drift between the emails and the hints.
+//   in-person → "in Room 204"
+//   online    → "online — here's the meeting link: <link>"
+export function classLocationTailText(
+  location: string | null | undefined,
+  deliveryMode: string | null | undefined
+): string {
+  const loc = location?.trim()
+  if (deliveryMode === 'online') {
+    return loc
+      ? `online — here's the meeting link: ${loc}`
+      : `online — we'll send the meeting link before class`
+  }
+  return `in ${loc || 'TBD'}`
+}
+
+function classLocationTailHtml(
+  location: string | null | undefined,
+  deliveryMode: string | null | undefined
+): string {
+  const loc = location?.trim()
+  if (deliveryMode === 'online' && loc && /^https?:\/\//i.test(loc)) {
+    return `online — here's the meeting link: <a href="${loc}">${loc}</a>`
+  }
+  return classLocationTailText(location, deliveryMode)
+}
+
+/** The full preview sentence for the admin/counselor entry hints. */
+export function classLocationSentence(
+  location: string | null | undefined,
+  deliveryMode: string | null | undefined = 'in_person'
+): string {
+  return `All classes will take place ${classLocationTailText(location, deliveryMode)}.`
 }
 
 // PL-67: first name only for mid-sentence instructor mentions (#6 onward) —
@@ -175,6 +202,14 @@ export const VARIABLES: Record<string, VariableDef> = {
   studentFirstName: { description: "Student's first name", resolve: (c) => c.studentFirstName },
   studentLastName: { description: "Student's last name", resolve: (c) => c.studentLastName },
   studentEmail: { description: "Student's email (— when blank)", resolve: (c) => c.studentEmail ?? '—' },
+  // PL-71d: parent-only pass-along clause for LR's register instructions —
+  // empty on the student send.
+  together_or_blank: {
+    description:
+      'Parent send: " — you can do it together or just pass this along to {studentFirstName}" · student send: empty',
+    resolve: (c, a) =>
+      a === 'student' ? '' : ` — you can do it together or just pass this along to ${c.studentFirstName}`,
+  },
   recipientFirstName: {
     description: 'Parent name on the parent send, student name on the student send',
     resolve: (c, a) => (a === 'student' ? c.studentFirstName : c.parentFirstName),
@@ -238,6 +273,15 @@ export const VARIABLES: Record<string, VariableDef> = {
   classLocationPhrase: {
     description: 'Per delivery mode: "the classroom location" (in-person) or "the meeting link for class" (online)',
     resolve: (c) => (c.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'),
+  },
+  // PL-71: the composed mode-aware "where" — templates write
+  // "…take place {classLocationLine}" and it renders "in Room 204" or
+  // "online — here's the meeting link: <link>".
+  classLocationLine: {
+    description:
+      "Mode-aware, follows \"take place\": in-person → \"in Room 204\" · online → \"online — here's the meeting link: <link>\"",
+    block: true, // may contain the meeting-link anchor
+    resolve: (c) => classLocationTailHtml(c.defaultLocation, c.deliveryMode),
   },
   // PL-65: subject-safe (title-case, no article) sibling of the above —
   // "Classroom location for {className}" / "Meeting link for {className}".
@@ -499,12 +543,14 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (_c, _a, e) => e.upsellPackagesBlock ?? '<p><em>(package buttons)</em></p>',
   },
   classDetailsBlock: {
-    description: 'LR: instructor + room sentence, or the not-yet-confirmed fallback',
+    description: 'LR: instructor + where-classes-happen sentence, or the not-yet-confirmed fallback',
     block: true,
+    // PL-71b: mode-aware via the shared builder; LR keeps the FULL
+    // instructor name (first-introduction rule).
     resolve: (c, _a, e) =>
       e.classDetailsBlock ??
       (c.instructorName && c.defaultLocation
-        ? `The instructor will be ${c.instructorName}, and classes take place at ${classroomValue(c)}.`
+        ? `The instructor will be ${c.instructorName}, and classes take place ${classLocationTailHtml(c.defaultLocation, c.deliveryMode)}.`
         : `We'll send classroom and instructor details as soon as they're confirmed.`),
   },
   waitlistPosition: {

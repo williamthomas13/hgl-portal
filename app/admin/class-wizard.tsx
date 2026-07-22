@@ -886,7 +886,7 @@ export default function ClassWizard({
                 blocking; whoever types the value words it to fit. */}
             {defaultLocation.trim() && (
               <p className="text-xs text-gray-500 mt-1">
-                Families will see: &ldquo;{classLocationSentence(defaultLocation)}&rdquo;
+                Families will see: &ldquo;{classLocationSentence(defaultLocation, deliveryMode)}&rdquo;
               </p>
             )}
           </div>

@@ -301,7 +301,7 @@ Your first diagnostic test is ready. It's in two parts — Reading & Writing, th
 
 **Deadline: {diagnosticDueDate}** (the day before your first class). Your instructor uses the results to shape the course, so this one matters.
 
-To get in: click the button below, hit **"register,"** and provide some quick basic info. That creates your account on our testing platform and unlocks the test.
+To get {you_or_name} in: click the button below, hit **"register,"** and provide some quick basic info{together_or_blank}. That creates your account on our testing platform and unlocks the test.
 
 [button:Take the diagnostic test]({synapGroupLink})
 
@@ -375,7 +375,7 @@ I think you already know, but just in case...
 
 The {className} class {for_name_or_blank}is coming up soon! (The first day is {firstSessionDate} from {classTime}.)
 
-The instructor will be {instructorName}, and **all classes will take place here: {classroom}**.
+The instructor will be {instructorName}, and **all classes will take place {classLocationLine}**.
 
 We're looking forward to seeing {you_or_name} in class!
 
@@ -408,7 +408,7 @@ Sorry for so many messages, but we really wanted to make sure that {you_dont_or_
 
 So here you go...one last reminder: the first day of class is {firstSessionDate} from {classTime}.
 
-**All classes take place here: {classroom}**
+**All classes take place {classLocationLine}**
 
 Looking forward to seeing {you_or_name} in class!
 
