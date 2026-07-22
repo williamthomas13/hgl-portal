@@ -5,6 +5,7 @@ import { formatDateShort } from '../../utils/dates'
 import ScoresEntry from '../../components/ScoresEntry'
 import { ConfirmAction } from './confirm'
 import { WEEKDAYS, familyLabel, fmtDay, fmtTime, type Engagement } from './types'
+import { FamilyCommsTimeline } from '../family-comms'
 
 // The "one source of truth per family" view (Phase 7a §5): student schedules
 // (tutoring_engagements rows — UI copy is student-centric per Scarlett's
@@ -105,6 +106,12 @@ export default function EngagementsPanel({
               {group.rows[0]?.students?.families?.parent_email}
             </span>
           </div>
+          {/* PL-83: the family's full comms history, right on the record. */}
+          {famId !== 'unknown' && (
+            <div className="mb-2">
+              <FamilyCommsTimeline familyId={famId} />
+            </div>
+          )}
           <div className="space-y-2">
             {group.rows.map((e) => {
               const next = nextSessions[e.id]

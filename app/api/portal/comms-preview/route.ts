@@ -29,16 +29,21 @@ export async function GET(req: Request) {
     .select('id, dedupe_key, template_key, enrollment_id, class_id, subject_rendered, status')
     .eq('id', id)
     .maybeSingle()
-  if (!row?.class_id) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
 
-  // Authorization: assigned instructor of this class, or staff.
-  const { data: cls } = await supabase
-    .from('classes')
-    .select('id, instructors ( email )')
-    .eq('id', row.class_id)
-    .maybeSingle()
-  const instructorEmail = one<any>(cls?.instructors)?.email?.toLowerCase()
-  let allowed = instructorEmail === user.email.toLowerCase()
+  // Authorization: assigned instructor of this class, or staff. PL-83: rows
+  // without a class (tutoring, agreements, waitlist…) are staff-only — the
+  // family timeline on the admin record opens them.
+  let allowed = false
+  if (row.class_id) {
+    const { data: cls } = await supabase
+      .from('classes')
+      .select('id, instructors ( email )')
+      .eq('id', row.class_id)
+      .maybeSingle()
+    const instructorEmail = one<any>(cls?.instructors)?.email?.toLowerCase()
+    allowed = instructorEmail === user.email.toLowerCase()
+  }
   if (!allowed) {
     const { data: profile } = await session.from('profiles').select('role').eq('id', user.id).maybeSingle()
     allowed = profile?.role === 'admin' || profile?.role === 'manager'

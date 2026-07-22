@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../utils/supabase'
 import { formatDateAdmin, formatTimestampAdmin, addDays, bySessionStart, effectiveStartDate } from '../utils/dates'
 import SessionCalendar from '../components/SessionCalendar'
@@ -17,6 +17,7 @@ import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h } from './ui'
+import { FamilyCommsRow } from './family-comms'
 
 type Session = {
   id: string
@@ -1039,7 +1040,8 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {c.enrollments?.map((en) => (
-                  <tr key={en.id} className="hover:bg-gray-50 transition">
+                  <Fragment key={en.id}>
+                  <tr className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                       {en.students?.first_name} {en.students?.last_name}
                       {en.students?.id && (
@@ -1156,6 +1158,11 @@ export default function AdminDashboard() {
                       </a>
                     </td>
                   </tr>
+                  {/* PL-83: the family's full comms history — every email the
+                      family received or will receive across ALL classes and
+                      tutoring, badged automatic / by hand / test. */}
+                  {en.students?.id && <FamilyCommsRow studentId={en.students.id} colSpan={7} />}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
