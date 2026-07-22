@@ -2,6 +2,8 @@
 
 Seven items from Scarlett's continuing test-send review (#9, PR2/PR4, W2, LR, admin alerts, #0, CX follow-through). Continues PL-x numbering.
 
+**Status: ALL SEVEN SHIPPED July 28** — see per-item notes. Three migrations applied (waitlist_declined_at; families chase-round columns; enrollment conversion columns). New pages: /test-link, /link-help, /waitlist/decline. New versions: #4 v3, #5 v4, LR v3, W2 v2; new draft: CX_TUTORING_START. Gates at ship: tsc clean · build ✓ · smoke 8/8 · link audit 92/92 · cancel-class + resume-addon regressions green under the renamed QA fixtures.
+
 **Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · contact block on parent surfaces · `git push` after committing · PL-x IDs in commits · check items off here when shipped · copy for live templates lands as new registry versions.
 
 **Editor context (already done, not work):** LR v2 saved by Scarlett's review — subject is now `{youre_or_name_is} in — …`, "please complete it" → "{you_or_name} should complete it", "To get in" → "To get {you_or_name} in". PL-71c below finishes that paragraph. #8 v3 (student-voiced conversion) also already saved. Don't re-seed either except where PL-71 says.
