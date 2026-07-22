@@ -289,8 +289,8 @@ export async function POST(req: Request) {
           vars: {
             alertStudentName: `${enrollment.studentFirstName} ${enrollment.studentLastName}`,
             alertCounts: pendingCount > 0
-              ? `${paidCount} + ${pendingCount} pending / ${bundle.minEnrollment} min / ${bundle.capacity} cap`
-              : `${paidCount} / ${bundle.minEnrollment} min / ${bundle.capacity} cap`,
+              ? `${paidCount} enrolled + ${pendingCount} pending / ${bundle.minEnrollment} min / ${bundle.capacity} cap`
+              : `${paidCount} enrolled / ${bundle.minEnrollment} min / ${bundle.capacity} cap`,
             schoolNickname: bundle.schoolLabel,
             classType: bundle.classType,
             schoolName: bundle.schoolName,
