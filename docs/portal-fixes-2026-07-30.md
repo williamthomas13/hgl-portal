@@ -6,7 +6,9 @@ One small item. Continues PL-x numbering.
 
 ---
 
-## PL-80 · Fourth pronoun option: "Something else / rather not say" → name-based rendering
+## PL-80 · Fourth pronoun option: "Something else / rather not say" → name-based rendering ✅
+
+> **Shipped, regress:pronouns 61/61.** `name_only` added to the `students.pronouns` check constraint (migration `20260801000001` **applied**; round-trip insert verified). Both pronoun sources — `pn()` in comms-variables and its `studentPronounSet` twin in email.ts — return the name-based set for `name_only`: subj/obj = the first name, poss = "Ana's", third-person-singular verbs (has/needs/doesn't). Every pronoun-bearing paired variable and composed phrase resolves through those two sources, so no per-template work: "{takingAdvantagePhrase}" renders "Ana has been taking advantage of Ana's class time with Jordan" (repetition kept per the no-new-copy rule). All three capture surfaces show the option with the exact label **"Something else / rather not say"** (storage name never appears), and the register/intake/waitlist API allowlists accept it. Unset is untouched — the byte-identity goldens still pass, and the regression now runs the full five-state matrix including name-branch verb agreement ("Ana has", "Ana doesn't") plus an end-to-end #8 render asserting "Ana's hard work".
 
 Follow-on to PL-69 (decided by Scarlett). The three pronoun sets can leave people out (neopronoun users; families who'd rather not say). Free text is rejected — typed pronouns can't drive verb agreement/possessives without asking parents for a conjugation table, and a badly conjugated guess is worse than the fallback.
 

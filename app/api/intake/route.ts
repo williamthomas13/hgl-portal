@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     studentPhone: str(body.studentPhone, 50),
     studentEmail: str(body.studentEmail, 200)?.toLowerCase() ?? null,
     school: str(body.school, 200),
-    pronouns: ['she_her', 'he_him', 'they_them'].includes(body.pronouns as string)
+    pronouns: ['she_her', 'he_him', 'they_them', 'name_only'].includes(body.pronouns as string)
       ? (body.pronouns as string)
       : null,
     grade: str(body.grade, 50),

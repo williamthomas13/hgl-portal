@@ -217,7 +217,11 @@ export type Rendered = { subject: string; html: string; from?: string }
 // PL-69: the one student-pronoun source. Unset resolves to exactly the
 // they/them copy every email used before pronouns existed — nothing ever
 // blocks on the field. Verb agreement rides along (she has / they have).
-export function studentPronounSet(ctx: Pick<EnrollmentEmailContext, 'studentPronouns'>): {
+// PL-80: 'name_only' substitutes the student's name wherever a pronoun
+// would go ("Ana has", "Ana's") — never a wrong pronoun, never new copy.
+export function studentPronounSet(
+  ctx: Pick<EnrollmentEmailContext, 'studentPronouns' | 'studentFirstName'>
+): {
   subj: string
   obj: string
   poss: string
@@ -230,6 +234,15 @@ export function studentPronounSet(ctx: Pick<EnrollmentEmailContext, 'studentPron
       return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't" }
     case 'he_him':
       return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't" }
+    case 'name_only':
+      return {
+        subj: ctx.studentFirstName,
+        obj: ctx.studentFirstName,
+        poss: `${ctx.studentFirstName}'s`,
+        have: 'has',
+        need: 'needs',
+        dont: "doesn't",
+      }
     default:
       return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't" }
   }

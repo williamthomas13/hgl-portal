@@ -166,12 +166,25 @@ const s = (ctx: EnrollmentEmailContext) => ctx.studentFirstName
 // PL-69: the one student-pronoun source (mirrors studentPronounSet in
 // email.ts for the code twins). Unset resolves to exactly the they/them copy
 // every email used before pronouns existed. Verb agreement rides along.
+// PL-80: 'name_only' ("Something else / rather not say") substitutes the
+// student's name wherever a pronoun would go — the name-based forms that
+// already existed ("Ana has", "Ana's"). Repetition is acceptable and warm;
+// a wrong pronoun never is. Explicit choice only — unset stays they/them.
 function pn(ctx: EnrollmentEmailContext) {
   switch (ctx.studentPronouns) {
     case 'she_her':
       return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't" }
     case 'he_him':
       return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't" }
+    case 'name_only':
+      return {
+        subj: ctx.studentFirstName,
+        obj: ctx.studentFirstName,
+        poss: `${ctx.studentFirstName}'s`,
+        have: 'has',
+        need: 'needs',
+        dont: "doesn't",
+      }
     default:
       return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't" }
   }
@@ -386,11 +399,11 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (c, a) => (a === 'student' ? 'your' : `${s(c)}'s`),
   },
   you_or_they: {
-    description: '"you" ↔ the student\'s pronoun (she / he / they; unset → they)',
+    description: '"you" ↔ the student\'s pronoun (she / he / they / the name for name_only; unset → they)',
     resolve: (c, a) => (a === 'student' ? 'you' : pn(c).subj),
   },
   your_or_their: {
-    description: '"your" ↔ the student\'s possessive (her / his / their; unset → their)',
+    description: '"your" ↔ the student\'s possessive (her / his / their / "Ana\'s"; unset → their)',
     resolve: (c, a) => (a === 'student' ? 'your' : pn(c).poss),
   },
   youre_or_name_is: {
@@ -402,28 +415,28 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (c, a) => (a === 'student' ? 'you have' : `${s(c)} has`),
   },
   you_have_or_they_have: {
-    description: '"you have" ↔ "she has / he has / they have" (verb agrees; unset → they have)',
+    description: '"you have" ↔ "she has / he has / they have / Ana has" (verb agrees; unset → they have)',
     resolve: (c, a) => (a === 'student' ? 'you have' : `${pn(c).subj} ${pn(c).have}`),
   },
   you_need_or_they_need: {
-    description: '"you need" ↔ "she needs / he needs / they need" (verb agrees; unset → they need)',
+    description: '"you need" ↔ "she needs / he needs / they need / Ana needs" (verb agrees; unset → they need)',
     resolve: (c, a) => (a === 'student' ? 'you need' : `${pn(c).subj} ${pn(c).need}`),
   },
   you_dont_or_they_dont: {
-    description: `"you don't" ↔ "she doesn't / he doesn't / they don't" (verb agrees; unset → they don't)`,
+    description: `"you don't" ↔ "she doesn't / he doesn't / they don't / Ana doesn't" (verb agrees; unset → they don't)`,
     resolve: (c, a) => (a === 'student' ? "you don't" : `${pn(c).subj} ${pn(c).dont}`),
   },
   // PL-69: standalone pronoun variables (student's, regardless of audience).
   she_he_they: {
-    description: "The student's subject pronoun: she / he / they (unset → they)",
+    description: "The student's subject pronoun: she / he / they — or the name for name_only (unset → they)",
     resolve: (c) => pn(c).subj,
   },
   her_him_them: {
-    description: "The student's object pronoun: her / him / them (unset → them)",
+    description: "The student's object pronoun: her / him / them — or the name for name_only (unset → them)",
     resolve: (c) => pn(c).obj,
   },
   her_his_their: {
-    description: "The student's possessive: her / his / their (unset → their)",
+    description: "The student's possessive: her / his / their — or \"Ana's\" for name_only (unset → their)",
     resolve: (c) => pn(c).poss,
   },
   Your_or_names: {

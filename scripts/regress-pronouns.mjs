@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// PL-69 regression: student pronouns resolve correctly in every state, with
-// verb agreement — and an UNSET student renders byte-identical to the
+// PL-69/PL-80 regression: student pronouns resolve correctly in every state
+// — five now: she/her, he/him, they/them, name_only ("Something else /
+// rather not say" → the name-based forms, "Ana has" / "Ana's"), and unset —
+// with verb agreement, and an UNSET student renders byte-identical to the
 // pre-pronoun copy (nothing ever blocks or changes for existing students).
 //
 //   node scripts/regress-pronouns.mjs   (npm run regress:pronouns)
@@ -34,25 +36,27 @@ try {
   const { SAMPLE_CONTEXT, SAMPLE_EXTRA, VARIABLES } = req(path.join(buildDir, 'comms-variables.js'))
   const { studentPronounSet } = req(path.join(buildDir, 'email.js'))
 
-  // --- 1. resolver matrix: all four states, verb agreement included --------
+  // --- 1. resolver matrix: all FIVE states, verb agreement included --------
   const ctxFor = (p) => ({ ...SAMPLE_CONTEXT, studentPronouns: p, lastSession: '2099-01-01' })
   const r = (name, p, audience = 'parent') => VARIABLES[name].resolve(ctxFor(p), audience, SAMPLE_EXTRA)
 
   const MATRIX = [
-    // [variable, she_her, he_him, they_them, unset]
-    ['she_he_they', 'she', 'he', 'they', 'they'],
-    ['her_him_them', 'her', 'him', 'them', 'them'],
-    ['her_his_their', 'her', 'his', 'their', 'their'],
-    ['you_or_they', 'she', 'he', 'they', 'they'],
-    ['your_or_their', 'her', 'his', 'their', 'their'],
-    ['you_have_or_they_have', 'she has', 'he has', 'they have', 'they have'],
-    ['you_need_or_they_need', 'she needs', 'he needs', 'they need', 'they need'],
-    ['you_dont_or_they_dont', "she doesn't", "he doesn't", "they don't", "they don't"],
+    // [variable, she_her, he_him, they_them, name_only, unset]
+    ['she_he_they', 'she', 'he', 'they', 'Ana', 'they'],
+    ['her_him_them', 'her', 'him', 'them', 'Ana', 'them'],
+    ['her_his_their', 'her', 'his', 'their', "Ana's", 'their'],
+    ['you_or_they', 'she', 'he', 'they', 'Ana', 'they'],
+    ['your_or_their', 'her', 'his', 'their', "Ana's", 'their'],
+    // PL-80: the name branch takes third-person-singular verbs ("Ana has").
+    ['you_have_or_they_have', 'she has', 'he has', 'they have', 'Ana has', 'they have'],
+    ['you_need_or_they_need', 'she needs', 'he needs', 'they need', 'Ana needs', 'they need'],
+    ['you_dont_or_they_dont', "she doesn't", "he doesn't", "they don't", "Ana doesn't", "they don't"],
   ]
-  for (const [name, she, he, they, unset] of MATRIX) {
+  for (const [name, she, he, they, nameOnly, unset] of MATRIX) {
     check(`{${name}} she/her`, r(name, 'she_her') === she, r(name, 'she_her'))
     check(`{${name}} he/him`, r(name, 'he_him') === he, r(name, 'he_him'))
     check(`{${name}} they/them`, r(name, 'they_them') === they, r(name, 'they_them'))
+    check(`{${name}} name_only → name-based`, r(name, 'name_only') === nameOnly, r(name, 'name_only'))
     check(`{${name}} unset → neutral`, r(name, null) === unset, r(name, null))
   }
   // student audience always "you"-family, untouched by pronouns
@@ -70,11 +74,27 @@ try {
     r('takingAdvantagePhrase', null) === 'Ana has been taking advantage of their class time with Jordan',
     r('takingAdvantagePhrase', null)
   )
+  // PL-80: name repetition is deliberate (doc: acceptable and warm) — the
+  // point is the sentence stays grammatical with zero wrong-pronoun risk.
+  check(
+    '{takingAdvantagePhrase} name_only',
+    r('takingAdvantagePhrase', 'name_only') === "Ana has been taking advantage of Ana's class time with Jordan",
+    r('takingAdvantagePhrase', 'name_only')
+  )
 
   // code-twin source agrees with the registry source
-  for (const [p, subj, have] of [['she_her', 'she', 'has'], ['he_him', 'he', 'has'], ['they_them', 'they', 'have'], [null, 'they', 'have']]) {
-    const set = studentPronounSet({ studentPronouns: p })
+  for (const [p, subj, have] of [['she_her', 'she', 'has'], ['he_him', 'he', 'has'], ['they_them', 'they', 'have'], ['name_only', 'Ana', 'has'], [null, 'they', 'have']]) {
+    const set = studentPronounSet({ studentPronouns: p, studentFirstName: 'Ana' })
     check(`twin source ${p ?? 'unset'}`, set.subj === subj && set.have === have, JSON.stringify(set))
+  }
+  // name_only possessive + dont from the twin, verb agreement on the name
+  {
+    const set = studentPronounSet({ studentPronouns: 'name_only', studentFirstName: 'Ana' })
+    check(
+      'twin source name_only full set ("Ana\'s", "doesn\'t")',
+      set.poss === "Ana's" && set.dont === "doesn't" && set.need === 'needs' && set.obj === 'Ana',
+      JSON.stringify(set)
+    )
   }
 
   // --- 2. golden: unset renders byte-identical to the PRE-pronoun version --
@@ -106,6 +126,9 @@ try {
     check('#8 she/her: "her hard work"', she.html.includes('Congrats to Ana for her hard work'))
     const he = renderVersion(cur, tpl, ctxFor('he_him'), 'parent', SAMPLE_EXTRA)
     check('#8 he/him: "his hard work"', he.html.includes('Congrats to Ana for his hard work'))
+    // PL-80: name branch end-to-end through a real template render
+    const nameOnly = renderVersion(cur, tpl, ctxFor('name_only'), 'parent', SAMPLE_EXTRA)
+    check(`#8 name_only: "Ana's hard work"`, nameOnly.html.includes("Congrats to Ana for Ana's hard work"))
   }
 } finally {
   rmSync(buildDir, { recursive: true, force: true })

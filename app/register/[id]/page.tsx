@@ -475,6 +475,9 @@ export default function RegistrationPage() {
                   <option value="she_her">she/her</option>
                   <option value="he_him">he/him</option>
                   <option value="they_them">they/them</option>
+                  {/* PL-80: renders the student's name where a pronoun
+                      would go — never a wrong pronoun. */}
+                  <option value="name_only">Something else / rather not say</option>
                 </select>
               </div>
               <div className="col-span-2">

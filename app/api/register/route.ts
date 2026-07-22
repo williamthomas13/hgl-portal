@@ -81,7 +81,7 @@ export async function POST(request: Request) {
   // 1+2. Family + student: match on parent email and attach to the existing
   // family (PHASE4_SPEC §7 — siblings and returning families share one row;
   // repeat registrations never overwrite the parent's name).
-  const PRONOUNS = ['she_her', 'he_him', 'they_them']
+  const PRONOUNS = ['she_her', 'he_him', 'they_them', 'name_only']
   const result = await upsertFamilyAndStudent({
     parentFirst,
     parentLast,

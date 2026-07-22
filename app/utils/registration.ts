@@ -18,7 +18,7 @@ export type RegistrantInput = {
   studentEmail: string | null
   schoolId: string | null
   graduatingYear: string | null
-  /** PL-69: 'she_her' | 'he_him' | 'they_them' | null — always optional. */
+  /** PL-69/80: 'she_her' | 'he_him' | 'they_them' | 'name_only' | null — always optional. */
   pronouns?: string | null
 }
 

@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       schoolId: bundle.schoolId,
       graduatingYear: graduatingYear || null,
       // PL-69: same optional student-step field as registration.
-      pronouns: ['she_her', 'he_him', 'they_them'].includes(body.pronouns as string)
+      pronouns: ['she_her', 'he_him', 'they_them', 'name_only'].includes(body.pronouns as string)
         ? (body.pronouns as string)
         : null,
     })
