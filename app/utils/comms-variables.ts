@@ -117,8 +117,13 @@ export type ExtraVars = {
   timecardHours?: string
   /** Tutor portal timecard link. */
   timecardLink?: string
-  /** Tutor-facing schedule-change sentence (pre-rendered). */
+  /** Tutor-facing what-changed deltas (pre-rendered; PL-81: the whole batch). */
   tutorChangeBlock?: string
+  /** PL-81: "Schedule change" or "3 schedule changes" — subject scales. */
+  scheduleChangeCountPhrase?: string
+  /** PL-81: each affected student's CURRENT upcoming schedule, listed before
+   *  the deltas so any single notice carries the whole truth. */
+  tutorScheduleBlock?: string
   /** Internal alerts: who/what the alert is about. */
   alertStudentName?: string
   alertParentName?: string
@@ -572,7 +577,17 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: "Tutor portal timecard link (T5)",
     resolve: (c, _a, e) => e.timecardLink ?? c.portalUrl,
   },
-  tutorChangeBlock: { description: 'Tutor-facing schedule-change sentence', block: true, resolve: (_c, _a, e) => e.tutorChangeBlock ?? '' },
+  tutorChangeBlock: { description: 'T3-T: the "what changed" delta list (computed, the whole coalesced batch)', block: true, resolve: (_c, _a, e) => e.tutorChangeBlock ?? '' },
+  // PL-81: the coalesced tutor notice's composed pieces.
+  scheduleChangeCountPhrase: {
+    description: 'T3-T subject lead: "Schedule change" (one) or "3 schedule changes" (batch)',
+    resolve: (_c, _a, e) => e.scheduleChangeCountPhrase ?? 'Schedule change',
+  },
+  tutorScheduleBlock: {
+    description: "T3-T: each affected student's current upcoming schedule at send time (computed) — the truth first, deltas after",
+    block: true,
+    resolve: (_c, _a, e) => e.tutorScheduleBlock ?? '',
+  },
   alertStudentName: { description: 'Alerts: student the alert is about', resolve: (_c, _a, e) => e.alertStudentName ?? '—' },
   alertParentName: { description: 'Alerts: parent the alert is about', resolve: (_c, _a, e) => e.alertParentName ?? '—' },
   alertParentEmail: { description: "Alerts: that parent's email", resolve: (_c, _a, e) => e.alertParentEmail ?? '—' },
@@ -950,6 +965,17 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   AL_OVERDUE_30: {
     alertDetailsBlock:
       "<p>September 2026 tutoring invoice ($480.00) is 30+ days past due. Per the signed policy you MAY apply the 10% late fee — it's a button on the invoice panel (/admin/tutoring), never automatic — and consider pausing the schedule.</p>",
+  },
+  // PL-81 coalesced tutor notice: a two-change batch with the current
+  // schedule leading — mirrors composeTutorNotice in tutor-notices.ts.
+  T3_TUTOR_NOTICE: {
+    scheduleChangeCountPhrase: '2 schedule changes',
+    studentNames: 'Ana',
+    tutoringSubject: 'SAT',
+    tutorScheduleBlock:
+      '<h3 style="color:#334155;margin:18px 0 6px">Ana — SAT · upcoming sessions</h3><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Wed, Sep 16 · 4:00 PM–5:00 PM</li><li style="margin:2px 0">Mon, Sep 21 · 4:00 PM–5:00 PM</li><li style="margin:2px 0">Mon, Sep 28 · 4:00 PM–5:00 PM</li></ul>',
+    tutorChangeBlock:
+      '<p style="margin:16px 0 6px"><strong>What changed:</strong></p><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Ana\'s SAT session on <strong>Mon, Sep 14, 4:00 PM</strong> moved to <strong>Wed, Sep 16, 4:00 PM</strong>.</li><li style="margin:2px 0">Ana\'s SAT session on <strong>Mon, Sep 7, 4:00 PM</strong> was cancelled — you\'re still paid for the reserved slot (it stays on your calendar, XCL-marked).</li></ul>',
   },
   // PL-82 sanity pass on other shared block samples: {classSummaryLine} is
   // shared by NW (admin-format date) and the IN_ set (instructor-comms

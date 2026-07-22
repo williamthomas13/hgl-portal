@@ -6,6 +6,7 @@ import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
+import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers } from '../../../utils/waitlist-offers'
 import {
@@ -1579,6 +1580,10 @@ export async function GET(req: Request) {
     if (agreements.nudged1 > 0) counters.agreement_nudged_1 = agreements.nudged1
     if (agreements.nudged2 > 0) counters.agreement_nudged_2 = agreements.nudged2
     if (agreements.alerted > 0) counters.agreement_alerted = agreements.alerted
+    // PL-81: due coalesced tutor schedule notices (45-min window, 3-h cap;
+    // urgent ones already went out inline at change time).
+    const tutorNotices = await sweepPendingTutorNotices()
+    if (tutorNotices > 0) counters.tutor_notices_sent = tutorNotices
   } catch (e) {
     console.error('tutoring billing sweep failed (continuing):', e)
   }

@@ -1241,12 +1241,18 @@ Sessions cancelled inside 24 hours and no-shows are on the card on purpose — y
     audience: 'parent',
     from_identity: 'info',
     category: 'transactional',
-    subject: 'Schedule change: {studentFirstName} — {tutoringSubject}',
-    preheader: '{studentFirstName} — {tutoringSubject}',
+    // PL-81: coalesced notice — subject scales with the batch, the current
+    // schedule leads, deltas follow, and the glance line closes.
+    subject: '{scheduleChangeCountPhrase}: {studentNames} — {tutoringSubject}',
+    preheader: 'Your Google Calendar is already updated — this is the recap of what moved.',
     footer_note: null,
-    body_markdown: `## Schedule change
+    body_markdown: `## {scheduleChangeCountPhrase}
 
-{tutorChangeBlock}`,
+{tutorScheduleBlock}
+
+{tutorChangeBlock}
+
+Worth a quick glance even if you live in your calendar — your Google Calendar is already updated, but this email is the recap of what moved.`,
   },
 
   // --- Internal [HGL Admin] alerts (the sender adds the [HGL Admin] prefix) --

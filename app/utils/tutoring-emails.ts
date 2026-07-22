@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { renderRegistered } from './comms-registered'
 import { sendOnce, wrap, footerT } from './email'
+import { recordTutorScheduleChange } from './tutor-notices'
 
 // Phase 7c tutoring emails (spec §6): T1 monthly proposal, T1b nudge,
 // T2 invoice, T3 schedule change, T4 payment failed. Code-rendered (the A4
@@ -268,9 +269,9 @@ export async function sendScheduleChangeNotices(opts: {
       .from('tutoring_sessions')
       .select(
         `id, starts_at, ends_at, status,
-         students ( first_name, families ( parent_first_name, parent_email, billing_cc_emails, timezone ) ),
+         students ( id, first_name, families ( parent_first_name, parent_email, billing_cc_emails, timezone ) ),
          tutoring_engagements ( subjects ( name ) ),
-         instructors ( name, email, timezone )`
+         instructors ( id, name, email, timezone )`
       )
       .eq('id', opts.sessionId)
       .maybeSingle()
@@ -292,12 +293,14 @@ export async function sendScheduleChangeNotices(opts: {
       })
 
     const changeLines: string[] = []
+    let replacementStartsAt: string | null = null
     if (opts.kind === 'reschedule' && opts.replacementId) {
       const { data: r } = await supabase
         .from('tutoring_sessions')
         .select('starts_at, ends_at')
         .eq('id', opts.replacementId)
         .maybeSingle()
+      replacementStartsAt = r?.starts_at ?? null
       changeLines.push(`${subject} on ${fmt(s.starts_at)} moved to ${r ? fmt(r.starts_at) : 'a new time'}.`)
       if (opts.notice === 'late') {
         changeLines.push(
@@ -332,37 +335,24 @@ export async function sendScheduleChangeNotices(opts: {
       html: email.html,
     })
 
-    if (tutor?.email) {
-      const tutorTz = tutor.timezone ?? 'America/Denver'
-      const tFmt = (iso: string) =>
-        new Date(iso).toLocaleString('en-US', { timeZone: tutorTz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      // PL-66: registry copy when T3-T is flipped live; code twin otherwise.
-      const changeSentence = `<p>${student.first_name}'s ${subject} session on <strong>${tFmt(s.starts_at)}</strong>
-           ${opts.kind === 'reschedule' ? 'was rescheduled' : opts.kind === 'no_show' ? 'was a no-show' : 'was cancelled (you are still paid for the reserved slot)'}.
-           Your Google Calendar is already updated${opts.kind !== 'reschedule' ? ' (the slot stays, XCL-marked)' : ''}.</p>`
-      const tutorEmail = await renderRegistered(
-        'T3_TUTOR_NOTICE',
-        {
-          parentFirstName: tutor.name?.split(' ')[0] ?? 'there',
-          parentEmail: tutor.email,
-          studentFirstName: student.first_name,
+    // PL-81: the tutor side no longer sends per change — it folds into the
+    // tutor's coalesced pending notice (45-min sliding window, 3-h cap,
+    // immediate when a touched session starts within 24 h). The parent T3
+    // above and the calendar patch stay instant.
+    if (tutor?.id && tutor?.email && student.id) {
+      await recordTutorScheduleChange({
+        tutorId: tutor.id,
+        change: {
+          sessionId: opts.sessionId,
+          kind: opts.kind,
+          notice: opts.notice,
+          studentId: student.id,
+          studentFirst: student.first_name,
+          subjectName: subject,
+          oldStartsAt: s.starts_at,
+          newStartsAt: replacementStartsAt,
+          recordedAt: new Date().toISOString(),
         },
-        { tutoringSubject: subject, tutorChangeBlock: changeSentence },
-        () => ({
-          subject: `Schedule change: ${student.first_name} — ${subject}`,
-          html: wrap(`<h2 style="color:#334155">Schedule change</h2>
-           ${changeSentence}`,
-            { preheader: `${student.first_name} — ${subject}`, footer: footerT() }
-          ),
-        })
-      )
-      await sendOnce({
-        dedupeKey: `t3_tutor:${opts.sessionId}:${opts.replacementId ?? opts.kind}`,
-        emailType: 'tutor_schedule_notice',
-        templateKey: 'T3_TUTOR_NOTICE',
-        to: [tutor.email],
-        subject: tutorEmail.subject,
-        html: tutorEmail.html,
       })
     }
   } catch (e) {
