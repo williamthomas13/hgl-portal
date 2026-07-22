@@ -2,6 +2,8 @@
 
 One feature, three items: instructors stop being out of the loop. Motivating reports (Scarlett): instructors don't know enrollment counts, check the public website for the calendar, and don't know what families have been told — so they sometimes send their own (occasionally conflicting) start-date/class-link emails. All three decisions below are Scarlett's (made Jul 22). Continues PL-x numbering.
 
+**Status: ALL THREE SHIPPED July 29** — see per-item notes, including two flagged corrections: the safety gate is now an explicit `comms_enabled` toggle (instructors DO have login emails on file), and PL-79 creates events on the instructor's own calendar (class sessions had no existing GCal events to attach attendees to). Migration applied. Gates at ship: tsc clean · build ✓ · smoke 8/8 · link audit 96/96 (three IN_ drafts included) · cancel regression 11/11.
+
 **Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · `git push` after committing · PL-x IDs in commits · check items off here when shipped · new templates get realistic samples (PL-56) and regress:links coverage · count strings use the PL-73 format ("6 enrolled / 8 min / 15 cap").
 
 **Natural safety gate:** instructors currently have **no email addresses on file** (deliberate — Scarlett's call at roster seeding). Everything below can ship live: nothing sends until she adds an instructor's email. When an email is added, do a one-time idempotent backfill for that instructor's current assignments (welcome email + calendar attendee + digest enrollment).
