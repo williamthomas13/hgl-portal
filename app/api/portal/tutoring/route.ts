@@ -4,6 +4,12 @@ import { sessionTutor } from '../../../utils/tutor-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../utils/gcal-sync'
 import { recomputeTimecard } from '../../../utils/timecards'
 import { workTypeOptions } from '../../../utils/work-types'
+import {
+  cancelCoverage,
+  coverageCandidates,
+  requestCoverage,
+  respondCoverage,
+} from '../../../utils/coverage'
 
 // Tutor timecard actions (Phase 7b §7.2): the tutor's only required work is
 // correcting exceptions — mark a no-show, adjust an actual duration within
@@ -17,6 +23,10 @@ type Body =
   | { action: 'confirm_timecard'; timecard_id: string }
   | { action: 'set_work_type'; session_id: string; work_type: string }
   | { action: 'add_note'; session_id: string; note: string; next_time?: string }
+  | { action: 'coverage_candidates'; session_id: string }
+  | { action: 'request_coverage'; session_id: string; candidate_id: string; note?: string }
+  | { action: 'respond_coverage'; request_id: string; response: 'accept' | 'decline' }
+  | { action: 'cancel_coverage'; request_id: string }
 
 const MIN_MINUTES = 15
 const MAX_MINUTES = 240
@@ -93,6 +103,43 @@ export async function POST(req: Request) {
 
       if (session.timecard_id) await recomputeTimecard(session.timecard_id)
       return NextResponse.json({ ok: true })
+    }
+
+    // PL-112: substitute coverage — candidates are subject-qualified ONLY
+    // (never the admin matching notes), one offer at a time, accept flips
+    // the session onto the substitute's schedule.
+    if (body.action === 'coverage_candidates') {
+      const out = await coverageCandidates(body.session_id, caller.instructorIds)
+      if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status })
+      return NextResponse.json(out)
+    }
+    if (body.action === 'request_coverage') {
+      const out = await requestCoverage({
+        sessionId: body.session_id,
+        candidateId: body.candidate_id,
+        note: body.note,
+        callerIds: caller.instructorIds,
+      })
+      if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status })
+      return NextResponse.json(out)
+    }
+    if (body.action === 'respond_coverage') {
+      if (body.response !== 'accept' && body.response !== 'decline') {
+        return NextResponse.json({ error: 'Answer accept or decline.' }, { status: 400 })
+      }
+      const out = await respondCoverage({
+        requestId: body.request_id,
+        response: body.response,
+        callerIds: caller.instructorIds,
+      })
+      if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status })
+      after(() => processGcalQueue())
+      return NextResponse.json(out)
+    }
+    if (body.action === 'cancel_coverage') {
+      const out = await cancelCoverage({ requestId: body.request_id, callerIds: caller.instructorIds })
+      if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status })
+      return NextResponse.json(out)
     }
 
     // PL-111: the short session note — what we worked on, parent-visible.

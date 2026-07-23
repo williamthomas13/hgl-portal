@@ -129,6 +129,11 @@ export function templateMetaFor(
       return { key: 'T6_NOTES_EOD', role: 'instructor' }
     case 'T6_NOTES_NUDGE':
       return { key: 'T6_NOTES_NUDGE', role: 'instructor' }
+    // PL-112: substitute coverage offer + outcome
+    case 'SUB_COVERAGE_OFFER':
+      return { key: 'SUB_COVERAGE_OFFER', role: 'instructor' }
+    case 'SUB_COVERAGE_RESULT':
+      return { key: 'SUB_COVERAGE_RESULT', role: 'instructor' }
     // Phase 7c monthly billing cycle (spec §6)
     case 'T1_MONTHLY_PROPOSAL':
       return { key: 'T1_MONTHLY_PROPOSAL', role: 'parent' }
@@ -182,6 +187,8 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   T3_TUTOR_NOTICE: 'T3-T — Schedule change notice (tutor)',
   T6_NOTES_EOD: 'T6 — Session notes end-of-day reminder (tutor)',
   T6_NOTES_NUDGE: 'T6-N — Session notes nudge (tutor)',
+  SUB_COVERAGE_OFFER: 'SUB — Coverage request (candidate tutor)',
+  SUB_COVERAGE_RESULT: 'SUB — Coverage outcome (requesting tutor)',
   IN_WELCOME: 'IN — Instructor class assignment welcome',
   IN_DIGEST: 'IN — Instructor enrollment digest / milestone ping',
   IN_FYI: 'IN — Instructor FYI copy (family logistics email)',
@@ -202,6 +209,8 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   AL_DUNNING_EXHAUSTED: 'AL — Autopay retries exhausted',
   AL_OVERDUE_10: 'AL — Invoice 10+ days past due',
   AL_OVERDUE_30: 'AL — Invoice 30+ days past due (late-fee decision)',
+  AL_COVERAGE_REQUEST: 'AL — Session needs a substitute',
+  AL_COVERAGE_RESOLVED: 'AL — Substitute request resolved',
   W1_WAITLIST: 'W1 — Waitlist confirmation',
   W2_SPOT_OPEN: 'W2 — Waitlist spot open',
   SU_SCHEDULE_UPDATE: 'SU — Schedule update',
@@ -274,7 +283,7 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
   },
   {
     name: 'Tutors & staff',
-    match: (k) => k === 'T5_TIMECARD_READY' || k === 'T3_TUTOR_NOTICE' || /^T\d_NOTES|^IN_/.test(k),
+    match: (k) => k === 'T5_TIMECARD_READY' || k === 'T3_TUTOR_NOTICE' || /^T\d_NOTES|^SUB_|^IN_/.test(k),
   },
   {
     name: 'Internal admin alerts',

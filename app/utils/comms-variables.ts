@@ -124,6 +124,12 @@ export type ExtraVars = {
   missingSessionsBlock?: string
   /** PL-111 (T6): tutor portal notes link. */
   notesLink?: string
+  /** PL-112 (SUB): the offered session's details, pre-rendered lines. */
+  coverageSessionBlock?: string
+  /** PL-112 (SUB): tutor portal link where the candidate answers. */
+  coverageRespondLink?: string
+  /** PL-112 (SUB): one-sentence outcome for the requesting tutor. */
+  coverageOutcomeLine?: string
   /** Tutor-facing what-changed deltas (pre-rendered; PL-81: the whole batch). */
   tutorChangeBlock?: string
   /** PL-81: "Schedule change" or "3 schedule changes" — subject scales. */
@@ -606,6 +612,20 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'T6: tutor portal session-notes link',
     resolve: (c, _a, e) => e.notesLink ?? c.portalUrl,
   },
+  // PL-112: SUB coverage templates.
+  coverageSessionBlock: {
+    description: 'SUB: the offered session details (computed lines)',
+    block: true,
+    resolve: (_c, _a, e) => e.coverageSessionBlock ?? '',
+  },
+  coverageRespondLink: {
+    description: 'SUB: tutor portal link where the candidate answers',
+    resolve: (c, _a, e) => e.coverageRespondLink ?? c.portalUrl,
+  },
+  coverageOutcomeLine: {
+    description: 'SUB: one-sentence outcome for the requesting tutor (computed)',
+    resolve: (_c, _a, e) => e.coverageOutcomeLine ?? '—',
+  },
   tutorChangeBlock: { description: 'T3-T: the "what changed" delta list (computed, the whole coalesced batch)', block: true, resolve: (_c, _a, e) => e.tutorChangeBlock ?? '' },
   // PL-81: the coalesced tutor notice's composed pieces.
   scheduleChangeCountPhrase: {
@@ -924,6 +944,11 @@ export const SAMPLE_EXTRA: ExtraVars = {
   sessionDate: 'Wednesday, July 22',
   missingSessionsBlock: '4:00 PM — Ana García\n6:00 PM — Marcus Lee',
   notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
+  coverageSessionBlock:
+    'Wednesday, July 29, 4:00 PM (your local time)\nAna · SAT Math\nhttps://meet.google.com/sample-link',
+  coverageRespondLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
+  coverageOutcomeLine:
+    "Jordan Fisher accepted — Ana's SAT Math session on Wednesday, July 29, 4:00 PM has moved to their schedule and calendar. Nothing else to do.",
   tutorChangeBlock:
     "<p>Ana's SAT session on <strong>Mon, Sep 14, 4:00 PM</strong> was rescheduled. Your Google Calendar is already updated.</p>",
   alertStudentName: 'Ana García',

@@ -7,6 +7,13 @@ import TimecardPanel, {
 import { one } from './shared'
 import { workTypeOptions } from '../utils/work-types'
 import SessionNotesPanel, { type NoteSession } from './session-notes-panel'
+import CoveragePanel, {
+  type CoverageRow,
+  type CoverableSession,
+  type HandoffView,
+} from './coverage-panel'
+import { supabaseAdmin } from '../utils/supabase-admin'
+import { loadContactInfo } from '../utils/tutoring-emails'
 
 // Tutor view (Phase 7b §7): upcoming 1-on-1 sessions plus timecards. The
 // twice-monthly "reconstruct my calendar into a timecard" ritual becomes a
@@ -137,6 +144,78 @@ export default async function TutorView({
 
   const fmt = (iso: string, opts: Intl.DateTimeFormatOptions) =>
     new Date(iso).toLocaleString('en-US', { timeZone: tz, ...opts })
+  const fmtFull = (iso: string) =>
+    fmt(iso, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+  // PL-112: coverage requests I'm on either side of (service role scoped to
+  // this tutor — same pattern as the parent tutoring surface). Candidate
+  // lists come from the API on demand; nothing here carries matching notes.
+  const { data: covRaw } = await supabaseAdmin
+    .from('coverage_requests')
+    .select(
+      `id, status, note, created_at, requesting_tutor_id, candidate_tutor_id,
+       requester:instructors!coverage_requests_requesting_tutor_id_fkey ( name, email ),
+       candidate:instructors!coverage_requests_candidate_tutor_id_fkey ( name, email ),
+       tutoring_sessions ( id, starts_at, student_id,
+         students ( first_name, last_name ),
+         tutoring_engagements ( location, subjects ( name ) ) )`
+    )
+    .or(`requesting_tutor_id.eq.${tutor.id},candidate_tutor_id.eq.${tutor.id}`)
+    .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(20)
+  const coverageRows: CoverageRow[] = ((covRaw as any[]) ?? []).map((r) => {
+    const ses = one<any>(r.tutoring_sessions)
+    const student = one<any>(ses?.students)
+    const subject = one<any>(one<any>(ses?.tutoring_engagements)?.subjects)?.name ?? ''
+    const isRequester = r.requesting_tutor_id === tutor.id
+    const other = one<any>(isRequester ? r.candidate : r.requester)
+    return {
+      id: r.id,
+      status: r.status,
+      role: isRequester ? ('requester' as const) : ('candidate' as const),
+      otherName: other?.name ?? other?.email ?? '—',
+      sessionLabel: ses
+        ? `${fmtFull(ses.starts_at)} — ${student?.first_name ?? ''} · ${subject}`
+        : '(session no longer exists)',
+      note: r.note,
+    }
+  })
+
+  // The handoff: accepted coverage where I'm the substitute and the session
+  // is still ahead — session details + the student's note history (PL-111).
+  const handoffs: HandoffView[] = []
+  for (const r of ((covRaw as any[]) ?? []).filter(
+    (r) => r.status === 'accepted' && r.candidate_tutor_id === tutor.id
+  )) {
+    const ses = one<any>(r.tutoring_sessions)
+    if (!ses || new Date(ses.starts_at) <= new Date()) continue
+    const student = one<any>(ses.students)
+    const eng = one<any>(ses.tutoring_engagements)
+    const { data: history } = await supabaseAdmin
+      .from('session_notes')
+      .select('note, next_time, tutoring_sessions!inner ( starts_at )')
+      .eq('student_id', ses.student_id)
+      .order('created_at', { ascending: false })
+      .limit(8)
+    handoffs.push({
+      sessionLabel: `${fmtFull(ses.starts_at)} — ${student?.first_name ?? ''} ${student?.last_name ?? ''} · ${one<any>(eng?.subjects)?.name ?? ''}`,
+      location: eng?.location ?? null,
+      notes: ((history as any[]) ?? []).map((n) => ({
+        when: fmt(one<any>(n.tutoring_sessions)?.starts_at ?? '', { month: 'short', day: 'numeric' }),
+        note: n.note,
+        next_time: n.next_time,
+      })),
+    })
+  }
+
+  const coverable: CoverableSession[] = ((upcoming as any[]) ?? []).map((s) => {
+    const student = one<any>(s.students)
+    const subject = one<any>(one<any>(s.tutoring_engagements)?.subjects)?.name ?? ''
+    return { id: s.id, label: `${fmtFull(s.starts_at)} — ${student?.first_name ?? ''} · ${subject}` }
+  })
+  const contact = await loadContactInfo()
+  const managerLine = `Prefer a hand? Your manager can help find a suitable replacement — write to ${contact.email}${contact.phone ? ` or call ${contact.phone}` : ''}.`
 
   return (
     <div className="space-y-6">
@@ -198,6 +277,13 @@ export default async function TutorView({
           <p className="text-sm text-gray-500 italic">No upcoming sessions on the books.</p>
         )}
       </div>
+
+      <CoveragePanel
+        requests={coverageRows}
+        handoffs={handoffs}
+        upcoming={coverable}
+        managerLine={managerLine}
+      />
 
       <SessionNotesPanel sessions={noteSessions} timezone={tz} />
 

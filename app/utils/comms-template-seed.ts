@@ -1280,6 +1280,72 @@ These sessions from {sessionDate} still don't have a session note:
 
 Families can read these notes on their family portal, so keep them parent-friendly. This is the last automatic reminder — anything still open will show when your timecard is reviewed, and approval waits for it.`,
   },
+  // PL-112: substitute coverage. Drafts — code twins in coverage.ts send
+  // until Scarlett flips these live.
+  {
+    template_key: 'SUB_COVERAGE_OFFER',
+    display_name: 'SUB — Coverage request (candidate tutor)',
+    sequence_number: 'SUB',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Can you cover a session?',
+    preheader: 'One click to accept or decline',
+    footer_note: null,
+    body_markdown: `## Coverage request
+
+Hi {tutorFirstName},
+
+A colleague is asking if you can cover one 1-on-1 session:
+
+{coverageSessionBlock}
+
+Accept or decline from your portal — one click either way. If you accept, the session moves onto your schedule and calendar, and the student's session-note history opens up to you so you can walk in prepared.
+
+[Answer in your portal →]({coverageRespondLink})`,
+  },
+  {
+    template_key: 'SUB_COVERAGE_RESULT',
+    display_name: 'SUB — Coverage outcome (requesting tutor)',
+    sequence_number: 'SUB',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Your coverage request has an answer',
+    preheader: 'The outcome of your substitute request',
+    footer_note: null,
+    body_markdown: `## Coverage update
+
+Hi {tutorFirstName},
+
+{coverageOutcomeLine}
+
+[Open your portal →]({coverageRespondLink})`,
+  },
+  {
+    template_key: 'AL_COVERAGE_REQUEST',
+    display_name: 'AL — Session needs a substitute',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Substitute requested: {alertStudentName}',
+    preheader: 'A tutor asked a colleague for coverage.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    template_key: 'AL_COVERAGE_RESOLVED',
+    display_name: 'AL — Substitute request resolved',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Substitute request update: {alertStudentName}',
+    preheader: 'Accepted, declined, or withdrawn.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
   {
     template_key: 'T3_TUTOR_NOTICE',
     display_name: 'T3-T — Schedule change notice (tutor)',
