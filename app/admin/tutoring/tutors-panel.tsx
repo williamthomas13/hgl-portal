@@ -173,6 +173,8 @@ function TutorEditor({
   const [calendarId, setCalendarId] = useState(tutor.google_calendar_id ?? '')
   const [location, setLocation] = useState(tutor.default_location ?? '')
   const [windows, setWindows] = useState<OfferWindowUI[]>(tutor.offer_windows ?? [])
+  const [payTitles, setPayTitles] = useState<string[]>(tutor.pay_type_titles ?? [])
+  const [newTitle, setNewTitle] = useState('')
   const [notes, setNotes] = useState(initialNotes)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -193,6 +195,7 @@ function TutorEditor({
         google_calendar_id: calendarId.trim() || null,
         default_location: location.trim() || null,
         offer_windows: windows,
+        pay_type_titles: payTitles,
       })
       .eq('id', tutor.id)
     const { error: e2 } = await supabase
@@ -353,6 +356,44 @@ function TutorEditor({
             placeholder="https://meet.google.com/… or the SLC office"
             className="w-full border border-gray-300 rounded-md p-2"
           />
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">
+            QBO pay-type titles — the named additional pay types this tutor has in QBO Payroll
+            (e.g. Class/Workshop, chem prep). Titles only: rates and dollar amounts live in QBO
+            and never enter the portal. Base pay (1-on-1 / Test Prep) is implicit — don&apos;t list it.
+          </label>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {payTitles.map((t) => (
+              <span key={t} className="inline-flex items-center gap-1 bg-gray-100 border border-gray-300 rounded px-2 py-0.5 text-xs">
+                {t}
+                <button
+                  type="button"
+                  onClick={() => setPayTitles((p) => p.filter((x) => x !== t))}
+                  className="text-gray-400 hover:text-red-600"
+                  title="Remove this title"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const t = newTitle.trim()
+                  if (t && !payTitles.includes(t)) setPayTitles((p) => [...p, t])
+                  setNewTitle('')
+                }
+              }}
+              placeholder="Add a title, press Enter"
+              className="border border-gray-300 rounded p-1.5 text-xs w-44"
+            />
+          </div>
         </div>
 
         <div>

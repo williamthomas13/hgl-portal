@@ -1,8 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { ConfirmAction } from './confirm'
+import {
+  CLASS_WORK_TYPE,
+  DEFAULT_TUTORING_WORK_TYPE,
+  hoursByWorkType,
+  sessionMinutes,
+} from '../../utils/work-types'
 
 // Staff timecard review (Phase 7b §7.3): per-period list, approve, CSV
 // export for manual entry into QBO Payroll. Hours only — no pay rates, no
@@ -35,10 +41,132 @@ function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? ((v[0] as T) ?? null) : v
 }
 
+const PAYROLL_TZ = 'America/Denver'
+const denverDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: PAYROLL_TZ })
+
+/** PL-104 payroll handoff: hours by pay-type title for one card. */
+type SummaryLine = { workType: string; hours: number }
+
+/** PL-104 quick-verify: one scheduled thing in the period, next to its
+ *  claimed state on the card. */
+type VerifyRow = {
+  key: string
+  when: string
+  label: string
+  hours: number
+  status: string
+  payable: boolean
+  onCard: boolean
+}
+
 export default function TimecardsPanel() {
   const [rows, setRows] = useState<Row[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  // PL-104: per-card expansions — payroll handoff summary (hours by pay-type
+  // title, copyable) and quick-verify (the period's schedule next to the
+  // claimed hours). Titles only — no amounts anywhere.
+  const [detail, setDetail] = useState<{ id: string; mode: 'summary' | 'verify' } | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [summary, setSummary] = useState<SummaryLine[]>([])
+  const [verify, setVerify] = useState<VerifyRow[]>([])
+  const [copied, setCopied] = useState(false)
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  async function openSummary(r: Row) {
+    setDetail({ id: r.id, mode: 'summary' })
+    setDetailLoading(true)
+    setCopied(false)
+    const [{ data: tut }, { data: cls }] = await Promise.all([
+      supabase.from('tutoring_sessions').select('duration_minutes, work_type').eq('timecard_id', r.id),
+      supabase.from('sessions').select('start_time, end_time').eq('timecard_id', r.id),
+    ])
+    setSummary(
+      hoursByWorkType([
+        ...((tut as any[]) ?? []).map((s) => ({
+          workType: s.work_type ?? DEFAULT_TUTORING_WORK_TYPE,
+          hours: s.duration_minutes / 60,
+        })),
+        ...((cls as any[]) ?? []).map((s) => ({
+          workType: CLASS_WORK_TYPE,
+          hours: sessionMinutes(s.start_time, s.end_time) / 60,
+        })),
+      ])
+    )
+    setDetailLoading(false)
+  }
+
+  async function openVerify(r: Row) {
+    setDetail({ id: r.id, mode: 'verify' })
+    setDetailLoading(true)
+    // Pad a day each side, then filter to the Denver payroll calendar — the
+    // same dates recompute uses, without re-deriving wall-clock bounds here.
+    const fromPad = new Date(r.period_start + 'T00:00:00Z')
+    fromPad.setUTCDate(fromPad.getUTCDate() - 1)
+    const toPad = new Date(r.period_end + 'T00:00:00Z')
+    toPad.setUTCDate(toPad.getUTCDate() + 2)
+    const [{ data: tut }, { data: cls }] = await Promise.all([
+      supabase
+        .from('tutoring_sessions')
+        .select('id, starts_at, duration_minutes, status, reschedule_notice, timecard_id, students ( first_name, last_name )')
+        .eq('tutor_id', r.tutor_id)
+        .gte('starts_at', fromPad.toISOString())
+        .lt('starts_at', toPad.toISOString())
+        .order('starts_at'),
+      supabase
+        .from('sessions')
+        .select('id, session_date, start_time, end_time, timecard_id, classes!inner ( class_type, instructor_id, status, schools ( nickname ) )')
+        .eq('classes.instructor_id', r.tutor_id)
+        .gte('session_date', r.period_start)
+        .lte('session_date', r.period_end)
+        .order('session_date'),
+    ])
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: PAYROLL_TZ })
+    const out: VerifyRow[] = []
+    for (const s of (tut as any[]) ?? []) {
+      const d = denverDate(s.starts_at)
+      if (d < r.period_start || d > r.period_end) continue
+      const student = one<any>(s.students)
+      const payable =
+        ['completed', 'forfeited', 'no_show'].includes(s.status) ||
+        (s.status === 'rescheduled' && s.reschedule_notice === 'late')
+      out.push({
+        key: 't' + s.id,
+        when: d,
+        label: student ? `${student.first_name} ${student.last_name}` : '1-on-1 session',
+        hours: s.duration_minutes / 60,
+        status: s.status === 'rescheduled' ? `rescheduled (${s.reschedule_notice ?? '—'} notice)` : s.status.replace('_', ' '),
+        payable,
+        onCard: s.timecard_id === r.id,
+      })
+    }
+    for (const s of (cls as any[]) ?? []) {
+      const c = one<any>(s.classes)
+      const past = s.session_date < today
+      out.push({
+        key: 'c' + s.id,
+        when: s.session_date,
+        label: `${[one<any>(c?.schools)?.nickname, c?.class_type].filter(Boolean).join(' ')} (class)`,
+        hours: sessionMinutes(s.start_time, s.end_time) / 60,
+        status: c?.status === 'cancelled' ? 'class cancelled' : past ? 'on the schedule, past' : 'on the schedule, upcoming',
+        payable: c?.status !== 'cancelled' && past,
+        onCard: s.timecard_id === r.id,
+      })
+    }
+    out.sort((a, b) => a.when.localeCompare(b.when))
+    setVerify(out)
+    setDetailLoading(false)
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  function summaryText(r: Row) {
+    const name = r.instructors?.name ?? r.instructors?.email ?? ''
+    return [
+      `${name} — ${r.period_start} → ${r.period_end}`,
+      ...summary.map((l) => `${l.workType}: ${l.hours} h`),
+      `Total: ${Number(r.total_hours)} h`,
+    ].join('\n')
+  }
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -140,7 +268,8 @@ export default function TimecardsPanel() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {periodRows.map((r) => (
-                  <tr key={r.id}>
+                  <Fragment key={r.id}>
+                  <tr>
                     <td className="py-1.5 pr-4 font-semibold text-hgl-slate">
                       {r.instructors?.name ?? r.instructors?.email}
                     </td>
@@ -157,6 +286,28 @@ export default function TimecardsPanel() {
                       )}
                     </td>
                     <td className="py-1.5 text-right whitespace-nowrap">
+                      {/* PL-104: schedule-vs-claimed in one click, and the
+                          hours-by-title handoff for QBO transcription. */}
+                      <button
+                        disabled={busy || detailLoading}
+                        onClick={() =>
+                          detail?.id === r.id && detail.mode === 'verify' ? setDetail(null) : openVerify(r)
+                        }
+                        className="text-hgl-blue underline text-xs mr-3"
+                        title="Scheduled sessions for the period next to the claimed hours"
+                      >
+                        {detail?.id === r.id && detail.mode === 'verify' ? 'hide verify' : 'verify'}
+                      </button>
+                      <button
+                        disabled={busy || detailLoading}
+                        onClick={() =>
+                          detail?.id === r.id && detail.mode === 'summary' ? setDetail(null) : openSummary(r)
+                        }
+                        className="text-hgl-blue underline text-xs mr-3"
+                        title="Hours by pay-type title, ready to enter into QBO Payroll"
+                      >
+                        {detail?.id === r.id && detail.mode === 'summary' ? 'hide summary' : 'payroll summary'}
+                      </button>
                       {(r.status === 'open' || r.status === 'tutor_confirmed') && (
                         <ConfirmAction
                           label="approve"
@@ -183,6 +334,79 @@ export default function TimecardsPanel() {
                       )}
                     </td>
                   </tr>
+                  {detail?.id === r.id && (
+                    <tr>
+                      <td colSpan={4} className="py-2 pl-4 bg-gray-50">
+                        {detailLoading ? (
+                          <p className="text-xs text-gray-400 animate-pulse">Loading…</p>
+                        ) : detail.mode === 'summary' ? (
+                          <div className="text-xs space-y-1">
+                            <p className="font-semibold text-hgl-slate">
+                              Payroll handoff — hours by pay-type title (enter into QBO Payroll; rates live there, not here)
+                            </p>
+                            {summary.length === 0 ? (
+                              <p className="text-gray-500 italic">No hours on this card.</p>
+                            ) : (
+                              <ul className="text-gray-700">
+                                {summary.map((l) => (
+                                  <li key={l.workType}>
+                                    {l.workType}: <span className="font-semibold">{l.hours} h</span>
+                                  </li>
+                                ))}
+                                <li className="text-gray-500 mt-0.5">Total: {Number(r.total_hours)} h</li>
+                              </ul>
+                            )}
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(summaryText(r)).then(() => setCopied(true))
+                              }}
+                              className="text-hgl-blue underline"
+                            >
+                              {copied ? '✓ copied' : 'copy for QBO'}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-xs space-y-1">
+                            <p className="font-semibold text-hgl-slate">
+                              Quick verify — the period&apos;s schedule next to what the card claims
+                            </p>
+                            {verify.length === 0 ? (
+                              <p className="text-gray-500 italic">Nothing on the schedule this period.</p>
+                            ) : (
+                              <>
+                                <ul className="text-gray-700 space-y-0.5">
+                                  {verify.map((v) => {
+                                    const mismatch = v.payable !== v.onCard
+                                    return (
+                                      <li key={v.key} className={mismatch ? 'text-amber-800 font-semibold' : ''}>
+                                        {v.when} · {v.label} · {v.hours.toFixed(2)} h · {v.status} ·{' '}
+                                        {v.onCard ? 'on the card' : 'not on the card'}
+                                        {mismatch &&
+                                          (v.payable
+                                            ? ' — ⚠ looks payable but is missing (reopen re-totals)'
+                                            : ' — ⚠ on the card but not payable (reopen re-totals)')}
+                                      </li>
+                                    )
+                                  })}
+                                </ul>
+                                <p className="text-gray-500">
+                                  Schedule shows{' '}
+                                  <span className="font-semibold">
+                                    {verify.filter((v) => v.payable).reduce((s, v) => s + v.hours, 0).toFixed(2)} h payable
+                                  </span>{' '}
+                                  · card claims <span className="font-semibold">{Number(r.total_hours)} h</span>
+                                  {Math.abs(verify.filter((v) => v.payable).reduce((s, v) => s + v.hours, 0) - Number(r.total_hours)) < 0.01
+                                    ? ' — ✓ matches'
+                                    : ' — ⚠ mismatch, worth a look (durations may have been corrected)'}
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

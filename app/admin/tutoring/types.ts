@@ -30,6 +30,9 @@ export type Tutor = {
   google_calendar_id: string | null
   default_location: string | null
   offer_windows: OfferWindowUI[]
+  /** PL-104: the tutor's QBO pay-type TITLES (never amounts — rates live in
+   *  QBO Payroll only). Base pay = the 1-on-1/Test Prep default, implicit. */
+  pay_type_titles: string[] | null
 }
 
 export type FamilyRef = {
