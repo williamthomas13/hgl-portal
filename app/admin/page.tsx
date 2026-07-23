@@ -1082,6 +1082,7 @@ export default function AdminDashboard() {
           {/* PL-37: milestone score entry alongside attendance. */}
           <ScoresEntry
             classId={c.id}
+            defaultExam={c.class_type.includes('ACT') ? 'ACT' : 'SAT'}
             students={(c.enrollments ?? [])
               .filter((en) => en.students?.id)
               .map((en) => ({

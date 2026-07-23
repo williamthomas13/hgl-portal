@@ -346,6 +346,7 @@ export default async function InstructorView({
             {/* PL-37: milestone score entry where attendance is taken. */}
             <ScoresEntry
               classId={c.id}
+              defaultExam={String(c.class_type ?? '').includes('ACT') ? 'ACT' : 'SAT'}
               students={active
                 .map((e: any) => one<any>(e.students))
                 .filter(Boolean)
