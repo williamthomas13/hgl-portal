@@ -1,6 +1,6 @@
 # Portal fixes — batch 14
 
-First batch on the new naming (`portal-fixes-batch-14.md`). Continues PL-x numbering from PL-96.
+First batch on the new naming (`portal-fixes-batch-14.md`). Continues PL-x numbering from PL-96 — **ALL four shipped ✅**, gates green (tsc · build · smoke:public 8 · regress:links 96 · regress:pronouns 61 · cancel-class 11 · resume-addon).
 
 **Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
 
