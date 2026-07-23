@@ -137,7 +137,9 @@ Code twins + reseed drafts + PL-82 samples (10-day sample shows delivered-and-op
 - To make that promise true, add the missing mechanism: an admin **"Attach this payment to enrollment X"** one-click on the pre-filtered enrollments view, which runs the normal paid-webhook consequences end-to-end (confirmation, sequence scheduling, PR cancellation, QBO sync). Idempotent; logged by-hand on the family timeline.
 - **General note for the AL pass:** where an alert has downstream consequences, the body carries this same two-part ledger — "not done yet" and "what happens automatically once you act" (the dunning and HOLD alerts already got theirs in PL-89/90).
 
-## PL-93 · School/counselor comms timeline with open tracking ("are our nudges landing?")
+## PL-93 · School/counselor comms timeline with open tracking ("are our nudges landing?") ✅
+
+> **Shipped, browser-verified as signed-in admin.** New `/api/admin/school-comms` (staff-gated) scopes `email_sends` to a school's contact emails (counselor-role rows — CD/CR/FP/CX-C all land there), each row with the delivered/**opened** state, the automatic/by-hand badge, and the openable render via the PL-77 preview endpoint. Embedded **per contact** on the School contacts panel: "Emails to this contact (1 — 0 opened, 1 not yet)" — the summary leads with the open counts because the all-unopened contact is the reliable pattern (verified live: the QA contact's CR shows sent/automatic, 0 opened). **Open state on chase lines everywhere they render:** the PL-89 alert already carries it (classroom-chase util), and the class card's room-request badge now appends the live chase line via a new `ChaseStatus` component (verified rendering under a pending request — honestly "not yet sent" per round when no CR emails exist). Raw per-row status, no editorializing, read-only throughout.
 
 Scarlett: the counselor's profile should show whether they've opened our emails — PL-83 covers families only. Extend the same timeline machinery to schools:
 

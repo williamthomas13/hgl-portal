@@ -18,6 +18,7 @@ import ScoresEntry from '../components/ScoresEntry'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h, useDeepLinkFocus } from './ui'
 import { FamilyCommsRow } from './family-comms'
+import { ChaseStatus } from './school-comms'
 
 type Session = {
   id: string
@@ -842,6 +843,10 @@ export default function AdminDashboard() {
                   <span className={`inline-block px-2 py-0.5 rounded font-semibold ${badge.cls}`}>
                     {badge.text}
                   </span>
+                  {/* PL-93: the CR chase line with open state — "nudged Aug 27
+                      (not yet opened)" is the difference between sending CR3
+                      and picking up the phone. */}
+                  {rr?.status === 'pending' && <ChaseStatus classId={c.id} />}
                 </p>
               )
             })()}

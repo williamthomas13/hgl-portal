@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
 import { formatDateAdmin } from '../utils/dates'
+import { SchoolCommsRow } from './school-comms'
 
 // School contact management (PHASE4_SPEC §10 + admin UX addendum): a CONTACT
 // is the person; a SCHOOL_AFFILIATION is their tenure at a school (null
@@ -268,7 +269,8 @@ export default function CounselorsPanel({
           </thead>
           <tbody className="divide-y divide-gray-200">
             {active.map((a) => (
-              <tr key={a.id} className="hover:bg-gray-50 transition text-sm">
+              <Fragment key={a.id}>
+              <tr className="hover:bg-gray-50 transition text-sm">
                 <td className="px-4 py-2 font-semibold text-hgl-slate">{a.schools?.nickname ?? '—'}</td>
                 <td className="px-4 py-2">
                   {a.contacts?.first_name} {a.contacts?.last_name}
@@ -303,6 +305,12 @@ export default function CounselorsPanel({
                   </button>
                 </td>
               </tr>
+              {/* PL-93: "are our nudges landing?" — this contact's timeline
+                  with per-row delivered/opened status. */}
+              {a.contacts?.email && (
+                <SchoolCommsRow schoolId={a.school_id} email={a.contacts.email} colSpan={6} />
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
