@@ -862,15 +862,17 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
       .in('status', ['sent', 'delivered'])
       .order('sent_at', { ascending: false })
       .limit(1)
+    // PL-98 standing rule: no internal shorthand in alert bodies — spell
+    // out what a new hire would understand.
     const fpStatus = fpSends?.[0]?.sent_at
-      ? `FP last-call sent ${formatDate(fpSends[0].sent_at.slice(0, 10))}`
-      : 'FP push not yet sent (it fires deadline−3d to −1d)'
+      ? `the final-days push (the counselor's last-call email) was sent ${formatDate(fpSends[0].sent_at.slice(0, 10))}`
+      : "the counselor's final-days push has not gone out yet (it goes out 3 days to 1 day before the deadline)"
     const classLink = `${emailBaseUrl()}/admin?class=${bundle.id}`
     const movesHtml = `
       <p><strong>Your three moves:</strong></p>
       <ul style="margin:0;padding-left:20px;color:#334155">
         <li style="margin:6px 0"><strong>Hold</strong> — final-days signups often close the gap;
-        the FP push is already working the counselor side.</li>
+        the counselor's final-days push is already working that side.</li>
         <li style="margin:6px 0"><strong>Extend the deadline</strong> (commonly a week) —
         <a href="${classLink}">set it on the class page</a>. Extending propagates automatically:
         collateral, the registration page, and the counselor push timing all derive from the

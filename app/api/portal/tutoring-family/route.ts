@@ -187,7 +187,7 @@ export async function POST(req: Request) {
           body: `<p><strong>${student.first_name} ${student.last_name}</strong>'s family moved their
             ${subj ?? 'tutoring'} session themselves in the portal (picked an offered slot):</p>
             <p><strong>${fmtDenver(original.starts_at)} → ${fmtDenver(picked.starts_at)}</strong> (Denver)</p>
-            <p>Free reschedule (24h+ notice). The tutor's Google Calendar and T3 notices are already
+            <p>Free reschedule (24h+ notice). The tutor's Google Calendar and the schedule-change emails are already
             handled — nothing to do unless it looks wrong. It's also listed under
             <a href="${emailBaseUrl()}/admin/tutoring" style="color:#00AEEE">Recent parent activity on the tutoring page</a>.</p>`,
         }),

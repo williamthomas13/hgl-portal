@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         (${record.family.parent_email}) converted ${record.student.first_name}'s
         ${record.classLabel} payment themselves from the cancellation email: ${terms}.</p>
         <p>The page rolled straight into the availability grid; if they don't share times,
-        the CX-T follow-up goes out automatically after a day.</p>
+        the tutoring-start follow-up email goes out automatically after a day.</p>
         <p><a href="${emailBaseUrl()}/admin/tutoring?family=${record.family.id}" style="color:#00AEEE">The family record</a>
         · <a href="${emailBaseUrl()}/admin/communications?enrollment=${record.enrollment.id}" style="color:#00AEEE">the enrollment's comms</a></p>`,
     }).catch((e) => console.error('self-serve conversion alert failed (conversion stands):', e))
