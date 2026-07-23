@@ -25,8 +25,13 @@ export function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   // "Adjust state during render" pattern: a bumped openSignal (Duplicate
-  // class) forces the section open without an effect-driven double render.
-  const [seenSignal, setSeenSignal] = useState(openSignal ?? 0)
+  // class, alert deep-links) forces the section open without an
+  // effect-driven double render. PL-99: seenSignal starts at 0 — NOT at the
+  // incoming value — so a signal fired BEFORE this section mounted (deep-link
+  // intent set while the page was still loading; these sections render only
+  // after `loaded` flips) still opens it on first render. A one-shot signal
+  // must survive late mounts.
+  const [seenSignal, setSeenSignal] = useState(0)
   if (openSignal !== undefined && openSignal !== seenSignal) {
     setSeenSignal(openSignal)
     setOpen(true)
@@ -201,6 +206,11 @@ export function useDeepLinkFocus(elementId: string | null) {
         clearInterval(timer)
         el.scrollIntoView({ block: 'center', behavior: 'smooth' })
         el.classList.add('ring-2', 'ring-hgl-blue')
+        // PL-99: panels above keep loading after the first scroll and shift
+        // the layout — re-assert the position once things settle so the
+        // highlighted row is actually on screen when the reader looks.
+        setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 1800)
+        setTimeout(() => el.scrollIntoView({ block: 'center' }), 4000)
         setTimeout(() => el.classList.remove('ring-2', 'ring-hgl-blue'), 8000)
       } else if (tries > 25) {
         clearInterval(timer)

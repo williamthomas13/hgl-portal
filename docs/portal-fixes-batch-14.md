@@ -1,0 +1,47 @@
+# Portal fixes — batch 14
+
+First batch on the new naming (`portal-fixes-batch-14.md`). Continues PL-x numbering from PL-96.
+
+**Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
+
+## PL-96 (small) · CX sample `cancellationOptionsBlock` is stale — test-sends hide the PL-86 button and the approved copy
+
+**Found:** Scarlett's batch-13 re-test-send of CX_FAMILY (parent) rendered the options list as the old PL-13-era worked example — "Here are your options: 1. Convert to 1-on-1 tutoring… 2. Full refund." — with **no conversion button and none of the deck-verbatim savings framing**. Real sends are fine: `cancel-class/route.ts` passes `cancellationOptionsHtml(ctx, audience, offer, creditTerm)` in as `{cancellationOptionsBlock}`, and that composer carries the PL-86 button (`convertUrlFor`), the "savings of over {pct}% (USD ${usd})" copy, the availability-tailoring line, and the one-tap explainer. The gap is only the **sample variable** at `comms-variables.ts` (~line 840): PL-86 rebuilt the composer but never rebuilt the sample, so the editor preview and every test-send show pre-batch-13 copy. That breaks the PL-56/82 realistic-samples standing rule on exactly the template whose new behavior most needs eyeballing.
+
+**Fix:**
+- Rebuild the sample `cancellationOptionsBlock` by rendering it FROM the real composer, not by hand-writing HTML that will drift again: build it from `cancellationOptionsHtml()` with a sample-shaped ctx (Ana / SIS SAT Prep / $450 / 6-hour offer, consistent with the existing CX samples), a sample `CancellationOffer` carrying realistic `savingsPct`/`savingsUsd`, and `creditTerm` set so the credit option shows too (the two-option `<ol>` shape is the common real case). If a static string must remain for the sample table, generate it from the composer in a seed/refresh step or a unit test that fails on drift — the point is that composer and sample can never disagree silently again.
+- The button must appear in the sample with an obviously-test href (follow the `payButtonBlock` pattern: `https://hgl-portal.vercel.app/test-link`) — never a mintable real `/convert/{id}` token.
+- Cover both audiences: the composer branches on `isStudent` (you/Ana, your/your family's) — if per-audience sample pins exist for CX (PL-82 machinery), pin both; otherwise the parent shape is the sample and that's fine, note it.
+- Include the add-on variant nowhere in the default sample (keep it the standard case), but verify render of the add-on branch in the E2E so the deck-addendum copy is exercised.
+- **Sweep for siblings:** audit every other sample block variable in `comms-variables.ts` that shadows a code composer touched in batches 11–13 (`changeListBlock` vs the PL-85 collapsed T3-T shape is the prime suspect; also any alert samples PL-82 didn't rebuild in batch 13). Same rule: sample must match the current composed shape. List what was updated in the checkoff note.
+- Re-render check: after the fix, the CX editor preview must show the button + savings copy; test-send to billy@ to confirm.
+
+**Verify:** editor preview and test-send show the composed shape (button, savings %, credit option, refund close) · sample href is the test link · drift guard in place · sibling sweep documented.
+
+## PL-97 (tiny) · AL_INTAKE_COMPLETE has no action link — PL-92 standing-rule violation
+
+**Found:** the test-send body says "The lead is marked intake-complete on /admin/leads — availability and all answers are on the lead record, ready for matching." — `/admin/leads` is plain prose, and there is no link or button anywhere in the body. The PL-92 standing rule says every internal alert deep-links its SPECIFIC record with its decision's one-click actions.
+
+**Fix:** give it the standard action surface: a primary button deep-linking the exact lead record (`/admin/leads?lead={id}` via the `useDeepLinkFocus` machinery — opens the leads section, scrolls to and highlights the row with the intake answers/availability visible). If "ready for matching" has a one-click next step (the scheduling wizard preloaded with this lead, mirroring AL_AVAILABILITY_SHARED's "Schedule {student} now"), add it as the action; if leads don't flow into that wizard, the record deep-link alone is the fix — note which. Update the sample to the new shape (test-link href) and reseed the draft's code twin per the usual mechanics. While there, sweep the remaining alert family for any other body that names an admin path in prose without linking it — PL-92's concrete pass covered the big ones, but this one slipped through; list anything else found.
+
+**Verify:** test-send shows the button(s) · deep-link opens and highlights the exact lead as signed-in admin · sample matches composed shape.
+
+## PL-98 (tiny) · No internal shorthand in alert bodies — "FP" et al. spelled out
+
+**Found:** AL_MIN_ENROLLMENT's counselor-status line reads "Counselor side: FP last-call sent Saturday, August 22, 2026." Scarlett: no shorthand like "FP" — it won't always be understood. These alerts outlive the person who named the sequences.
+
+**Fix:** spell it out in reader-first terms — e.g. "Counselor side: the final-days push (the counselor's last-call email) was sent Saturday, August 22, 2026." / "not yet sent (it goes out 3 days to 1 day before the deadline)". Then sweep every alert/digest body and sample for other internal shorthand rendered to a reader — template keys (CR1/CR3, CX-T, IN_DIGEST, T3-T…), "FP", "CR chase", "QBO" (say QuickBooks), etc. Sequence-position labels families already see (#4 email) are fine; internal code names are not. Update samples + reseed touched subjects/preheaders per the usual mechanics; list every body changed in the checkoff note. This is a **standing copy rule** going forward: alert and digest bodies never use internal shorthand — write what a new hire would understand.
+
+**Verify:** re-render/test-send of every touched alert · grep composes for the shorthand tokens comes back clean.
+
+## PL-99 · AL_AVAILABILITY_SHARED's "Schedule now" deep link doesn't auto-open the wizard (mount race) ✅
+
+> **Shipped, clean-arrival browser E2E green for all three params.** The doc's hypothesized mechanism was exactly right: `CollapsibleSection` initialized its `seenSignal` to the INCOMING `openSignal` value, so a section that mounts after `loaded` flips (the tutoring page gates every section on data load) mounted with the already-incremented signal and never observed a change. Fix in the one shared place: `seenSignal` now starts at 0, so a signal fired before the section existed still opens it on its first render — one-shot deep-link intent survives late mounts by construction. Also hardened `useDeepLinkFocus`: after finding the row it re-asserts the scroll at +1.8s and +4s, because panels above keep loading and shift the layout out from under the first scroll. Verified on fresh navigations as signed-in admin: **`?schedule={id}` lands with the wizard OPEN, the student preselected, and the shared windows visible — zero clicks** (the original repro) · `?invoice={id}` auto-opens Billing with the exact row rendered and ring-highlighted · `?family={id}` highlights the family card. Consumer sweep: every `openSignal` consumer (both wizards, Billing, QuickBooks) bumps from a zero-initialized state, so nothing auto-opens unintentionally under the new semantics; the admin page's `?class`/`?enrollment`/`?qbo` params were race-free already (immediate-mount sections / tab state) and stay green.
+
+**Found in live E2E (Jul 23):** the upstream flow verified end-to-end — token minted with the house pattern → `/availability/{token}` form (QA Availability family) saved Mon/Wed 4–6pm → AL_AVAILABILITY_SHARED fired through the real pipeline (`availability_shared:{studentId}:2026-07-23`) → and once the wizard section is opened by hand, the student IS preselected with the just-shared windows loaded. But on fresh arrival at `/admin/tutoring?schedule={studentId}` the "New student schedule" section stays **collapsed** — the reader lands on a page that looks like nothing happened. Reproduced on a clean navigation.
+
+**Likely mechanism (verify):** `page.tsx`'s mount effect increments `wizardOpenSignal` immediately, but the `CollapsibleSection` carrying `openSignal` only renders after `loaded` flips true — it mounts with the already-incremented value and never observes a *change*, so it never opens. `?invoice=`/`?family=` focus params may share the timing issue via `useDeepLinkFocus` racing data load — check all three deep-link params on this page, and any other `useDeepLinkFocus` consumers with the same render-after-load structure (school contacts panel, leads, QuickBooks section).
+
+**Fix:** make the open/focus state survive late mounts — e.g. hold the pending deep-link intent in state the section reads on ITS mount (an `initialOpen` prop or signal re-fired once `loaded`), rather than a one-shot signal fired before the section exists. E2E: fresh navigation to `?schedule={id}` must land with the wizard open, student preselected, windows visible, no clicks.
+
+**Verify:** clean-arrival E2E for `?schedule`, `?invoice`, `?family` (and swept consumers) · existing PL-92 suite still green.
