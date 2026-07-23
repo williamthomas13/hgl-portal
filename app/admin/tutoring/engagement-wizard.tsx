@@ -133,6 +133,88 @@ export default function EngagementWizard({
     )
   }, [students, studentFilter])
 
+  // PL-110: the wizard KNOWS about prospective students — open leads without
+  // a student record yet search alongside real students and surface FIRST.
+  type LeadOption = { id: string; student_name: string | null; contact_name: string | null; contact_email: string | null; status: string }
+  const [leadOptions, setLeadOptions] = useState<LeadOption[]>([])
+  const [pullingLeadId, setPullingLeadId] = useState('')
+  const [pendingPickId, setPendingPickId] = useState<string | null>(null)
+  useEffect(() => {
+    supabase
+      .from('leads')
+      .select('id, student_name, contact_name, contact_email, status')
+      .not('status', 'in', '("scheduled","lost")')
+      .is('student_id', null)
+      .then(({ data }) => setLeadOptions((data as LeadOption[]) ?? []))
+  }, [])
+  const filteredLeads = useMemo(() => {
+    const q = studentFilter.trim().toLowerCase()
+    if (!q) return []
+    return leadOptions.filter((l) =>
+      `${l.student_name ?? ''} ${l.contact_name ?? ''} ${l.contact_email ?? ''}`.toLowerCase().includes(q)
+    )
+  }, [leadOptions, studentFilter])
+  // Adopt a pulled-through student once the refreshed list contains them
+  // (same late-adoption pattern as the deep-link preload).
+  if (pendingPickId && students.some((st) => st.id === pendingPickId)) {
+    setPendingPickId(null)
+    setStudentId(pendingPickId)
+  }
+  async function pullThroughLead(lead: LeadOption) {
+    setPullingLeadId(lead.id)
+    const res = await fetch('/api/admin/leads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_family', id: lead.id }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setPullingLeadId('')
+    if (!res.ok) return alert(json.error ?? 'Could not pull the prospective student through.')
+    // Family+student now exist (deduped by parent email / student name) and
+    // any intake availability is already on the student — refresh the page's
+    // student list and pick them; the pipeline advances to Started the
+    // moment the schedule is created (the existing PL-10 trigger).
+    setLeadOptions((prev) => prev.filter((l) => l.id !== lead.id))
+    setPendingPickId(json.studentId)
+    onCreated()
+  }
+  async function addNewProspect() {
+    const studentName = prompt('Student name (first last):', studentFilter.trim())
+    if (studentName == null || !studentName.trim()) return
+    const parentName = prompt("Parent/guardian name:")
+    if (parentName == null) return
+    const parentEmail = (prompt('Parent email (their login + billing contact):') ?? '').trim().toLowerCase()
+    if (!parentEmail || !/^\S+@\S+\.\S+$/.test(parentEmail)) return alert('A valid parent email is required.')
+    // Dedupe guard: same email/name anywhere → ask before creating.
+    const emailMatch =
+      students.find((st) => (st.families?.parent_email ?? '').toLowerCase() === parentEmail) ??
+      null
+    const leadMatch = leadOptions.find((l) => (l.contact_email ?? '').toLowerCase() === parentEmail) ?? null
+    if (emailMatch) {
+      if (confirm(`${parentEmail} already belongs to ${familyLabel(emailMatch.families)} — is this the same family? OK picks their existing record.`)) {
+        setStudentId(emailMatch.id)
+        return
+      }
+      return
+    }
+    if (leadMatch) {
+      if (confirm(`${parentEmail} is already on the pipeline (${leadMatch.student_name ?? leadMatch.contact_name}) — same family? OK pulls that record through.`)) {
+        await pullThroughLead(leadMatch)
+      }
+      return
+    }
+    // Lead-backed create — never an orphan family (the pipeline record IS
+    // the paper trail).
+    const res = await fetch('/api/admin/leads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', source: 'call', student_name: studentName.trim(), contact_name: (parentName ?? '').trim() || null, contact_email: parentEmail, interest: 'unsure', status: 'contacted' }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) return alert(json.error ?? 'Could not create the prospective student.')
+    await pullThroughLead({ id: json.lead?.id ?? json.id, student_name: studentName.trim(), contact_name: parentName, contact_email: parentEmail, status: 'contacted' })
+  }
+
   // PL-53d: the class instructor's handoff note + who taught this student
   // (continuity hint — never a rule; the Ops Director's judgment wins).
   const [handoffNote, setHandoffNote] = useState<{ note: string; by: string | null } | null>(null)
@@ -489,6 +571,23 @@ export default function EngagementWizard({
             />
             {studentFilter.trim() && (
               <ul className="border border-gray-200 rounded-md mt-1 divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                {/* PL-110: prospective students surface FIRST — picking one
+                    pulls the lead through (family+student created/linked,
+                    intake availability rides along). */}
+                {filteredLeads.slice(0, 4).map((l) => (
+                  <li key={l.id}>
+                    <button
+                      disabled={pullingLeadId === l.id}
+                      onClick={() => pullThroughLead(l)}
+                      className="w-full text-left px-3 py-2 hover:bg-purple-50 disabled:opacity-50"
+                    >
+                      <span className="font-semibold text-hgl-slate">{l.student_name ?? l.contact_name ?? l.contact_email}</span>{' '}
+                      <span className="text-xs bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 font-semibold">prospective student</span>{' '}
+                      <span className="text-gray-500 text-xs">{l.contact_name ?? ''} {l.contact_email ? `· ${l.contact_email}` : ''}</span>
+                      {pullingLeadId === l.id && <span className="text-xs text-gray-400"> — pulling through…</span>}
+                    </button>
+                  </li>
+                ))}
                 {filteredStudents.slice(0, 8).map((s) => (
                   <li key={s.id}>
                     <button
@@ -502,19 +601,21 @@ export default function EngagementWizard({
                     </button>
                   </li>
                 ))}
-                {filteredStudents.length === 0 && (
-                  <li className="px-3 py-2 text-gray-400 italic">No students match.</li>
+                {filteredStudents.length === 0 && filteredLeads.length === 0 && (
+                  <li className="px-3 py-2 text-gray-400 italic">No students or prospective students match.</li>
                 )}
+                <li>
+                  <button
+                    onClick={addNewProspect}
+                    className="w-full text-left px-3 py-2 text-hgl-blue hover:bg-blue-50 text-sm"
+                  >
+                    + Add a new family… <span className="text-gray-400">(creates a pipeline record first — matched, never duplicated)</span>
+                  </button>
+                </li>
               </ul>
             )}
           </>
         )}
-        <p className="text-xs text-gray-400 mt-1">
-          New family? Add them as a prospective student on the{' '}
-          <a href="/admin/leads" className="text-hgl-blue underline">prospective students page</a> and use
-          &ldquo;Create family + student&rdquo; there — never re-enter a family that came through a
-          group class.
-        </p>
       </div>
 
       {/* 1b. Student availability (PL-19 §3): the intake grid, editable here
