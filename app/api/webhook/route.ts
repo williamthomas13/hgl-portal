@@ -9,6 +9,7 @@ import {
   markTutoringInvoicePaid,
   resolveInvoicePaymentIntentId,
 } from '../../utils/tutoring-stripe';
+import { emailBaseUrl } from '../../utils/base-url';
 import { sendAdminAlert } from '../../utils/email';
 import { ADMIN_EMAIL } from '../../utils/lifecycle';
 
@@ -167,7 +168,8 @@ export async function POST(req: Request) {
             (period ${String(tutoringInv.period).slice(0, 7)}). Tutoring refunds are discretionary
             (policy is reschedule-not-refund), so the books entry is manual: record a Refund
             Receipt in QuickBooks against the matching tutoring item.</p>
-            <p>If the month should not stay marked paid, adjust it on /admin/tutoring.</p>`,
+            <p>If the month should not stay marked paid,
+            <a href="${emailBaseUrl()}/admin/tutoring?invoice=${tutoringInv.id}" style="color:#00AEEE">adjust it on the invoice row</a>.</p>`,
         }).catch((e) => console.error('alert failed:', e));
         return NextResponse.json({ received: true });
       }

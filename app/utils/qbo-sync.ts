@@ -495,7 +495,8 @@ export async function sweepQboHealth(): Promise<'alerted' | null> {
     body: `<p>The QuickBooks connection stopped working (revoked or past Intuit's ~100-day
       refresh window). <strong>${count ?? 0}</strong> payment record${count === 1 ? ' is' : 's are'}
       waiting to sync and will drain automatically once reconnected.</p>
-      <p>Reconnect from the QuickBooks panel at the bottom of /admin.</p>`,
+      <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin?qbo=reconnect" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Reconnect QuickBooks</a>
+      — lands with the QuickBooks section open.</p>`,
   })
   return status === 'sent' ? 'alerted' : null
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useDeepLinkFocus } from '../ui'
 import { supabase } from '../../utils/supabase'
 import { CollapsibleSection } from '../ui'
 import { ConfirmAction } from '../tutoring/confirm'
@@ -598,6 +599,26 @@ export default function LeadsAdmin() {
   }, [load, refreshSignal])
   const refresh = () => setRefreshSignal((n) => n + 1)
 
+  // PL-97: the intake-complete alert deep-links ?lead={id} — expand and
+  // highlight the exact lead record on arrival (PL-99 semantics: the focus
+  // hook polls until the data-loaded DOM contains the card).
+  const [focusLead, setFocusLead] = useState<string | null>(null)
+  useEffect(() => {
+    const leadId = new URLSearchParams(window.location.search).get('lead')
+    if (leadId) {
+      setExpanded(leadId)
+      setFocusLead(`lead-${leadId}`)
+    }
+  }, [])
+  useDeepLinkFocus(focusLead)
+  // A deep-linked lead in a hidden group (scheduled/lost) must still render.
+  useEffect(() => {
+    if (!focusLead || !loaded) return
+    const lead = leads.find((l) => `lead-${l.id}` === focusLead)
+    if (lead && (lead.status === 'scheduled' || lead.status === 'lost')) setShowClosed(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, focusLead])
+
   const open = leads.filter((l) => l.status !== 'scheduled' && l.status !== 'lost')
   const staleCount = open.filter(isStale).length
   const visibleStatuses = STATUS_ORDER.filter((s) =>
@@ -663,7 +684,7 @@ export default function LeadsAdmin() {
                       </h3>
                       <div className="space-y-2">
                         {group.map((lead) => (
-                          <div key={lead.id} className="border border-gray-200 rounded-lg p-3 bg-white">
+                          <div key={lead.id} id={`lead-${lead.id}`} className="border border-gray-200 rounded-lg p-3 bg-white">
                             <button
                               type="button"
                               className="w-full text-left flex flex-wrap items-center gap-x-3 gap-y-1"

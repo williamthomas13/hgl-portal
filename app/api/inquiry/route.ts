@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { sendAdminAlert } from '../../utils/email'
@@ -90,7 +91,8 @@ export async function POST(req: Request) {
     subject: `New inquiry — ${studentName ?? parentName}`,
     body: `<p><strong>${parentName}</strong> (${parentEmail}${parentPhone ? `, ${parentPhone}` : ''})
       asked about ${subject ?? 'tutoring'}${studentName ? ` for <strong>${studentName}</strong>` : ''}.</p>
-      <p>They're at the top of the prospective-students pipeline — /admin/leads.</p>`,
+      <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/leads?lead=${lead.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the lead record</a>
+      — they're at the top of the prospective-students pipeline.</p>`,
   }).catch((e) => console.error('inquiry alert failed (row stands):', e))
 
   return NextResponse.json({ ok: true })

@@ -204,15 +204,23 @@ export function useDeepLinkFocus(elementId: string | null) {
       tries++
       if (el) {
         clearInterval(timer)
-        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        el.classList.add('ring-2', 'ring-hgl-blue')
-        // PL-99: panels above keep loading after the first scroll and shift
-        // the layout — re-assert the position once things settle so the
-        // highlighted row is actually on screen when the reader looks.
-        setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 1800)
-        setTimeout(() => el.scrollIntoView({ block: 'center' }), 4000)
-        setTimeout(() => el.classList.remove('ring-2', 'ring-hgl-blue'), 8000)
-      } else if (tries > 25) {
+        // PL-99: panels keep loading after the first scroll (layout shifts)
+        // AND React re-renders can recreate the node or reset className,
+        // wiping a one-shot class mutation — so re-QUERY and re-apply at
+        // each assert point instead of holding the original node.
+        const assert = (smooth: boolean) => {
+          const node = document.getElementById(elementId)
+          if (!node) return
+          node.scrollIntoView(smooth ? { block: 'center', behavior: 'smooth' } : { block: 'center' })
+          node.classList.add('ring-2', 'ring-hgl-blue')
+        }
+        assert(true)
+        setTimeout(() => assert(true), 1800)
+        setTimeout(() => assert(false), 4000)
+        setTimeout(() => document.getElementById(elementId)?.classList.remove('ring-2', 'ring-hgl-blue'), 9000)
+      } else if (tries > 75) {
+        // ~30s: generous enough to outlive slow data loads (and first-hit
+        // dev compiles) without polling forever.
         clearInterval(timer)
       }
     }, 400)

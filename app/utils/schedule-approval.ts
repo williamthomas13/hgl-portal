@@ -361,8 +361,9 @@ export async function declineEngagement(engagementId: string, note: string | nul
     body: `<p><strong>${e.parentFirst}</strong> (${e.parentEmail}) responded to
       ${e.studentFirst}'s proposed schedule with ${e.tutorName}:</p>
       <blockquote>${note ?? '(no note)'}</blockquote>
-      <p>The schedule stays unconfirmed. Adjust it in the New Student Schedule area on
-      /admin/tutoring and re-send the confirmation.</p>`,
+      <p>The schedule stays unconfirmed. Adjust it on
+      <a href="${appUrl()}/admin/tutoring?family=${e.familyId}" style="color:#00AEEE">the family's record on the tutoring page</a>
+      and re-send the confirmation.</p>`,
   }).catch((err) => console.error('decline alert failed:', err))
   return { ok: true }
 }
@@ -397,7 +398,8 @@ export async function runScheduleApprovalNudges(): Promise<{ nudged: number; ale
         body: `<p>The family (${e?.parentEmail ?? '—'}) hasn't confirmed
           ${e?.studentFirst ?? 'the student'}'s proposed schedule with ${e?.tutorName ?? 'the tutor'}
           after two emails. Worth a call — the schedule never locks in on its own. You can also
-          set it live directly from the Students panel on /admin/tutoring.</p>`,
+          set it live directly from
+          <a href="${appUrl()}/admin/tutoring?family=${e?.familyId ?? ''}" style="color:#00AEEE">the family's row on the Students panel</a>.</p>`,
       }).catch((err) => console.error('unconfirmed alert failed:', err))
       result.alerted++
     }

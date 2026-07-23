@@ -1001,17 +1001,17 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   AL_UNAGREED: {
     alertCounts: '2',
     alertDetailsBlock:
-      '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li>Alex García (sample-parent@example.com)</li><li>Jordan Lee (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <strong>/admin/agreements</strong>.</p>',
+      '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Alex García</a> (sample-parent@example.com)</li><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Jordan Lee</a> (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">the agreements panel</a> — each name above lands on that family\'s row.</p>',
   },
   // availability route (PL-92 shape): schedule-now opens the wizard preloaded.
   AL_AVAILABILITY_SHARED: {
     alertDetailsBlock:
       '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
   },
-  // intake route: lead finished the form.
+  // intake route (PL-97 shape): lead record deep-link + schedule-now button.
   AL_INTAKE_COMPLETE: {
     alertDetailsBlock:
-      '<p><strong>Alex García</strong> (sample-parent@example.com) completed the intake form for <strong>Ana García</strong> (test prep).</p><p>The lead is marked intake-complete on /admin/leads — availability and all answers are on the lead record, ready for matching.</p>',
+      '<p><strong>Alex García</strong> (sample-parent@example.com) completed the intake form for <strong>Ana García</strong> (test prep).</p><p>Availability and all answers are on the lead record, ready for matching.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a>&nbsp;&nbsp;<a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the lead record</a></p>',
   },
   // tutoring-stripe dunning (PL-90 shape): one charge, three attempts, and
   // the emailed invoice link was the LAST automatic step.

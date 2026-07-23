@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { renderRegistered } from '../../../utils/comms-registered'
@@ -112,8 +113,9 @@ export async function POST(request: Request) {
       subject: 'Class cancelled but some scheduled emails could not be stopped',
       body: `<p>${bundle.schoolLabel} ${bundle.classType} was cancelled, but
         <strong>${leftover}</strong> scheduled/held email
-        row${(leftover ?? 0) === 1 ? '' : 's'} for it could not be cancelled. Cancel them by hand
-        on /admin/communications (bulk cancel for the class) before the next send window.</p>`,
+        row${(leftover ?? 0) === 1 ? '' : 's'} for it could not be cancelled. Cancel them by hand on
+        <a href="${emailBaseUrl()}/admin/communications?class=${classId}" style="color:#00AEEE">the communications dashboard (pre-filtered to this class — bulk cancel is there)</a>
+        before the next send window.</p>`,
     }).catch((e) => console.error('cancel-sends alert failed:', e))
     return NextResponse.json(
       {

@@ -291,7 +291,9 @@ export async function processGcalQueue(): Promise<GcalQueueResult> {
               could not be pushed to the tutor's Google Calendar.</p>
               <p>Last error: <code>${message.slice(0, 500)}</code></p>
               <p>The portal schedule is still correct — only the calendar copy is missing.
-              Fix the cause (Google Calendar panel on /admin/tutoring), then hit Retry there.</p>`,
+              Fix the cause on
+              <a href="${emailBaseUrl()}/admin" style="color:#00AEEE">the Google Calendar panel (admin page)</a>,
+              then hit Retry there.</p>`,
           }).catch((err) => console.error('gcal failure alert failed:', err))
         } else {
           result.deferred++

@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse, after } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionFamily } from '../../../utils/family-gate'
@@ -187,8 +188,8 @@ export async function POST(req: Request) {
             ${subj ?? 'tutoring'} session themselves in the portal (picked an offered slot):</p>
             <p><strong>${fmtDenver(original.starts_at)} → ${fmtDenver(picked.starts_at)}</strong> (Denver)</p>
             <p>Free reschedule (24h+ notice). The tutor's Google Calendar and T3 notices are already
-            handled — nothing to do unless it looks wrong. It's also listed under Recent parent
-            activity in /admin/tutoring.</p>`,
+            handled — nothing to do unless it looks wrong. It's also listed under
+            <a href="${emailBaseUrl()}/admin/tutoring" style="color:#00AEEE">Recent parent activity on the tutoring page</a>.</p>`,
         }),
       ])
     )

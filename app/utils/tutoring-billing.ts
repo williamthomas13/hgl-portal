@@ -334,7 +334,8 @@ export async function generateMonthlyCycle(
     if ((acceptances ?? 0) === 0) {
       result.familiesWithoutAgreement++
       unagreedFamilies.push(
-        `${family.parent_first_name} ${family.parent_last_name ?? ''} (${family.parent_email})`.trim()
+        // PL-97: each family deep-links its agreements row.
+        `<a href="${appUrl()}/admin/agreements?family=${familyId}" style="color:#00AEEE">${`${family.parent_first_name} ${family.parent_last_name ?? ''}`.trim()}</a> (${family.parent_email})`
       )
     }
 
@@ -541,7 +542,9 @@ export async function generateMonthlyCycle(
       body: `<p>The ${month.label} cycle just proposed invoices for families with no accepted
         scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p>
         <ul>${unagreedFamilies.map((f) => `<li>${f}</li>`).join('')}</ul>
-        <p>Send or re-send agreement links from <strong>/admin/agreements</strong>.</p>`,
+        <p>Send or re-send agreement links from
+        <a href="${appUrl()}/admin/agreements" style="color:#00AEEE">the agreements panel</a>
+        — each name above lands on that family's row.</p>`,
     }).catch((e) => console.error('unagreed-families alert failed:', e))
   }
   return result
@@ -734,7 +737,9 @@ export async function requestChanges(invoiceId: string, note: string): Promise<{
       schedule:</p><blockquote style="border-left:3px solid #cbd5e1;margin:8px 0;padding:4px 12px;color:#334155">${note
         .trim()
         .replace(/</g, '&lt;')}</blockquote>
-      <p>Edit the sessions on /admin/tutoring — the proposal page and invoice update automatically.
+      <p>Edit the sessions on
+      <a href="${appUrl()}/admin/tutoring?invoice=${invoiceId}" style="color:#00AEEE">the tutoring page</a>
+      (this month's invoice row opens highlighted) — the proposal page and invoice update automatically.
       The month stays unconfirmed until they confirm or the auto-confirm window closes (it pauses
       while a change request is open).</p>`,
   }).catch((e) => console.error('change-request alert failed:', e))

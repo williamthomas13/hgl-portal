@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyIntakeToken, applyIntakeSubmission, type IntakeSubmission } from '../../utils/intake'
 import { validAvailabilityRanges } from '../../utils/availability'
+import { emailBaseUrl } from '../../utils/base-url'
 import { sendAdminAlert } from '../../utils/email'
 import { ADMIN_EMAIL } from '../../utils/lifecycle'
 
@@ -106,11 +107,17 @@ export async function POST(req: Request) {
     templateKey: 'AL_INTAKE_COMPLETE',
     vars: { alertStudentName: `${studentFirst} ${studentLast}` },
     subject: `Intake complete — ${studentFirst} ${studentLast}`,
+    // PL-97 (PL-92 standing rule): deep-link the exact lead record + the
+    // one-click next step — intake creates/matches the student, so the
+    // schedule wizard preloads directly.
     body: `<p><strong>${guardianFirst} ${guardianLast}</strong> (${guardianEmail}) completed
       the intake form for <strong>${studentFirst} ${studentLast}</strong>
       (${interest === 'test_prep' ? 'test prep' : 'subject tutoring'}).</p>
-      <p>The lead is marked intake-complete on /admin/leads — availability and all answers
-      are on the lead record, ready for matching.</p>`,
+      <p>Availability and all answers are on the lead record, ready for matching.</p>
+      <p style="margin:20px 0">
+        <a href="${emailBaseUrl()}/admin/tutoring?schedule=${result.studentId}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule ${studentFirst} now</a>
+        &nbsp;&nbsp;<a href="${emailBaseUrl()}/admin/leads?lead=${leadId}" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the lead record</a>
+      </p>`,
   }).catch((e) => console.error('intake alert failed (submission stands):', e))
 
   return NextResponse.json({ ok: true })

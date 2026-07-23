@@ -98,6 +98,11 @@ export default function CommunicationsDashboard() {
 
   // Filters
   const [classFilter, setClassFilter] = useState('')
+  // PL-97: alert deep-links can pre-filter to a class on arrival.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('class')
+    if (c) setClassFilter(c)
+  }, [])
   const [templateFilter, setTemplateFilter] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
