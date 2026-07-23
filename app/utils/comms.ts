@@ -156,7 +156,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   E1_THANKS: '#1 — Thank you',
   E2_DIAG_PARENT: '#2-P — Diagnostic & Synap access (parent)',
   E2_DIAG_STUDENT: '#2-S — Diagnostic & Synap access (student)',
-  E3_VFAQ: '#3 — Video FAQs',
+  E3_VFAQ: '#3 — VERY FAQs',
   E4_CLASS_DETAILS: '#4 — Class details',
   E5_LOCATION: '#5 — Location reminder',
   E6_DIAG2: '#6 — Second diagnostic',

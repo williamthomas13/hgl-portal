@@ -310,7 +310,7 @@ Higher Ground Learning`,
   },
   {
     template_key: 'E3_VFAQ',
-    display_name: '#3 — Video FAQs',
+    display_name: '#3 — VERY FAQs',
     sequence_number: '3',
     audience: 'both',
     from_identity: 'info',
