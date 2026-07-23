@@ -48,3 +48,6 @@ next-env.d.ts
 
 # one-off local QA/data scripts (referenced by fixes docs, never committed)
 scripts/.tmp-*
+
+# audit scratch — keep local, never commit
+_to_delete/
