@@ -1,4 +1,5 @@
 import type { EnrollmentEmailContext, Audience } from './email'
+import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
 import { formatDateFull } from './dates'
 import type { ResolvedVars } from './comms-md'
 
@@ -784,6 +785,30 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   sessions: [],
 }
 
+// PL-96: the CX sample is RENDERED FROM the real composer at module load —
+// after Scarlett's test-send caught the sample still showing pre-batch-13
+// copy (no PL-86 convert button, no savings framing) while real sends were
+// fine. Computed, not hand-written: composer and sample can never disagree
+// silently again. Standard (no-add-on) parent case, two-option shape
+// (hours offer + next-course credit), obviously-test convert href.
+const SAMPLE_CX_CTX = {
+  enrollmentId: '00000000-0000-4000-8000-000000000000',
+  studentFirstName: 'Ana',
+  classType: 'SAT Prep',
+  schoolNickname: 'SIS',
+  className: 'SIS SAT Prep',
+  addons: [] as { name: string; hours: number; pricePaid: number }[],
+}
+// 6 hours at the ~$125 regular rate ≈ $750 → $450 paid = save $300 (40%).
+const SAMPLE_CX_OFFER: CancellationOffer = { hours: 6, price: 450, savingsPct: 40, savingsUsd: 300 }
+const SAMPLE_CANCELLATION_OPTIONS = cancellationOptionsHtml(
+  SAMPLE_CX_CTX,
+  'parent',
+  SAMPLE_CX_OFFER,
+  'January 2027',
+  { convertUrl: 'https://hgl-portal.vercel.app/test-link' }
+)
+
 // PL-56: previews must read like real sends — placeholder-ish samples
 // ("your tutor", "tutoring", "—") impersonated bugs during template review.
 // Composed blocks carry worked examples mirroring what the send code
@@ -832,13 +857,14 @@ export const SAMPLE_EXTRA: ExtraVars = {
   payButtonBlock:
     '<p style="margin:24px 0"><a href="https://hgl-portal.vercel.app/test-link" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>',
 
-  // T3 (schedule change)
+  // T3 (schedule change) — PL-96 sibling sweep: mirrors the REAL parent
+  // compose in sendScheduleChangeNotices (subject-first sentence, ul/li
+  // markup), not the pre-PL-13 hand-written shape.
   changeListBlock:
-    '<p><strong>Monday, September 14</strong> — was 4:00 PM, now <strong>5:30 PM</strong><br/><strong>Monday, September 21</strong> — cancelled (make-up added Wednesday, September 23 at 4:00 PM)</p>',
+    '<ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">SAT on Mon, Sep 14, 4:00 PM moved to Wed, Sep 16, 4:00 PM.</li></ul>',
 
-  // CX / CX-W (cancellation) — worked options list
-  cancellationOptionsBlock:
-    "<p>Here are your options:</p><ol><li><strong>Convert to 1-on-1 tutoring.</strong> Ana would receive 6 hours of 1-on-1 SAT tutoring — the $450 you paid carries over in full.</li><li><strong>Full refund.</strong> We'll return the full $450 to your original payment method — just reply and we'll take care of it.</li></ol>",
+  // CX / CX-W (cancellation) — PL-96: rendered from the real composer above.
+  cancellationOptionsBlock: SAMPLE_CANCELLATION_OPTIONS,
 
   // T7/T8 links + lines
   intakeFormLink: 'https://hgl-portal.vercel.app/test-link',
