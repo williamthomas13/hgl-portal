@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import type { EnrollmentEmailContext, Rendered } from './email'
 import { renderEmail, type RenderedWithVersion } from './comms-db-render'
 import type { ExtraVars } from './comms-variables'
@@ -10,7 +11,7 @@ import type { ExtraVars } from './comms-variables'
 // variables resolve from ExtraVars. Same live-flag ramp as every template:
 // code copy sends until the template is flipped live in the editor.
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 
 export type TutoringStub = {
   parentFirstName: string

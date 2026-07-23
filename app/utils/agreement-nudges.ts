@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendAdminAlert, sendOnce } from './email'
 import { renderRegistered } from './comms-registered'
@@ -20,7 +21,7 @@ import { ADMIN_EMAIL } from './lifecycle'
 // unchanged; the firmness lives in the language and this chase, so a
 // billed-unsigned family is a slipped crack, not the normal path.
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 const DAY_MS = 24 * 3600_000
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

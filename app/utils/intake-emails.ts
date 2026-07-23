@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT } from './email'
 import { loadContactInfo, contactBlockHtml, type ContactInfo } from './tutoring-emails'
@@ -11,7 +12,7 @@ import { renderRegistered } from './comms-registered'
 // agreements link, autopay link, location, the 24h policy line. Both carry
 // the §8 human-help block: replying or calling always works.
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 
 const button = (label: string, href: string) =>
   `<p style="margin:24px 0">

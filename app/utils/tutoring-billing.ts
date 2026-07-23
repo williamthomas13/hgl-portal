@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert } from './email'
@@ -135,7 +136,7 @@ export function verifyAutopayToken(token: string): string | null {
   return expected.length === got.length && timingSafeEqual(expected, got) ? id : null
 }
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 
 // ---------------------------------------------------------------------------
 // Generation (spec §6.1) — materialize next month's sessions as `proposed`

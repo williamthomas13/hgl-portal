@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { nonProductionOrigins } from './base-url'
 import { classLocationTailText } from './comms-variables'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
@@ -1781,6 +1782,34 @@ export async function sendOnce(opts: {
   if (!process.env.RESEND_API_KEY) {
     console.warn(`RESEND_API_KEY not set — skipping email ${opts.dedupeKey}`)
     return 'failed'
+  }
+
+  // PL-87: a REAL send may never ship a non-production origin — localhost /
+  // 127.x / ngrok / preview deployments all refuse loudly, with an admin
+  // alert. ALLOW_REAL_EMAILS deliberately does NOT bypass this: a
+  // dev-machine real send is allowed, a dev LINK in a real email never is.
+  // (Test-sends are exempt — they go to the admin's own inbox by design.)
+  if (!opts.isTest) {
+    const badOrigins = nonProductionOrigins(opts.html)
+    if (badOrigins.length > 0) {
+      console.error(
+        `[PL-87] REFUSED real send ${opts.dedupeKey} — non-production origin(s): ${badOrigins.join(', ')}`
+      )
+      // Quote hosts without a scheme so the alert can't trip its own guard.
+      await sendAdminAlert({
+        dedupeKey: `origin_guard:${opts.dedupeKey}`,
+        adminEmail: process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmail.com',
+        subject: `Blocked: outgoing email carried a non-production link (${opts.templateKey ?? opts.emailType})`,
+        body: `<p>A real (non-test) send was <strong>refused</strong> because its body contained
+          link origin(s) that aren't production: <strong>${badOrigins.join(', ')}</strong>.</p>
+          <p>Send: <code>${opts.dedupeKey}</code> · template ${opts.templateKey ?? opts.emailType}
+          · to ${opts.to.join(', ')}.</p>
+          <p>This usually means an email was composed on a dev machine from the dev origin.
+          Nothing was delivered; the recipient saw nothing. Re-run the send from production
+          (or after the compose path is fixed) and it will go out normally.</p>`,
+      }).catch((e) => console.error('origin-guard alert failed (send stays refused):', e))
+      return 'failed'
+    }
   }
 
   // PL-60: the Roman-Desmond incident. A dev-server cron run against the

@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { createHmac, timingSafeEqual } from 'crypto'
 import { availabilityToken } from './intake'
@@ -287,7 +288,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export function calendarPageUrlFor(classId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/classes/${classId}/calendar`
 }
 
@@ -298,7 +299,7 @@ export function calendarPageUrlFor(classId: string) {
  * The pt HMAC matches portal-auth's loginPrefillToken.
  */
 export function portalDeepLinkFor(enrollmentId: string, parentEmail: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   const email = parentEmail.trim().toLowerCase()
   const token = createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
     .update(`login:${email}`)
@@ -385,7 +386,7 @@ function claimToken(enrollmentId: string) {
 }
 
 export function claimUrlFor(enrollmentId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/api/waitlist/claim?e=${enrollmentId}&t=${claimToken(enrollmentId)}`
 }
 
@@ -405,7 +406,7 @@ function declineToken(enrollmentId: string) {
 }
 
 export function declineUrlFor(enrollmentId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/waitlist/decline?e=${enrollmentId}&t=${declineToken(enrollmentId)}`
 }
 
@@ -490,7 +491,7 @@ function resumeToken(enrollmentId: string) {
 }
 
 export function resumePaymentUrlFor(enrollmentId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/api/resume-payment?e=${enrollmentId}&t=${resumeToken(enrollmentId)}`
 }
 
@@ -510,7 +511,7 @@ function addonToken(enrollmentId: string) {
 }
 
 export function addonPageUrlFor(enrollmentId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/addons/${enrollmentId}?t=${addonToken(enrollmentId)}`
 }
 
@@ -531,12 +532,12 @@ function unsubToken(familyId: string) {
 
 /** PL-53b: the family's signed share-your-availability page. */
 export function availabilityUrlFor(familyId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/availability/${availabilityToken(familyId)}`
 }
 
 export function unsubscribeUrlFor(familyId: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/api/unsubscribe?f=${familyId}&t=${unsubToken(familyId)}`
 }
 
@@ -548,7 +549,7 @@ export function verifyUnsubToken(familyId: string, token: string) {
 
 /** Public registration link for a class (slug preferred, uuid fallback). */
 export function registrationUrlFor(bundle: Pick<ClassBundle, 'id' | 'slug'>) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/register/${bundle.slug ?? bundle.id}`
 }
 
@@ -564,7 +565,7 @@ function digestToken(affiliationId: string) {
 }
 
 export function digestFrequencyUrlFor(affiliationId: string, frequency: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/api/counselor-digest/frequency?c=${affiliationId}&f=${frequency}&t=${digestToken(affiliationId)}`
 }
 
@@ -584,7 +585,7 @@ function classroomRequestToken(classId: string) {
 }
 
 export function classroomRequestUrlFor(classId: string, counselorEmail: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return `${base}/classroom-request/${classId}?t=${classroomRequestToken(classId)}&ce=${encodeURIComponent(counselorEmail)}`
 }
 

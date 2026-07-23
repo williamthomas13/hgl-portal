@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
@@ -13,7 +14,7 @@ import { snapshotAcceptancePdf } from '../../../utils/agreement-pdf'
 // (old acceptances remain valid records of what was agreed when), and retry
 // a failed PDF snapshot.
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 const KIND = 'scheduling_billing_policy'
 
 export async function GET(req: Request) {

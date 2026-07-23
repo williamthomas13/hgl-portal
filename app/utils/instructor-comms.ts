@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
@@ -13,7 +14,7 @@ import { createGcalEvent, deleteGcalEvent, loadGcalConnection, patchGcalEvent } 
 // moment). Everything is dedupe-keyed, so the hourly cron re-running is the
 // backfill mechanism: welcome + digest + calendar converge on their own.
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 
 export type ClassInstructor = {
   id: string

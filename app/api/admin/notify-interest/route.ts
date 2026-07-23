@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
   const firstSession =
     ((cls.sessions as { session_date: string }[]) ?? []).map((s) => s.session_date).sort()[0] ??
     cls.start_date
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   // PL-54 amendment: the button lands on the hgl.co marketing page (the
   // Squarespace sales page), never a portal deep-link — families should see
   // the pitch first. The portal register URL is only the fallback when no

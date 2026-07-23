@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert } from './email'
@@ -71,7 +72,7 @@ export async function ensureStripeCustomer(family: FamilyBilling): Promise<strin
 }
 
 const cents = (n: number) => Math.round(Number(n) * 100)
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 
 function dueDateFor(now: Date = new Date()): { iso: string; label: string; unix: number } {
   // §10.4: due at month-end (of the month the invoice goes out). Stripe wants

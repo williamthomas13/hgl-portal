@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '../../../utils/supabase-admin'
 import { deriveRoles, ensureAuthUser, safeNextPath } from '../../../utils/portal-auth'
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
       return generic
     }
 
-    const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const base = emailBaseUrl()
     const next = safeNextPath(body.next) ?? '/portal'
     const confirmUrl = `${base}/auth/confirm?token_hash=${encodeURIComponent(
       data.properties.hashed_token

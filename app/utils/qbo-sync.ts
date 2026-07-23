@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import {
   QboApiError,
@@ -140,7 +141,7 @@ async function customerIdFor(detail: EnrollmentDetail): Promise<string> {
 }
 
 function privateNote(row: SyncRow, extra?: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return [
     `Stripe PaymentIntent ${row.stripe_payment_intent_id}`,
     `Portal enrollment ${base}/admin (id ${row.enrollment_id})`,

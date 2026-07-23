@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin } from './supabase-admin'
 import {
   durationPhraseFromDates,
@@ -91,7 +92,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
   const firstSession = sessions[0]?.session_date ?? c.start_date
   const lastSession = sessions[sessions.length - 1]?.session_date ?? c.start_date
 
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   const slug = c.slug ?? c.id
   const registerUrl = `${base}/register/${slug}?src=flyer`
   const shortLink = (c.short_link ?? '').trim() || null

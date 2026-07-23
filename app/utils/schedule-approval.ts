@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert, wrap, footerT } from './email'
@@ -16,7 +17,7 @@ import { zonedToUtc, type RecurrenceSlot } from './tutoring'
 // active from the wizard/panel instead). All three emails send FROM the
 // configurable tutoring contact (PL-50).
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 
 // ---------------------------------------------------------------------------
 // Signed link (house HMAC pattern, distinct prefix)

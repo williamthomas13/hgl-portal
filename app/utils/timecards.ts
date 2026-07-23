@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
@@ -233,7 +234,7 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
         .eq('id', tutorId)
         .maybeSingle()
       if (tutor?.email) {
-        const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+        const base = emailBaseUrl()
         const tutorFirst = tutor.name?.split(' ')[0] ?? 'there'
         // PL-66: registry copy when T5 is flipped live; code twin otherwise.
         const codeTwin = (): Rendered => ({

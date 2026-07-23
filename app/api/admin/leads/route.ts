@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
@@ -22,7 +23,7 @@ import {
 // offer management. Reads happen in the browser under staff RLS; every
 // mutation lands here.
 
-const appUrl = () => process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+const appUrl = () => emailBaseUrl()
 
 const LEAD_FIELDS = [
   'source',

@@ -1,3 +1,4 @@
+import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import {
   GcalApiError,
@@ -106,7 +107,7 @@ async function loadSessionDetail(sessionId: string): Promise<SessionDetail | nul
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 function eventInput(d: SessionDetail, xcl: boolean): GcalEventInput {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = emailBaseUrl()
   return {
     tutorEmail: d.tutor.email,
     calendarId: d.tutor.google_calendar_id,

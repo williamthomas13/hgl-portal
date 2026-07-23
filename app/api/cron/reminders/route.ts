@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
@@ -849,7 +850,7 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
     paidCount: paid,
     minEnrollment: bundle.minEnrollment,
     firstSession: bundle.firstSession,
-    adminUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/admin`,
+    adminUrl: `${emailBaseUrl()}/admin`,
   }
 
   // PL-66: registry copy when live (subject WITHOUT the [HGL Admin] prefix —
@@ -1190,7 +1191,7 @@ async function sweepCounselorDigests(
           (e) => e.enrolled_at >= since && e.payment_status !== 'Expired'
         ).length,
         regUrl: registrationUrlFor(b),
-        materialsUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/portal`,
+        materialsUrl: `${emailBaseUrl()}/portal`,
         // Only meaningful when the counselor has seen a previous digest —
         // otherwise there are no "posted copies" to replace yet.
         materialsUpdated:
