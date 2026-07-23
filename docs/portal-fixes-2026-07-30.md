@@ -1,6 +1,6 @@
 # Portal fixes — batch 12 (July 2026, follows batch 11 + PL-69)
 
-One small item. Continues PL-x numbering.
+Seven items (grew from "one small item" as review continued): PL-80 · 80b · 80c · 81 · 82 · 83 · 84 — **ALL shipped ✅**, gates green (tsc · build · smoke:public · regress:links 96 · regress:pronouns 61 · cancel-class 11 · resume-addon). Continues PL-x numbering.
 
 **Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
 
