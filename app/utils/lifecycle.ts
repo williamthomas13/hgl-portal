@@ -545,6 +545,29 @@ function unsubToken(familyId: string) {
     .slice(0, 32)
 }
 
+// PL-86: the self-serve conversion page's signed token (same HMAC pattern
+// as claim/decline — enrollment-scoped; the page itself is read-only and
+// the conversion fires only on a JS-executed POST behind one visible tap).
+export function convertToken(enrollmentId: string) {
+  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+    .update(`convert:${enrollmentId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function verifyConvertToken(enrollmentId: string, token: string): boolean {
+  const expected = convertToken(enrollmentId)
+  return (
+    token.length === expected.length &&
+    timingSafeEqual(Buffer.from(token), Buffer.from(expected))
+  )
+}
+
+export function convertUrlFor(enrollmentId: string) {
+  const base = emailBaseUrl()
+  return `${base}/convert/${enrollmentId}?t=${convertToken(enrollmentId)}`
+}
+
 /** PL-53b: the family's signed share-your-availability page. */
 export function availabilityUrlFor(familyId: string) {
   const base = emailBaseUrl()

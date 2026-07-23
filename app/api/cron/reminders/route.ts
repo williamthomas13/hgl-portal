@@ -8,6 +8,7 @@ import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../.
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
+import { sweepConversionFollowups } from '../../../utils/convert-tutoring'
 import { classroomChaseLine } from '../../../utils/classroom-chase'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
@@ -782,6 +783,7 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
 // ---------------------------------------------------------------------------
 // 7. Admin checkpoints + weekly digest
 // ---------------------------------------------------------------------------
+
 
 async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
   const today = localDate(bundle.timezone)
@@ -1675,6 +1677,11 @@ export async function GET(req: Request) {
     // urgent ones already went out inline at change time).
     const tutorNotices = await sweepPendingTutorNotices()
     if (tutorNotices > 0) counters.tutor_notices_sent = tutorNotices
+    // PL-86: the demoted CX_TUTORING_START — a self-serve conversion that
+    // hasn't shared availability after a day gets the one follow-up (the
+    // once-ever dedupe key means receipt OR nudge, never both).
+    const cxFollowups = await sweepConversionFollowups()
+    if (cxFollowups > 0) counters.conversion_followups = cxFollowups
   } catch (e) {
     console.error('tutoring billing sweep failed (continuing):', e)
   }

@@ -46,6 +46,7 @@ type Enrollment = {
   waitlist_offer_expires_at: string | null
   waitlist_offer_round: number | null
   converted_to_tutoring_at: string | null
+  converted_by: string | null
   tutoring_credit_amount: number | null
   cancellation_offer_hours: number | null
   amount_paid: number | null
@@ -390,6 +391,7 @@ export default function AdminDashboard() {
           waitlist_offer_expires_at,
           waitlist_offer_round,
           converted_to_tutoring_at,
+          converted_by,
           tutoring_credit_amount,
           cancellation_offer_hours,
           amount_paid,
@@ -548,10 +550,14 @@ export default function AdminDashboard() {
   async function handleConvertToTutoring(en: Enrollment, studentName: string) {
     const already = Boolean(en.converted_to_tutoring_at)
     const offered = Number(en.cancellation_offer_hours ?? 0)
+    const who =
+      en.converted_by === 'family'
+        ? `self-serve, ${en.converted_to_tutoring_at ? new Date(en.converted_to_tutoring_at).toLocaleDateString() : ''}`
+        : `by ${en.converted_by ?? 'the Ops Director'}`
     const msg = already
       ? offered > 0
-        ? `${studentName} was already converted (${offered}-hour tutoring package). Re-send the availability email?`
-        : `${studentName} was already converted ($${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit). Re-send the availability email?`
+        ? `${studentName} was already converted (${offered}-hour tutoring package — ${who}). Re-send the availability email?`
+        : `${studentName} was already converted ($${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit — ${who}). Re-send the availability email?`
       : offered > 0
         ? `Convert ${studentName} to 1-on-1 tutoring? The family gets the ${offered} hours offered at cancellation as a tutoring package (paid $${Number(en.amount_paid ?? 0).toLocaleString()}), plus the availability request email.`
         : `Convert ${studentName} to 1-on-1 tutoring? No hours offer is on the cancellation record, so the paid amount becomes a Stripe credit toward tutoring invoices, and the family gets the availability request email.`
@@ -1247,8 +1253,8 @@ export default function AdminDashboard() {
                           >
                             {en.converted_to_tutoring_at
                               ? Number(en.cancellation_offer_hours ?? 0) > 0
-                                ? `✓ ${en.cancellation_offer_hours}h tutoring package`
-                                : `✓ tutoring credit $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()}`
+                                ? `✓ ${en.cancellation_offer_hours}h tutoring package${en.converted_by === 'family' ? ' (self-serve)' : ''}`
+                                : `✓ tutoring credit $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()}${en.converted_by === 'family' ? ' (self-serve)' : ''}`
                               : 'convert to 1-on-1 tutoring'}
                           </button>
                         )}

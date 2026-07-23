@@ -2,7 +2,7 @@ import { Resend } from 'resend'
 import { nonProductionOrigins } from './base-url'
 import { classLocationTailText } from './comms-variables'
 import { supabaseAdmin as supabase } from "./supabase-admin"
-import { packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
+import { convertUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 import { templateMetaFor, type RecipientRole } from './comms'
 import { formatDateFull } from './dates'
 
@@ -1574,7 +1574,10 @@ export function cancellationOptionsHtml(
       that we weren't able to offer the group course. ${receives} We
       would tailor the schedule to ${isStudent ? 'your' : "your family's"} availability and the
       lesson content to ${isStudent ? 'your' : `${s}'s`} strengths and weaknesses (according to
-      the first diagnostic test score).`
+      the first diagnostic test score).
+      <span style="display:block;margin:14px 0"><a href="${convertUrlFor(ctx.enrollmentId)}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Convert my ${ctx.className} payment to ${offer.hours} hours of 1-on-1 tutoring</a></span>
+      <span style="color:#64748b;font-size:13px">One tap to confirm on the next page — then pick the
+      times that work. Prefer to talk it through first? Just reply.</span>`
     )
   }
   if (creditTerm) {
