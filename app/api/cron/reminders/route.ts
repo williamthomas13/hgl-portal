@@ -4,6 +4,7 @@ import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
 import { processGcalQueue } from '../../../utils/gcal-sync'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
+import { sweepSessionNoteReminders } from '../../../utils/session-notes'
 import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
@@ -1639,6 +1640,13 @@ export async function GET(req: Request) {
   const tc = await sweepTimecards()
   if (tc.created > 0) counters.timecards_created = tc.created
   if (tc.t5Sent > 0) counters.timecards_t5_sent = tc.t5Sent
+
+  // PL-111: session-note reminders — end-of-day list per tutor (only when
+  // something is missing) plus one nudge 3 days later. The timecard approval
+  // gate is the backstop; no nagging beyond these two.
+  const noteReminders = await sweepSessionNoteReminders()
+  if (noteReminders.eod > 0) counters.session_note_eod_sent = noteReminders.eod
+  if (noteReminders.nudge > 0) counters.session_note_nudges_sent = noteReminders.nudge
 
   // Phase 7c: the monthly billing cycle (spec §6). Generation fires on the
   // settings day (default the 20th, Denver); the proposal sweep (T1b nudge +

@@ -124,6 +124,11 @@ export function templateMetaFor(
       return { key: 'IM_INSTRUCTOR_MESSAGE', role: student ? 'student' : 'parent' }
     case 'T5_TIMECARD_READY': // Phase 7b: tutor pay-period close notice
       return { key: 'T5_TIMECARD_READY', role: 'instructor' }
+    // PL-111: session-note reminders (end-of-day list + single nudge)
+    case 'T6_NOTES_EOD':
+      return { key: 'T6_NOTES_EOD', role: 'instructor' }
+    case 'T6_NOTES_NUDGE':
+      return { key: 'T6_NOTES_NUDGE', role: 'instructor' }
     // Phase 7c monthly billing cycle (spec §6)
     case 'T1_MONTHLY_PROPOSAL':
       return { key: 'T1_MONTHLY_PROPOSAL', role: 'parent' }
@@ -175,6 +180,8 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   CR_CLASSROOM_NUDGE_2: 'CR2 — Classroom request re-nudge',
   CR_CLASSROOM_NUDGE_3: 'CR3 — Classroom request (last call)',
   T3_TUTOR_NOTICE: 'T3-T — Schedule change notice (tutor)',
+  T6_NOTES_EOD: 'T6 — Session notes end-of-day reminder (tutor)',
+  T6_NOTES_NUDGE: 'T6-N — Session notes nudge (tutor)',
   IN_WELCOME: 'IN — Instructor class assignment welcome',
   IN_DIGEST: 'IN — Instructor enrollment digest / milestone ping',
   IN_FYI: 'IN — Instructor FYI copy (family logistics email)',
@@ -259,7 +266,7 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
   { name: 'Agreements', match: (k) => /^AG_/.test(k) },
   {
     name: 'Tutoring families',
-    match: (k) => /^T\d(?!_TUTOR)|^T1B|^T_SCHEDULE|^E8_ADDON/.test(k) && k !== 'T5_TIMECARD_READY',
+    match: (k) => /^T\d(?!_TUTOR|_NOTES)|^T1B|^T_SCHEDULE|^E8_ADDON/.test(k) && k !== 'T5_TIMECARD_READY',
   },
   {
     name: 'Counselors & schools',
@@ -267,7 +274,7 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
   },
   {
     name: 'Tutors & staff',
-    match: (k) => k === 'T5_TIMECARD_READY' || k === 'T3_TUTOR_NOTICE' || /^IN_/.test(k),
+    match: (k) => k === 'T5_TIMECARD_READY' || k === 'T3_TUTOR_NOTICE' || /^T\d_NOTES|^IN_/.test(k),
   },
   {
     name: 'Internal admin alerts',

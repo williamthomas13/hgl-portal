@@ -1234,6 +1234,52 @@ Your sessions for the pay period are in: **{timecardHours} hours**. The portal b
 
 Sessions cancelled inside 24 hours and no-shows are on the card on purpose — you're paid for reserved time.`,
   },
+  // PL-111: session-note reminders. Drafts — Scarlett ramps the copy; the
+  // code twin in session-notes.ts sends until these flip live.
+  {
+    template_key: 'T6_NOTES_EOD',
+    display_name: 'T6 — Session notes end-of-day reminder (tutor)',
+    sequence_number: 'T6',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Quick one — session notes for {sessionDate}',
+    preheader: 'A line or two per session and you are done',
+    footer_note: null,
+    body_markdown: `## Session notes — {sessionDate}
+
+Hi {tutorFirstName},
+
+These sessions are still missing their short session note — a line or two on what you worked on (and, if useful, what to pick up next time):
+
+{missingSessionsBlock}
+
+[Add your notes →]({notesLink})
+
+Families can read these notes on their family portal, so keep them parent-friendly. If you just added them, you are all set — this is the only reminder today.`,
+  },
+  {
+    template_key: 'T6_NOTES_NUDGE',
+    display_name: 'T6-N — Session notes nudge (tutor)',
+    sequence_number: 'T6-N',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Still open — session notes from {sessionDate}',
+    preheader: 'Last automatic reminder before timecard review',
+    footer_note: null,
+    body_markdown: `## Session notes — one more reminder — {sessionDate}
+
+Hi {tutorFirstName},
+
+These sessions from {sessionDate} still don't have a session note:
+
+{missingSessionsBlock}
+
+[Add your notes →]({notesLink})
+
+Families can read these notes on their family portal, so keep them parent-friendly. This is the last automatic reminder — anything still open will show when your timecard is reviewed, and approval waits for it.`,
+  },
   {
     template_key: 'T3_TUTOR_NOTICE',
     display_name: 'T3-T — Schedule change notice (tutor)',

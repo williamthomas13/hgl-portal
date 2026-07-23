@@ -6,6 +6,7 @@ import TimecardPanel, {
 } from './timecard-panel'
 import { one } from './shared'
 import { workTypeOptions } from '../utils/work-types'
+import SessionNotesPanel, { type NoteSession } from './session-notes-panel'
 
 // Tutor view (Phase 7b §7): upcoming 1-on-1 sessions plus timecards. The
 // twice-monthly "reconstruct my calendar into a timecard" ritual becomes a
@@ -103,6 +104,37 @@ export default async function TutorView({
     })
   }
 
+  // PL-111: recent completed sessions and their note state — the write
+  // surface for the required short session notes (last 14 days).
+  const twoWeeksAgo = new Date(Date.now() - 14 * 86400000).toISOString()
+  const { data: recentDone } = await supabase
+    .from('tutoring_sessions')
+    .select(
+      `id, starts_at, students ( first_name, last_name ), tutoring_engagements ( subjects ( name ) )`
+    )
+    .eq('tutor_id', tutor.id)
+    .eq('status', 'completed')
+    .gte('starts_at', twoWeeksAgo)
+    .order('starts_at', { ascending: false })
+    .limit(30)
+  const recentIds = ((recentDone as any[]) ?? []).map((s) => s.id)
+  const { data: recentNotes } = recentIds.length
+    ? await supabase.from('session_notes').select('session_id, note, next_time').in('session_id', recentIds)
+    : { data: [] }
+  const noteBySession = new Map(((recentNotes as any[]) ?? []).map((n) => [n.session_id, n]))
+  const noteSessions: NoteSession[] = ((recentDone as any[]) ?? []).map((s) => {
+    const student = one<any>(s.students)
+    const rec = noteBySession.get(s.id)
+    return {
+      id: s.id,
+      starts_at: s.starts_at,
+      studentName: student ? `${student.first_name} ${student.last_name}` : '—',
+      subjectName: one<any>(one<any>(s.tutoring_engagements)?.subjects)?.name ?? '',
+      note: rec?.note ?? null,
+      next_time: rec?.next_time ?? null,
+    }
+  })
+
   const fmt = (iso: string, opts: Intl.DateTimeFormatOptions) =>
     new Date(iso).toLocaleString('en-US', { timeZone: tz, ...opts })
 
@@ -166,6 +198,8 @@ export default async function TutorView({
           <p className="text-sm text-gray-500 italic">No upcoming sessions on the books.</p>
         )}
       </div>
+
+      <SessionNotesPanel sessions={noteSessions} timezone={tz} />
 
       <TimecardPanel
         timecards={(timecards ?? []) as TimecardData[]}

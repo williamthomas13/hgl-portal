@@ -28,6 +28,40 @@ export async function POST(req: Request) {
 
   try {
     if (body.action === 'approve') {
+      // PL-111 gate: a timecard cannot be approved while any of its period's
+      // completed 1-on-1 sessions is missing a session note. The response
+      // names each open session so the fix is a glance, not a hunt.
+      const { data: cardSessions } = await supabase
+        .from('tutoring_sessions')
+        .select('id, starts_at, timecard_id, students ( first_name, last_name )')
+        .in('timecard_id', body.ids)
+        .eq('status', 'completed')
+      const sessionIds = (cardSessions ?? []).map((s) => s.id)
+      const { data: notes } = sessionIds.length
+        ? await supabase.from('session_notes').select('session_id').in('session_id', sessionIds)
+        : { data: [] }
+      const noted = new Set((notes ?? []).map((n) => n.session_id))
+      const missing = (cardSessions ?? [])
+        .filter((s) => !noted.has(s.id))
+        .map((s) => {
+          /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+          const st: any = Array.isArray(s.students) ? s.students[0] : s.students
+          return {
+            session_id: s.id,
+            starts_at: s.starts_at,
+            studentName: st ? `${st.first_name} ${st.last_name}` : '—',
+          }
+        })
+      if (missing.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Cannot approve yet — ${missing.length} session${missing.length === 1 ? ' is' : 's are'} missing a session note. The tutor adds notes from their portal; reopening is not needed.`,
+            missingNotes: missing,
+          },
+          { status: 400 }
+        )
+      }
+
       let updated = 0
       for (const id of body.ids) {
         await recomputeTimecard(id) // no-ops if already approved/exported

@@ -57,6 +57,8 @@ type VerifyRow = {
   status: string
   payable: boolean
   onCard: boolean
+  /** PL-111: note state for completed 1-on-1 rows; null where not applicable. */
+  hasNote: boolean | null
 }
 
 export default function TimecardsPanel() {
@@ -121,6 +123,12 @@ export default function TimecardsPanel() {
         .lte('session_date', r.period_end)
         .order('session_date'),
     ])
+    // PL-111: note-present state for the completed 1-on-1 rows.
+    const tutIds = ((tut as any[]) ?? []).map((s) => s.id)
+    const { data: noteRows } = tutIds.length
+      ? await supabase.from('session_notes').select('session_id').in('session_id', tutIds)
+      : { data: [] }
+    const noted = new Set(((noteRows as any[]) ?? []).map((n) => n.session_id))
     const today = new Date().toLocaleDateString('en-CA', { timeZone: PAYROLL_TZ })
     const out: VerifyRow[] = []
     for (const s of (tut as any[]) ?? []) {
@@ -131,6 +139,7 @@ export default function TimecardsPanel() {
         ['completed', 'forfeited', 'no_show'].includes(s.status) ||
         (s.status === 'rescheduled' && s.reschedule_notice === 'late')
       out.push({
+        hasNote: s.status === 'completed' ? noted.has(s.id) : null,
         key: 't' + s.id,
         when: d,
         label: student ? `${student.first_name} ${student.last_name}` : '1-on-1 session',
@@ -144,6 +153,7 @@ export default function TimecardsPanel() {
       const c = one<any>(s.classes)
       const past = s.session_date < today
       out.push({
+        hasNote: null,
         key: 'c' + s.id,
         when: s.session_date,
         label: `${[one<any>(c?.schools)?.nickname, c?.class_type].filter(Boolean).join(' ')} (class)`,
@@ -195,7 +205,19 @@ export default function TimecardsPanel() {
     })
     const json = await res.json()
     setBusy(false)
-    setMessage(res.ok ? done : 'Error: ' + json.error)
+    // PL-111: the approval gate names each session missing its note — show
+    // them right here so the fix is a glance, not a hunt.
+    if (!res.ok && Array.isArray(json.missingNotes) && json.missingNotes.length > 0) {
+      const lines = json.missingNotes
+        .map(
+          (m: { starts_at: string; studentName: string }) =>
+            `${denverDate(m.starts_at)} — ${m.studentName}`
+        )
+        .join(' · ')
+      setMessage(`Error: ${json.error} Open notes: ${lines}`)
+    } else {
+      setMessage(res.ok ? done : 'Error: ' + json.error)
+    }
     load()
   }
 
@@ -381,6 +403,12 @@ export default function TimecardsPanel() {
                                       <li key={v.key} className={mismatch ? 'text-amber-800 font-semibold' : ''}>
                                         {v.when} · {v.label} · {v.hours.toFixed(2)} h · {v.status} ·{' '}
                                         {v.onCard ? 'on the card' : 'not on the card'}
+                                        {v.hasNote != null &&
+                                          (v.hasNote ? (
+                                            <span className="text-green-700"> · note ✓</span>
+                                          ) : (
+                                            <span className="text-amber-800"> · note missing (blocks approval)</span>
+                                          ))}
                                         {mismatch &&
                                           (v.payable
                                             ? ' — ⚠ looks payable but is missing (reopen re-totals)'

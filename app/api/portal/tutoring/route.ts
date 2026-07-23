@@ -16,6 +16,7 @@ type Body =
   | { action: 'adjust_duration'; session_id: string; duration_minutes: number }
   | { action: 'confirm_timecard'; timecard_id: string }
   | { action: 'set_work_type'; session_id: string; work_type: string }
+  | { action: 'add_note'; session_id: string; note: string; next_time?: string }
 
 const MIN_MINUTES = 15
 const MAX_MINUTES = 240
@@ -91,6 +92,41 @@ export async function POST(req: Request) {
       }
 
       if (session.timecard_id) await recomputeTimecard(session.timecard_id)
+      return NextResponse.json({ ok: true })
+    }
+
+    // PL-111: the short session note — what we worked on, parent-visible.
+    // One per session, editable by its tutor any time (notes are living
+    // handoff material, not frozen records).
+    if (body.action === 'add_note') {
+      const note = (body.note ?? '').trim()
+      if (!note) return NextResponse.json({ error: 'The note cannot be empty.' }, { status: 400 })
+      const { data: session } = await supabase
+        .from('tutoring_sessions')
+        .select('id, tutor_id, student_id, status')
+        .eq('id', body.session_id)
+        .maybeSingle()
+      if (!session || !caller.instructorIds.includes(session.tutor_id)) {
+        return NextResponse.json({ error: 'Not your session.' }, { status: 403 })
+      }
+      if (session.status !== 'completed') {
+        return NextResponse.json(
+          { error: 'Notes go on completed sessions — this one is ' + session.status.replace('_', ' ') + '.' },
+          { status: 400 }
+        )
+      }
+      const { error } = await supabase.from('session_notes').upsert(
+        {
+          session_id: session.id,
+          student_id: session.student_id,
+          tutor_id: session.tutor_id,
+          note,
+          next_time: (body.next_time ?? '').trim() || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'session_id' }
+      )
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 

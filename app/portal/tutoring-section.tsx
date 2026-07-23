@@ -113,6 +113,32 @@ export default async function TutoringSection({ email }: { email: string }) {
     packageInfo.set(e.id, { purchased, remaining: Math.max(0, Number((purchased - used).toFixed(1))) })
   }
 
+  // PL-111: session notes — what the tutor and student worked on, straight
+  // from the tutor after each session. Parent-visible by design.
+  const { data: familyStudents } = await supabase
+    .from('students')
+    .select('id, first_name')
+    .in('family_id', familyIds)
+  const studentName = new Map(((familyStudents as any[]) ?? []).map((s) => [s.id, s.first_name]))
+  const { data: recentNotes } = familyStudents?.length
+    ? await supabase
+        .from('session_notes')
+        .select('id, student_id, note, next_time, tutoring_sessions!inner ( starts_at )')
+        .in('student_id', (familyStudents as any[]).map((s) => s.id))
+        .order('created_at', { ascending: false })
+        .limit(12)
+    : { data: [] }
+  const noteRows = (((recentNotes as any[]) ?? [])
+    .map((n) => ({
+      id: n.id,
+      studentFirst: studentName.get(n.student_id) ?? '',
+      startsAt: one<any>(n.tutoring_sessions)?.starts_at as string | undefined,
+      note: n.note as string,
+      nextTime: n.next_time as string | null,
+    }))
+    .filter((n) => n.startsAt) as { id: string; studentFirst: string; startsAt: string; note: string; nextTime: string | null }[])
+    .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
+
   const proposedInvoice = (invoices ?? []).find((i) => i.status === 'proposed' || i.status === 'draft')
   const icsToken = tutoringIcsToken(family.id)
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
@@ -221,6 +247,27 @@ export default async function TutoringSection({ email }: { email: string }) {
                     contactPhone={contact.phone}
                   />
                 </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* PL-111: session notes — what they worked on, from the tutor. */}
+      {noteRows.length > 0 && (
+        <div className="mb-6">
+          <h3 className="font-semibold text-hgl-slate text-sm mb-1">What they worked on</h3>
+          <ul className="divide-y divide-gray-100 text-sm">
+            {noteRows.map((n) => (
+              <li key={n.id} className="py-2">
+                <div className="flex flex-wrap items-baseline gap-x-3">
+                  <span className="font-semibold text-hgl-slate">{fmtDay(n.startsAt)}</span>
+                  <span className="text-gray-600">{n.studentFirst}</span>
+                </div>
+                <p className="text-gray-700 text-xs mt-0.5">
+                  {n.note}
+                  {n.nextTime && <span className="text-gray-400"> · Next time: {n.nextTime}</span>}
+                </p>
               </li>
             ))}
           </ul>

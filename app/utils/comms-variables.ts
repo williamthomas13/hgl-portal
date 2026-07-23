@@ -118,6 +118,12 @@ export type ExtraVars = {
   timecardHours?: string
   /** Tutor portal timecard link. */
   timecardLink?: string
+  /** PL-111 (T6): "Wednesday, July 22" — the day whose notes are missing. */
+  sessionDate?: string
+  /** PL-111 (T6): pre-rendered list of sessions missing notes. */
+  missingSessionsBlock?: string
+  /** PL-111 (T6): tutor portal notes link. */
+  notesLink?: string
   /** Tutor-facing what-changed deltas (pre-rendered; PL-81: the whole batch). */
   tutorChangeBlock?: string
   /** PL-81: "Schedule change" or "3 schedule changes" — subject scales. */
@@ -586,6 +592,20 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: "Tutor portal timecard link (T5)",
     resolve: (c, _a, e) => e.timecardLink ?? c.portalUrl,
   },
+  // PL-111: T6 session-note reminders.
+  sessionDate: {
+    description: 'T6: the day whose notes are missing, e.g. "Wednesday, July 22"',
+    resolve: (_c, _a, e) => e.sessionDate ?? '—',
+  },
+  missingSessionsBlock: {
+    description: 'T6: the list of sessions still missing notes (computed)',
+    block: true,
+    resolve: (_c, _a, e) => e.missingSessionsBlock ?? '',
+  },
+  notesLink: {
+    description: 'T6: tutor portal session-notes link',
+    resolve: (c, _a, e) => e.notesLink ?? c.portalUrl,
+  },
   tutorChangeBlock: { description: 'T3-T: the "what changed" delta list (computed, the whole coalesced batch)', block: true, resolve: (_c, _a, e) => e.tutorChangeBlock ?? '' },
   // PL-81: the coalesced tutor notice's composed pieces.
   scheduleChangeCountPhrase: {
@@ -901,6 +921,9 @@ export const SAMPLE_EXTRA: ExtraVars = {
   payPeriodRange: 'September 1 – September 15',
   timecardHours: '14.5',
   timecardLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
+  sessionDate: 'Wednesday, July 22',
+  missingSessionsBlock: '4:00 PM — Ana García\n6:00 PM — Marcus Lee',
+  notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
   tutorChangeBlock:
     "<p>Ana's SAT session on <strong>Mon, Sep 14, 4:00 PM</strong> was rescheduled. Your Google Calendar is already updated.</p>",
   alertStudentName: 'Ana García',
