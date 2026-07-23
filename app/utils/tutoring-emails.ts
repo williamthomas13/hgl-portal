@@ -366,6 +366,9 @@ export async function sendScheduleChangeNotices(opts: {
           sessionId: opts.sessionId,
           kind: opts.kind,
           notice: opts.notice,
+          // PL-85: lets a later change to the replacement session chain onto
+          // this one, so the notice collapses to the net effect.
+          replacementId: opts.replacementId ?? null,
           studentId: student.id,
           studentFirst: student.first_name,
           subjectName: subject,

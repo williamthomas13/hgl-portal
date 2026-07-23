@@ -17,7 +17,9 @@ Eleven items; PL-87 first (pre-launch guard gap). Continues PL-x numbering.
 - **(c) Sweep + repair.** Audit whatever rendered-HTML records exist for real (non-test) sends containing non-production origins; list them. Expected blast radius: QA/billy recipients only (no real families exist pre-Aug 20) — re-send corrected copies where the QA flow matters (the QA-PL76 CX-T at minimum), and note any that don't.
 - **(d) Regression:** an E2E that attempts a real send from a dev-shaped environment and asserts it's refused with the alert fired.
 
-## PL-85 · T3-T deltas collapse to the net effect per session
+## PL-85 · T3-T deltas collapse to the net effect per session ✅
+
+> **Shipped, E2E 13/13 (+ the PL-81 suite re-run green, 26/26).** `collapseChanges()` in tutor-notices.ts builds per-session chains — a reschedule's recorded change now carries its `replacementId`, so a later change to the replacement session chains onto the original (that's the mechanism that makes "per session" true across moves, since each move mints a new session row). One line per chain: original state as of the window's first change → final state. Verified: move+cancel → one cancelled line at the ORIGINAL time · move chain Mon→Tue→Thu → one "moved to Thu" line · **round trip → no line, and an all-round-trip batch sends NO email** (the pending row is marked cancelled so the audit trail says why; delivery-path verified through the real sweep) · a no-show on another session stays its own line. The subject counts COLLAPSED lines (3 raw changes on one session + 1 no-show → "2 schedule changes"). The PL-81 E2E was extended per the doc and its coalescing checks re-fixtured onto distinct sessions (same-session multi-deltas are exactly what now collapses).
 
 Follow-on to PL-81, from Scarlett reading the E2E's coalesced notice (three same-timestamped fixture sessions each exercising one delta type — confusing to read, and the same confusion would hit real sends whenever ONE session changes more than once inside a coalescing window).
 

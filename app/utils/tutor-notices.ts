@@ -31,6 +31,9 @@ export type TutorChange = {
   sessionId: string
   kind: 'reschedule' | 'forfeited' | 'no_show'
   notice?: 'ok' | 'late'
+  /** PL-85: a reschedule's replacement session id — chains a later change to
+   *  this one so the notice can collapse to the net effect. */
+  replacementId?: string | null
   studentId: string
   studentFirst: string
   subjectName: string
@@ -176,6 +179,16 @@ export async function deliverPendingTutorNotice(rowId: string): Promise<boolean>
 
     const changes = row.changes as TutorChange[]
     const email = await composeTutorNotice(tutor, changes)
+    if (!email) {
+      // PL-85: the batch netted to nothing (round trips only) — no email.
+      // The row is marked cancelled so the audit trail says why nothing sent.
+      await supabase
+        .from('tutor_pending_notices')
+        .update({ status: 'cancelled', sent_at: null, updated_at: new Date().toISOString() })
+        .eq('id', rowId)
+        .eq('status', 'sent')
+      return false
+    }
     const status = await sendOnce({
       dedupeKey: `t3_tutor_batch:${row.id}:${changes.length}`,
       emailType: 'tutor_schedule_notice',
@@ -221,33 +234,100 @@ function tzFormats(tz: string) {
   return { dateTime, date, time }
 }
 
-export function changeDeltaLine(c: TutorChange, fmt: (iso: string) => string): string {
+// PL-85: the "What changed" list shows each SESSION once — original state
+// (as of the window's first change, what the tutor last knew) → final state.
+// A move chain (Mon→Tue→Thu) is one "moved to Thu" line; moved-then-
+// cancelled is one cancelled line; a round trip (moved away and back)
+// produces NO line, and a batch that nets to nothing sends no email.
+// No-show marks are terminal states of their own session's chain and never
+// merge with time changes on other sessions.
+export type CollapsedDelta = {
+  kind: 'reschedule' | 'forfeited' | 'no_show'
+  studentId: string
+  studentFirst: string
+  subjectName: string
+  /** State as of the window's first change touching this chain. */
+  originalStartsAt: string
+  /** Final time for surviving reschedules; null for terminal states. */
+  finalStartsAt: string | null
+}
+
+export function collapseChanges(changes: TutorChange[]): CollapsedDelta[] {
+  type Chain = CollapsedDelta & { currentId: string; terminal: boolean }
+  const ordered = [...changes].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt))
+  const byCurrentId = new Map<string, Chain>()
+  const chains: Chain[] = []
+  for (const c of ordered) {
+    let chain = byCurrentId.get(c.sessionId)
+    if (!chain) {
+      chain = {
+        kind: c.kind,
+        studentId: c.studentId,
+        studentFirst: c.studentFirst,
+        subjectName: c.subjectName,
+        originalStartsAt: c.oldStartsAt,
+        finalStartsAt: null,
+        currentId: c.sessionId,
+        terminal: false,
+      }
+      chains.push(chain)
+    }
+    if (chain.terminal) continue // late duplicate after a terminal mark — ignore
+    byCurrentId.delete(chain.currentId)
+    chain.kind = c.kind
+    if (c.kind === 'reschedule') {
+      chain.finalStartsAt = c.newStartsAt
+      chain.currentId = c.replacementId ?? c.sessionId
+    } else {
+      chain.finalStartsAt = null
+      chain.terminal = true
+    }
+    byCurrentId.set(chain.currentId, chain)
+  }
+  return chains
+    .filter((ch) => {
+      // Round trip: a surviving reschedule whose final time equals the
+      // original disappears entirely.
+      if (ch.kind === 'reschedule' && ch.finalStartsAt) {
+        return new Date(ch.finalStartsAt).getTime() !== new Date(ch.originalStartsAt).getTime()
+      }
+      return true
+    })
+    .map(({ currentId: _c, terminal: _t, ...delta }) => delta)
+}
+
+export function changeDeltaLine(c: CollapsedDelta, fmt: (iso: string) => string): string {
   const who = `${c.studentFirst}'s ${c.subjectName} session`
   if (c.kind === 'reschedule') {
-    return `${who} on <strong>${fmt(c.oldStartsAt)}</strong> moved to <strong>${c.newStartsAt ? fmt(c.newStartsAt) : 'a new time'}</strong>.`
+    return `${who} on <strong>${fmt(c.originalStartsAt)}</strong> moved to <strong>${c.finalStartsAt ? fmt(c.finalStartsAt) : 'a new time'}</strong>.`
   }
   if (c.kind === 'no_show') {
-    return `${who} on <strong>${fmt(c.oldStartsAt)}</strong> was a no-show.`
+    return `${who} on <strong>${fmt(c.originalStartsAt)}</strong> was a no-show.`
   }
-  return `${who} on <strong>${fmt(c.oldStartsAt)}</strong> was cancelled — you're still paid for the reserved slot (it stays on your calendar, XCL-marked).`
+  return `${who} on <strong>${fmt(c.originalStartsAt)}</strong> was cancelled — you're still paid for the reserved slot (it stays on your calendar, XCL-marked).`
 }
 
 /** Exported for the regression/E2E scripts — production callers go through
- *  deliverPendingTutorNotice. */
+ *  deliverPendingTutorNotice. PL-85: returns null when the batch collapses
+ *  to nothing (round trips only). */
 export async function composeTutorNotice(
   tutor: { id: string; name: string | null; email: string; timezone: string | null },
   changes: TutorChange[]
-): Promise<Rendered> {
+): Promise<Rendered | null> {
   const tz = tutor.timezone ?? 'America/Denver'
   const { dateTime, date, time } = tzFormats(tz)
   const nowIso = new Date().toISOString()
 
+  // PL-85: one line per session — original → net effect; round trips vanish.
+  const deltas = collapseChanges(changes)
+  if (deltas.length === 0) return null
+
   // (b) lead with the CURRENT upcoming schedule for each affected student —
   // queried at send time, so even a notice read after ignoring three others
   // carries the correct picture.
-  const students = uniq(changes.map((c) => c.studentId))
-  const nameFor = new Map(changes.map((c) => [c.studentId, c.studentFirst]))
-  const subjectFor = new Map(changes.map((c) => [c.studentId, c.subjectName]))
+  const students = uniq(deltas.map((c) => c.studentId))
+  const nameFor = new Map(deltas.map((c) => [c.studentId, c.studentFirst]))
+  const subjectFor = new Map(deltas.map((c) => [c.studentId, c.subjectName]))
   const scheduleSections: string[] = []
   for (const studentId of students) {
     const { data: upcoming } = await supabase
@@ -272,15 +352,15 @@ export async function composeTutorNotice(
   }
   const tutorScheduleBlock = scheduleSections.join('')
 
-  const deltaLines = changes.map((c) => `<li style="margin:2px 0">${changeDeltaLine(c, dateTime)}</li>`)
+  const deltaLines = deltas.map((c) => `<li style="margin:2px 0">${changeDeltaLine(c, dateTime)}</li>`)
   const tutorChangeBlock =
     `<p style="margin:16px 0 6px"><strong>What changed:</strong></p>` +
     `<ul style="margin:0;padding-left:20px;color:#334155">${deltaLines.join('')}</ul>`
 
-  // (c) subject scales with severity.
-  const countPhrase = changes.length === 1 ? 'Schedule change' : `${changes.length} schedule changes`
-  const studentNames = uniq(changes.map((c) => c.studentFirst)).join(' & ')
-  const subjectNames = uniq(changes.map((c) => c.subjectName)).join(' & ')
+  // (c) subject scales with severity — counted AFTER collapsing (PL-85).
+  const countPhrase = deltas.length === 1 ? 'Schedule change' : `${deltas.length} schedule changes`
+  const studentNames = uniq(deltas.map((c) => c.studentFirst)).join(' & ')
+  const subjectNames = uniq(deltas.map((c) => c.subjectName)).join(' & ')
 
   const glanceLine =
     'Worth a quick glance even if you live in your calendar — your Google Calendar is already updated, but this email is the recap of what moved.'
