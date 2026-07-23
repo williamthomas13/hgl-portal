@@ -32,6 +32,9 @@ export default function TutoringAdmin() {
   const [nextSessions, setNextSessions] = useState<Record<string, string>>({})
   const [packageHoursUsed, setPackageHoursUsed] = useState<Record<string, number>>({})
   const [addonHours, setAddonHours] = useState<Record<string, number>>({})
+  // PL-84: family_id → cancellation-conversion packages (the authoritative
+  // "what was promised" record on the family profile).
+  const [conversions, setConversions] = useState<Record<string, { label: string; hours: number; paid: number }[]>>({})
   const [refreshSignal, setRefreshSignal] = useState(0)
   const [loaded, setLoaded] = useState(false)
 
@@ -115,6 +118,27 @@ export default function TutoringAdmin() {
     } else {
       setNextSessions({})
     }
+
+    // PL-84: hours packages minted from class cancellations, keyed by family.
+    const { data: conversionRows } = await supabase
+      .from('enrollment_addons')
+      .select(
+        `hours, price_paid,
+         enrollments!inner ( class_id, classes ( class_type, schools ( nickname ) ),
+           students!inner ( family_id ) )`
+      )
+      .eq('source', 'cancellation_conversion')
+    const byFam: Record<string, { label: string; hours: number; paid: number }[]> = {}
+    for (const row of (conversionRows as any[]) ?? []) {
+      const enr = one<any>(row.enrollments)
+      const cls = one<any>(enr?.classes)
+      const school = one<any>(cls?.schools)
+      const famId = one<any>(enr?.students)?.family_id
+      if (!famId) continue
+      const label = cls ? `${school?.nickname ?? 'HGL'} ${cls.class_type}` : 'class'
+      ;(byFam[famId] ??= []).push({ label, hours: Number(row.hours), paid: Number(row.price_paid) })
+    }
+    setConversions(byFam)
     setLoaded(true)
   }, [])
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -189,6 +213,7 @@ export default function TutoringAdmin() {
                 nextSessions={nextSessions}
                 packageHoursUsed={packageHoursUsed}
                 addonHours={addonHours}
+                conversions={conversions}
                 onChange={refresh}
               />
             </CollapsibleSection>

@@ -18,6 +18,7 @@ export default function EngagementsPanel({
   nextSessions,
   packageHoursUsed,
   addonHours,
+  conversions,
   onChange,
 }: {
   engagements: Engagement[]
@@ -27,6 +28,8 @@ export default function EngagementsPanel({
   packageHoursUsed: Record<string, number>
   /** addon_id → purchased hours */
   addonHours: Record<string, number>
+  /** PL-84: family_id → hours packages minted from class cancellations. */
+  conversions?: Record<string, { label: string; hours: number; paid: number }[]>
   onChange: () => void
 }) {
   const [busyId, setBusyId] = useState('')
@@ -106,6 +109,14 @@ export default function EngagementsPanel({
               {group.rows[0]?.students?.families?.parent_email}
             </span>
           </div>
+          {/* PL-84: what the family was promised at cancellation — the
+              authoritative hours record, no rate lookups. */}
+          {(conversions?.[famId] ?? []).map((cv, i) => (
+            <p key={i} className="text-xs font-semibold text-emerald-700 mb-1">
+              Converted from {cv.label} cancellation: <strong>{cv.hours} hours</strong> (paid $
+              {cv.paid.toLocaleString()})
+            </p>
+          ))}
           {/* PL-83: the family's full comms history, right on the record. */}
           {famId !== 'unknown' && (
             <div className="mb-2">

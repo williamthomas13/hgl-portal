@@ -137,6 +137,9 @@ export type ExtraVars = {
   // --- PL-76: cancelled-class → tutoring conversion --------------------------
   /** "$899.00" — the cancelled class's paid amount, now a tutoring credit. */
   creditAmount?: string
+  /** PL-84: the CX-T terms sentence — hours variant when the cancellation
+   *  carried an hours offer, dollar-credit wording only as the fallback. */
+  conversionTermsBlock?: string
   /** Override for stub-context sends (CX-T): the family's tokenized page. */
   availabilityLink?: string
 
@@ -601,6 +604,13 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'PL-76: the cancelled class\'s paid amount as tutoring credit, e.g. "$899.00"',
     resolve: (_c, _a, e) => e.creditAmount ?? '—',
   },
+  // PL-84: computed by the conversion route from the persisted offer.
+  conversionTermsBlock: {
+    description:
+      'CX-T: the conversion terms — "converts to 8 hours of 1-on-1 tutoring — nothing to pay until those are used" when the cancellation carried an hours offer; dollar-credit wording only as the no-offer fallback',
+    block: true,
+    resolve: (_c, _a, e) => e.conversionTermsBlock ?? '',
+  },
   // --- PL-78: instructor emails ---------------------------------------------
   instructorCountsLine: {
     description: 'Live count, PL-73 format: "6 enrolled / 8 min / 15 cap"',
@@ -858,6 +868,10 @@ export const SAMPLE_EXTRA: ExtraVars = {
   alertDetailsBlock:
     '<p><strong>Ana García</strong> registered for <strong>SIS SAT Prep</strong> (Sample International School).</p><p>Add-on purchased: <strong>5-Hour Package (5h)</strong></p><p>SIS SAT Prep: <strong>3 enrolled / 8 min / 15 cap</strong></p>',
   creditAmount: '$899.00',
+  // PL-84: sample the hours variant — it's the normal case (dollar credit is
+  // the no-offer fallback only).
+  conversionTermsBlock:
+    '<p>Wonderful — you chose 1-on-1 tutoring for Ana. Your SIS SAT Prep payment converts to <strong>8 hours</strong> of 1-on-1 tutoring — nothing to pay until those are used.</p>',
   // PL-80b: sample the min-met digest variant — the milestone line and the
   // counts must agree (a min-met line over "6 enrolled / 8 min" reads like a
   // bug; real sends compute both live so they can never disagree).

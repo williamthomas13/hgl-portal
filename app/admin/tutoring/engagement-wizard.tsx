@@ -172,14 +172,16 @@ export default function EngagementWizard({
     }
     supabase
       .from('enrollment_addons')
-      .select('id, hours, tutoring_packages ( name ), enrollments!inner ( student_id )')
+      .select('id, hours, source, tutoring_packages ( name ), enrollments!inner ( student_id )')
       .eq('enrollments.student_id', studentId)
       .then(({ data }) => {
         setAddons(
           (data ?? []).map((a) => {
             /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
             const pkg: any = Array.isArray(a.tutoring_packages) ? a.tutoring_packages[0] : a.tutoring_packages
-            return { id: a.id, hours: Number(a.hours), label: `${pkg?.name ?? 'Package'} — ${a.hours}h purchased` }
+            // PL-84: conversion packages have no catalog package behind them.
+            const name = pkg?.name ?? (a.source === 'cancellation_conversion' ? 'Cancellation conversion' : 'Package')
+            return { id: a.id, hours: Number(a.hours), label: `${name} — ${a.hours}h purchased` }
           })
         )
       })

@@ -43,6 +43,8 @@ type Enrollment = {
   waitlist_declined_at: string | null
   converted_to_tutoring_at: string | null
   tutoring_credit_amount: number | null
+  cancellation_offer_hours: number | null
+  amount_paid: number | null
   class_cancelled: boolean
   cancellation_outcome: string | null
   enrollment_addons: { hours: number }[] | null
@@ -363,6 +365,8 @@ export default function AdminDashboard() {
           waitlist_declined_at,
           converted_to_tutoring_at,
           tutoring_credit_amount,
+          cancellation_offer_hours,
+          amount_paid,
           class_cancelled,
           cancellation_outcome,
           enrollment_addons ( hours ),
@@ -509,14 +513,22 @@ export default function AdminDashboard() {
   // Bookkeeping after a cancellation: how each paid family resolved it
   // (refunded / converted / credited) — recorded from the billy@ reply
   // thread, no Stripe automation (PHASE4_SPEC §12).
-  // PL-76: one click credits the paid amount as a Stripe customer balance
-  // and sends the CX-T availability request — the on-ramp to the standard
-  // tutoring pipeline. Idempotent server-side; a second click offers resend.
+  // PL-76: one click converts and sends the CX-T availability request — the
+  // on-ramp to the standard tutoring pipeline. PL-84: when the cancellation
+  // carried an HOURS offer (the normal case), conversion mints an hours
+  // package via the add-on machinery — the promised hours are the record,
+  // not a dollar balance that can run dry early. Dollar Stripe credit only
+  // when no hours were offered. Idempotent; a second click offers resend.
   async function handleConvertToTutoring(en: Enrollment, studentName: string) {
     const already = Boolean(en.converted_to_tutoring_at)
+    const offered = Number(en.cancellation_offer_hours ?? 0)
     const msg = already
-      ? `${studentName} was already converted ($${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit). Re-send the availability email?`
-      : `Convert ${studentName} to 1-on-1 tutoring? The paid amount becomes a Stripe credit toward tutoring invoices, and the family gets the availability request email.`
+      ? offered > 0
+        ? `${studentName} was already converted (${offered}-hour tutoring package). Re-send the availability email?`
+        : `${studentName} was already converted ($${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit). Re-send the availability email?`
+      : offered > 0
+        ? `Convert ${studentName} to 1-on-1 tutoring? The family gets the ${offered} hours offered at cancellation as a tutoring package (paid $${Number(en.amount_paid ?? 0).toLocaleString()}), plus the availability request email.`
+        : `Convert ${studentName} to 1-on-1 tutoring? No hours offer is on the cancellation record, so the paid amount becomes a Stripe credit toward tutoring invoices, and the family gets the availability request email.`
     if (!confirm(msg)) return
     const res = await fetch('/api/admin/convert-to-tutoring', {
       method: 'POST',
@@ -1119,13 +1131,19 @@ export default function AdminDashboard() {
                             }
                             title={
                               en.converted_to_tutoring_at
-                                ? `Converted ${new Date(en.converted_to_tutoring_at).toLocaleDateString()} — $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit on the family's Stripe balance. Click to re-send the availability email.`
-                                : 'Credit the paid amount toward tutoring and send the availability request'
+                                ? Number(en.cancellation_offer_hours ?? 0) > 0
+                                  ? `Converted ${new Date(en.converted_to_tutoring_at).toLocaleDateString()} — ${en.cancellation_offer_hours}-hour tutoring package (paid $${Number(en.amount_paid ?? 0).toLocaleString()}). Click to re-send the availability email.`
+                                  : `Converted ${new Date(en.converted_to_tutoring_at).toLocaleDateString()} — $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit on the family's Stripe balance. Click to re-send the availability email.`
+                                : Number(en.cancellation_offer_hours ?? 0) > 0
+                                  ? `Convert the ${en.cancellation_offer_hours} hours offered at cancellation into a tutoring package and send the availability request`
+                                  : 'No hours offer on record — credit the paid amount toward tutoring and send the availability request'
                             }
                             className={`ml-2 text-xs underline ${en.converted_to_tutoring_at ? 'text-emerald-700' : 'text-hgl-blue hover:text-hgl-slate'}`}
                           >
                             {en.converted_to_tutoring_at
-                              ? `✓ tutoring credit $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()}`
+                              ? Number(en.cancellation_offer_hours ?? 0) > 0
+                                ? `✓ ${en.cancellation_offer_hours}h tutoring package`
+                                : `✓ tutoring credit $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()}`
                               : 'convert to 1-on-1 tutoring'}
                           </button>
                         )}

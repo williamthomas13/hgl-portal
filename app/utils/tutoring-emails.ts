@@ -73,20 +73,40 @@ const firstNames = (blocks: StudentScheduleBlock[]) =>
 // the family already chose tutoring in their CX reply; this just gets their
 // availability so the standard pipeline (wizard → approval → welcome) takes
 // over. Sent from the PL-50 configured contact.
+// PL-84: the terms sentence is the ONE conversion source of truth — hours
+// variant when the cancellation carried an hours offer (the normal case),
+// dollar-credit wording only as the no-offer fallback. Shared by the code
+// twin and the registry's {conversionTermsBlock} so wording never drifts.
+export function conversionTermsHtml(opts: {
+  studentFirst: string
+  classLabel: string
+  offerHours: number | null
+  creditAmount: string // "$899.00" — used only when offerHours is null
+}): string {
+  if (opts.offerHours && opts.offerHours > 0) {
+    return `<p>Wonderful — you chose 1-on-1 tutoring for ${opts.studentFirst}. Your ${opts.classLabel} payment converts to <strong>${opts.offerHours} hours</strong> of 1-on-1 tutoring — nothing to pay until those are used.</p>`
+  }
+  return `<p>Wonderful — you chose 1-on-1 tutoring for ${opts.studentFirst}. Your ${opts.classLabel} payment (<strong>${opts.creditAmount}</strong>) is applied as credit toward these sessions, so there's nothing to pay now.</p>`
+}
+
 export function cxTutoringStartEmail(opts: {
   parentFirst: string | null
   studentFirst: string
   classLabel: string
   creditAmount: string // "$899.00"
+  offerHours?: number | null // PL-84: hours offer wins when present
   availabilityLink: string
   contact: ContactInfo
 }): { subject: string; html: string } {
   const subject = `Let's get ${opts.studentFirst}'s 1-on-1 tutoring going`
   const html = wrap(
     `<p>Hi ${opts.parentFirst ?? 'there'},</p>
-     <p>Wonderful — you chose 1-on-1 tutoring for ${opts.studentFirst}. Your ${opts.classLabel}
-     payment (<strong>${opts.creditAmount}</strong>) is applied as credit toward these sessions,
-     so there's nothing to pay now.</p>
+     ${conversionTermsHtml({
+       studentFirst: opts.studentFirst,
+       classLabel: opts.classLabel,
+       offerHours: opts.offerHours ?? null,
+       creditAmount: opts.creditAmount,
+     })}
      <p>One quick step: share when ${opts.studentFirst} is usually available, and we'll propose
      times that fit your family.</p>
      <p style="margin:24px 0"><a href="${opts.availabilityLink}" style="background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Share ${opts.studentFirst}'s availability</a></p>

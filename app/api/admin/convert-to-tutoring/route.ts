@@ -7,6 +7,7 @@ import { renderRegistered } from '../../../utils/comms-registered'
 import {
   contactBlockHtml,
   contactFrom,
+  conversionTermsHtml,
   cxTutoringStartEmail,
   loadContactInfo,
   money,
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     .from('enrollments')
     .select(
       `id, payment_status, class_cancelled, amount_paid, converted_to_tutoring_at,
-       tutoring_credit_amount, stripe_credit_txn_id,
+       tutoring_credit_amount, stripe_credit_txn_id, cancellation_offer_hours,
        students ( id, first_name, last_name,
          families ( id, parent_first_name, parent_last_name, parent_email,
                     billing_email, billing_cc_emails, stripe_customer_id ) ),
@@ -76,12 +77,18 @@ export async function POST(req: Request) {
   const classLabel = `${school?.nickname ?? 'HGL'} ${cls?.class_type ?? 'class'}`
   const paid = Number(enrollment.amount_paid ?? 0)
   const alreadyConverted = Boolean(enrollment.converted_to_tutoring_at)
+  // PL-84: the persisted hours offer decides the conversion shape. Hours →
+  // an add-on hours package (the authoritative record: balance, package-
+  // covered proposals, #8b hours remaining). Dollars → ONLY when the
+  // cancellation carried no hours offer.
+  const offerHours = Number(enrollment.cancellation_offer_hours ?? 0) || null
 
   // Second click without explicit resend: report state, never re-credit.
   if (alreadyConverted && !body.resend) {
     return NextResponse.json({
       ok: true,
       already: true,
+      offerHours,
       creditAmount: Number(enrollment.tutoring_credit_amount ?? paid),
     })
   }
@@ -91,36 +98,72 @@ export async function POST(req: Request) {
     if (!(paid > 0)) {
       return NextResponse.json({ error: 'No recorded paid amount to credit.' }, { status: 400 })
     }
-    // Stripe customer credit balance: NEGATIVE balance = credit that future
-    // invoices consume automatically.
-    const customerId = await ensureStripeCustomer(family)
-    const txn = await stripe.customers.createBalanceTransaction(customerId, {
-      amount: -Math.round(paid * 100),
-      currency: 'usd',
-      description: `Cancellation credit — ${classLabel} (enrollment ${enrollment.id})`,
-    })
-    creditAmount = paid
-    const { data: stamped } = await supabase
-      .from('enrollments')
-      .update({
-        converted_to_tutoring_at: new Date().toISOString(),
-        tutoring_credit_amount: paid,
-        stripe_credit_txn_id: txn.id,
-        cancellation_outcome: 'converted',
-      })
-      .eq('id', enrollment.id)
-      .is('converted_to_tutoring_at', null)
-      .select('id')
-    if (!stamped || stamped.length === 0) {
-      // A concurrent click won the race and already credited — reverse ours.
-      await stripe.customers
-        .createBalanceTransaction(customerId, {
-          amount: Math.round(paid * 100),
-          currency: 'usd',
-          description: `Reversal (duplicate conversion click) — ${classLabel}`,
+    if (offerHours) {
+      // Hours path: stamp first (the idempotency gate), then mint the hours
+      // package. If a concurrent click won the stamp, do nothing.
+      const { data: stamped } = await supabase
+        .from('enrollments')
+        .update({
+          converted_to_tutoring_at: new Date().toISOString(),
+          cancellation_outcome: 'converted',
         })
-        .catch((e) => console.error('duplicate-credit reversal failed — fix in Stripe:', e))
-      return NextResponse.json({ ok: true, already: true, creditAmount })
+        .eq('id', enrollment.id)
+        .is('converted_to_tutoring_at', null)
+        .select('id')
+      if (!stamped || stamped.length === 0) {
+        return NextResponse.json({ ok: true, already: true, offerHours, creditAmount })
+      }
+      const { error: addonError } = await supabase.from('enrollment_addons').insert({
+        enrollment_id: enrollment.id,
+        package_id: null,
+        hours: offerHours,
+        price_paid: paid,
+        source: 'cancellation_conversion',
+      })
+      if (addonError) {
+        // Un-stamp so a retry can mint the package — nothing external moved.
+        await supabase
+          .from('enrollments')
+          .update({ converted_to_tutoring_at: null, cancellation_outcome: null })
+          .eq('id', enrollment.id)
+        return NextResponse.json(
+          { error: `Could not record the hours package: ${addonError.message}` },
+          { status: 500 }
+        )
+      }
+    } else {
+      // No hours offer on the cancellation record — dollar-credit fallback
+      // (the original PL-76 path). Stripe customer credit balance: NEGATIVE
+      // balance = credit that future invoices consume automatically.
+      const customerId = await ensureStripeCustomer(family)
+      const txn = await stripe.customers.createBalanceTransaction(customerId, {
+        amount: -Math.round(paid * 100),
+        currency: 'usd',
+        description: `Cancellation credit — ${classLabel} (enrollment ${enrollment.id})`,
+      })
+      creditAmount = paid
+      const { data: stamped } = await supabase
+        .from('enrollments')
+        .update({
+          converted_to_tutoring_at: new Date().toISOString(),
+          tutoring_credit_amount: paid,
+          stripe_credit_txn_id: txn.id,
+          cancellation_outcome: 'converted',
+        })
+        .eq('id', enrollment.id)
+        .is('converted_to_tutoring_at', null)
+        .select('id')
+      if (!stamped || stamped.length === 0) {
+        // A concurrent click won the race and already credited — reverse ours.
+        await stripe.customers
+          .createBalanceTransaction(customerId, {
+            amount: Math.round(paid * 100),
+            currency: 'usd',
+            description: `Reversal (duplicate conversion click) — ${classLabel}`,
+          })
+          .catch((e) => console.error('duplicate-credit reversal failed — fix in Stripe:', e))
+        return NextResponse.json({ ok: true, already: true, creditAmount })
+      }
     }
   }
 
@@ -138,6 +181,13 @@ export async function POST(req: Request) {
     },
     {
       creditAmount: money(creditAmount),
+      // PL-84: hours terms when the offer exists; credit wording otherwise.
+      conversionTermsBlock: conversionTermsHtml({
+        studentFirst: student.first_name,
+        classLabel,
+        offerHours,
+        creditAmount: money(creditAmount),
+      }),
       availabilityLink,
       contactBlock: contactBlockHtml(contact),
     },
@@ -147,6 +197,7 @@ export async function POST(req: Request) {
         studentFirst: student.first_name,
         classLabel,
         creditAmount: money(creditAmount),
+        offerHours,
         availabilityLink,
         contact,
       })
@@ -169,5 +220,5 @@ export async function POST(req: Request) {
       { status: 500 }
     )
   }
-  return NextResponse.json({ ok: true, creditAmount, resent: alreadyConverted })
+  return NextResponse.json({ ok: true, offerHours, creditAmount, resent: alreadyConverted })
 }

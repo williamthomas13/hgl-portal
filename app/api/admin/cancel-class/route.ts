@@ -144,10 +144,13 @@ export async function POST(request: Request) {
 
   // 3. Paid enrollments keep their status but carry the flag (refunds stay
   // manual in Stripe; the outcome field records the family's choice later).
+  // PL-84: the HOURS OFFER is persisted here too — it used to live only in
+  // the CX email, so conversion had no record of what was promised and fell
+  // back to a dollar credit that could run dry before the promised hours.
   if (paid.length > 0) {
     await supabase
       .from('enrollments')
-      .update({ class_cancelled: true })
+      .update({ class_cancelled: true, cancellation_offer_hours: offerHours })
       .in('id', paid.map((e) => e.id))
   }
 

@@ -1451,9 +1451,11 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     subject: "Let's get {studentFirstName}'s 1-on-1 tutoring going",
     preheader: 'Your {className} payment carries over — pick times that fit.',
     footer_note: null,
+    // PL-84: the terms ride {conversionTermsBlock} — hours variant when the
+    // cancellation carried an hours offer, dollar credit only as fallback.
     body_markdown: `Hi {parentFirstName},
 
-Wonderful — you chose 1-on-1 tutoring for {studentFirstName}. Your {className} payment (**{creditAmount}**) is applied as credit toward these sessions, so there's nothing to pay now.
+{conversionTermsBlock}
 
 One quick step: share when {studentFirstName} is usually available, and we'll propose times that fit your family.
 
