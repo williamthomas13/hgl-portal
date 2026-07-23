@@ -217,7 +217,7 @@ export async function POST(req: Request) {
       const { created } = await materializeSessions(engagement, requireApproval)
 
       // PL-10: a schedule actually existing is what "won" means — move any
-      // open pipeline row for this student to Scheduled — won. Trigger is
+      // open pipeline row for this student to Started (PL-109 label). Trigger is
       // schedule creation, never mere family/student record creation.
       const { error: leadAdvanceError } = await supabase
         .from('leads')

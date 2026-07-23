@@ -43,6 +43,9 @@ const LEAD_FIELDS = [
   'status',
   'assigned_to',
   'notes',
+  // PL-108: the close reason travels with the status change.
+  'lost_reason_kind',
+  'lost_reason',
 ] as const
 
 type Body =
@@ -90,6 +93,23 @@ export async function POST(req: Request) {
 
     if (body.action === 'update') {
       if (!body.id) return NextResponse.json({ error: 'Missing lead id.' }, { status: 400 })
+      // PL-108: "Closed — not now" is never blank — a quick-pick reason is
+      // required the first time a lead moves to closed.
+      if (body.status === 'lost') {
+        const kinds = ['price', 'timing', 'went_elsewhere', 'no_response', 'other']
+        const { data: current } = await supabase
+          .from('leads').select('lost_reason_kind').eq('id', body.id).maybeSingle()
+        const kind = (body.lost_reason_kind as string) ?? current?.lost_reason_kind
+        if (!kind || !kinds.includes(kind)) {
+          return NextResponse.json({ error: 'Closing a lead needs a reason (price, timing, went elsewhere, no response, or other).' }, { status: 400 })
+        }
+        if (kind === 'other' && !String(body.lost_reason ?? '').trim() && !current?.lost_reason_kind) {
+          return NextResponse.json({ error: 'For "other", a few words on why are required.' }, { status: 400 })
+        }
+        // A null/absent kind on a re-close falls back to the stored reason —
+        // it must never NULL the stored reason through the field pick below.
+        if (body.lost_reason_kind == null) delete body.lost_reason_kind
+      }
       const patch = pickLeadFields(body as Record<string, unknown>)
       if (Object.keys(patch).length === 0) {
         return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })

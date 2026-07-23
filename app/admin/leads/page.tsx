@@ -37,6 +37,8 @@ type Lead = {
   consult_gcal_event_id: string | null
   notes: string | null
   intake_token_sent_at: string | null
+  lost_reason_kind: string | null
+  lost_reason: string | null
   intake_completed_at: string | null
   intake: Record<string, any> | null
   family_id: string | null
@@ -75,8 +77,8 @@ const STATUS_LABELS: Record<string, string> = {
   consult_scheduled: 'Consult scheduled',
   consult_done: 'Consult done',
   proposal_sent: 'Proposal sent',
-  scheduled: 'Scheduled — won',
-  lost: 'Lost',
+  scheduled: 'Started',
+  lost: 'Closed — not now',
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -102,6 +104,34 @@ const OFFER_KIND_LABELS: Record<string, string> = {
   free_hours: 'Free hours',
   percent_off_first_month: '% off first month',
   fixed_credit: 'Fixed credit ($)',
+}
+
+// PL-108: closing a lead requires a reason — quick-pick + optional detail
+// (detail required for 'other').
+const LOST_REASONS: Record<string, string> = {
+  price: 'Price',
+  timing: 'Timing',
+  went_elsewhere: 'Went elsewhere',
+  no_response: 'No response',
+  other: 'Other',
+}
+
+function promptCloseReason(): { kind: string; text: string | null } | null {
+  const pick = prompt(
+    'Why "not now"? Type one:\n\nprice · timing · went elsewhere · no response · other'
+  )
+  if (pick == null) return null
+  const kind = pick.trim().toLowerCase().replace(/\s+/g, '_')
+  if (!LOST_REASONS[kind]) {
+    alert('Please type one of: price, timing, went elsewhere, no response, other.')
+    return null
+  }
+  const text = prompt(kind === 'other' ? 'A few words on why (required):' : 'Anything worth noting? (optional)')
+  if (kind === 'other' && !(text ?? '').trim()) {
+    alert('For "other", a few words are required.')
+    return null
+  }
+  return { kind, text: (text ?? '').trim() || null }
 }
 
 const STALE_DAYS = 4
@@ -233,6 +263,71 @@ function NewLeadForm({ onCreated }: { onCreated: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// PL-109: the pipeline's job is moving students toward tutoring — every
+// status carries its one obvious next move as a button on the row.
+function NextStepButton({ lead, onChange }: { lead: Lead; onChange: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const stop = (e: React.MouseEvent) => e.stopPropagation()
+  const act = async (e: React.MouseEvent, body: Record<string, unknown>, okMsg: string) => {
+    e.stopPropagation()
+    setBusy(true)
+    const res = await post(body)
+    setBusy(false)
+    if (!res.ok) alert(res.error ?? 'Failed.')
+    else onChange()
+    void okMsg
+  }
+  const cls = 'text-xs font-semibold text-white bg-hgl-blue rounded px-2.5 py-1 hover:opacity-90 disabled:opacity-50'
+  const studentFirst = (lead.student_name ?? '').split(' ')[0] || 'the student'
+
+  if (lead.status === 'new' || lead.status === 'contacted') {
+    if (!lead.contact_email) return <span className="text-xs text-gray-400" onClick={stop}>next: get a contact email</span>
+    return (
+      <button type="button" disabled={busy} className={cls}
+        onClick={(e) => { e.stopPropagation(); if (confirm(`Email the intake form link to ${lead.contact_email}?`)) act(e, { action: 'send_intake', id: lead.id }, 'sent') }}>
+        Send intake form
+      </button>
+    )
+  }
+  if (lead.status === 'intake_sent') {
+    return (
+      <button type="button" disabled={busy} className={cls}
+        onClick={(e) => { e.stopPropagation(); if (confirm(`Re-send the intake form link to ${lead.contact_email}?`)) act(e, { action: 'send_intake', id: lead.id }, 'sent') }}>
+        Re-send intake form
+      </button>
+    )
+  }
+  if (['intake_complete', 'consult_done', 'proposal_sent'].includes(lead.status)) {
+    // Scheduling IS the next step — the wizard preload deep-link (PL-92
+    // pattern applied inside the app). Without a student record yet, the
+    // detail's "Create family + student" is the gateway.
+    if (lead.student_id) {
+      return (
+        <a href={`/admin/tutoring?schedule=${lead.student_id}`} onClick={stop} className={cls}>
+          Schedule {studentFirst}
+        </a>
+      )
+    }
+    return <span className="text-xs text-gray-400" onClick={stop}>next: create family + student (open the row)</span>
+  }
+  if (lead.status === 'consult_scheduled') {
+    return (
+      <button type="button" disabled={busy} className={cls}
+        onClick={(e) => act(e, { action: 'update', id: lead.id, status: 'consult_done' }, 'done')}>
+        Mark consult done
+      </button>
+    )
+  }
+  if (lead.status === 'scheduled' && lead.student_id) {
+    return (
+      <a href={`/admin/tutoring?family=${lead.family_id ?? ''}`} onClick={stop} className="text-xs text-gray-500 underline">
+        see the schedule
+      </a>
+    )
+  }
+  return null
+}
+
 // Lead detail (expanded row)
 // ---------------------------------------------------------------------------
 
@@ -315,6 +410,12 @@ function LeadDetail({
 
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 space-y-3 text-sm">
+      {lead.status === 'lost' && lead.lost_reason_kind && (
+        <p className="text-xs text-gray-500">
+          Closed — not now: <span className="font-semibold">{LOST_REASONS[lead.lost_reason_kind] ?? lead.lost_reason_kind}</span>
+          {lead.lost_reason ? ` — ${lead.lost_reason}` : ''}
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
@@ -348,7 +449,12 @@ function LeadDetail({
         <button
           type="button"
           disabled={busy}
-          onClick={() =>
+          onClick={() => {
+            // PL-108: picking "Closed — not now" in the dropdown also
+            // requires the reason before saving.
+            const closing = status === 'lost' && lead.status !== 'lost'
+            const reason = closing ? promptCloseReason() : null
+            if (closing && !reason) return
             run(
               {
                 action: 'update',
@@ -357,10 +463,11 @@ function LeadDetail({
                 assigned_to: assignedTo,
                 notes,
                 offer_id: offerId || null,
+                ...(reason ? { lost_reason_kind: reason.kind, lost_reason: reason.text } : {}),
               },
               'Saved.'
             )
-          }
+          }}
           className="bg-hgl-slate text-white font-bold py-1.5 px-4 rounded-md hover:opacity-90 disabled:opacity-50"
         >
           Save
@@ -379,14 +486,22 @@ function LeadDetail({
           <span className="text-xs text-gray-400">Add a contact email to send the intake form</span>
         )}
         {lead.status !== 'lost' && (
-          <ConfirmAction
-            label="Mark lost"
-            message="Move this lead to Lost?"
-            confirmLabel="Yes, mark lost"
-            className="text-gray-500 underline"
+          <button
+            type="button"
             disabled={busy}
-            onConfirm={() => run({ action: 'update', id: lead.id, status: 'lost' }, 'Marked lost.')}
-          />
+            className="text-gray-500 underline"
+            onClick={() => {
+              // PL-108: never closed without a reason.
+              const reason = promptCloseReason()
+              if (!reason) return
+              run(
+                { action: 'update', id: lead.id, status: 'lost', lost_reason_kind: reason.kind, lost_reason: reason.text },
+                'Closed — not now (reason saved).'
+              )
+            }}
+          >
+            Close — not now…
+          </button>
         )}
       </div>
 
@@ -721,6 +836,18 @@ export default function LeadsAdmin() {
                                   no touch in {STALE_DAYS}+ days
                                 </span>
                               )}
+                              {/* PL-108: the reason travels with the row. */}
+                              {lead.status === 'lost' && lead.lost_reason_kind && (
+                                <span
+                                  className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5"
+                                  title={lead.lost_reason ?? undefined}
+                                >
+                                  {LOST_REASONS[lead.lost_reason_kind] ?? lead.lost_reason_kind}
+                                </span>
+                              )}
+                              {/* PL-109: every status surfaces its next step
+                                  as an action, right on the row. */}
+                              <NextStepButton lead={lead} onChange={refresh} />
                               <span className="ml-auto text-gray-400 text-sm">
                                 {expanded === lead.id ? '▾' : '▸'}
                               </span>

@@ -53,11 +53,15 @@ Group-class teaching currently has no pay path — timecards only know 1-on-1 tu
 
 The #3 template's display name is wrong: `#3 — Video FAQs` → **`#3 — VERY FAQs`** in `comms.ts` (E3_VFAQ), the seed, and anywhere else the display name renders. Template key can stay; it's internal (PL-98 keeps it out of reader-facing copy anyway).
 
-## PL-108 (small) · Lost leads capture a reason
+## PL-108 (small) · Lost leads capture a reason ✅
+
+> **Shipped, guard matrix 7/7 + browser-verified.** Closing a lead (the "Close — not now…" button AND picking the status in the dropdown — both intercepted) prompts a quick-pick cause (price / timing / went elsewhere / no response / other) plus free text — optional normally, **required for "other"**; never blank (server-enforced: a reasonless first close is a 400 and the lead stays open). Stored on the lead (`lost_reason_kind` + `lost_reason`, migration `20260806000001` **applied**); shown as a chip on the pipeline row (hover reveals the free text) and a line on the record. Guard subtlety caught during verification: an explicit-null re-close used to wipe the stored reason through the field pick — now the stored reason is preserved (matrix-verified).
 
 Moving a lead to closed (see PL-109 for the rename) prompts for a **reason** — short free-text plus a few quick-pick common causes (price, timing, went elsewhere, no response, other). Stored on the lead, shown on the record and in the pipeline row hover/detail. Not required to be an essay; required to not be blank.
 
-## PL-109 · Pipeline: statuses prompt the next step; "Won"/"Lost" renamed
+## PL-109 · Pipeline: statuses prompt the next step; "Won"/"Lost" renamed ✅
+
+> **Shipped, browser-verified.** Renames: "Scheduled — won" → **"Started"**, "Lost" → **"Closed — not now"** — verified live that neither old label renders anywhere on the pipeline (labels only; the internal enum values stay, so nothing downstream breaks — the engagement route's auto-advance to Started is untouched, comment updated). **Every status carries its next move on the ROW** (new `NextStepButton`): new/contacted → [Send intake form] (or "next: get a contact email" when there's none) · intake_sent → [Re-send intake form] · **intake_complete / consult_done / proposal_sent → [Schedule {student}]** deep-linking the wizard preload (`?schedule=` — the PL-99-verified flow; intake stamps `student_id`, so the button lights up the moment intake completes; without a student record it points at the detail's "Create family + student") · consult_scheduled → [Mark consult done] · Started → a quiet "see the schedule" link. Buttons stop propagation so the row still expands normally; verified rendering on a live lead.
 
 - Every pipeline status should **surface its next step as an action**, not just sit as a label. "Intake complete" → the record prompts "Schedule {student}" (wizard deep-link, windows preloaded — the PL-92 pattern applied inside the app). Map each status to its one obvious next move (new → contact/intake; intake complete → schedule; scheduled → confirm/start) and put that button on the row/record. The pipeline's job is moving students toward tutoring.
 - **Rename (Scarlett's pick): "Won" → "Started", "Lost" → "Closed — not now".** Update everywhere the labels render (pipeline columns, filters, records, any reports/digests); plain-English statuses rule applies. "Closed — not now" pairs with PL-108's reason.
