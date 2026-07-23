@@ -1,9 +1,13 @@
-import { convertUrlFor } from './lifecycle'
 import type { Audience, EnrollmentEmailContext } from './email'
 
 // PL-96: extracted from email.ts into a LEAF module so comms-variables can
 // render the editor sample FROM this composer (drift-proof by construction).
 // The ctx param is a structural Pick — real sends pass the full context.
+// GENUINELY leaf (PL-96 follow-up): comms-variables rides in the templates
+// page's CLIENT bundle, so this module may import nothing that reaches
+// server-only code — the convert URL is therefore a REQUIRED caller input
+// (server callers mint it with convertUrlFor; the sample passes the test
+// link), never computed here.
 
 export type CancellationCtx = Pick<
   EnrollmentEmailContext,
@@ -33,9 +37,10 @@ export function cancellationOptionsHtml(
   audience: Audience,
   offer: CancellationOffer | null,
   creditTerm: string | null,
-  /** PL-96: the sample passes the test-link so previews never carry a
-   *  mintable /convert token; real sends omit it. */
-  opts: { convertUrl?: string } = {}
+  /** REQUIRED: server callers mint the real /convert link (convertUrlFor);
+   *  the editor sample passes the test link. Caller-supplied so this module
+   *  stays client-safe (no lifecycle/crypto/secret imports). */
+  opts: { convertUrl: string }
 ): string {
   const isStudent = audience === 'student'
   const s = ctx.studentFirstName
@@ -65,7 +70,7 @@ export function cancellationOptionsHtml(
       would tailor the schedule to ${isStudent ? 'your' : "your family's"} availability and the
       lesson content to ${isStudent ? 'your' : `${s}'s`} strengths and weaknesses (according to
       the first diagnostic test score).
-      <span style="display:block;margin:14px 0"><a href="${opts.convertUrl ?? convertUrlFor(ctx.enrollmentId)}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Convert my ${ctx.className} payment to ${offer.hours} hours of 1-on-1 tutoring</a></span>
+      <span style="display:block;margin:14px 0"><a href="${opts.convertUrl}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Convert my ${ctx.className} payment to ${offer.hours} hours of 1-on-1 tutoring</a></span>
       <span style="color:#64748b;font-size:13px">One tap to confirm on the next page — then pick the
       times that work. Prefer to talk it through first? Just reply.</span>`
     )
