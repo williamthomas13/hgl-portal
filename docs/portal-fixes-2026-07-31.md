@@ -1,6 +1,6 @@
 # Portal fixes — batch 13 (July 2026, follows batch 12)
 
-Eleven items; PL-87 first (pre-launch guard gap). Continues PL-x numbering.
+Eleven items; PL-87 first (pre-launch guard gap) — **ALL shipped ✅**, gates green (tsc · build · smoke:public 8 · regress:links 96 · regress:pronouns 61 · cancel-class 11 · resume-addon). Continues PL-x numbering.
 
 **Standing rules:** plain-English statuses · "Ops Director" · never "engagement" in UI copy · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
 
