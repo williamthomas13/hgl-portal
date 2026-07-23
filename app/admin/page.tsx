@@ -1364,6 +1364,13 @@ export default function AdminDashboard() {
             >
               Communications
             </a>
+            <a
+              href="/admin/view-as"
+              className="text-sm font-semibold text-purple-700 underline hover:text-hgl-slate"
+              title="See the portal exactly as a parent, tutor, school contact, or manager sees it"
+            >
+              View as…
+            </a>
           <button
             onClick={async () => {
               await supabase.auth.signOut()

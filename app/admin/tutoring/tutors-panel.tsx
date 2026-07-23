@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { TimezoneSelect } from '../ui'
 import { WEEKDAYS } from './types'
@@ -25,6 +25,16 @@ export default function TutorsPanel({
 }) {
   const [editing, setEditing] = useState<Tutor | null>(null)
   const [message, setMessage] = useState('')
+  // PL-104/PL-102: pay-type titles are edited by admins only — managers see
+  // them read-only (a DB trigger enforces this server-side regardless).
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return
+      const { data: p } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
+      setIsAdmin(p?.role === 'admin')
+    })
+  }, [])
 
   async function toggleActive(t: Tutor) {
     const { error } = await supabase
@@ -143,6 +153,7 @@ export default function TutorsPanel({
         <TutorEditor
           tutor={editing}
           subjects={subjects}
+          canEditTitles={isAdmin}
           initialNotes={notes[editing.id] ?? ''}
           onClose={(changed) => {
             setEditing(null)
@@ -159,11 +170,14 @@ export default function TutorsPanel({
 function TutorEditor({
   tutor,
   subjects,
+  canEditTitles,
   initialNotes,
   onClose,
 }: {
   tutor: Tutor
   subjects: Subject[]
+  /** PL-104: admin-only — managers get the read-only rendering. */
+  canEditTitles: boolean
   initialNotes: string
   onClose: (changed: boolean) => void
 }) {
@@ -195,7 +209,9 @@ function TutorEditor({
         google_calendar_id: calendarId.trim() || null,
         default_location: location.trim() || null,
         offer_windows: windows,
-        pay_type_titles: payTitles,
+        // Managers must not touch titles (the DB trigger would refuse the
+        // whole update) — only include the field when the caller may edit.
+        ...(canEditTitles ? { pay_type_titles: payTitles } : {}),
       })
       .eq('id', tutor.id)
     const { error: e2 } = await supabase
@@ -368,31 +384,40 @@ function TutorEditor({
             {payTitles.map((t) => (
               <span key={t} className="inline-flex items-center gap-1 bg-gray-100 border border-gray-300 rounded px-2 py-0.5 text-xs">
                 {t}
-                <button
-                  type="button"
-                  onClick={() => setPayTitles((p) => p.filter((x) => x !== t))}
-                  className="text-gray-400 hover:text-red-600"
-                  title="Remove this title"
-                >
-                  ×
-                </button>
+                {canEditTitles && (
+                  <button
+                    type="button"
+                    onClick={() => setPayTitles((p) => p.filter((x) => x !== t))}
+                    className="text-gray-400 hover:text-red-600"
+                    title="Remove this title"
+                  >
+                    ×
+                  </button>
+                )}
               </span>
             ))}
-            <input
-              type="text"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  const t = newTitle.trim()
-                  if (t && !payTitles.includes(t)) setPayTitles((p) => [...p, t])
-                  setNewTitle('')
-                }
-              }}
-              placeholder="Add a title, press Enter"
-              className="border border-gray-300 rounded p-1.5 text-xs w-44"
-            />
+            {payTitles.length === 0 && !canEditTitles && (
+              <span className="text-xs text-gray-400 italic">none listed</span>
+            )}
+            {canEditTitles ? (
+              <input
+                type="text"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const t = newTitle.trim()
+                    if (t && !payTitles.includes(t)) setPayTitles((p) => [...p, t])
+                    setNewTitle('')
+                  }
+                }}
+                placeholder="Add a title, press Enter"
+                className="border border-gray-300 rounded p-1.5 text-xs w-44"
+              />
+            ) : (
+              <span className="text-xs text-gray-400">— edited by the admin only</span>
+            )}
           </div>
         </div>
 
