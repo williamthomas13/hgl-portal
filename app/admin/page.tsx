@@ -42,6 +42,9 @@ type Enrollment = {
   enrolled_at: string
   payment_status: string
   waitlist_declined_at: string | null
+  waitlist_offer_sent_at: string | null
+  waitlist_offer_expires_at: string | null
+  waitlist_offer_round: number | null
   converted_to_tutoring_at: string | null
   tutoring_credit_amount: number | null
   cancellation_offer_hours: number | null
@@ -229,6 +232,9 @@ export default function AdminDashboard() {
       setQboOpenSignal((n) => n + 1)
       setDeepFocus(`qbo-${qboRow}`)
     }
+    // PL-94: the rollover alert lands with the family's row in view.
+    const enrollmentRow = q.get('enrollment')
+    if (enrollmentRow) setDeepFocus(`enrollment-${enrollmentRow}`)
   }, [])
   useDeepLinkFocus(deepFocus)
   // Phase 5 copy-a-previous-class: 'blank' renders an empty wizard; 'pick'
@@ -380,6 +386,9 @@ export default function AdminDashboard() {
           enrolled_at,
           payment_status,
           waitlist_declined_at,
+          waitlist_offer_sent_at,
+          waitlist_offer_expires_at,
+          waitlist_offer_round,
           converted_to_tutoring_at,
           tutoring_credit_amount,
           cancellation_offer_hours,
@@ -567,6 +576,45 @@ export default function AdminDashboard() {
       .eq('id', studentId)
     if (error) alert('Error saving pronouns: ' + error.message)
     else fetchRosters()
+  }
+
+  // PL-94: waitlist rescue — the hour-49 phone call. Both actions are
+  // admin-authed one-clicks; the rollover alert only deep-links here.
+  async function handleWaitlistRescue(en: Enrollment, studentName: string, action: 'add_back' | 're_offer') {
+    let position: number | undefined
+    if (action === 'add_back') {
+      const raw = prompt(
+        `Add ${studentName} back to the waitlist at which position?\n\n#1 = next in line (a live 48h offer already out to another family is never revoked — they'd be next after it resolves).`,
+        '1'
+      )
+      if (raw == null) return
+      position = Math.max(1, Number(raw) || 1)
+    } else if (!confirm(`Re-offer the spot to ${studentName} now? They get a fresh 48-hour claim window.`)) {
+      return
+    }
+    const send = (confirmOverCap = false) =>
+      fetch('/api/admin/waitlist-rescue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, enrollmentId: en.id, position, confirmOverCap }),
+      })
+    let res = await send()
+    let json = await res.json().catch(() => ({}))
+    if (res.status === 409 && json.needsOverCapConfirm) {
+      // The explicit, logged over-cap confirm — informed override, never silent.
+      if (
+        !confirm(
+          `The class is at ${json.taken}/${json.capacity}. Re-offering enrolls ${studentName} at ${json.taken + 1}/${json.capacity} — sure?\n\nThis is logged as an Ops override.`
+        )
+      )
+        return
+      res = await send(true)
+      json = await res.json().catch(() => ({}))
+    }
+    if (!res.ok) alert(json.error ?? 'Rescue failed.')
+    else if (action === 'add_back') alert(`${studentName} is back on the waitlist at #${json.position} — confirmation email sent.`)
+    else alert(`Fresh 48-hour offer sent to ${studentName}${json.overCap ? ' (over-cap override logged)' : ''}.`)
+    fetchRosters()
   }
 
   async function handleOutcome(enrollmentId: string, outcome: string) {
@@ -1074,7 +1122,7 @@ export default function AdminDashboard() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {c.enrollments?.map((en) => (
                   <Fragment key={en.id}>
-                  <tr className="hover:bg-gray-50 transition">
+                  <tr id={`enrollment-${en.id}`} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                       {en.students?.first_name} {en.students?.last_name}
                       {en.students?.id && (
@@ -1125,6 +1173,42 @@ export default function AdminDashboard() {
                           ? 'Declined offer'
                           : en.payment_status}
                       </span>
+                      {/* PL-94: waitlist rescue on expired/declined/rolled rows
+                          (and stale offers) — the hour-49 phone call. */}
+                      {((en.payment_status === 'Expired' &&
+                        (en.waitlist_declined_at || en.waitlist_offer_sent_at)) ||
+                        (en.payment_status === 'Waitlisted' &&
+                          en.waitlist_offer_expires_at &&
+                          new Date(en.waitlist_offer_expires_at).getTime() <= Date.now())) && (
+                        <>
+                          <button
+                            onClick={() =>
+                              handleWaitlistRescue(
+                                en,
+                                `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
+                                're_offer'
+                              )
+                            }
+                            title="Send a fresh 48-hour claim offer now (over-cap asks first, and is logged)"
+                            className="ml-2 text-xs text-hgl-blue underline hover:text-hgl-slate"
+                          >
+                            re-offer the spot
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleWaitlistRescue(
+                                en,
+                                `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
+                                'add_back'
+                              )
+                            }
+                            title="Reinsert on the waitlist at a chosen position (live offers are never revoked); the family gets a fresh position confirmation"
+                            className="ml-2 text-xs text-hgl-blue underline hover:text-hgl-slate"
+                          >
+                            add back at #…
+                          </button>
+                        </>
+                      )}
                       {qboBadge(en)}
                       {(en.payment_status === 'Paid' ||
                         en.payment_status === 'Completed') && (

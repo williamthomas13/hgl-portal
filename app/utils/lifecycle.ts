@@ -58,6 +58,8 @@ export type EnrollmentRow = {
   addons: AddonRow[]
   waitlist_offer_sent_at: string | null
   waitlist_offer_expires_at: string | null
+  /** PL-94: rescue rounds — each re-offer mints a fresh W2 dedupe key. */
+  waitlist_offer_round: number
   familyId: string
   pronouns: string | null
   marketingOptOut: boolean
@@ -205,7 +207,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     enrollments (
       id, payment_status, enrolled_at, paid_at, amount_paid,
       accommodations, previous_scores, notes,
-      waitlist_offer_sent_at, waitlist_offer_expires_at,
+      waitlist_offer_sent_at, waitlist_offer_expires_at, waitlist_offer_round,
       enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
       students (
         first_name, last_name, student_email, graduating_year, pronouns,
@@ -248,6 +250,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           })),
           waitlist_offer_sent_at: e.waitlist_offer_sent_at,
           waitlist_offer_expires_at: e.waitlist_offer_expires_at,
+          waitlist_offer_round: e.waitlist_offer_round ?? 0,
           familyId: family.id,
           pronouns: student.pronouns ?? null,
           marketingOptOut: family.marketing_opt_out ?? false,

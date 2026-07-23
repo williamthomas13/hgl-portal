@@ -10,7 +10,7 @@ import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
 import { classroomChaseLine } from '../../../utils/classroom-chase'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
-import { extendWaitlistOffers } from '../../../utils/waitlist-offers'
+import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
 import {
   maybeSendInstructorFyi,
   sweepInstructorComms,
@@ -759,9 +759,14 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
           templateKey: 'AL_WAITLIST_ROLLOVER',
           vars: { schoolNickname: bundle.schoolLabel, classType: bundle.classType },
           subject: `Waitlist offer expired unclaimed — ${bundle.schoolLabel} ${bundle.classType}`,
-          body: `<p>${e.parentFirstName} (${e.parentEmail}, student ${e.studentFirstName}
+          // PL-94: the cockpit — offer open status + the rescue action row.
+          body: await waitlistRolloverAlertBody(
+            bundle,
+            e,
+            `<p>${e.parentFirstName} (${e.parentEmail}, student ${e.studentFirstName}
             ${e.studentLastName}) did not claim their spot within ${WAITLIST_CLAIM_HOURS} hours.
-            The offer rolls to the next family automatically.</p>`,
+            The offer rolls to the next family automatically.</p>`
+          ),
           enrollmentId: e.id,
         })
       }

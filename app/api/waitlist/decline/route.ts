@@ -2,7 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { ADMIN_EMAIL, loadClassBundles, verifyDeclineToken } from '../../../utils/lifecycle'
 import { sendAdminAlert } from '../../../utils/email'
-import { extendWaitlistOffers } from '../../../utils/waitlist-offers'
+import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
 
 // PL-72: confirmed early decline of an offered waitlist spot. POST-only (the
 // emailed GET lands on the confirm page; a scanner can never reach this) and
@@ -84,9 +84,14 @@ export async function POST(req: Request) {
       templateKey: 'AL_WAITLIST_ROLLOVER',
       vars: { schoolNickname: bundle.schoolLabel, classType: bundle.classType },
       subject: `Waitlist spot declined — ${bundle.schoolLabel} ${bundle.classType}`,
-      body: `<p>${e.parentFirstName} (${e.parentEmail}, student ${e.studentFirstName}
+      // PL-94: same cockpit as the expiry variant.
+      body: await waitlistRolloverAlertBody(
+        bundle,
+        e,
+        `<p>${e.parentFirstName} (${e.parentEmail}, student ${e.studentFirstName}
         ${e.studentLastName}) released their offered spot early. The offer cascades to the next
-        family immediately with a fresh 48-hour clock.</p>`,
+        family immediately with a fresh 48-hour clock.</p>`
+      ),
       enrollmentId,
     }).catch((err) => console.error('decline alert failed (decline stands):', err))
 
