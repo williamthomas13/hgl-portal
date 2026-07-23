@@ -12,6 +12,7 @@ import {
   type ReceiptLine,
 } from './qbo'
 import { sendAdminAlert } from './email'
+import { stripeDashboardUrl } from './checkout-paid'
 import { ADMIN_EMAIL, DEFAULT_TIMEZONE, localDate } from './lifecycle'
 
 // Phase 6 sync worker (spec §4/§5): drains pending qbo_sync_log rows into QBO
@@ -445,13 +446,22 @@ export async function processQboQueue(): Promise<QboQueueResult> {
             adminEmail: ADMIN_EMAIL,
             templateKey: 'AL_QBO_FAILURE',
             subject: `QuickBooks sync FAILED — ${row.kind} for payment ${row.stripe_payment_intent_id}`,
+            // PL-92: deep-link THIS failed row with its Retry control in
+            // view — never the panel root. Error text stays verbatim.
             body: `<p>After ${MAX_ATTEMPTS} attempts, the ${row.kind === 'refund' ? 'Refund Receipt' : 'Sales Receipt'}
               for Stripe payment <code>${row.stripe_payment_intent_id}</code>
               (${row.tutoring_invoice_id ? `tutoring invoice <code>${row.tutoring_invoice_id}</code>` : `enrollment <code>${row.enrollment_id}</code>`})
               could not be created in QuickBooks.</p>
               <p>Last error: <code>${message.slice(0, 500)}</code></p>
-              <p>Fix the cause (see the QuickBooks panel on /admin), then hit Retry there —
-              the books are missing this transaction until then.</p>`,
+              <p>The books are missing this transaction until it's fixed and retried.</p>
+              <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin?qbo=${row.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fix &amp; retry this sync</a></p>
+              <p><a href="${stripeDashboardUrl(`payments/${row.stripe_payment_intent_id}`)}" style="color:#00AEEE">The Stripe payment</a>${
+                row.enrollment_id
+                  ? ` · <a href="${emailBaseUrl()}/admin/communications?enrollment=${row.enrollment_id}" style="color:#00AEEE">the enrollment record</a>`
+                  : row.tutoring_invoice_id
+                    ? ` · <a href="${emailBaseUrl()}/admin/tutoring?invoice=${row.tutoring_invoice_id}" style="color:#00AEEE">the invoice</a>`
+                    : ''
+              }</p>`,
             enrollmentId: row.enrollment_id ?? undefined,
           }).catch((err) => console.error('QBO failure alert failed:', err))
         } else {

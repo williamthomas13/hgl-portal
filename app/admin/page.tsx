@@ -16,7 +16,7 @@ import ContactSettingsPanel from './contact-settings-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
-import { CollapsibleSection, DateHint, TimeSelect, to24h } from './ui'
+import { CollapsibleSection, DateHint, TimeSelect, to24h, useDeepLinkFocus } from './ui'
 import { FamilyCommsRow } from './family-comms'
 
 type Session = {
@@ -215,11 +215,21 @@ export default function AdminDashboard() {
   // Live classes render as tabs; '' = first live class, '__past' = the rest.
   const [activeTab, setActiveTab] = useState('')
   // PL-89/92 standing rule: alert deep-links land on the exact record —
-  // ?class={id} selects that class's roster tab on arrival.
+  // ?class={id} selects that class's roster tab; ?qbo={rowId} opens the
+  // QuickBooks section and highlights the failed sync row.
+  const [qboOpenSignal, setQboOpenSignal] = useState(0)
+  const [deepFocus, setDeepFocus] = useState<string | null>(null)
   useEffect(() => {
-    const classId = new URLSearchParams(window.location.search).get('class')
+    const q = new URLSearchParams(window.location.search)
+    const classId = q.get('class')
     if (classId) setActiveTab(classId)
+    const qboRow = q.get('qbo')
+    if (qboRow) {
+      setQboOpenSignal((n) => n + 1)
+      setDeepFocus(`qbo-${qboRow}`)
+    }
   }, [])
+  useDeepLinkFocus(deepFocus)
   // Phase 5 copy-a-previous-class: 'blank' renders an empty wizard; 'pick'
   // shows the source picker; a prefill snapshot renders a pre-filled wizard.
   // wizardKey remounts the wizard whenever the source (or blank reset) changes.
@@ -1425,6 +1435,7 @@ export default function AdminDashboard() {
         <CollapsibleSection
           title="QuickBooks"
           subtitle="Stripe payments post to QuickBooks automatically — connection, item mapping, and the sync log"
+          openSignal={qboOpenSignal}
         >
           <QboPanel status={qboStatus} onStatusChange={fetchQboStatus} />
         </CollapsibleSection>

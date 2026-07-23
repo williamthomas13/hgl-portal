@@ -950,15 +950,15 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       '<p>Alex (sample-parent@example.com, student Ana García) did not claim their spot within 48 hours. The offer rolls to the next family automatically.</p>',
   },
-  // webhook route: session completed, no enrollment row matched.
+  // webhook route (PL-92 shape): consequences ledger + the match cockpit.
   AL_WEBHOOK_FAILURE: {
     alertDetailsBlock:
-      '<p>Stripe checkout session <code>cs_test_a1B2c3D4e5F6g7H8</code> completed, but the enrollment could not be updated.</p><p>No enrollment matched (enrollment_id=none).</p><p>Check the Stripe dashboard and the enrollments table.</p>',
+      '<p>Stripe checkout session <code>cs_test_a1B2c3D4e5F6g7H8</code> completed (payer <strong>sample-parent@example.com</strong>), but the enrollment could not be updated.</p><p>No enrollment matched (enrollment_id=none).</p><p><strong>Because this payment isn\'t matched, none of this has happened yet:</strong> the enrollment still shows unpaid · no confirmation email went to the family · the class email sequence isn\'t scheduled · <strong>payment reminders for this family are NOT suppressed</strong> (they could be dunned despite having paid) · no QuickBooks receipt exists.</p><p><strong>Nothing retries automatically.</strong> Once you match the payment (below), everything above happens on its own — confirmation, sequence, reminder cancellation, QuickBooks — exactly as if the webhook had matched.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/match-payment?session=cs_test_a1B2c3D4e5F6g7H8&email=sample-parent%40example.com" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Match to an enrollment</a>&nbsp;&nbsp;<a href="https://dashboard.stripe.com/test/payments/pi_3SampleMismatch01" style="color:#00AEEE">Open this payment in Stripe</a></p>',
   },
-  // qbo-sync queue: retries exhausted on a sales receipt.
+  // qbo-sync queue (PL-92 shape): fix-and-retry deep-links THIS failed row.
   AL_QBO_FAILURE: {
     alertDetailsBlock:
-      '<p>After 5 attempts, the Sales Receipt for Stripe payment <code>pi_3SampleQboFail01</code> (enrollment <code>00000000-0000-4000-8000-000000000000</code>) could not be created in QuickBooks.</p><p>Last error: <code>Business Validation Error: Duplicate Document Number Error : You must specify a different number.</code></p><p>Fix the cause (see the QuickBooks panel on /admin), then hit Retry there — the books are missing this transaction until then.</p>',
+      '<p>After 5 attempts, the Sales Receipt for Stripe payment <code>pi_3SampleQboFail01</code> (enrollment <code>00000000-0000-4000-8000-000000000000</code>) could not be created in QuickBooks.</p><p>Last error: <code>Business Validation Error: Duplicate Document Number Error : You must specify a different number.</code></p><p>The books are missing this transaction until it\'s fixed and retried.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?qbo=00000000-0000-4000-8000-000000000004" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fix &amp; retry this sync</a></p><p><a href="https://dashboard.stripe.com/test/payments/pi_3SampleQboFail01" style="color:#00AEEE">The Stripe payment</a> · <a href="https://hgl-portal.vercel.app/admin/communications?enrollment=00000000-0000-4000-8000-000000000000" style="color:#00AEEE">the enrollment record</a></p>',
   },
   // tutoring-billing cycle: {alertCounts} is a PLAIN NUMBER in this subject —
   // the shared class-counts ticker read "3 enrolled / 8 min / 15 cap tutoring
@@ -968,10 +968,10 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li>Alex García (sample-parent@example.com)</li><li>Jordan Lee (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <strong>/admin/agreements</strong>.</p>',
   },
-  // availability route: add-on family ready for the schedule wizard.
+  // availability route (PL-92 shape): schedule-now opens the wizard preloaded.
   AL_AVAILABILITY_SHARED: {
     alertDetailsBlock:
-      "<p><strong>Alex</strong> (sample-parent@example.com) shared Ana's availability.</p><p>It's on the student record — the student-schedule wizard on /admin/tutoring will suggest matching times.</p>",
+      '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
   },
   // intake route: lead finished the form.
   AL_INTAKE_COMPLETE: {
@@ -985,15 +985,17 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       "<p>Autopay for <strong>Alex García's September 2026 tutoring invoice ($480.00)</strong> failed on the <strong>3rd and final attempt</strong> — one charge, retried automatically 3 times. Last error: <code>Your card was declined.</code></p><p>The family has already been emailed their invoice link to pay by card manually; that was the last automatic step, and <strong>nothing will retry from here</strong>.</p><p>If it stays unpaid, it's a personal follow-up: <a href=\"https://hgl-portal.vercel.app/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002\">the invoice</a> · <a href=\"https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003\">Alex's family record</a></p>",
   },
-  // sweepCollections 10-day: en-CA date, like the compose.
+  // sweepCollections 10-day (PL-92 shape): recap shows delivered-and-opened
+  // — the realistic 10-day texture.
   AL_OVERDUE_10: {
     alertDetailsBlock:
-      '<p>September 2026, $480.00, due 2026-09-30 — reminder sent to the family. 30-day mark adds the late-fee flag.</p>',
+      '<p><strong>Alex García — September 2026 tutoring invoice: $480.00</strong>, due <strong>September 30</strong> (10 days past due).</p><p>Already handled automatically: invoice sent Sep 21 — delivered, opened Sep 21 · past-due reminder sent to the family just now.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See Alex\'s recent activity</a></p><p><a href="https://hgl-portal.vercel.app/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002" style="color:#00AEEE">Re-send the invoice reminder now</a> — the send-now control on the invoice row (logged as sent-by-hand on the family timeline).</p><p>Nothing else happens automatically until the <strong>30-day mark</strong>, which adds the late-fee flag — that alert is where you decide.</p>',
   },
-  // sweepCollections 30-day: the late-fee decision.
+  // sweepCollections 30-day (PL-92 shape): led by the decision; recap shows
+  // delivered-not-opened — the realistic escalation texture.
   AL_OVERDUE_30: {
     alertDetailsBlock:
-      "<p>September 2026 tutoring invoice ($480.00) is 30+ days past due. Per the signed policy you MAY apply the 10% late fee — it's a button on the invoice panel (/admin/tutoring), never automatic — and consider pausing the schedule.</p>",
+      '<p><strong>The late-fee flag is now on the table — waive it, apply it, or make it a phone call.</strong></p><p><strong>Alex García — September 2026 tutoring invoice: $480.00</strong>, due September 30 (30+ days past due). Per the signed policy you MAY apply the 10% late fee — never automatic — and consider pausing the schedule.</p><p>Already handled automatically: invoice sent Sep 21 — delivered, not yet opened · 10-day reminder sent Oct 10 — delivered, not yet opened. Nothing further happens automatically.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Apply the 10% late fee</a>&nbsp;&nbsp;<a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See Alex\'s recent activity</a></p><p><a href="mailto:sample-parent@example.com?subject=Your%20September%202026%20HGL%20tutoring%20invoice" style="color:#00AEEE">Send a manual email</a> — opens pre-addressed to the family.</p>',
   },
   // PL-81 coalesced tutor notice: a two-change batch with the current
   // schedule leading — mirrors composeTutorNotice in tutor-notices.ts.

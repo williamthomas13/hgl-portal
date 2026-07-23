@@ -1,3 +1,4 @@
+import { emailBaseUrl } from '../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { verifyAvailabilityToken } from '../../utils/intake'
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
   // The token is family-scoped — the student must belong to that family.
   const { data: student } = await supabase
     .from('students')
-    .select('id, first_name, last_name, family_id, families ( parent_first_name, parent_email )')
+    .select('id, first_name, last_name, family_id, families ( id, parent_first_name, parent_email )')
     .eq('id', studentId)
     .eq('family_id', familyId)
     .maybeSingle()
@@ -80,10 +81,13 @@ export async function POST(req: Request) {
     templateKey: 'AL_AVAILABILITY_SHARED',
     vars: { alertStudentName: `${student.first_name} ${student.last_name}` },
     subject: `Add-on family shared availability — ${student.first_name} ${student.last_name} is ready to schedule`,
+    // PL-92: the wizard opens with the student preselected and the freshly
+    // shared windows loaded — suggestions compute on arrival.
     body: `<p><strong>${fam?.parent_first_name ?? 'A parent'}</strong> (${fam?.parent_email ?? '—'})
       shared ${student.first_name}'s availability${body.availability.length === 0 ? ' (cleared it, actually)' : ''}.</p>
-      <p>It's on the student record — the student-schedule wizard on /admin/tutoring will
-      suggest matching times.</p>`,
+      <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/tutoring?schedule=${studentId}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule ${student.first_name} now</a></p>
+      <p>The wizard opens with ${student.first_name} preselected and the just-shared windows
+      loaded${fam?.id ? ` · <a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="color:#00AEEE">the family record</a> shows the shared windows` : ''}.</p>`,
   }).catch((e) => console.error('availability alert failed (rows stand):', e))
 
   return NextResponse.json({ ok: true })

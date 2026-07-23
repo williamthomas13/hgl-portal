@@ -393,7 +393,7 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
                 const cls = r.enrollments?.classes
                 const docLink = qboDocLink(status, r.kind, r.qbo_doc_id)
                 return (
-                  <tr key={r.id} className="hover:bg-gray-50">
+                  <tr key={r.id} id={`qbo-${r.id}`} className="hover:bg-gray-50">
                     <td className="px-3 py-2 whitespace-nowrap text-gray-500">
                       {formatTimestampAdmin(r.created_at)}
                     </td>

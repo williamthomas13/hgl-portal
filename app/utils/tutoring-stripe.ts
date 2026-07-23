@@ -93,6 +93,27 @@ function dueDateFor(now: Date = new Date()): { iso: string; label: string; unix:
  * off-session charge; otherwise → hosted Stripe invoice + T2. Idempotent —
  * re-entry on an already-invoiced row is a no-op.
  */
+// PL-92: "delivered, opened Aug 30" / "delivered, not yet opened" — the
+// automatic-steps recap in the overdue alerts, from the send's own row.
+async function invoiceEmailStatus(dedupePattern: string): Promise<string> {
+  const { data } = await supabase
+    .from('email_sends')
+    .select('sent_at, status, delivered_at, first_opened_at')
+    .like('dedupe_key', dedupePattern)
+    .in('status', ['sent', 'delivered', 'bounced'])
+    .order('sent_at', { ascending: false })
+    .limit(1)
+  const row = data?.[0]
+  if (!row?.sent_at) return 'not yet sent'
+  const when = new Date(row.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (row.status === 'bounced') return `sent ${when} — BOUNCED`
+  const delivered = row.delivered_at || row.status === 'delivered'
+  const opened = row.first_opened_at
+    ? `opened ${new Date(row.first_opened_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    : 'not yet opened'
+  return `sent ${when} — ${delivered ? 'delivered, ' : ''}${opened}`
+}
+
 export async function issueOrCharge(invoiceId: string): Promise<{ ok: boolean; path?: string; error?: string }> {
   const inv = await loadInvoiceWithFamily(invoiceId)
   if (!inv || !inv.family) return { ok: false, error: 'invoice/family not loadable' }
@@ -496,7 +517,7 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
     // Escalation (§6.4, signed policy automated — money never moves itself).
     const { data: overdue } = await supabase
       .from('tutoring_invoices')
-      .select('id, period, total, due_at, reminder_sent_at, late_fee_flagged_at, stripe_hosted_invoice_url, families ( parent_first_name, parent_last_name, parent_email, billing_email, billing_cc_emails )')
+      .select('id, period, total, due_at, reminder_sent_at, late_fee_flagged_at, stripe_hosted_invoice_url, families ( id, parent_first_name, parent_last_name, parent_email, billing_email, billing_cc_emails )')
       .in('status', ['invoiced', 'past_due'])
       .not('due_at', 'is', null)
     const contact = await loadContactInfo()
@@ -530,14 +551,27 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
           subject: email.subject,
           html: email.html,
         })
+        // PL-92: the 10-day alert carries the automatic-steps recap and the
+        // action row — buttons land on admin-authed pages, never act from
+        // the email.
+        const parentName10 = `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim()
+        const invoiceStatus10 = await invoiceEmailStatus(`t2_invoice:${inv.id}:%`)
+        const overdueDays10 = Math.floor(overdueDays)
         await sendAdminAlert({
           dedupeKey: `overdue10:${inv.id}`,
           adminEmail: ADMIN_EMAIL,
           templateKey: 'AL_OVERDUE_10',
-          vars: { alertParentName: `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim() },
-          subject: `Tutoring invoice 10+ days past due — ${fam.parent_first_name} ${fam.parent_last_name ?? ''}`,
-          body: `<p>${month.label}, $${Number(inv.total).toFixed(2)}, due ${new Date(inv.due_at).toLocaleDateString('en-CA', { timeZone: 'America/Denver' })} —
-            reminder sent to the family. 30-day mark adds the late-fee flag.</p>`,
+          vars: { alertParentName: parentName10 },
+          subject: `Tutoring invoice 10+ days past due — ${parentName10}`,
+          body: `<p><strong>${parentName10} — ${month.label} tutoring invoice: $${Number(inv.total).toFixed(2)}</strong>,
+            due <strong>${new Date(inv.due_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'long', day: 'numeric' })}</strong>
+            (${overdueDays10} days past due).</p>
+            <p>Already handled automatically: invoice ${invoiceStatus10} · past-due reminder sent to the family just now.</p>
+            <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See ${fam.parent_first_name}'s recent activity</a></p>
+            <p><a href="${emailBaseUrl()}/admin/tutoring?invoice=${inv.id}" style="color:#00AEEE">Re-send the invoice reminder now</a>
+            — the send-now control on the invoice row (logged as sent-by-hand on the family timeline).</p>
+            <p>Nothing else happens automatically until the <strong>30-day mark</strong>, which adds
+            the late-fee flag — that alert is where you decide.</p>`,
         }).catch(() => {})
         await supabase
           .from('tutoring_invoices')
@@ -551,15 +585,33 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
           .from('tutoring_invoices')
           .update({ late_fee_flagged_at: now.toISOString(), updated_at: now.toISOString() })
           .eq('id', inv.id)
+        // PL-92: the 30-day alert LEADS with the decision and carries the
+        // full action row.
+        const parentName30 = `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim()
+        const [invoiceStatus30, reminderStatus30] = await Promise.all([
+          invoiceEmailStatus(`t2_invoice:${inv.id}:%`),
+          invoiceEmailStatus(`t2_reminder:${inv.id}`),
+        ])
         await sendAdminAlert({
           dedupeKey: `overdue30:${inv.id}`,
           adminEmail: ADMIN_EMAIL,
           templateKey: 'AL_OVERDUE_30',
-          vars: { alertParentName: `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim() },
-          subject: `30+ days past due — late-fee decision needed (${fam.parent_first_name} ${fam.parent_last_name ?? ''})`,
-          body: `<p>${month.label} tutoring invoice ($${Number(inv.total).toFixed(2)}) is 30+ days past due.
-            Per the signed policy you MAY apply the 10% late fee — it's a button on the invoice panel
-            (/admin/tutoring), never automatic — and consider pausing the schedule.</p>`,
+          vars: { alertParentName: parentName30 },
+          subject: `30+ days past due — late-fee decision needed (${parentName30})`,
+          body: `<p><strong>The late-fee flag is now on the table — waive it, apply it, or make it
+            a phone call.</strong></p>
+            <p><strong>${parentName30} — ${month.label} tutoring invoice: $${Number(inv.total).toFixed(2)}</strong>,
+            due ${new Date(inv.due_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'long', day: 'numeric' })}
+            (30+ days past due). Per the signed policy you MAY apply the 10% late fee — never
+            automatic — and consider pausing the schedule.</p>
+            <p>Already handled automatically: invoice ${invoiceStatus30} · 10-day reminder ${reminderStatus30}.
+            Nothing further happens automatically.</p>
+            <p style="margin:20px 0">
+              <a href="${emailBaseUrl()}/admin/tutoring?invoice=${inv.id}" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Apply the 10% late fee</a>
+              &nbsp;&nbsp;<a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See ${fam.parent_first_name}'s recent activity</a>
+            </p>
+            <p><a href="mailto:${fam.billing_email ?? fam.parent_email}?subject=${encodeURIComponent(`Your ${month.label} HGL tutoring invoice`)}" style="color:#00AEEE">Send a manual email</a>
+            — opens pre-addressed to the family.</p>`,
         }).catch(() => {})
         result.lateFeeFlags++
       }

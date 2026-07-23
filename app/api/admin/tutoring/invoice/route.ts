@@ -123,6 +123,19 @@ export async function POST(req: Request) {
     if (body.action === 'send_now' || body.action === 'retry_charge') {
       const res = await issueOrCharge(invoice.id)
       if (!res.ok) return NextResponse.json({ error: res.error }, { status: 500 })
+      // PL-92: a human chose this send moment — badge the T2 that just went
+      // out as by-hand on the family timeline (PL-83's sender_email signal).
+      const justNow = new Date(Date.now() - 60_000).toISOString()
+      await supabase
+        .from('email_sends')
+        .update({ sender_email: caller.email })
+        .like('dedupe_key', `t2_invoice:${invoice.id}:%`)
+        .gte('sent_at', justNow)
+      await supabase
+        .from('email_sends')
+        .update({ sender_email: caller.email })
+        .eq('dedupe_key', `t2_reminder:${invoice.id}`)
+        .gte('sent_at', justNow)
       return NextResponse.json({ ok: true, path: res.path })
     }
 

@@ -199,12 +199,14 @@ export default function TutoringAdmin() {
               title="New student schedule"
               subtitle="Student → subject → tutor → weekly slots → rate → go"
               accent="border-hgl-blue"
+              openSignal={wizardOpenSignal}
             >
               <EngagementWizard
                 students={students}
                 subjects={subjects}
                 tutors={tutors}
                 tutorNotes={tutorNotes}
+                preloadStudentId={wizardPreload}
                 onCreated={refresh}
               />
             </CollapsibleSection>

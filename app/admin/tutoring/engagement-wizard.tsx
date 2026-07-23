@@ -47,16 +47,26 @@ export default function EngagementWizard({
   subjects,
   tutors,
   tutorNotes,
+  preloadStudentId,
   onCreated,
 }: {
   students: StudentOption[]
   subjects: Subject[]
   tutors: Tutor[]
   tutorNotes: Record<string, string>
+  /** PL-92: the availability-shared alert's "Schedule {student} now" —
+   *  preselects the student so their shared windows load on arrival. */
+  preloadStudentId?: string | null
   onCreated: () => void
 }) {
   const [studentFilter, setStudentFilter] = useState('')
   const [studentId, setStudentId] = useState('')
+  // Adopt the deep-link preload once the student list is in.
+  const [seenPreload, setSeenPreload] = useState<string | null>(null)
+  if (preloadStudentId && preloadStudentId !== seenPreload && students.some((s) => s.id === preloadStudentId)) {
+    setSeenPreload(preloadStudentId)
+    setStudentId(preloadStudentId)
+  }
   const [subjectId, setSubjectId] = useState('')
   const [tutorId, setTutorId] = useState('')
   const [rate, setRate] = useState('')
