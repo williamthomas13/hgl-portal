@@ -996,13 +996,13 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   // composes formatDateFull + delivery mode) — same class, same story, but
   // pin the IN shape so each previews exactly like its own compose.
   IN_WELCOME: {
-    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person',
+    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person at SIS (Sample International School)',
   },
   IN_DIGEST: {
-    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person',
+    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person at SIS (Sample International School)',
   },
   IN_FYI: {
-    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person',
+    classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person at SIS (Sample International School)',
   },
 }
 

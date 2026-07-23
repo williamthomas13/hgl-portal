@@ -80,7 +80,13 @@ function baseExtras(bundle: ClassBundle, instructor: ClassInstructor) {
     instructorCountsLine: instructorCountsLine(bundle),
     instructorViewLink: `${appUrl()}/portal?view=instructor`,
     registrationCloseDate: formatDateFull(registrationCloseFor(bundle)),
-    classSummaryLine: `<strong>${bundle.schoolLabel} ${bundle.classType}</strong> — starts ${formatDateFull(bundle.firstSession)}, ${bundle.deliveryMode === 'online' ? 'online' : 'in person'}`,
+    // PL-88: name the school — "in person at SIS (Stockholm International
+    // School)" / online equivalent.
+    classSummaryLine: `<strong>${bundle.schoolLabel} ${bundle.classType}</strong> — starts ${formatDateFull(bundle.firstSession)}, ${
+      bundle.deliveryMode === 'online'
+        ? `online — ${bundle.schoolLabel} (${bundle.schoolName})`
+        : `in person at ${bundle.schoolLabel} (${bundle.schoolName})`
+    }`,
   }
 }
 

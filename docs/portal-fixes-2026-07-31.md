@@ -41,7 +41,9 @@ Approved by Scarlett. The reply path stays (families who want to talk get Kelsie
 - **Path reconciliation (explicit, not incidental):** we never know which path a family will take, so first-action-wins with graceful seconds. Conversion is idempotent **per enrollment** across both paths — if the family already self-served, Kelsie's admin button renders "already converted — self-serve, {date}" (no-op); if Kelsie already converted, the family's tokenized page skips straight to the already-done state + availability grid. CX_TUTORING_START's dedupe keys on the enrollment so it sends exactly once ever (receipt OR +1d nudge, whichever fires first). The self-serve Ops alert + the conversion marker mean Kelsie always sees the current state before acting on a reply.
 - CX_FAMILY's {cancellationOptionsBlock} copy gets the link on its tutoring option; wording final unless Scarlett edits in the editor.
 
-## PL-88 (tiny) · IN_WELCOME's {classSummaryLine} includes the school
+## PL-88 (tiny) · IN_WELCOME's {classSummaryLine} includes the school ✅
+
+> **Shipped, render-verified.** The composed line in instructor-comms now reads "…starts {date}, **in person at {schoolNickname} ({schoolFullName})**" (online: "…, online — {nickname} ({full name})"). All three IN_ per-template sample pins updated to "…in person at SIS (Sample International School)" — the existing sample school name kept, consistent everywhere. Verified against the live registry: IN_WELCOME's active version is **v5 (Scarlett's — untouched)** and its preview renders the school-named line via the samples; the code twin composes identically from the bundle.
 
 Scarlett: "SIS SAT Prep — starts Saturday, September 5, 2026, in person" should name the school — "…in person **at SIS (Stockholm International School)**." The line is a composed variable, so it's a compose change, not template copy:
 
