@@ -13,7 +13,9 @@ After login, admin lands on a dashboard page — cards laid out side by side (sq
 - Open to additional cards where they earn their place — reasonable candidates: upcoming classes at a glance (starts date + paid/min/cap), this week's tutoring session count, next monthly-generation date. Keep it restrained; Needs Attention is the star.
 - The existing admin sections remain reachable (see PL-101's nav); the dashboard is the new default landing after login.
 
-## PL-101 · Vertical section navigation (browser-tab style sidebar)
+## PL-101 · Vertical section navigation (browser-tab style sidebar) ✅
+
+> **Shipped, browser-verified.** The main admin page now has a **sticky vertical tab list** (sidebar) with all eight sections visible at once — Add a new class · Live class rosters · School contacts · Instructors · Branding & collateral · QuickBooks · Google Calendar · Contact settings — one click to switch, active tab highlighted; on small screens it becomes a horizontal scroll row. Panels hide with CSS instead of unmounting (the PL-99 late-mount lesson applied preemptively), so data loads and the deep-link focus machinery behave exactly as before. **Deep links select the right tab on arrival — verified in the browser:** `?class=`/`?enrollment=` land on Live class rosters (with the class tab selected inside), `?qbo=` lands on QuickBooks with the section expanded, and the roster cards' "duplicate class" action now jumps to the Add-a-new-class tab with the prefill banner showing (the open-signals that used to just expand a section also select its tab). Default landing tab is Live class rosters until PL-100's dashboard takes over as the entry point.
 
 The admin categories are currently stacked horizontally and require scrolling to see them all. Reorganize as a **vertical tab list** (sidebar, like browser tabs / standard app nav): all sections visible at once, one click to switch, active section highlighted. Applies to the main admin page structure; keep deep-link params (`?family=`, `?invoice=`, `?schedule=`, `?class=`…) working — they should select the right vertical tab on arrival (mind the PL-99 late-mount lesson).
 

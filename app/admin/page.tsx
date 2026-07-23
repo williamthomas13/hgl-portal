@@ -209,6 +209,18 @@ function AddSessionForm({
   )
 }
 
+// PL-101: the sidebar's tab list — ids match the visibility wrappers below.
+const NAV_SECTIONS = [
+  { id: 'add-class', label: 'Add a new class' },
+  { id: 'rosters', label: 'Live class rosters' },
+  { id: 'contacts', label: 'School contacts' },
+  { id: 'instructors', label: 'Instructors' },
+  { id: 'branding', label: 'Branding & collateral' },
+  { id: 'qbo', label: 'QuickBooks' },
+  { id: 'gcal', label: 'Google Calendar' },
+  { id: 'settings', label: 'Contact settings' },
+] as const
+
 export default function AdminDashboard() {
   const [schools, setSchools] = useState<SchoolBranding[]>([])
   const [rosters, setRosters] = useState<ClassRow[]>([])
@@ -224,10 +236,17 @@ export default function AdminDashboard() {
   // QuickBooks section and highlights the failed sync row.
   const [qboOpenSignal, setQboOpenSignal] = useState(0)
   const [deepFocus, setDeepFocus] = useState<string | null>(null)
+  // PL-101: vertical section tabs — one section visible at a time, all of
+  // them always MOUNTED (hidden, not unmounted) so deep-link focus polling
+  // and data loads behave exactly as before (the PL-99 late-mount lesson).
+  const [activeSection, setActiveSection] = useState<string>('rosters')
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const classId = q.get('class')
-    if (classId) setActiveTab(classId)
+    if (classId) {
+      setActiveTab(classId)
+      setActiveSection('rosters')
+    }
     const qboRow = q.get('qbo')
     if (qboRow) {
       setQboOpenSignal((n) => n + 1)
@@ -235,8 +254,15 @@ export default function AdminDashboard() {
     }
     // PL-94: the rollover alert lands with the family's row in view.
     const enrollmentRow = q.get('enrollment')
-    if (enrollmentRow) setDeepFocus(`enrollment-${enrollmentRow}`)
+    if (enrollmentRow) {
+      setDeepFocus(`enrollment-${enrollmentRow}`)
+      setActiveSection('rosters')
+    }
   }, [])
+  // Signals that used to just expand a section now also select its tab.
+  useEffect(() => {
+    if (qboOpenSignal > 0) setActiveSection('qbo')
+  }, [qboOpenSignal])
   useDeepLinkFocus(deepFocus)
   // Phase 5 copy-a-previous-class: 'blank' renders an empty wizard; 'pick'
   // shows the source picker; a prefill snapshot renders a pre-filled wizard.
@@ -309,6 +335,9 @@ export default function AdminDashboard() {
   const wizardKeySeq = useRef(0)
   const [copySearch, setCopySearch] = useState('')
   const [wizardOpenSignal, setWizardOpenSignal] = useState(0)
+  useEffect(() => {
+    if (wizardOpenSignal > 0) setActiveSection('add-class')
+  }, [wizardOpenSignal])
 
   const fetchSchools = useCallback(async () => {
     const { data } = await supabase.from('schools').select('*').order('nickname')
@@ -1345,6 +1374,32 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* PL-101: browser-tab-style vertical nav — every section visible at
+            once in the sidebar, one click to switch, active highlighted.
+            Panels hide with CSS instead of unmounting so deep links, data
+            loads, and the focus machinery behave exactly as before. */}
+        <div className="md:flex md:gap-6 md:items-start">
+          <nav
+            aria-label="Admin sections"
+            className="flex md:flex-col gap-1 md:w-52 shrink-0 md:sticky md:top-6 overflow-x-auto pb-2 md:pb-0 mb-4 md:mb-0"
+          >
+            {NAV_SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setActiveSection(s.id)}
+                className={`text-left text-sm rounded-md px-3 py-2 whitespace-nowrap font-semibold transition ${
+                  activeSection === s.id
+                    ? 'bg-hgl-slate text-white'
+                    : 'text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </nav>
+          <div className="flex-1 min-w-0 space-y-6">
+
+        <div className={activeSection === 'add-class' ? '' : 'hidden'}>
         <CollapsibleSection
           title="Add a new class"
           accent="border-hgl-slate"
@@ -1454,6 +1509,9 @@ export default function AdminDashboard() {
           )}
         </CollapsibleSection>
 
+        </div>
+
+        <div className={activeSection === 'rosters' ? '' : 'hidden'}>
         <CollapsibleSection title="Live class rosters" accent="border-hgl-blue" defaultOpen>
           {rosterError && (
             <div className="mb-4 p-3 rounded bg-red-100 text-red-700 font-semibold text-sm">
@@ -1508,6 +1566,9 @@ export default function AdminDashboard() {
           )}
         </CollapsibleSection>
 
+        </div>
+
+        <div className={activeSection === 'contacts' ? '' : 'hidden'}>
         <CollapsibleSection
           title="School contacts"
           subtitle="The person + their school affiliation — portal access and digests follow active affiliations"
@@ -1515,6 +1576,9 @@ export default function AdminDashboard() {
           <CounselorsPanel schools={schools} onChange={fetchAllCounselors} />
         </CollapsibleSection>
 
+        </div>
+
+        <div className={activeSection === 'instructors' ? '' : 'hidden'}>
         <CollapsibleSection
           title="Instructors"
           subtitle="Default meeting links auto-fill online classes; instructors sign in with their email"
@@ -1522,7 +1586,10 @@ export default function AdminDashboard() {
           <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
         </CollapsibleSection>
 
+        </div>
+
         {/* Out-of-flow branding edits — setup happens in the new-school wizard branch. */}
+        <div className={activeSection === 'branding' ? '' : 'hidden'}>
         <CollapsibleSection
           title="School branding &amp; collateral defaults"
           subtitle="Logo, accent color, and default language for the generated flyer + parent letter"
@@ -1532,6 +1599,9 @@ export default function AdminDashboard() {
 
         {/* Phase 6: accounting integration — connection + mapping are
             admin-only; the sync log and retries are staff-wide. */}
+        </div>
+
+        <div className={activeSection === 'qbo' ? '' : 'hidden'}>
         <CollapsibleSection
           title="QuickBooks"
           subtitle="Stripe payments post to QuickBooks automatically — connection, item mapping, and the sync log"
@@ -1542,6 +1612,9 @@ export default function AdminDashboard() {
 
         {/* PL-33: owner-level config, grouped with QuickBooks here rather
             than cluttering the tutoring page the Ops Director works in daily. */}
+        </div>
+
+        <div className={activeSection === 'gcal' ? '' : 'hidden'}>
         <CollapsibleSection
           title="Google Calendar"
           subtitle="Service-account connection and push queue for tutoring sessions"
@@ -1549,8 +1622,15 @@ export default function AdminDashboard() {
           <GcalPanel />
         </CollapsibleSection>
 
+        </div>
+
         {/* PL-50: renders only for admins (the API 403s managers). */}
+        <div className={activeSection === 'settings' ? '' : 'hidden'}>
         <ContactSettingsPanel />
+        </div>
+
+          </div>
+        </div>
       </div>
     </div>
   )
