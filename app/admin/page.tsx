@@ -13,6 +13,7 @@ import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-pane
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import GcalPanel from './tutoring/gcal-panel'
 import ContactSettingsPanel from './contact-settings-panel'
+import DashboardPanel from './dashboard-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
@@ -211,6 +212,7 @@ function AddSessionForm({
 
 // PL-101: the sidebar's tab list — ids match the visibility wrappers below.
 const NAV_SECTIONS = [
+  { id: 'dashboard', label: 'Dashboard' },
   { id: 'add-class', label: 'Add a new class' },
   { id: 'rosters', label: 'Live class rosters' },
   { id: 'contacts', label: 'School contacts' },
@@ -239,7 +241,7 @@ export default function AdminDashboard() {
   // PL-101: vertical section tabs — one section visible at a time, all of
   // them always MOUNTED (hidden, not unmounted) so deep-link focus polling
   // and data loads behave exactly as before (the PL-99 late-mount lesson).
-  const [activeSection, setActiveSection] = useState<string>('rosters')
+  const [activeSection, setActiveSection] = useState<string>('dashboard')
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const classId = q.get('class')
@@ -1398,6 +1400,12 @@ export default function AdminDashboard() {
             ))}
           </nav>
           <div className="flex-1 min-w-0 space-y-6">
+
+        <div className={activeSection === 'dashboard' ? '' : 'hidden'}>
+          {/* PL-100: the landing view — Needs Attention (state-driven) +
+              Recent Activity + a couple of restrained glance cards. */}
+          <DashboardPanel />
+        </div>
 
         <div className={activeSection === 'add-class' ? '' : 'hidden'}>
         <CollapsibleSection
