@@ -85,13 +85,19 @@ export default function AttendancePanel({
   sessions,
   roster,
   recordedBy,
+  adminReadOnly = false,
 }: {
   sessions: SessionForAttendance[]
   roster: RosterEntry[]
   recordedBy: string
+  /** PL-106: instructors own attendance-taking; the admin card shows a live
+      read-only reflection, editable only through an explicit override. */
+  adminReadOnly?: boolean
 }) {
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [openSession, setOpenSession] = useState<string | null>(null)
+  const [viewSession, setViewSession] = useState<string | null>(null)
+  const [overrideSession, setOverrideSession] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, Draft>>({}) // key = enrollmentId (for openSession)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -124,6 +130,14 @@ export default function AttendancePanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRecords()
   }, [fetchRecords])
+
+  // PL-106: keep the admin reflection live while instructors mark attendance
+  // (records only — never touches an in-progress override's drafts).
+  useEffect(() => {
+    if (!adminReadOnly) return
+    const t = setInterval(fetchRecords, 20000)
+    return () => clearInterval(t)
+  }, [adminReadOnly, fetchRecords])
 
   function recordFor(sessionId: string, enrollmentId: string) {
     return records.find((r) => r.session_id === sessionId && r.enrollment_id === enrollmentId) ?? null
@@ -179,6 +193,7 @@ export default function AttendancePanel({
     }
     setMessage('✓ Attendance saved.')
     setOpenSession(null)
+    setOverrideSession(null)
     fetchRecords()
   }
 
@@ -187,6 +202,12 @@ export default function AttendancePanel({
   return (
     <div className="mt-3">
       <h4 className="text-sm font-semibold text-hgl-slate mb-1">Attendance</h4>
+      {adminReadOnly && (
+        <p className="text-xs text-gray-400 mb-2">
+          Instructors take attendance from their portal — this view updates on its own. Use the
+          override only to correct a record.
+        </p>
+      )}
       {message && <p className="text-sm mb-2">{message}</p>}
       {loading ? (
         <p className="text-sm text-gray-400 animate-pulse">Loading attendance…</p>
@@ -198,7 +219,8 @@ export default function AttendancePanel({
         <ul className="space-y-2">
           {pastSessions.map((s) => {
             const state = sessionState(s.id)
-            const isOpen = openSession === s.id
+            const isOpen = openSession === s.id && (!adminReadOnly || overrideSession === s.id)
+            const isViewing = adminReadOnly && viewSession === s.id && !isOpen
             const badge =
               state === 'complete'
                 ? { text: 'Complete ✓', cls: 'bg-green-100 text-green-700' }
@@ -209,7 +231,18 @@ export default function AttendancePanel({
               <li key={s.id} className="border border-gray-200 rounded-lg overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => (isOpen ? setOpenSession(null) : openFor(s))}
+                  onClick={() => {
+                    if (adminReadOnly) {
+                      // Row click only expands the read-only view; editing is
+                      // behind the explicit override button inside it.
+                      setOpenSession(null)
+                      setOverrideSession(null)
+                      setViewSession(isViewing || isOpen ? null : s.id)
+                      return
+                    }
+                    if (isOpen) setOpenSession(null)
+                    else openFor(s)
+                  }}
                   className="w-full flex items-center justify-between px-3 py-3 text-sm bg-gray-50 hover:bg-gray-100"
                 >
                   <span className="font-semibold text-gray-700">
@@ -318,7 +351,48 @@ export default function AttendancePanel({
                   </div>
                 )}
 
-                {!isOpen && state !== 'none' && (
+                {isViewing && (
+                  <div className="p-3 space-y-2">
+                    <ul className="text-xs text-gray-600 space-y-1">
+                      {roster.map((entry) => {
+                        const r = recordFor(s.id, entry.enrollmentId)
+                        const label = r ? recordStatusLabel(r) : 'Not taken yet'
+                        return (
+                          <li key={entry.enrollmentId}>
+                            <span className="font-semibold text-hgl-slate">{entry.studentName}</span>:{' '}
+                            <span
+                              className={
+                                !r
+                                  ? 'text-gray-400 italic'
+                                  : label === 'Absent'
+                                    ? 'text-red-600 font-semibold'
+                                    : label === 'Present'
+                                      ? 'text-green-700'
+                                      : 'text-amber-700'
+                              }
+                            >
+                              {label}
+                            </span>
+                            {r?.note ? <span className="text-gray-400"> · {r.note}</span> : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openFor(s)
+                        setOverrideSession(s.id)
+                        setViewSession(null)
+                      }}
+                      className="text-xs text-amber-700 underline"
+                    >
+                      Admin override — edit this session&apos;s attendance
+                    </button>
+                  </div>
+                )}
+
+                {!isOpen && !isViewing && state !== 'none' && (
                   <ul className="px-3 py-2 text-xs text-gray-500 space-y-0.5">
                     {roster.map((entry) => {
                       const r = recordFor(s.id, entry.enrollmentId)

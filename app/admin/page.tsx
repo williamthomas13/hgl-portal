@@ -1006,94 +1006,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* COLLATERAL — with the class setup fields, not the roster: flyer +
-            parent letter downloads and the fields that drive them */}
-        <CollateralCard
-          classId={c.id}
-          classType={c.class_type}
-          inPerson={c.delivery_mode !== 'online'}
-          sessionDates={sortedSessions.map((s) => s.session_date)}
-          fields={c}
-          school={schools.find((s) => s.id === c.school_id) ?? null}
-          onSaved={fetchRosters}
-        />
-
-        {/* SESSIONS — same visual calendar as the public registration page */}
-        <div className="p-6 border-b border-gray-200">
-          <h4 className="font-semibold text-hgl-slate mb-1">Sessions</h4>
-          <p className="text-xs text-gray-500 mb-3">
-            All times in <span className="font-semibold">{c.schools?.timezone ?? '—'}</span>{' '}
-            (from the school record, read-only)
-          </p>
-          {sortedSessions.length === 0 ? (
-            <p className="text-sm text-gray-500 italic mb-3">No sessions scheduled yet.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-6 mb-3 items-start">
-              <SessionCalendar
-                sessions={sortedSessions}
-                defaultLocation={c.default_location}
-                hour24
-              />
-              <ul className="space-y-2">
-                {sortedSessions.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
-                  >
-                    <span>
-                      <strong>{formatDateAdmin(s.session_date)}</strong>
-                      {s.start_time && ` · ${to24h(s.start_time)}`}
-                      {s.end_time && ` – ${to24h(s.end_time)}`}
-                      {s.location && ` · ${s.location}`}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteSession(s.id)}
-                      className="text-red-600 text-xs hover:underline"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <AddSessionForm
-            key={`${c.id}:${sortedSessions.length}`}
-            classId={c.id}
-            defaultLocation={c.default_location}
-            lastSession={lastSession}
-            onAdded={fetchRosters}
-          />
-
-          {/* Feature B2: admin can view/edit all attendance (same panel the
-              instructor uses; staff RLS covers the writes). */}
-          <AttendancePanel
-            sessions={sortedSessions}
-            roster={(c.enrollments ?? [])
-              .filter((en) => ['Paid', 'Completed'].includes(en.payment_status))
-              .map((en) => ({
-                enrollmentId: en.id,
-                studentName: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim() || '—',
-              }))
-              .sort((a, b) => a.studentName.localeCompare(b.studentName))}
-            recordedBy={adminEmail}
-          />
-
-          {/* PL-37: milestone score entry alongside attendance. */}
-          <ScoresEntry
-            classId={c.id}
-            defaultExam={c.class_type.includes('ACT') ? 'ACT' : 'SAT'}
-            students={(c.enrollments ?? [])
-              .filter((en) => en.students?.id)
-              .map((en) => ({
-                id: en.students!.id,
-                name: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim() || '—',
-              }))
-              .sort((a, b) => a.name.localeCompare(b.name))}
-          />
-        </div>
-
-        {/* ROSTER — read-only source of truth about signups */}
+        {/* ROSTER — PL-106: the FIRST thing on the card is who's registered
+            (and paid state); sessions and setup come after. */}
         <div className="p-0 overflow-x-auto">
           {enrolledCount === 0 ? (
             <p className="text-sm text-gray-500 p-6 text-center italic">
@@ -1298,6 +1212,96 @@ export default function AdminDashboard() {
             </table>
           )}
         </div>
+
+        {/* COLLATERAL — with the class setup fields, not the roster: flyer +
+            parent letter downloads and the fields that drive them */}
+        <CollateralCard
+          classId={c.id}
+          classType={c.class_type}
+          inPerson={c.delivery_mode !== 'online'}
+          sessionDates={sortedSessions.map((s) => s.session_date)}
+          fields={c}
+          school={schools.find((s) => s.id === c.school_id) ?? null}
+          onSaved={fetchRosters}
+        />
+
+        {/* SESSIONS — same visual calendar as the public registration page */}
+        <div className="p-6 border-b border-gray-200">
+          <h4 className="font-semibold text-hgl-slate mb-1">Sessions</h4>
+          <p className="text-xs text-gray-500 mb-3">
+            All times in <span className="font-semibold">{c.schools?.timezone ?? '—'}</span>{' '}
+            (from the school record, read-only)
+          </p>
+          {sortedSessions.length === 0 ? (
+            <p className="text-sm text-gray-500 italic mb-3">No sessions scheduled yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-6 mb-3 items-start">
+              <SessionCalendar
+                sessions={sortedSessions}
+                defaultLocation={c.default_location}
+                hour24
+              />
+              <ul className="space-y-2">
+                {sortedSessions.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
+                  >
+                    <span>
+                      <strong>{formatDateAdmin(s.session_date)}</strong>
+                      {s.start_time && ` · ${to24h(s.start_time)}`}
+                      {s.end_time && ` – ${to24h(s.end_time)}`}
+                      {s.location && ` · ${s.location}`}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteSession(s.id)}
+                      className="text-red-600 text-xs hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <AddSessionForm
+            key={`${c.id}:${sortedSessions.length}`}
+            classId={c.id}
+            defaultLocation={c.default_location}
+            lastSession={lastSession}
+            onAdded={fetchRosters}
+          />
+
+          {/* PL-106: instructors take attendance in their portal; here it's a
+              live read-only reflection with an explicit admin override
+              (staff RLS still covers the override writes). */}
+          <AttendancePanel
+            adminReadOnly
+            sessions={sortedSessions}
+            roster={(c.enrollments ?? [])
+              .filter((en) => ['Paid', 'Completed'].includes(en.payment_status))
+              .map((en) => ({
+                enrollmentId: en.id,
+                studentName: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim() || '—',
+              }))
+              .sort((a, b) => a.studentName.localeCompare(b.studentName))}
+            recordedBy={adminEmail}
+          />
+
+          {/* PL-37: milestone score entry alongside attendance. */}
+          <ScoresEntry
+            classId={c.id}
+            defaultExam={c.class_type.includes('ACT') ? 'ACT' : 'SAT'}
+            students={(c.enrollments ?? [])
+              .filter((en) => en.students?.id)
+              .map((en) => ({
+                id: en.students!.id,
+                name: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim() || '—',
+              }))
+              .sort((a, b) => a.name.localeCompare(b.name))}
+          />
+        </div>
+
       </div>
     )
   }

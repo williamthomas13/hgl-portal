@@ -133,6 +133,14 @@ export default function ClassWizard({
   const [deadlineEdited, setDeadlineEdited] = useState(false)
   const [registrationClose, setRegistrationClose] = useState('') // cohort-specific; never copied
   const [synapGroup, setSynapGroup] = useState(initial?.synapGroup ?? '')
+  // PL-106: collateral basics are part of creating the class, not an
+  // afterthought on the card — the card keeps full editing + regeneration.
+  const [shortLink, setShortLink] = useState(initial?.collateral?.short_link ?? '')
+  const [collateralLang, setCollateralLang] = useState(initial?.collateral?.collateral_language ?? '')
+  const [practiceTestCount, setPracticeTestCount] = useState(
+    initial?.collateral?.practice_test_count != null ? String(initial.collateral.practice_test_count) : ''
+  )
+  const [flyerBlurb, setFlyerBlurb] = useState(initial?.collateral?.flyer_blurb ?? '')
   const [defaultLocation, setDefaultLocation] = useState(initial?.defaultLocation ?? '')
 
   // -- step 2: sessions ------------------------------------------------------
@@ -425,8 +433,21 @@ export default function ClassWizard({
       enrollment_deadline: enrollmentDeadline || null,
       registration_close_date: registrationClose || null,
       slug: slugify(`${school.nickname}-${classType}-${termFor(startDate)}`),
-      // Duplicate-class prefill carries the collateral fields onto the new row.
+      // Duplicate-class prefill carries the collateral fields onto the new
+      // row; the four visible wizard fields (PL-106) win over the prefill.
       ...(initial?.collateral ?? {}),
+      short_link: shortLink.trim() || null,
+      collateral_language: collateralLang || null,
+      practice_test_count: practiceTestCount.trim() === '' ? null : Math.trunc(Number(practiceTestCount)),
+      flyer_blurb: flyerBlurb.trim() || null,
+    }
+    if (
+      newClass.practice_test_count != null &&
+      (!Number.isFinite(newClass.practice_test_count) || newClass.practice_test_count < 0)
+    ) {
+      setMessage('Error: practice test count must be a whole number (0 or more).')
+      setSaving(false)
+      return
     }
 
     let { data: created, error } = await supabase
@@ -478,6 +499,10 @@ export default function ClassWizard({
     setEnrollmentDeadline('')
     setRegistrationClose('')
     setSynapGroup('')
+    setShortLink('')
+    setCollateralLang('')
+    setPracticeTestCount('')
+    setFlyerBlurb('')
     setDefaultLocation('')
     setSessions([])
     setDraft({ session_date: '', start_time: '', end_time: '', location: '' })
@@ -895,6 +920,65 @@ export default function ClassWizard({
             <label className="block text-sm font-medium text-gray-700">Synap group</label>
             <input type="url" value={synapGroup} onChange={(e) => setSynapGroup(e.target.value)} placeholder="https://…" className={inputCls} />
           </div>
+
+          {/* PL-106: collateral basics captured while creating the class.
+              Full editing, promo fields, and flyer/letter regeneration stay
+              on the class card's Collateral section. */}
+          <fieldset className="col-span-2 border border-gray-200 rounded-lg p-4">
+            <legend className="text-sm font-semibold text-hgl-slate px-1">
+              Collateral (flyer &amp; parent letter)
+            </legend>
+            <p className="text-xs text-gray-500 mb-3">
+              These drive the flyer and parent letter. You can leave them blank and finish later
+              from the class card, where downloads and the promo fields live.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Short link</label>
+                <input
+                  type="text"
+                  value={shortLink}
+                  onChange={(e) => setShortLink(e.target.value)}
+                  placeholder="hgl.link/…"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Collateral language</label>
+                <select
+                  value={collateralLang}
+                  onChange={(e) => setCollateralLang(e.target.value)}
+                  className={selectCls}
+                >
+                  <option value="">School default</option>
+                  <option value="en">English only</option>
+                  <option value="es">Spanish only</option>
+                  <option value="both">Both (separate EN + ES files)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Practice tests included</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={practiceTestCount}
+                  onChange={(e) => setPracticeTestCount(e.target.value)}
+                  placeholder="e.g. 2"
+                  className={inputCls}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700">Flyer blurb</label>
+                <textarea
+                  value={flyerBlurb}
+                  onChange={(e) => setFlyerBlurb(e.target.value)}
+                  rows={2}
+                  placeholder="One or two sentences families see on the flyer"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+          </fieldset>
         </div>
       )}
 
