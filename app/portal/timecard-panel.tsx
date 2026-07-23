@@ -2,6 +2,12 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  CLASS_WORK_TYPE,
+  DEFAULT_TUTORING_WORK_TYPE,
+  hoursByWorkType,
+  sessionMinutes,
+} from '../utils/work-types'
 
 // Client half of the tutor timecard view (Phase 7b §7.2): review the closed
 // period, correct exceptions (no-show, actual duration), confirm. Payable
@@ -25,8 +31,19 @@ export type TimecardSession = {
   status: string
   reschedule_notice: 'ok' | 'late' | null
   cancel_note: string | null
+  work_type: string | null
   studentName: string
   subjectName: string
+}
+
+/** PL-103: a group-class session taught this period — from the class
+ *  schedule, always paid under Class/Workshop. */
+export type TimecardClassSession = {
+  id: string
+  session_date: string
+  start_time: string | null
+  end_time: string | null
+  className: string
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -49,11 +66,16 @@ export default function TimecardPanel({
   timecards,
   actionableId,
   sessions,
+  classSessions = [],
+  workTypes = [],
   timezone,
 }: {
   timecards: TimecardData[]
   actionableId: string | null
   sessions: TimecardSession[]
+  classSessions?: TimecardClassSession[]
+  /** The tutor's selectable work types: the standard six + own pay-type titles. */
+  workTypes?: string[]
   timezone: string
 }) {
   const router = useRouter()
@@ -120,6 +142,30 @@ export default function TimecardPanel({
                   <span className="text-gray-600">{s.studentName} · {s.subjectName}</span>
                   <span className="text-gray-500 text-xs">{(s.duration_minutes / 60).toFixed(2)} h</span>
                   <span className="text-xs text-gray-400">{STATUS_LABELS[s.status] ?? s.status}</span>
+                  {/* PL-103: the paper timecard's hour columns — attribute the
+                      session's hours to a work type while the card is open. */}
+                  {actionable.status === 'open' ? (
+                    <select
+                      value={s.work_type ?? DEFAULT_TUTORING_WORK_TYPE}
+                      disabled={busy}
+                      onChange={(e) =>
+                        call(
+                          { action: 'set_work_type', session_id: s.id, work_type: e.target.value },
+                          'Work type updated.'
+                        )
+                      }
+                      className="border border-gray-200 rounded p-0.5 text-xs bg-white text-gray-600"
+                      title="Which pay type these hours count under (rates live in payroll, not here)"
+                    >
+                      {workTypes.map((w) => (
+                        <option key={w} value={w}>{w}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-wide text-gray-400 border border-gray-200 rounded px-1">
+                      {s.work_type ?? DEFAULT_TUTORING_WORK_TYPE}
+                    </span>
+                  )}
                   {actionable.status === 'open' && s.status === 'completed' && (
                     <span className="ml-auto flex gap-2 text-xs items-center">
                       {noShowArming === s.id ? (
@@ -174,10 +220,64 @@ export default function TimecardPanel({
                 {s.cancel_note && <p className="text-xs text-gray-400 mt-0.5">note: {s.cancel_note}</p>}
               </li>
             ))}
-            {sessions.length === 0 && (
+            {/* PL-103: group-class sessions taught — from the class schedule,
+                paid under Class/Workshop. */}
+            {classSessions.map((c) => {
+              const hours = sessionMinutes(c.start_time, c.end_time) / 60
+              return (
+                <li key={c.id} className="py-2">
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 items-baseline">
+                    <span className="font-semibold text-hgl-slate">
+                      {new Date(c.session_date + 'T12:00:00Z').toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        timeZone: 'UTC',
+                      })}
+                    </span>
+                    {c.start_time && <span>{c.start_time.slice(0, 5)}</span>}
+                    <span className="text-gray-600">{c.className}</span>
+                    <span className="text-gray-500 text-xs">
+                      {hours > 0 ? `${hours.toFixed(2)} h` : 'missing times — 0 h, tell the office'}
+                    </span>
+                    <span className="text-xs text-gray-400">Class session taught</span>
+                    <span className="text-[10px] uppercase tracking-wide text-gray-400 border border-gray-200 rounded px-1">
+                      {CLASS_WORK_TYPE}
+                    </span>
+                  </div>
+                </li>
+              )
+            })}
+            {sessions.length === 0 && classSessions.length === 0 && (
               <li className="py-2 text-gray-500 italic">No payable sessions this period.</li>
             )}
           </ul>
+
+          {/* PL-103: hours by work type — the paper timecard's columns. */}
+          {(() => {
+            const byType = hoursByWorkType([
+              ...sessions.map((s) => ({
+                workType: s.work_type ?? DEFAULT_TUTORING_WORK_TYPE,
+                hours: s.duration_minutes / 60,
+              })),
+              ...classSessions.map((c) => ({
+                workType: CLASS_WORK_TYPE,
+                hours: sessionMinutes(c.start_time, c.end_time) / 60,
+              })),
+            ])
+            if (byType.length === 0) return null
+            return (
+              <p className="text-xs text-gray-500 mb-3">
+                <span className="font-semibold text-gray-600">Hours by type:</span>{' '}
+                {byType.map((t, i) => (
+                  <span key={t.workType}>
+                    {i > 0 && ' · '}
+                    {t.workType} <span className="font-semibold">{t.hours}</span>
+                  </span>
+                ))}
+              </p>
+            )
+          })()}
 
           {actionable.status === 'open' && (
             <button

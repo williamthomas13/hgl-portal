@@ -1,6 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import TimecardPanel, { type TimecardData, type TimecardSession } from './timecard-panel'
+import TimecardPanel, {
+  type TimecardData,
+  type TimecardSession,
+  type TimecardClassSession,
+} from './timecard-panel'
 import { one } from './shared'
+import { workTypeOptions } from '../utils/work-types'
 
 // Tutor view (Phase 7b §7): upcoming 1-on-1 sessions plus timecards. The
 // twice-monthly "reconstruct my calendar into a timecard" ritual becomes a
@@ -19,7 +24,7 @@ export default async function TutorView({
 }) {
   const { data: instructorRows } = await supabase
     .from('instructors')
-    .select('id, timezone')
+    .select('id, timezone, pay_type_titles')
     .ilike('email', email)
   const tutor = instructorRows?.[0]
   if (!tutor) {
@@ -51,16 +56,26 @@ export default async function TutorView({
   // Sessions on the most recent actionable (not yet approved) timecard.
   const actionable = (timecards ?? []).find((t: any) => t.status === 'open' || t.status === 'tutor_confirmed')
   let cardSessions: TimecardSession[] = []
+  let cardClassSessions: TimecardClassSession[] = []
   if (actionable) {
-    const { data } = await supabase
-      .from('tutoring_sessions')
-      .select(
-        `id, starts_at, ends_at, duration_minutes, status, reschedule_notice, cancel_note,
-         students ( first_name, last_name ),
-         tutoring_engagements ( subjects ( name ) )`
-      )
-      .eq('timecard_id', actionable.id)
-      .order('starts_at')
+    const [{ data }, { data: classData }] = await Promise.all([
+      supabase
+        .from('tutoring_sessions')
+        .select(
+          `id, starts_at, ends_at, duration_minutes, status, reschedule_notice, cancel_note, work_type,
+           students ( first_name, last_name ),
+           tutoring_engagements ( subjects ( name ) )`
+        )
+        .eq('timecard_id', actionable.id)
+        .order('starts_at'),
+      // PL-103: group-class sessions taught this period (stamped by the
+      // sweep) — always attributed as Class/Workshop.
+      supabase
+        .from('sessions')
+        .select('id, session_date, start_time, end_time, classes ( class_type, schools ( nickname ) )')
+        .eq('timecard_id', actionable.id)
+        .order('session_date'),
+    ])
     cardSessions = ((data as any[]) ?? []).map((s) => {
       const eng = one<any>(s.tutoring_engagements)
       const student = one<any>(s.students)
@@ -71,8 +86,19 @@ export default async function TutorView({
         status: s.status,
         reschedule_notice: s.reschedule_notice,
         cancel_note: s.cancel_note,
+        work_type: s.work_type,
         studentName: student ? `${student.first_name} ${student.last_name}` : '—',
         subjectName: one<any>(eng?.subjects)?.name ?? '',
+      }
+    })
+    cardClassSessions = ((classData as any[]) ?? []).map((s) => {
+      const cls = one<any>(s.classes)
+      return {
+        id: s.id,
+        session_date: s.session_date,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        className: [one<any>(cls?.schools)?.nickname, cls?.class_type].filter(Boolean).join(' ') || 'Class',
       }
     })
   }
@@ -145,6 +171,8 @@ export default async function TutorView({
         timecards={(timecards ?? []) as TimecardData[]}
         actionableId={actionable?.id ?? null}
         sessions={cardSessions}
+        classSessions={cardClassSessions}
+        workTypes={workTypeOptions(tutor.pay_type_titles)}
         timezone={tz}
       />
     </div>

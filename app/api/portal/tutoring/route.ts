@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionTutor } from '../../../utils/tutor-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../utils/gcal-sync'
 import { recomputeTimecard } from '../../../utils/timecards'
+import { workTypeOptions } from '../../../utils/work-types'
 
 // Tutor timecard actions (Phase 7b §7.2): the tutor's only required work is
 // correcting exceptions — mark a no-show, adjust an actual duration within
@@ -14,6 +15,7 @@ type Body =
   | { action: 'no_show'; session_id: string; note?: string }
   | { action: 'adjust_duration'; session_id: string; duration_minutes: number }
   | { action: 'confirm_timecard'; timecard_id: string }
+  | { action: 'set_work_type'; session_id: string; work_type: string }
 
 const MIN_MINUTES = 15
 const MAX_MINUTES = 240
@@ -89,6 +91,45 @@ export async function POST(req: Request) {
       }
 
       if (session.timecard_id) await recomputeTimecard(session.timecard_id)
+      return NextResponse.json({ ok: true })
+    }
+
+    // PL-103: attribute a tutoring session's hours to a work type (the paper
+    // timecard's columns). Options = the standard six + the tutor's own QBO
+    // pay-type titles. Class-schedule sessions are always Class/Workshop and
+    // have no per-session override here.
+    if (body.action === 'set_work_type') {
+      const { data: session } = await supabase
+        .from('tutoring_sessions')
+        .select('id, tutor_id, timecard_id')
+        .eq('id', body.session_id)
+        .maybeSingle()
+      if (!session || !caller.instructorIds.includes(session.tutor_id)) {
+        return NextResponse.json({ error: 'Not your session.' }, { status: 403 })
+      }
+      if (await timecardLocked(session.timecard_id)) {
+        return NextResponse.json(
+          { error: 'This pay period has been approved — ask the Ops Director for a correction.' },
+          { status: 400 }
+        )
+      }
+      const { data: tutor } = await supabase
+        .from('instructors')
+        .select('pay_type_titles')
+        .eq('id', session.tutor_id)
+        .maybeSingle()
+      const allowed = workTypeOptions(tutor?.pay_type_titles)
+      if (!allowed.includes(body.work_type)) {
+        return NextResponse.json(
+          { error: `Unknown work type — pick one of: ${allowed.join(', ')}.` },
+          { status: 400 }
+        )
+      }
+      const { error } = await supabase
+        .from('tutoring_sessions')
+        .update({ work_type: body.work_type, updated_at: new Date().toISOString() })
+        .eq('id', session.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 

@@ -2,6 +2,7 @@ import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
+import { sessionMinutes } from './work-types'
 
 // Phase 7b timecards (docs/PHASE7_SPEC.md §7). Semi-monthly pay periods:
 // 1st–15th (payday the 20th) and 16th–end of month (payday the 5th),
@@ -113,6 +114,27 @@ async function payableSessions(tutorId: string, p: PayPeriod) {
 }
 
 /**
+ * PL-103: group-class sessions taught in the period — the class pay path.
+ * Comes from the class SCHEDULE (sessions of the tutor's non-cancelled
+ * classes whose date has passed); attendance confirms but a session the
+ * instructor forgot to mark still pays — the tutor confirms the card.
+ * Sessions missing a start or end time contribute 0 hours (flagged in UI).
+ * Dates compare against the Denver payroll calendar like everything else.
+ */
+async function payableClassSessions(tutorId: string, p: PayPeriod) {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('id, session_date, start_time, end_time, timecard_id, classes!inner ( id, class_type, instructor_id, status )')
+    .eq('classes.instructor_id', tutorId)
+    .neq('classes.status', 'cancelled')
+    .gte('session_date', p.start)
+    .lte('session_date', p.end)
+    .lt('session_date', denverToday())
+  if (error) throw new Error(`payable class sessions query failed: ${error.message}`)
+  return data ?? []
+}
+
+/**
  * Auto-flip past sessions to completed (spec §7.2): terminal statuses are
  * exempt; the tutor's only required action is correcting exceptions.
  */
@@ -140,7 +162,8 @@ export async function recomputeTimecard(timecardId: string): Promise<number | nu
     .maybeSingle()
   if (!tc) return null
   if (tc.status === 'approved' || tc.status === 'exported') return Number(tc.total_hours)
-  const sessions = await payableSessions(tc.tutor_id, { start: tc.period_start, end: tc.period_end })
+  const period = { start: tc.period_start, end: tc.period_end }
+  const sessions = await payableSessions(tc.tutor_id, period)
   const ids = sessions.map((s) => s.id)
   if (ids.length > 0) {
     await supabase.from('tutoring_sessions').update({ timecard_id: tc.id }).in('id', ids)
@@ -152,7 +175,25 @@ export async function recomputeTimecard(timecardId: string): Promise<number | nu
     .update({ timecard_id: null })
     .eq('timecard_id', tc.id)
     .not('id', 'in', `(${ids.length ? ids.join(',') : '00000000-0000-0000-0000-000000000000'})`)
-  const total = Number(sessions.reduce((sum, s) => sum + s.duration_minutes / 60, 0).toFixed(2))
+
+  // PL-103: class sessions taught ride the same stamp/unstamp cycle.
+  const classSessions = await payableClassSessions(tc.tutor_id, period)
+  const classIds = classSessions.map((s) => s.id)
+  if (classIds.length > 0) {
+    await supabase.from('sessions').update({ timecard_id: tc.id }).in('id', classIds)
+  }
+  await supabase
+    .from('sessions')
+    .update({ timecard_id: null })
+    .eq('timecard_id', tc.id)
+    .not('id', 'in', `(${classIds.length ? classIds.join(',') : '00000000-0000-0000-0000-000000000000'})`)
+
+  const tutoringHours = sessions.reduce((sum, s) => sum + s.duration_minutes / 60, 0)
+  const classHours = classSessions.reduce(
+    (sum, s) => sum + sessionMinutes(s.start_time, s.end_time) / 60,
+    0
+  )
+  const total = Number((tutoringHours + classHours).toFixed(2))
   await supabase
     .from('timecards')
     .update({ total_hours: total, updated_at: new Date().toISOString() })
@@ -181,13 +222,28 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
       .gte('starts_at', fromIso)
       .lt('starts_at', toIso)
       .in('status', ['completed', 'forfeited', 'no_show', 'rescheduled'])
+    // PL-103: tutors whose only period activity was teaching group classes
+    // get a timecard too — the class pay path must not depend on having
+    // 1-on-1 sessions in the same period.
+    const { data: classActivity } = await supabase
+      .from('sessions')
+      .select('classes!inner ( instructor_id, status )')
+      .neq('classes.status', 'cancelled')
+      .not('classes.instructor_id', 'is', null)
+      .gte('session_date', p.start)
+      .lte('session_date', p.end)
     const tutorIds = [
-      ...new Set(
-        (activity ?? [])
+      ...new Set([
+        ...(activity ?? [])
           .filter((s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late')
-          .map((s) => s.tutor_id)
-      ),
-    ]
+          .map((s) => s.tutor_id),
+        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        ...((classActivity as any[]) ?? []).map((s) => {
+          const c = Array.isArray(s.classes) ? s.classes[0] : s.classes
+          return c?.instructor_id as string
+        }),
+      ]),
+    ].filter(Boolean)
 
     for (const tutorId of tutorIds) {
       const { data: existing } = await supabase
