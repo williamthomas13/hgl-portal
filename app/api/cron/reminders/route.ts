@@ -831,31 +831,84 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     if (status === 'sent') bump(c, 'admin_alert')
   }
 
-  // Min-enrollment checkpoint at the deadline (or 7 days before start).
-  // §7.4 rule — the checkpoint and the instructor nudge "share a moment but
-  // never both fire": when the minimum IS met and no instructor is assigned,
-  // the nudge owns that moment, so the checkpoint stays quiet.
-  const checkpoint = bundle.enrollmentDeadline ?? addDaysISO(bundle.firstSession, -7)
-  if (isDue(bundle.timezone, checkpoint, 8) && today <= bundle.firstSession) {
-    const paidCount = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
-    const unassigned = !bundle.instructorId && !bundle.instructorName
-    if (paidCount >= bundle.minEnrollment && unassigned) return
-    const status = await sendAdminAlert({
-      dedupeKey: `min_enrollment:${bundle.id}`,
-      adminEmail: ADMIN_EMAIL,
-      templateKey: 'AL_MIN_ENROLLMENT',
-      vars: {
-        schoolNickname: bundle.schoolLabel,
-        classType: bundle.classType,
-        alertCounts: `${paidCount} paid / ${bundle.minEnrollment} minimum`,
-      },
-      subject: `Enrollment checkpoint — ${bundle.schoolLabel} ${bundle.classType}: ${paidCount} paid / ${bundle.minEnrollment} minimum`,
-      body: `<p><strong>${paidCount}</strong> paid enrollments against a minimum of
-        <strong>${bundle.minEnrollment}</strong> (${bundle.deliveryMode}, capacity ${bundle.capacity}).
-        Class starts ${bundle.firstSession}.
-        ${paidCount < bundle.minEnrollment ? 'Below minimum — decide whether to run, push, or cancel.' : 'Minimum met.'}</p>`,
-    })
-    if (status === 'sent') bump(c, 'admin_alert')
+  // PL-91: the min-enrollment checkpoint is a DECISION BRIEF at deadline−3d
+  // when paid < minimum — the full picture (both clocks, FP status) and the
+  // three legitimate moves. Nothing automatic: the brief informs, the Ops
+  // Director decides. Dedupe keys carry the deadline, so EXTENDING the
+  // deadline re-arms the checkpoint against the new date. If the deadline
+  // passes still under minimum, ONE follow-up; no other repeats.
+  // §7.4 rule preserved for the min-met moment: the instructor nudge owns
+  // "minimum met, nobody teaching"; min-met with an instructor stays quiet
+  // (the IN_DIGEST milestone ping already told everyone the good news).
+  const deadline = bundle.enrollmentDeadline ?? addDaysISO(bundle.firstSession, -7)
+  const paidCount = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
+  if (paidCount < bundle.minEnrollment && today <= bundle.firstSession && localHour(bundle.timezone) >= 8) {
+    const label = `${bundle.schoolLabel} ${bundle.classType}`
+    const daysToDeadline = Math.round((Date.parse(deadline) - Date.parse(today)) / 86_400_000)
+    const daysToFirst = Math.round((Date.parse(bundle.firstSession) - Date.parse(today)) / 86_400_000)
+    const weeksToFirst = Math.max(1, Math.round(daysToFirst / 7))
+    // Counselor-side status from the FP push's own send rows.
+    const { data: fpSends } = await supabase
+      .from('email_sends')
+      .select('sent_at')
+      .like('dedupe_key', `deadline_push:${bundle.id}:%`)
+      .in('status', ['sent', 'delivered'])
+      .order('sent_at', { ascending: false })
+      .limit(1)
+    const fpStatus = fpSends?.[0]?.sent_at
+      ? `FP last-call sent ${formatDate(fpSends[0].sent_at.slice(0, 10))}`
+      : 'FP push not yet sent (it fires deadline−3d to −1d)'
+    const classLink = `${emailBaseUrl()}/admin?class=${bundle.id}`
+    const movesHtml = `
+      <p><strong>Your three moves:</strong></p>
+      <ul style="margin:0;padding-left:20px;color:#334155">
+        <li style="margin:6px 0"><strong>Hold</strong> — final-days signups often close the gap;
+        the FP push is already working the counselor side.</li>
+        <li style="margin:6px 0"><strong>Extend the deadline</strong> (commonly a week) —
+        <a href="${classLink}">set it on the class page</a>. Extending propagates automatically:
+        collateral, the registration page, and the counselor push timing all derive from the
+        class record, and this checkpoint re-arms against the new date (you'll get this brief
+        again at new-deadline −3d if still under).</li>
+        <li style="margin:6px 0"><strong>Run under minimum, or cancel</strong> — running under
+        is a legitimate call once in a while; <a href="${classLink}">the cancel flow lives on
+        the class page</a> if it's the other way.</li>
+      </ul>
+      <p>Nothing here is automatic — this brief informs; the decision is yours.</p>`
+    const pictureHtml = `<p><strong>${paidCount} paid / ${bundle.minEnrollment} minimum / ${bundle.capacity} cap</strong>
+      · registration closes ${daysToDeadline >= 0 ? `in ${daysToDeadline} day${daysToDeadline === 1 ? '' : 's'}` : `${-daysToDeadline} day${daysToDeadline === -1 ? '' : 's'} ago`} (${formatDate(deadline)})
+      · first session in ${weeksToFirst} week${weeksToFirst === 1 ? '' : 's'} (${formatDate(bundle.firstSession)}).</p>
+      <p>Counselor side: ${fpStatus}.</p>`
+    if (today >= addDaysISO(deadline, -3) && today <= deadline) {
+      const status = await sendAdminAlert({
+        dedupeKey: `min_enrollment:${bundle.id}:${deadline}`,
+        adminEmail: ADMIN_EMAIL,
+        templateKey: 'AL_MIN_ENROLLMENT',
+        vars: {
+          schoolNickname: bundle.schoolLabel,
+          classType: bundle.classType,
+          alertCounts: `${paidCount} paid / ${bundle.minEnrollment} minimum`,
+        },
+        subject: `Enrollment checkpoint — ${label}: ${paidCount} paid / ${bundle.minEnrollment} minimum`,
+        body: pictureHtml + movesHtml,
+      })
+      if (status === 'sent') bump(c, 'admin_alert')
+    } else if (today > deadline) {
+      const status = await sendAdminAlert({
+        dedupeKey: `min_enrollment_followup:${bundle.id}:${deadline}`,
+        adminEmail: ADMIN_EMAIL,
+        templateKey: 'AL_MIN_ENROLLMENT',
+        vars: {
+          schoolNickname: bundle.schoolLabel,
+          classType: bundle.classType,
+          alertCounts: `${paidCount} paid / ${bundle.minEnrollment} minimum`,
+        },
+        subject: `Deadline passed — decision needed: ${label} at ${paidCount} paid / ${bundle.minEnrollment} minimum`,
+        body: `<p><strong>The registration deadline passed ${formatDate(deadline)} with the class
+          still under minimum.</strong> One decision closes this out — nothing else will nag.</p>` +
+          pictureHtml + movesHtml,
+      })
+      if (status === 'sent') bump(c, 'admin_alert')
+    }
   }
 }
 

@@ -83,7 +83,9 @@ Scarlett's read of the current body: "All 3 automatic charges failed" mis-descri
 - Subject: "Autopay failed 3×" → "Autopay failed after 3 attempts — {month} tutoring invoice past due" (same mechanics fix, subject-sized).
 - Wording final unless Scarlett edits in the editor after reseed.
 
-## PL-91 · AL_MIN_ENROLLMENT becomes a decision brief (timing, both clocks, and the three moves)
+## PL-91 · AL_MIN_ENROLLMENT becomes a decision brief (timing, both clocks, and the three moves) ✅
+
+> **Shipped, render-verified 12/12.** Fires in the deadline−3d…deadline window when paid < minimum (deadline = `enrollment_deadline ?? first−7d`, re-derived every sweep — never hardcoded); the dedupe key **carries the deadline value, so extending the deadline re-arms the checkpoint** against the new date by construction. Body leads with the full picture ("{n} paid / {min} minimum / {cap} cap · registration closes in {d} days ({date}) · first session in {x} weeks ({date})") plus the counselor-side FP status read from the FP push's own send rows ("FP last-call sent {date}" / "not yet sent (it fires deadline−3d to −1d)"). The three moves spelled out with class-page deep-links: hold · extend (with the propagation promise — **verified state-driven end-to-end:** collateral keys off `enrollment_deadline` in code, the registration page reads the live class record, and FP windows re-derive from `enrollmentDeadline` every sweep) · run-under-or-cancel framed as a legitimate call, closing with "Nothing here is automatic — this brief informs; the decision is yours." **If the deadline passes still under minimum, exactly ONE follow-up** ("Deadline passed — decision needed", its own deadline-keyed dedupe) and nothing else repeats. The old min-met "checkpoint" message is gone — the §7.4 instructor-nudge rule and the IN_DIGEST milestone ping already own that moment. Preheader reseeded (v2); PL-82 sample shows the 3-days-out case with FP-sent status.
 
 Scarlett: this is a decision point — give the decider everything. Approved design:
 

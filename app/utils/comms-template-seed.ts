@@ -1326,7 +1326,8 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     from_identity: 'info',
     category: 'transactional',
     subject: 'Enrollment checkpoint — {className}: {alertCounts}',
-    preheader: 'The class just crossed its minimum.',
+    // PL-91: this alert is the under-minimum decision brief now.
+    preheader: 'Under minimum with the deadline near — hold, extend, or decide.',
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,
   },
