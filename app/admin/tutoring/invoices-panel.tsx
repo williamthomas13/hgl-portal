@@ -169,7 +169,7 @@ export default function InvoicesPanel() {
             {rows
               .filter((r) => String(r.period) === p)
               .map((r) => (
-                <div key={r.id} className={`rounded p-3 ${r.status === 'void' ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
+                <div key={r.id} id={`invoice-${r.id}`} className={`rounded p-3 ${r.status === 'void' ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="font-semibold text-hgl-slate">
                       {r.families?.parent_first_name} {r.families?.parent_last_name ?? ''}

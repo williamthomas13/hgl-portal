@@ -965,10 +965,12 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       '<p><strong>Alex García</strong> (sample-parent@example.com) completed the intake form for <strong>Ana García</strong> (test prep).</p><p>The lead is marked intake-complete on /admin/leads — availability and all answers are on the lead record, ready for matching.</p>',
   },
-  // tutoring-stripe dunning: all 3 charges failed.
+  // tutoring-stripe dunning (PL-90 shape): one charge, three attempts, and
+  // the emailed invoice link was the LAST automatic step.
   AL_DUNNING_EXHAUSTED: {
+    alertParentName: 'Alex García',
     alertDetailsBlock:
-      '<p>All 3 automatic charges failed for <strong>Alex García</strong> (sample-parent@example.com) — September 2026, $480.00. Last error: <code>Your card was declined.</code></p><p>The family got a pay-by-link fallback. Consider a call, and the 10-day/30-day escalation applies from the due date (late fee is your call, never automatic).</p>',
+      "<p>Autopay for <strong>Alex García's September 2026 tutoring invoice ($480.00)</strong> failed on the <strong>3rd and final attempt</strong> — one charge, retried automatically 3 times. Last error: <code>Your card was declined.</code></p><p>The family has already been emailed their invoice link to pay by card manually; that was the last automatic step, and <strong>nothing will retry from here</strong>.</p><p>If it stays unpaid, it's a personal follow-up: <a href=\"https://hgl-portal.vercel.app/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002\">the invoice</a> · <a href=\"https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003\">Alex's family record</a></p>",
   },
   // sweepCollections 10-day: en-CA date, like the compose.
   AL_OVERDUE_10: {

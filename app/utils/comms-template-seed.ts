@@ -1407,8 +1407,9 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     audience: 'parent',
     from_identity: 'info',
     category: 'transactional',
-    subject: 'Autopay failed 3× — {tutoringMonthLabel} tutoring invoice past due',
-    preheader: 'Automatic retries stopped; the family was told how to pay.',
+    // PL-90: one charge retried three times — and nothing retries from here.
+    subject: 'Autopay failed after 3 attempts — {tutoringMonthLabel} tutoring invoice past due',
+    preheader: 'Automation is out of moves — this one is a personal follow-up.',
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,
   },

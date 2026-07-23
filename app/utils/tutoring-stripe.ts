@@ -293,18 +293,26 @@ export async function handleAutopayFailure(invoiceId: string, reason: string): P
       .update({ status: 'past_due', updated_at: new Date().toISOString() })
       .eq('id', invoiceId)
       .neq('status', 'paid')
+    // PL-90 (Scarlett's mechanics fix): ONE charge, retried automatically —
+    // and the emailed invoice link was the LAST automatic step. This alert
+    // means automation is out of moves, not that the problem was handled.
+    const parentName = `${inv.family.parent_first_name} ${inv.family.parent_last_name ?? ''}`.trim()
     await sendAdminAlert({
       dedupeKey: `t4_exhausted:${invoiceId}`,
       adminEmail: ADMIN_EMAIL,
       templateKey: 'AL_DUNNING_EXHAUSTED',
-      vars: { tutoringMonthLabel: month.label },
-      subject: `Autopay failed ${MAX_CHARGE_ATTEMPTS}× — ${month.label} tutoring invoice past due`,
-      body: `<p>All ${MAX_CHARGE_ATTEMPTS} automatic charges failed for
-        <strong>${inv.family.parent_first_name} ${inv.family.parent_last_name ?? ''}</strong>
-        (${inv.family.parent_email}) — ${month.label}, $${Number(inv.total).toFixed(2)}.
+      vars: { tutoringMonthLabel: month.label, alertParentName: parentName },
+      subject: `Autopay failed after ${MAX_CHARGE_ATTEMPTS} attempts — ${month.label} tutoring invoice past due`,
+      body: `<p>Autopay for <strong>${parentName}'s ${month.label} tutoring invoice
+        ($${Number(inv.total).toFixed(2)})</strong> failed on the
+        <strong>${MAX_CHARGE_ATTEMPTS}${MAX_CHARGE_ATTEMPTS === 3 ? 'rd' : 'th'} and final attempt</strong>
+        — one charge, retried automatically ${MAX_CHARGE_ATTEMPTS} times.
         Last error: <code>${reason.slice(0, 300)}</code></p>
-        <p>The family got a pay-by-link fallback. Consider a call, and the 10-day/30-day
-        escalation applies from the due date (late fee is your call, never automatic).</p>`,
+        <p>The family has already been emailed their invoice link to pay by card manually;
+        that was the last automatic step, and <strong>nothing will retry from here</strong>.</p>
+        <p>If it stays unpaid, it's a personal follow-up:
+        <a href="${emailBaseUrl()}/admin/tutoring?invoice=${invoiceId}">the invoice</a> ·
+        <a href="${emailBaseUrl()}/admin/tutoring?family=${inv.family.id}">${inv.family.parent_first_name}'s family record</a></p>`,
     }).catch(() => {})
   } else {
     const gapDays = RETRY_GAP_DAYS[attempts] ?? 2

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { formatDateAdmin } from '../utils/dates'
 
 // Small shared admin UI pieces (admin UX addendum): collapsible sections and
@@ -184,4 +184,28 @@ export function TimeSelect({
       </select>
     </span>
   )
+}
+
+// PL-90/92 standing rule: internal alerts deep-link the specific record they
+// are about. The alert URL carries a focus param; the page calls this with
+// the target element id and it scrolls + highlights once the data-loaded DOM
+// contains it (polls briefly — panels fetch client-side).
+export function useDeepLinkFocus(elementId: string | null) {
+  useEffect(() => {
+    if (!elementId) return
+    let tries = 0
+    const timer = setInterval(() => {
+      const el = document.getElementById(elementId)
+      tries++
+      if (el) {
+        clearInterval(timer)
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        el.classList.add('ring-2', 'ring-hgl-blue')
+        setTimeout(() => el.classList.remove('ring-2', 'ring-hgl-blue'), 8000)
+      } else if (tries > 25) {
+        clearInterval(timer)
+      }
+    }, 400)
+    return () => clearInterval(timer)
+  }, [elementId])
 }

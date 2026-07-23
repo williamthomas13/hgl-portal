@@ -70,7 +70,9 @@ Scarlett, reading AL_CLASS_DETAILS_HOLD: "if we don't have the location at this 
 - **AL_CLASS_DETAILS_HOLD copy update** (it now only fires after the 3-day warning failed): "The class-details email was due this morning and is being held — families are waiting on it. Fill in {gaps} on the admin page and it releases on the next hourly sweep." Drop the current breezy framing.
 - Both are code-composed alert bodies with registered drafts: update code twins, reseed the drafts, update per-template samples (PL-82 standard — the HOLD sample should show the location-blank case).
 
-## PL-90 (tiny) · AL_DUNNING_EXHAUSTED copy: one charge retried, and "pay-by-link" ≠ resolved
+## PL-90 (tiny) · AL_DUNNING_EXHAUSTED copy: one charge retried, and "pay-by-link" ≠ resolved ✅
+
+> **Shipped, render-verified 6/6.** Code twin rewritten to the approved direction: "Autopay for **{parent}'s {month} tutoring invoice ({amount})** failed on the **3rd and final attempt** — one charge, retried automatically three times… the family has already been emailed their invoice link to pay by card manually; that was the last automatic step, and **nothing will retry from here**. If it stays unpaid, it's a personal follow-up: [the invoice] · [{parent}'s family record]." Subject reseeded (v2, guard-checked): "Autopay failed after 3 attempts — {month} tutoring invoice past due"; preheader now says automation is out of moves. The two links are the first application of the PL-92 standing rule: `/admin/tutoring?invoice={id}` and `?family={id}` deep-link focus params (new `useDeepLinkFocus` — opens the right section, scrolls to and highlights the exact record). Sample updated to the new shape; old "pay-by-link fallback" framing verified gone.
 
 Scarlett's read of the current body: "All 3 automatic charges failed" mis-describes the mechanics (one charge for one invoice, automatically retried 3 times), and "The family got a pay-by-link fallback" reads like the problem was solved when the alert actually means automation is out of moves. Replace the composed body (code twin + reseed draft + PL-82 sample) with the approved direction:
 

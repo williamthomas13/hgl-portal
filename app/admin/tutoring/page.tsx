@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
-import { CollapsibleSection } from '../ui'
+import { CollapsibleSection, useDeepLinkFocus } from '../ui'
 import TutorsPanel from './tutors-panel'
 import TimecardsPanel from './timecards-panel'
 import InvoicesPanel from './invoices-panel'
@@ -37,6 +37,28 @@ export default function TutoringAdmin() {
   const [conversions, setConversions] = useState<Record<string, { label: string; hours: number; paid: number }[]>>({})
   const [refreshSignal, setRefreshSignal] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  // PL-90/92: alert deep-links — ?invoice={id} / ?family={id} / ?schedule=
+  // {studentId} open the right section and highlight the exact record.
+  const [billingOpenSignal, setBillingOpenSignal] = useState(0)
+  const [wizardOpenSignal, setWizardOpenSignal] = useState(0)
+  const [focusElement, setFocusElement] = useState<string | null>(null)
+  const [wizardPreload, setWizardPreload] = useState<string | null>(null)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const invoice = q.get('invoice')
+    const family = q.get('family')
+    const schedule = q.get('schedule')
+    if (invoice) {
+      setBillingOpenSignal((n) => n + 1)
+      setFocusElement(`invoice-${invoice}`)
+    } else if (family) {
+      setFocusElement(`family-${family}`)
+    } else if (schedule) {
+      setWizardOpenSignal((n) => n + 1)
+      setWizardPreload(schedule)
+    }
+  }, [])
+  useDeepLinkFocus(focusElement)
 
   const load = useCallback(async () => {
     const [tutorsRes, subjectsRes, studentsRes, engagementsRes, notesRes] = await Promise.all([
@@ -221,6 +243,7 @@ export default function TutoringAdmin() {
             <CollapsibleSection
               title="Billing"
               subtitle="Monthly cycle: propose on the 20th → family confirms → invoice or autopay, due month-end"
+              openSignal={billingOpenSignal}
             >
               <InvoicesPanel />
             </CollapsibleSection>
