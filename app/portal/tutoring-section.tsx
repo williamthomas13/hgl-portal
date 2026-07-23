@@ -36,6 +36,7 @@ const INVOICE_STATUS_COPY: Record<string, { label: string; cls: string }> = {
   draft: { label: 'In preparation', cls: 'bg-gray-100 text-gray-600' },
   proposed: { label: 'Awaiting your confirmation', cls: 'bg-blue-100 text-blue-700' },
   confirmed: { label: 'Confirmed', cls: 'bg-indigo-100 text-indigo-700' },
+  invoicing: { label: 'Confirmed', cls: 'bg-indigo-100 text-indigo-700' }, // PL-114 transient claim state
   invoiced: { label: 'Invoice sent', cls: 'bg-amber-100 text-amber-800' },
   paid: { label: 'Paid', cls: 'bg-green-100 text-green-700' },
   past_due: { label: 'Payment outstanding', cls: 'bg-red-100 text-red-700' },

@@ -16,7 +16,7 @@ type InvoiceRow = {
   id: string
   family_id: string
   period: string
-  status: 'draft' | 'proposed' | 'confirmed' | 'invoiced' | 'paid' | 'past_due' | 'void'
+  status: 'draft' | 'proposed' | 'confirmed' | 'invoicing' | 'invoiced' | 'paid' | 'past_due' | 'void'
   total: number
   due_at: string | null
   paid_at: string | null
@@ -35,6 +35,7 @@ const STATUS_LABELS: Record<InvoiceRow['status'], string> = {
   draft: 'Draft',
   proposed: 'Awaiting family confirmation',
   confirmed: 'Confirmed — not yet billed',
+  invoicing: 'Billing in progress…',
   invoiced: 'Invoice sent',
   paid: 'Paid',
   past_due: 'Past due',
@@ -45,6 +46,7 @@ const STATUS_STYLES: Record<InvoiceRow['status'], string> = {
   draft: 'bg-gray-100 text-gray-600',
   proposed: 'bg-blue-100 text-blue-700',
   confirmed: 'bg-indigo-100 text-indigo-700',
+  invoicing: 'bg-indigo-50 text-indigo-500',
   invoiced: 'bg-amber-100 text-amber-800',
   paid: 'bg-green-100 text-green-700',
   past_due: 'bg-red-100 text-red-700',

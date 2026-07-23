@@ -10,7 +10,8 @@
     "smoke:public": "node scripts/smoke-public-pages.mjs",
     "regress:links": "node scripts/regress-email-links.mjs",
     "regress:pronouns": "node scripts/regress-pronouns.mjs",
-    "regress:client-imports": "node scripts/regress-client-imports.mjs"
+    "regress:client-imports": "node scripts/regress-client-imports.mjs",
+    "regress:tutoring-charge": "node scripts/regress-tutoring-charge.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

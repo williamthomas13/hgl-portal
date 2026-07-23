@@ -49,7 +49,7 @@ async function loadInvoiceWithFamily(invoiceId: string) {
     .from('tutoring_invoices')
     .select(
       `id, family_id, period, status, total, due_at, sent_at, charge_attempts, next_charge_at,
-       stripe_invoice_id, stripe_payment_intent_id, stripe_hosted_invoice_url,
+       stripe_invoice_id, stripe_payment_intent_id, stripe_hosted_invoice_url, issue_attempts,
        reminder_sent_at, late_fee_flagged_at,
        families ( id, parent_first_name, parent_last_name, parent_email, billing_email,
                   billing_cc_emails, autopay, stripe_customer_id, stripe_payment_method_id )`
@@ -119,6 +119,23 @@ export async function issueOrCharge(invoiceId: string): Promise<{ ok: boolean; p
   if (!inv || !inv.family) return { ok: false, error: 'invoice/family not loadable' }
   if (inv.status !== 'confirmed') return { ok: true, path: 'noop' }
 
+  // PL-114: claim FIRST and atomically. The confirm follow-up, the daily
+  // sweep's catch-up loop, and the admin buttons can all arrive at once —
+  // exactly one caller wins confirmed→invoicing, everyone else no-ops.
+  // issue_attempts feeds the Stripe idempotency key for this issuance.
+  const { data: claimed } = await supabase
+    .from('tutoring_invoices')
+    .update({
+      status: 'invoicing',
+      issue_attempts: Number(inv.issue_attempts ?? 0) + 1,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoiceId)
+    .eq('status', 'confirmed')
+    .select('issue_attempts')
+  if (!claimed?.length) return { ok: true, path: 'noop_lost_claim' }
+  const issueAttempt = Number(claimed[0].issue_attempts)
+
   const total = Number(inv.total)
   if (total <= 0) {
     // Fully package-covered month: the confirmation IS the outcome (§6.1 —
@@ -127,7 +144,7 @@ export async function issueOrCharge(invoiceId: string): Promise<{ ok: boolean; p
       .from('tutoring_invoices')
       .update({ status: 'paid', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', invoiceId)
-      .eq('status', 'confirmed')
+      .eq('status', 'invoicing')
     return { ok: true, path: 'package_covered' }
   }
 
@@ -135,9 +152,16 @@ export async function issueOrCharge(invoiceId: string): Promise<{ ok: boolean; p
     if (inv.family.autopay && inv.family.stripe_payment_method_id) {
       return await chargeAutopay(inv)
     }
-    return await issueHostedInvoice(inv)
+    return await issueHostedInvoice(inv, issueAttempt)
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
+    // Release the claim so the sweep genuinely retries (a row stuck in
+    // 'invoicing' would otherwise fall out of every loop).
+    await supabase
+      .from('tutoring_invoices')
+      .update({ status: 'confirmed', updated_at: new Date().toISOString() })
+      .eq('id', invoiceId)
+      .eq('status', 'invoicing')
     console.error(`issueOrCharge failed for invoice ${invoiceId} (sweep will retry):`, message)
     return { ok: false, error: message }
   }
@@ -169,38 +193,63 @@ function t2Extras(opts: {
   }
 }
 
-async function issueHostedInvoice(inv: NonNullable<Awaited<ReturnType<typeof loadInvoiceWithFamily>>>) {
+async function issueHostedInvoice(
+  inv: NonNullable<Awaited<ReturnType<typeof loadInvoiceWithFamily>>>,
+  issueAttempt: number
+) {
   const family = inv.family!
   const customerId = await ensureStripeCustomer(family)
   const due = dueDateFor()
   const month = billingMonth(String(inv.period).slice(0, 7))
 
+  // PL-114: a re-issue supersedes the previous document — void it if it is
+  // still open (the admin re-issue path already voids before clearing ids;
+  // this covers the crash-window leftovers).
+  if (inv.stripe_invoice_id) {
+    try {
+      const old = await stripe.invoices.retrieve(inv.stripe_invoice_id)
+      if (old.status === 'open') await stripe.invoices.voidInvoice(inv.stripe_invoice_id)
+    } catch (e) {
+      console.error(`voiding superseded stripe invoice ${inv.stripe_invoice_id} failed (continuing):`, e)
+    }
+  }
+
   // Invoice first (excluding any stray pending items from an earlier failed
   // attempt), then attach lines directly to it — a retry can never double-up.
-  const stripeInvoice = await stripe.invoices.create({
-    customer: customerId,
-    collection_method: 'send_invoice',
-    due_date: due.unix,
-    auto_advance: false, // we deliver the link in HGL voice (T2), Stripe stays quiet
-    payment_settings: { payment_method_types: ['card', 'us_bank_account'] },
-    pending_invoice_items_behavior: 'exclude',
-    metadata: { tutoring_invoice_id: inv.id, hgl_family_id: family.id },
-  })
+  // PL-114: every create carries an idempotency key scoped to this issuance,
+  // so a network retry returns the SAME document instead of a sibling.
+  const idem = (part: string) => ({ idempotencyKey: `tutoring:${part}:${inv.id}:${issueAttempt}` })
+  const stripeInvoice = await stripe.invoices.create(
+    {
+      customer: customerId,
+      collection_method: 'send_invoice',
+      due_date: due.unix,
+      auto_advance: false, // we deliver the link in HGL voice (T2), Stripe stays quiet
+      payment_settings: { payment_method_types: ['card', 'us_bank_account'] },
+      pending_invoice_items_behavior: 'exclude',
+      metadata: { tutoring_invoice_id: inv.id, hgl_family_id: family.id },
+    },
+    idem('inv')
+  )
   const { data: lines } = await supabase
     .from('tutoring_invoice_lines')
     .select('description, amount')
     .eq('invoice_id', inv.id)
     .order('created_at')
+  let lineIndex = 0
   for (const line of lines ?? []) {
-    await stripe.invoiceItems.create({
-      customer: customerId,
-      invoice: stripeInvoice.id,
-      amount: cents(line.amount), // negative amounts (credits) are supported
-      currency: 'usd',
-      description: line.description,
-    })
+    await stripe.invoiceItems.create(
+      {
+        customer: customerId,
+        invoice: stripeInvoice.id,
+        amount: cents(line.amount), // negative amounts (credits) are supported
+        currency: 'usd',
+        description: line.description,
+      },
+      idem(`item${lineIndex++}`)
+    )
   }
-  const finalized = await stripe.invoices.finalizeInvoice(stripeInvoice.id!)
+  const finalized = await stripe.invoices.finalizeInvoice(stripeInvoice.id!, {}, idem('fin'))
 
   await supabase
     .from('tutoring_invoices')
@@ -213,7 +262,7 @@ async function issueHostedInvoice(inv: NonNullable<Awaited<ReturnType<typeof loa
       updated_at: new Date().toISOString(),
     })
     .eq('id', inv.id)
-    .eq('status', 'confirmed')
+    .in('status', ['invoicing', 'confirmed'])
 
   const contact = await loadContactInfo()
   const t2Opts = {
@@ -248,7 +297,12 @@ async function chargeAutopay(inv: NonNullable<Awaited<ReturnType<typeof loadInvo
   const customerId = await ensureStripeCustomer(family)
   const attempt = Number(inv.charge_attempts) + 1
 
-  await supabase
+  // PL-114: the attempts bump doubles as an optimistic claim — two callers
+  // holding the same snapshot both try charge_attempts→N+1 with
+  // .eq(charge_attempts, N); exactly one matches, the loser no-ops. Covers
+  // the retry path (sweep calls this directly) the same way issueOrCharge's
+  // confirmed→invoicing claim covers first charges.
+  const { data: claimedRows } = await supabase
     .from('tutoring_invoices')
     .update({
       status: 'invoiced',
@@ -259,19 +313,27 @@ async function chargeAutopay(inv: NonNullable<Awaited<ReturnType<typeof loadInvo
       updated_at: new Date().toISOString(),
     })
     .eq('id', inv.id)
-    .in('status', ['confirmed', 'invoiced'])
+    .eq('charge_attempts', Number(inv.charge_attempts))
+    .in('status', ['invoicing', 'confirmed', 'invoiced'])
+    .select('id')
+  if (!claimedRows?.length) return { ok: true, path: 'noop_lost_claim' }
 
   try {
-    const pi = await stripe.paymentIntents.create({
-      amount: cents(inv.total),
-      currency: 'usd',
-      customer: customerId,
-      payment_method: family.stripe_payment_method_id!,
-      off_session: true,
-      confirm: true,
-      description: `HGL tutoring — ${billingMonth(String(inv.period).slice(0, 7)).label}`,
-      metadata: { tutoring_invoice_id: inv.id, hgl_family_id: family.id },
-    })
+    // PL-114: the idempotency key makes a same-attempt duplicate (network
+    // retry, double-dispatch) return the SAME PaymentIntent — one charge.
+    const pi = await stripe.paymentIntents.create(
+      {
+        amount: cents(inv.total),
+        currency: 'usd',
+        customer: customerId,
+        payment_method: family.stripe_payment_method_id!,
+        off_session: true,
+        confirm: true,
+        description: `HGL tutoring — ${billingMonth(String(inv.period).slice(0, 7)).label}`,
+        metadata: { tutoring_invoice_id: inv.id, hgl_family_id: family.id },
+      },
+      { idempotencyKey: `tutoring:pi:${inv.id}:${attempt}` }
+    )
     await supabase
       .from('tutoring_invoices')
       .update({ stripe_payment_intent_id: pi.id, updated_at: new Date().toISOString() })
@@ -301,8 +363,14 @@ export async function handleAutopayFailure(invoiceId: string, reason: string): P
     if (!hostedUrl) {
       try {
         const asConfirmed = { ...inv, status: 'confirmed' as const }
-        await supabase.from('tutoring_invoices').update({ status: 'confirmed' }).eq('id', invoiceId)
-        const issued = await issueHostedInvoice(asConfirmed)
+        // PL-114: bump issue_attempts so the fallback document gets its own
+        // idempotency key (this path bypasses issueOrCharge's claim).
+        const nextIssue = Number(inv.issue_attempts ?? 0) + 1
+        await supabase
+          .from('tutoring_invoices')
+          .update({ status: 'confirmed', issue_attempts: nextIssue })
+          .eq('id', invoiceId)
+        const issued = await issueHostedInvoice(asConfirmed, nextIssue)
         void issued
         hostedUrl = (await loadInvoiceWithFamily(invoiceId))?.stripe_hosted_invoice_url ?? null
       } catch (e) {
@@ -488,6 +556,18 @@ export type CollectionSweepResult = {
 export async function sweepCollections(now: Date = new Date()): Promise<CollectionSweepResult> {
   const result: CollectionSweepResult = { issued: 0, retried: 0, reminders: 0, lateFeeFlags: 0 }
   try {
+    // PL-114 crash recovery: a claim ('invoicing') that never resolved —
+    // process died between the claim and the Stripe call — goes back to
+    // confirmed after 15 minutes so the catch-up loop below retries it.
+    // (issue_attempts already advanced, so the retry mints a NEW idempotency
+    // key; any orphaned Stripe document from the crash window is voided by
+    // the supersede check in issueHostedInvoice.)
+    await supabase
+      .from('tutoring_invoices')
+      .update({ status: 'confirmed', updated_at: now.toISOString() })
+      .eq('status', 'invoicing')
+      .lt('updated_at', new Date(now.getTime() - 15 * 60000).toISOString())
+
     // Confirmed but never billed (fail-soft catch-up).
     const { data: confirmed } = await supabase
       .from('tutoring_invoices')
