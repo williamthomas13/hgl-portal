@@ -15,6 +15,7 @@ import {
   type StudentScheduleBlock,
 } from './tutoring-emails'
 import { renderRegistered } from './comms-registered'
+import { signingSecret } from './signing'
 
 // Phase 7c monthly cycle engine (spec §6): generate → propose → confirm →
 // (payment leg in tutoring-stripe.ts). Replaces the Ops Director's calendar
@@ -93,7 +94,7 @@ export function currentMonthEnd(now: Date = new Date()): string {
 // ---------------------------------------------------------------------------
 
 function sig(prefix: string, id: string): string {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`${prefix}:${id}`)
     .digest('hex')
     .slice(0, 32)

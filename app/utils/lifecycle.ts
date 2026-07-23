@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { availabilityToken } from './intake'
 import type { EnrollmentEmailContext, SessionInfo } from './email'
 import { bySessionStart } from './dates'
+import { signingSecret } from './signing'
 
 // Shared plumbing for the email lifecycle: loads every class with its school,
 // sessions, and enrollments in one query, and provides the timezone-aware
@@ -316,7 +317,7 @@ export function calendarPageUrlFor(classId: string) {
 export function portalDeepLinkFor(enrollmentId: string, parentEmail: string) {
   const base = emailBaseUrl()
   const email = parentEmail.trim().toLowerCase()
-  const token = createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  const token = createHmac('sha256', signingSecret())
     .update(`login:${email}`)
     .digest('hex')
     .slice(0, 32)
@@ -394,7 +395,7 @@ export function spotsTaken(bundle: ClassBundle): number {
 // ---------------------------------------------------------------------------
 
 function claimToken(enrollmentId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(enrollmentId)
     .digest('hex')
     .slice(0, 32)
@@ -414,7 +415,7 @@ export function verifyClaimToken(enrollmentId: string, token: string) {
 // PL-72: decline links — distinct HMAC prefix so a decline token can never
 // double as a claim token (or vice versa).
 function declineToken(enrollmentId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`decline:${enrollmentId}`)
     .digest('hex')
     .slice(0, 32)
@@ -499,7 +500,7 @@ export function examInfoFor(classType: string): { examName: string; regLabel: st
 // Resume-payment links for the PR1-4 "Finalize Registration" buttons.
 // Distinct HMAC prefix, as with claim/unsubscribe/addon tokens.
 function resumeToken(enrollmentId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`resume:${enrollmentId}`)
     .digest('hex')
     .slice(0, 32)
@@ -519,7 +520,7 @@ export function verifyResumeToken(enrollmentId: string, token: string) {
 // Per-enrollment add-on page links (email #9). Distinct HMAC prefix, as with
 // claim and unsubscribe tokens.
 function addonToken(enrollmentId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`addon:${enrollmentId}`)
     .digest('hex')
     .slice(0, 32)
@@ -539,7 +540,7 @@ export function verifyAddonToken(enrollmentId: string, token: string) {
 // Unsubscribe links (relationship emails only). Distinct HMAC input prefix so
 // claim tokens and unsubscribe tokens can never be swapped for each other.
 function unsubToken(familyId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`unsub:${familyId}`)
     .digest('hex')
     .slice(0, 32)
@@ -549,7 +550,7 @@ function unsubToken(familyId: string) {
 // as claim/decline — enrollment-scoped; the page itself is read-only and
 // the conversion fires only on a JS-executed POST behind one visible tap).
 export function convertToken(enrollmentId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`convert:${enrollmentId}`)
     .digest('hex')
     .slice(0, 32)
@@ -596,7 +597,7 @@ export function registrationUrlFor(bundle: Pick<ClassBundle, 'id' | 'slug'>) {
 // two-school contact manages each independently); the freq travels as a
 // plain param. Distinct HMAC prefix, as with the other signed-link families.
 function digestToken(affiliationId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`digest:${affiliationId}`)
     .digest('hex')
     .slice(0, 32)
@@ -616,7 +617,7 @@ export function verifyDigestToken(affiliationId: string, token: string) {
 // Classroom-request form links (PHASE4_SPEC §4b): single-question tokenized
 // form, no login. `ce` (counselor email) rides along so we know who answered.
 function classroomRequestToken(classId: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`room:${classId}`)
     .digest('hex')
     .slice(0, 32)

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin } from './supabase-admin'
+import { signingSecret } from './signing'
 
 // Phase 4 account provisioning (docs/PHASE4_SPEC.md §2): passwordless login,
 // accounts provisioned implicitly from existing data. Every legitimate user
@@ -107,7 +108,7 @@ export async function ensureAuthUser(emailRaw: string, roles: PortalRole[]): Pro
 // ---------------------------------------------------------------------------
 
 export function loginPrefillToken(emailRaw: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`login:${emailRaw.trim().toLowerCase()}`)
     .digest('hex')
     .slice(0, 32)

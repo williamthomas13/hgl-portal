@@ -18,6 +18,7 @@ const APP = path.join(ROOT, 'app')
 // QBO/GCal credentials) or import them.
 const SERVER_ONLY = [
   'app/utils/supabase-admin.ts',
+  'app/utils/signing.ts',
   'app/utils/lifecycle.ts',
   'app/utils/email.ts',
   'app/utils/checkout-paid.ts',

@@ -1558,8 +1558,11 @@ async function sweepClassroomRequests(
 
 export async function GET(req: Request) {
   // Vercel Cron / pg_cron send Authorization: Bearer <CRON_SECRET>.
+  // PL-113: fail CLOSED — a missing secret means NOBODY is authorized, not
+  // everybody (the old `if (cronSecret && …)` skipped auth entirely when the
+  // env var was unset, making the sweep world-callable).
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

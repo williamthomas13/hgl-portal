@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { createHash, createCipheriv, createDecipheriv, createSign, randomBytes } from 'crypto'
 import { zonedToUtc } from './tutoring'
+import { credentialKeySecret } from './signing'
 
 // Google Calendar client (Phase 7a, docs/PHASE7_SPEC.md §4): service account
 // with domain-wide delegation. Principle: portal writes, Google displays;
@@ -34,7 +35,7 @@ export class GcalApiError extends Error {
 
 function cryptKey(): Buffer {
   return createHash('sha256')
-    .update(`gcal-sa-key:${process.env.CRON_SECRET ?? 'dev-secret'}`)
+    .update(`gcal-sa-key:${credentialKeySecret()}`)
     .digest()
 }
 

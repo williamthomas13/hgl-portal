@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import type { AvailabilityRange } from './availability'
+import { signingSecret } from './signing'
 
 // Phase 7e intake & onboarding (docs/PHASE7_SPEC.md §11): signed-link tokens
 // for the public intake form and the policy-agreement page (house HMAC
@@ -12,7 +13,7 @@ import type { AvailabilityRange } from './availability'
 // ---------------------------------------------------------------------------
 
 function sig(prefix: string, id: string): string {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`${prefix}:${id}`)
     .digest('hex')
     .slice(0, 32)

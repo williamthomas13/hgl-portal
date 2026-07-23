@@ -8,6 +8,7 @@ import { tutoringIcsToken } from './tutoring-billing'
 import { contactBlockHtml, contactFrom, loadContactInfo, type ContactInfo } from './tutoring-emails'
 import { renderRegistered } from './comms-registered'
 import { zonedToUtc, type RecurrenceSlot } from './tutoring'
+import { signingSecret } from './signing'
 
 // PL-40/PL-41 (docs/SESSION_SETUP_COMMS_SPEC.md): propose → parent approves →
 // sessions push to the TUTOR's calendar only, family gets ONE warm welcome
@@ -24,7 +25,7 @@ const appUrl = () => emailBaseUrl()
 // ---------------------------------------------------------------------------
 
 function sig(id: string): string {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`schedule-approve:${id}`)
     .digest('hex')
     .slice(0, 32)

@@ -1,5 +1,6 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto'
+import { credentialKeySecret, signingSecret } from './signing'
 
 // QuickBooks Online client (Phase 6, docs/PHASE6_SPEC.md §6): OAuth2 connect
 // flow, proactive token refresh with atomic refresh-token rotation, and a thin
@@ -34,7 +35,7 @@ export function qboDocUrl(kind: 'sale' | 'refund', docId: string) {
 
 function tokenKey(): Buffer {
   return createHash('sha256')
-    .update(`qbo-token-key:${process.env.CRON_SECRET ?? 'dev-secret'}`)
+    .update(`qbo-token-key:${credentialKeySecret()}`)
     .digest()
 }
 
@@ -114,7 +115,7 @@ function redirectUri() {
 }
 
 function stateSignature(ts: string) {
-  return createHmac('sha256', process.env.CRON_SECRET ?? 'dev-secret')
+  return createHmac('sha256', signingSecret())
     .update(`qbo-oauth:${ts}`)
     .digest('hex')
     .slice(0, 32)
