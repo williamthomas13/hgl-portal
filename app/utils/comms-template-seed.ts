@@ -1300,7 +1300,8 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     from_identity: 'info',
     category: 'transactional',
     subject: 'HOLD: class details email not sent for {className}',
-    preheader: 'The #4 email is waiting on missing details.',
+    // PL-89: this only fires after the 3-day warning failed — it's overdue.
+    preheader: 'Overdue to families — fill in the blanks and it releases.',
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,
   },
@@ -1311,8 +1312,9 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     audience: 'parent',
     from_identity: 'info',
     category: 'transactional',
-    subject: 'Missing details — {className} starts {firstSessionDate}',
-    preheader: 'Details are still blank with class approaching.',
+    // PL-89: anchored to the families' email deadline, not the class start.
+    subject: 'Missing details — {className} class-details email goes out {classDetailsSendDate}',
+    preheader: 'Three days of runway before families are supposed to hear.',
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,
   },

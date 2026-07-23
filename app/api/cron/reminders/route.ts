@@ -8,6 +8,7 @@ import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../.
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
+import { classroomChaseLine } from '../../../utils/classroom-chase'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers } from '../../../utils/waitlist-offers'
 import {
@@ -85,6 +86,8 @@ import {
   type ClassBundle,
   type EnrollmentRow,
   type TutoringPackage,
+  classDetailsSendDate,
+  missingDetailsAlertStart,
 } from '../../../utils/lifecycle'
 
 // The lifecycle sweep. Runs hourly (Supabase pg_cron; Vercel daily cron as
@@ -416,11 +419,14 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
         templateKey: 'AL_CLASS_DETAILS_HOLD',
         vars: { schoolNickname: bundle.schoolLabel, classType: bundle.classType },
         subject: `HOLD: class details email not sent for ${bundle.schoolLabel} ${bundle.classType}`,
-        body: `<p>The "class details" email is due but is being held because
-          ${!bundle.instructorName ? '<strong>instructor</strong> ' : ''}
-          ${!bundle.instructorName && !bundle.defaultLocation ? 'and ' : ''}
-          ${!bundle.defaultLocation ? '<strong>location</strong> ' : ''}
-          is blank. Fill it in on the admin page — the email goes out on the next hourly sweep.</p>`,
+        // PL-89: this alert now only fires after the 3-day warning failed —
+        // the email is OVERDUE to families, so say so plainly.
+        body: `<p>The class-details email to your ${bundle.schoolLabel} ${bundle.classType} families
+          was due this morning and is being held —
+          <strong>families are waiting on it</strong>. Fill in
+          ${!bundle.instructorName ? '<strong>instructor</strong>' : ''}${!bundle.instructorName && !bundle.defaultLocation ? ' and ' : ''}${!bundle.defaultLocation ? '<strong>location</strong>' : ''}
+          on the admin page and it releases on the next hourly sweep.</p>
+          <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin?class=${bundle.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p>`,
       })
       bump(c, 'held')
       continue
@@ -775,13 +781,32 @@ async function sweepWaitlist(bundle: ClassBundle, c: Counters) {
 async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
   const today = localDate(bundle.timezone)
 
-  // Instructor/classroom still blank 6 days before start — daily nag.
-  const sixDaysOut = addDaysISO(bundle.firstSession, -6)
+  // PL-89: instructor/classroom still blank — daily warning anchored to #4's
+  // SEND date (derived from the SEQUENCE offset; today first-session −7d),
+  // starting 3 days before it: "not going to be solvable in an hour"
+  // deserves 3 days of runway framed around the email deadline, not the
+  // class start.
+  const fourSend = classDetailsSendDate(bundle)
   if (
-    today >= sixDaysOut &&
+    today >= missingDetailsAlertStart(bundle) &&
     today <= bundle.firstSession &&
     (!bundle.instructorName || !bundle.defaultLocation)
   ) {
+    const label = `${bundle.schoolLabel} ${bundle.classType}`
+    const daysToFirst = Math.round((Date.parse(bundle.firstSession) - Date.parse(today)) / 86_400_000)
+    const daysToSend = Math.round((Date.parse(fourSend) - Date.parse(today)) / 86_400_000)
+    const weeksPhrase = daysToFirst >= 7 ? `in ${Math.round(daysToFirst / 7)} week${Math.round(daysToFirst / 7) === 1 ? '' : 's'}` : `in ${daysToFirst} day${daysToFirst === 1 ? '' : 's'}`
+    const sendPhrase = daysToSend > 0 ? `in ${daysToSend} day${daysToSend === 1 ? '' : 's'}` : daysToSend === 0 ? 'today' : `${-daysToSend} day${daysToSend === -1 ? '' : 's'} ago`
+    const bullets: string[] = []
+    if (!bundle.defaultLocation) {
+      const chase = await classroomChaseLine(bundle.id)
+      bullets.push(
+        `<li style="margin:4px 0"><strong>Location</strong> — blank. Classroom request status: ${chase}.</li>`
+      )
+    }
+    if (!bundle.instructorName) {
+      bullets.push(`<li style="margin:4px 0"><strong>Instructor</strong> — blank. Assign one on the class page.</li>`)
+    }
     const status = await sendAdminAlert({
       dedupeKey: `blank_details:${bundle.id}:${today}`,
       adminEmail: ADMIN_EMAIL,
@@ -789,12 +814,19 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
       vars: {
         schoolNickname: bundle.schoolLabel,
         classType: bundle.classType,
+        schoolName: bundle.schoolName,
         firstSession: bundle.firstSession,
+        classDetailsSendDate: formatDate(fourSend),
       },
-      subject: `Missing details — ${bundle.schoolLabel} ${bundle.classType} starts ${bundle.firstSession}`,
-      body: `<p>${!bundle.instructorName ? 'Instructor is blank. ' : ''}
-        ${!bundle.defaultLocation ? 'Location is blank. ' : ''}
-        Class starts ${bundle.firstSession}.</p>`,
+      subject: `Missing details — ${label} class-details email goes out ${formatDate(fourSend)}`,
+      body: `<p><strong>${label}</strong> — first session <strong>${formatDate(bundle.firstSession)}</strong> (${weeksPhrase}).</p>
+        <p>The "class details" email to families goes out <strong>${formatDate(fourSend)}</strong>
+        (${sendPhrase}), and it can't send while these are blank:</p>
+        <ul style="margin:0;padding-left:20px;color:#334155">${bullets.join('')}</ul>
+        <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin?class=${bundle.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p>
+        <p>If the room comes through, filling it in releases everything automatically — nothing
+        else to do. If it's still blank when the email is due, the send holds and families wait;
+        that's the next alert you'd get.</p>`,
     })
     if (status === 'sent') bump(c, 'admin_alert')
   }

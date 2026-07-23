@@ -133,6 +133,9 @@ export type ExtraVars = {
   /** The alert's composed data guts (pre-rendered HTML) — framing copy is
    *  editable in the template; the computed details ride this block. */
   alertDetailsBlock?: string
+  /** PL-89: when #4 (class details) goes to families, written out — derived
+   *  from the SEQUENCE offset at compose time. */
+  classDetailsSendDate?: string
 
   // --- PL-76: cancelled-class → tutoring conversion --------------------------
   /** "$899.00" — the cancelled class's paid amount, now a tutoring credit. */
@@ -600,6 +603,11 @@ export const VARIABLES: Record<string, VariableDef> = {
     block: true,
     resolve: (_c, _a, e) => e.alertDetailsBlock ?? '',
   },
+  // PL-89: subject-safe date for the missing-details warning.
+  classDetailsSendDate: {
+    description: "When the families' class-details email (#4) goes out — derived from the sequence, e.g. \"Tuesday, September 1, 2026\"",
+    resolve: (_c, _a, e) => e.classDetailsSendDate ?? '—',
+  },
   creditAmount: {
     description: 'PL-76: the cancelled class\'s paid amount as tutoring credit, e.g. "$899.00"',
     resolve: (_c, _a, e) => e.creditAmount ?? '—',
@@ -916,14 +924,19 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       '<p><strong style="color:#b45309">⚠ In-person classes under minimum</strong> (travel booking waits on these):</p><ul><li><strong>SIS SAT Prep</strong> — 6 paid / 8 min, starts 2026-09-05</li></ul><p><strong>Open classes — full rosters:</strong></p><div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0"><p style="margin:0"><strong>SIS SAT Prep</strong> — starts 2026-09-05 · 6 paid / 1 pending / 0 waitlisted · 8 min / 15 cap · <span style="color:#b45309;font-weight:bold">below minimum — needs 2 more paid</span></p><ul style="margin:6px 0 0"><li>Ana García — Paid <span style="color:#0284c7;font-weight:bold">(new this week)</span></li><li>Sam Lee — Paid</li><li>Maya Ortiz — Pending</li></ul></div>',
   },
-  // hold-and-alert (cron/reminders): #4 held on a blank detail.
+  // hold-and-alert (cron/reminders, PL-89 tone): the email is OVERDUE to
+  // families — location-blank case per the doc.
   AL_CLASS_DETAILS_HOLD: {
     alertDetailsBlock:
-      '<p>The "class details" email is due but is being held because <strong>location</strong> is blank. Fill it in on the admin page — the email goes out on the next hourly sweep.</p>',
+      '<p>The class-details email to your SIS SAT Prep families was due this morning and is being held — <strong>families are waiting on it</strong>. Fill in <strong>location</strong> on the admin page and it releases on the next hourly sweep.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p>',
   },
-  // blank-details warning (cron/reminders): raw ISO date, like the compose.
+  // blank-details warning (cron/reminders, PL-89 shape): both clocks,
+  // conditional bullets with the CR chase status, fill-in button, honest
+  // hold explanation.
   AL_MISSING_DETAILS: {
-    alertDetailsBlock: '<p>Instructor is blank. Location is blank. Class starts 2026-09-05.</p>',
+    classDetailsSendDate: 'Tuesday, September 1, 2026',
+    alertDetailsBlock:
+      '<p><strong>SIS SAT Prep</strong> — first session <strong>Saturday, September 5, 2026</strong> (in 1 week).</p><p>The "class details" email to families goes out <strong>Tuesday, September 1, 2026</strong> (in 3 days), and it can\'t send while these are blank:</p><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:4px 0"><strong>Location</strong> — blank. Classroom request status: asked the counselor Aug 22, 2026 (opened Aug 22, 2026) · nudged Aug 27, 2026 (not yet opened) · last call not yet sent.</li><li style="margin:4px 0"><strong>Instructor</strong> — blank. Assign one on the class page.</li></ul><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p><p>If the room comes through, filling it in releases everything automatically — nothing else to do. If it\'s still blank when the email is due, the send holds and families wait; that\'s the next alert you\'d get.</p>',
   },
   // min-enrollment checkpoint (cron/reminders): subject counts use the
   // "N paid / M minimum" shape, not the enrolled/min/cap ticker.

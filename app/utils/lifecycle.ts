@@ -158,6 +158,18 @@ export function stepTargetDate(step: SequenceStep, bundle: ClassBundle): string 
   return addDaysISO(anchor, step.offsetDays)
 }
 
+// PL-89: the missing-details warning anchors to #4's SEND date, derived from
+// the SEQUENCE offset (never hardcoded — retiming #4 retimes the warning).
+export function classDetailsSendDate(bundle: Pick<ClassBundle, 'firstSession' | 'lastSession'>): string {
+  const step = SEQUENCE.find((s) => s.type === 'class_details')!
+  return stepTargetDate(step, bundle as ClassBundle)
+}
+
+/** The warning starts 3 days before #4 is due, daily until resolved. */
+export function missingDetailsAlertStart(bundle: Pick<ClassBundle, 'firstSession' | 'lastSession'>): string {
+  return addDaysISO(classDetailsSendDate(bundle), -3)
+}
+
 // Payment reminder ladder for Pending enrollments (hours since registration),
 // then expiry at 168h (7 days).
 export const PAYMENT_REMINDERS = [

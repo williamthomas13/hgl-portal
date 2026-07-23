@@ -214,6 +214,12 @@ export default function AdminDashboard() {
   const [rosterError, setRosterError] = useState('')
   // Live classes render as tabs; '' = first live class, '__past' = the rest.
   const [activeTab, setActiveTab] = useState('')
+  // PL-89/92 standing rule: alert deep-links land on the exact record —
+  // ?class={id} selects that class's roster tab on arrival.
+  useEffect(() => {
+    const classId = new URLSearchParams(window.location.search).get('class')
+    if (classId) setActiveTab(classId)
+  }, [])
   // Phase 5 copy-a-previous-class: 'blank' renders an empty wizard; 'pick'
   // shows the source picker; a prefill snapshot renders a pre-filled wizard.
   // wizardKey remounts the wizard whenever the source (or blank reset) changes.
