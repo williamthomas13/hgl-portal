@@ -155,7 +155,9 @@ Scarlett's scenario: a family never saw the offer emails (PL-93 shows unopened),
 - **(c) AL_WAITLIST_ROLLOVER becomes the cockpit** (PL-92 standing rule): body gains the **open status of the offer + reminder emails** ("neither was opened — this expiry may be a spam-folder artifact; consider a call"), and the action row: [Re-offer the spot] · [Add back at #1] · [See the waitlist] — all admin-authed deep-links to the class's waitlist with the relevant row in view.
 - Reinsertions and re-offers show on the family timeline (PL-83) badged by-hand; waitlist history keeps the original expiry so the record stays honest.
 
-## PL-95 (small) · IN_DIGEST variants carry a "what happens from here" footer
+## PL-95 (small) · IN_DIGEST variants carry a "what happens from here" footer ✅
+
+> **Shipped, all four variants verified against the doc copy.** `digestNextStepsHtml(bundle, variant)` in instructor-comms — the same composed-variant machinery as the milestone lines — rides a new `{digestNextStepsBlock}` variable: **min_met** lists the automatic next steps with real dates (the class-details email date derives from the PL-89 sequence helper; FYI copy, fills-ping, sessions-on-calendar) · **class_full** promises the final count at close, nothing to do · **registration_closed** gives the final roster count, the location-reminder FYI, and attendance-on-your-page · **weekly** stays one line. Both the code twin and the registry render carry it (IN_DIGEST reseeded **v2** — prior version was the untouched claude-code seed, guard-checked). Sample note: a preview renders ONE variant, so the sample shows the min-met story end-to-end (milestone + 8/8 counts + min-met footer, all with matching dates); the footer copy lives in the composed map like the milestone lines — editable in code, not the editor, same as those.
 
 Scarlett: same consequences-ledger idea, tuned for the instructor audience — reassurance about what's automatic, so the ping never reads like assigned homework. Per-variant composed footer (the variant machinery from PL-78):
 

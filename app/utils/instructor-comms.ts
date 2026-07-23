@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { formatDateFull } from './dates'
-import { localDate, registrationCloseFor, type ClassBundle } from './lifecycle'
+import { classDetailsSendDate, localDate, registrationCloseFor, type ClassBundle } from './lifecycle'
 import { createGcalEvent, deleteGcalEvent, loadGcalConnection, patchGcalEvent } from './gcal'
 
 // PL-78/PL-79: instructors stop being out of the loop. Every send and every
@@ -149,6 +149,29 @@ const MILESTONE_LINES: Record<Exclude<DigestVariant, 'weekly'>, string> = {
   registration_closed: '<p><strong>Registration is closed — this is the final count.</strong></p>',
 }
 
+// PL-95: the "what happens from here" footer, per variant — reassurance
+// about what's automatic, so a ping never reads like assigned homework.
+// Same composed-variant machinery as the milestone lines. Exported for the
+// regression scripts.
+export function digestNextStepsHtml(bundle: ClassBundle, variant: DigestVariant): string {
+  const regClose = formatDateFull(registrationCloseFor(bundle))
+  const style = 'color:#64748b;font-size:13px;margin-top:16px'
+  if (variant === 'min_met') {
+    const fourSend = formatDateFull(classDetailsSendDate(bundle))
+    return `<p style="${style}">Nothing you need to do. From here, automatically: families get the class-details email on ${fourSend} — you'll receive an FYI copy · registration stays open through ${regClose}, and you'll get another ping if the class fills · the sessions are already on your calendar.</p>`
+  }
+  if (variant === 'class_full') {
+    return `<p style="${style}">Registration is effectively done — you'll get the final count when it closes on ${regClose}. Nothing to do.</p>`
+  }
+  if (variant === 'registration_closed') {
+    const paid = bundle.enrollments.filter(
+      (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+    ).length
+    return `<p style="${style}">Final roster: ${paid} student${paid === 1 ? '' : 's'}. Families get their location reminder before day one (FYI to you) · attendance lives on your class page from the first session.</p>`
+  }
+  return `<p style="${style}">Nothing needed — this is just your weekly picture.</p>`
+}
+
 export async function sendInstructorDigest(
   bundle: ClassBundle,
   instructor: ClassInstructor,
@@ -158,6 +181,7 @@ export async function sendInstructorDigest(
   const extras = {
     ...baseExtras(bundle, instructor),
     digestMilestoneLine: variant === 'weekly' ? '' : MILESTONE_LINES[variant],
+    digestNextStepsBlock: digestNextStepsHtml(bundle, variant),
   }
   const stub = instructorStub(bundle, instructor)
   const fallback = (): Rendered => ({
@@ -167,7 +191,8 @@ export async function sendInstructorDigest(
        ${extras.digestMilestoneLine}
        <p><strong>${bundle.schoolLabel} ${bundle.classType}</strong>: ${extras.instructorCountsLine}
        · registration closes ${extras.registrationCloseDate} · first session ${formatDateFull(bundle.firstSession)}.</p>
-       <p style="margin:20px 0"><a href="${extras.instructorViewLink}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your class page</a></p>`,
+       <p style="margin:20px 0"><a href="${extras.instructorViewLink}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your class page</a></p>
+       ${extras.digestNextStepsBlock}`,
       { preheader: 'Your weekly enrollment picture.', footer: footerT() }
     ),
   })

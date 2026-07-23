@@ -155,6 +155,8 @@ export type ExtraVars = {
   registrationCloseDate?: string
   /** Milestone variant line for IN_DIGEST ('' on quiet weekly sends). */
   digestMilestoneLine?: string
+  /** PL-95: IN_DIGEST's per-variant "what happens from here" footer. */
+  digestNextStepsBlock?: string
   /** PL-80c: IN_WELCOME's class-session list — renamed from {scheduleBlock}
    *  so it can never collide with the tutoring sample again. */
   classScheduleBlock?: string
@@ -637,6 +639,12 @@ export const VARIABLES: Record<string, VariableDef> = {
     block: true,
     resolve: (_c, _a, e) => e.digestMilestoneLine ?? '',
   },
+  // PL-95: reassurance footer, composed per variant like the milestone line.
+  digestNextStepsBlock: {
+    description: 'IN_DIGEST "what happens from here", per variant: min-met lists the automatic next steps (class-details email + FYI, another ping if it fills, sessions already on the calendar) · class-full / registration-closed / weekly get their own lines',
+    block: true,
+    resolve: (_c, _a, e) => e.digestNextStepsBlock ?? '',
+  },
   // PL-80c: IN_WELCOME's session list gets its OWN variable — {scheduleBlock}
   // is the tutoring list and its sample ("Ana — September sessions") rendered
   // inside the instructor welcome. Distinct name = the collision is
@@ -1017,6 +1025,10 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   },
   IN_DIGEST: {
     classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person at SIS (Sample International School)',
+    // PL-95: the sample IS the min-met variant (milestone + 8/8 counts), so
+    // its footer is the min-met one — all three pieces tell one story.
+    digestNextStepsBlock:
+      "<p style=\"color:#64748b;font-size:13px;margin-top:16px\">Nothing you need to do. From here, automatically: families get the class-details email on Tuesday, September 1, 2026 — you'll receive an FYI copy · registration stays open through Friday, September 4, 2026, and you'll get another ping if the class fills · the sessions are already on your calendar.</p>",
   },
   IN_FYI: {
     classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person at SIS (Sample International School)',

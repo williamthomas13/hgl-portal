@@ -1513,13 +1513,16 @@ One line on what to expect: you'll get a weekly enrollment update while registra
     subject: '{className}: {instructorCountsLine}',
     preheader: 'Your weekly enrollment picture.',
     footer_note: null,
+    // PL-95: the per-variant "what happens from here" footer closes it out.
     body_markdown: `Hi {tutorFirstName},
 
 {digestMilestoneLine}
 
 **{className}**: {instructorCountsLine} · registration closes {registrationCloseDate} · first session {firstSessionDate}.
 
-[button:Open your class page]({instructorViewLink})`,
+[button:Open your class page]({instructorViewLink})
+
+{digestNextStepsBlock}`,
   },
   {
     template_key: 'IN_FYI',
