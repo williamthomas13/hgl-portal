@@ -35,7 +35,9 @@ Two fail-open defaults, same root class:
 **Fix:** reject `apply_late_fee` when a `kind='late_payment_fee'` line exists (clear message back to the UI); compute the fee off the pre-fee subtotal. Disable the button in the UI when a fee line is present.
 **Verify:** double-click E2E → one line; re-issue after fee keeps one fee.
 
-## PL-116 · Conversion must not credit the tutoring add-on the family keeps
+## PL-116 · Conversion must not credit the tutoring add-on the family keeps ✅
+
+> **Shipped, 6/6 E2E green.** One fix point: `loadConversionRecord` now computes `paid = max(0, amount_paid − Σ price_paid of enrollment_addons where source ≠ 'cancellation_conversion')` — both conversion paths inherit it, since the hours path's `price_paid` and the dollar path's balance credit (and `creditAmount`) all read `record.paid`. Verified with the doc's own scenario: $950 total ($500 class + $450 in-checkout add-on) → record.paid $500, conversion addon minted at $500/6h, **the family's original add-on row untouched** (their hours stay theirs — the PL-84 promise); no-addon enrollments unchanged ($500 → $500). The CX composer needed **no change**: `cancellation-copy.ts` already documents and uses the class fee (`classes.price`) — "never amount_paid" — so the savings math was never on the buggy field.
 
 `convert-tutoring.ts:65,102-125` uses `paid = enrollment.amount_paid` — the Stripe `amount_total` including any in-checkout tutoring add-on (`checkout-paid.ts:158`). The dollar path credits the full amount to the Stripe balance while the family keeps the prepaid add-on hours; the hours path records `price_paid: paid` against the class-only offer. $500 class + $450 add-on → $950 credited + 6 hours kept.
 

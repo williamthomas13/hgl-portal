@@ -62,7 +62,18 @@ export async function loadConversionRecord(enrollmentId: string): Promise<Conver
   if (!['Paid', 'Completed'].includes(enrollment.payment_status)) {
     return { error: 'Only a paid enrollment converts — this one never paid.', status: 400 }
   }
-  const paid = Number(enrollment.amount_paid ?? 0)
+  // PL-116: convert the CLASS fee only. amount_paid mirrors Stripe's
+  // amount_total, which includes any in-checkout tutoring add-on — and the
+  // family KEEPS those hours (the PL-84 promise). Crediting the full total
+  // would hand them the add-on twice: $500 class + $450 add-on paid must
+  // convert $500, not $950, while the 6 hours stay theirs untouched.
+  const { data: keptAddons } = await supabase
+    .from('enrollment_addons')
+    .select('price_paid')
+    .eq('enrollment_id', enrollment.id)
+    .neq('source', 'cancellation_conversion')
+  const keptAddonTotal = (keptAddons ?? []).reduce((s, a) => s + Number(a.price_paid ?? 0), 0)
+  const paid = Math.max(0, Number(enrollment.amount_paid ?? 0) - keptAddonTotal)
   return {
     enrollment,
     student,
