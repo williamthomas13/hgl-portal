@@ -103,7 +103,11 @@ async function materializeSessions(
     .from('tutoring_sessions')
     .select('starts_at')
     .eq('engagement_id', engagement.id)
-    .in('status', ['proposed', 'confirmed'])
+    // PL-122: same taken-set as the monthly cycle (PL-62) — cancelled and
+    // rescheduled rows are TOMBSTONES. A slot the family vacated must never
+    // be resurrected by a regenerate (it would re-bill the slot on top of
+    // any late fee already charged on its tombstone).
+    .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled'])
   const taken = new Set((existing ?? []).map((s) => new Date(s.starts_at).getTime()))
 
   const rows = occurrences
@@ -134,14 +138,26 @@ async function materializeSessions(
  *  engagement end). Their Google events are deleted inline (best-effort)
  *  BEFORE the rows go — row deletion cascades the queue away. */
 async function clearFutureSessions(engagementId: string): Promise<{ removed: number }> {
-  const { data: doomed } = await supabase
+  const { data: doomedRaw } = await supabase
     .from('tutoring_sessions')
     .select('id, gcal_event_id, tutor_id, instructors ( email, google_calendar_id )')
     .eq('engagement_id', engagementId)
     .in('status', ['proposed', 'confirmed'])
     .is('invoice_id', null)
     .gt('starts_at', new Date().toISOString())
-  if (!doomed || doomed.length === 0) return { removed: 0 }
+  // PL-122: REPLACEMENT sessions (the target of a reschedule tombstone's
+  // rescheduled_to_id) are an agreed commitment, not generated filler —
+  // deleting them would silently drop the make-up session AND null the
+  // tombstone's link (the FK is on delete set null), breaking the
+  // reschedule chain. Same semantics as the monthly cycle: preserve them.
+  const { data: links } = await supabase
+    .from('tutoring_sessions')
+    .select('rescheduled_to_id')
+    .eq('engagement_id', engagementId)
+    .not('rescheduled_to_id', 'is', null)
+  const replacementIds = new Set((links ?? []).map((l) => l.rescheduled_to_id))
+  const doomed = (doomedRaw ?? []).filter((s) => !replacementIds.has(s.id))
+  if (doomed.length === 0) return { removed: 0 }
 
   const conn = await loadGcalConnection()
   if (conn?.key && conn.status === 'connected') {
