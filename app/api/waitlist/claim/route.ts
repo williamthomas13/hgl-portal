@@ -51,10 +51,21 @@ export async function GET(request: Request) {
   const family: any = Array.isArray(student?.families) ? student.families[0] : student?.families
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
+  // PL-139: the Checkout session must die WITH the offer. Stripe's default
+  // (~24h) outlives the 48-hour claim window, so a family could pay for a
+  // spot the sweep had already rolled to the next family. Stripe requires
+  // expires_at to sit between 30 minutes and 24 hours out, so clamp into
+  // that range — the offer deadline wins whenever it falls inside it.
+  const offerDeadlineMs = new Date(enrollment.waitlist_offer_expires_at).getTime()
+  const expiresAt = Math.floor(
+    Math.min(Date.now() + 24 * 3600_000 - 60_000, Math.max(Date.now() + 31 * 60_000, offerDeadlineMs)) / 1000
+  )
+
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
     customer_email: family?.parent_email,
     allow_promotion_codes: true,
+    expires_at: expiresAt,
     line_items: [
       {
         price_data: {

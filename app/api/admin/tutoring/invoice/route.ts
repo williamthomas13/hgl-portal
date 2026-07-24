@@ -34,10 +34,27 @@ async function reissueStripeInvoiceIfNeeded(invoiceId: string) {
     .eq('id', invoiceId)
     .maybeSingle()
   if (!inv || !inv.stripe_invoice_id || !['invoiced', 'past_due'].includes(inv.status)) return
+  // PL-145: the void MUST succeed. Continuing past a failed void left two
+  // payable Stripe invoices for the same month side by side — the family
+  // could pay the stale pre-fee one and believe they were square. A failure
+  // here aborts the re-issue and surfaces to the staff member; the line edit
+  // stays saved, so retrying the same action re-runs this cleanly.
   try {
-    await stripe.invoices.voidInvoice(inv.stripe_invoice_id)
+    const current = await stripe.invoices.retrieve(inv.stripe_invoice_id)
+    if (current.status === 'open' || current.status === 'draft') {
+      await stripe.invoices.voidInvoice(inv.stripe_invoice_id)
+    } else if (current.status === 'paid') {
+      throw new Error('that invoice is already paid in Stripe — refund or credit it instead of re-issuing')
+    }
+    // 'void'/'uncollectible': already superseded, nothing to void.
   } catch (e) {
-    console.error(`voiding stripe invoice ${inv.stripe_invoice_id} failed (continuing):`, e)
+    const why = e instanceof Error ? e.message : String(e)
+    console.error(`[PL-145] re-issue BLOCKED for invoice ${invoiceId}: void failed — ${why}`)
+    throw new Error(
+      `The edit was saved, but the old Stripe invoice could not be voided (${why}). ` +
+        `The invoice was NOT re-issued — two payable invoices would exist. Try again, ` +
+        `or void it in the Stripe dashboard and then use Send now.`
+    )
   }
   // Back to confirmed → issueOrCharge builds a fresh hosted invoice from the
   // current lines and re-sends T2 (sendOnce dedupe key is per-invoice, so a
@@ -138,7 +155,16 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
       const total = await recomputeInvoiceTotals(invoice.id)
-      await reissueStripeInvoiceIfNeeded(invoice.id)
+      // PL-145: a blocked re-issue reports plainly — the line edit is saved
+      // either way, so the message says exactly what did and didn't happen.
+      try {
+        await reissueStripeInvoiceIfNeeded(invoice.id)
+      } catch (e) {
+        return NextResponse.json(
+          { error: e instanceof Error ? e.message : 'Re-issue failed.', total },
+          { status: 502 }
+        )
+      }
       return NextResponse.json({ ok: true, total })
     }
 

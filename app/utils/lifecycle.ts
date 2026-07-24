@@ -378,6 +378,19 @@ export function registrationCloseFor(bundle: ClassBundle): string {
   return bundle.registrationCloseDate ?? bundle.firstSession
 }
 
+/**
+ * PL-141: THE deadline every surface quotes — the go/no-go date for the
+ * min-enrollment decision brief, the final-week counselor push, and the
+ * FP-status line. Three call sites used to default differently (first
+ * session −7 days in the brief, the first session in the push), so the brief
+ * asserted a date no other calendar honored. One chain now: an explicit
+ * enrollment deadline, else the registration close (which itself defaults to
+ * the first session). Matches `collateral.ts`, which already read this way.
+ */
+export function effectiveDeadline(bundle: ClassBundle): string {
+  return bundle.enrollmentDeadline ?? registrationCloseFor(bundle)
+}
+
 /** Spots taken = Pending + Paid + waitlisted holders of an unexpired offer. */
 export function spotsTaken(bundle: ClassBundle): number {
   const now = Date.now()

@@ -98,6 +98,10 @@ export async function POST(request: Request) {
     // Per-enrollment charge total — the webhook stamps THIS on each row
     // (amount_paid must never carry a sibling's money: the PL-116 lesson).
     const perEnrollmentTotal: Record<string, number> = {};
+    // PL-142: the component prices as the family sees them RIGHT NOW. These
+    // ride the enrollment to payment and become the receipt's authority, so
+    // a later price edit can never rewrite what someone already paid.
+    const perEnrollmentAddonPrice: Record<string, number> = {};
 
     for (const raw of enrs as any[]) {
       const e = raw;
@@ -138,6 +142,7 @@ export async function POST(request: Request) {
           quantity: 1,
         });
         perEnrollmentTotal[e.id] += Number(pkg.package_price);
+        perEnrollmentAddonPrice[e.id] = Number(pkg.package_price); // PL-142
       }
     }
 
@@ -180,6 +185,9 @@ export async function POST(request: Request) {
           stripe_session_id: session.id,
           pending_package_id: pkgFor(id), // explicit null: "no thanks" clears an earlier pick
           pending_checkout_total: perEnrollmentTotal[id] ?? price,
+          // PL-142: component snapshots — the receipt's future authority.
+          class_price_snapshot: price,
+          pending_addon_price: perEnrollmentAddonPrice[id] ?? null,
         })
         .eq('id', id);
       if (stampError) {

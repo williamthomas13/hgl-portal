@@ -1,11 +1,11 @@
 import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
-import { processQboQueue, sweepQboHealth } from '../../../utils/qbo-sync'
+import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
 import { processGcalQueue } from '../../../utils/gcal-sync'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { sweepSessionNoteReminders } from '../../../utils/session-notes'
-import { generateMonthlyCycle, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
+import { generateMonthlyCycle, generationDueFor, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
@@ -81,6 +81,7 @@ import {
   loadTutoringPackages,
   localDate,
   localHour,
+  effectiveDeadline,
   registrationCloseFor,
   registrationUrlFor,
   spotsTaken,
@@ -680,18 +681,30 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
 
   const current = classDetailsSnapshot(bundle)
   // jsonb does not preserve key order, so compare fields — never stringified objects.
-  const stableKey = `${current.first_session}|${current.location ?? ''}|${current.instructor ?? ''}`
-  const hash = createHash('md5').update(stableKey).digest('hex').slice(0, 8)
+  const stateKey = (s: Partial<typeof current>) =>
+    `${s.first_session ?? ''}|${s.location ?? ''}|${s.instructor ?? ''}`
 
-  const staleByEnrollment = new Map<string, ScheduleChange[]>()
+  // PL-138: the dedupe key used to hash the DESTINATION state alone, so a
+  // room that went A→B→A→B suppressed the second "now B" email forever — the
+  // family sat on a stale room. The key now names the TRANSITION (old→new)
+  // and carries a per-enrollment change sequence, so every real change sends
+  // exactly once even when the class oscillates between two states.
+  const staleByEnrollment = new Map<string, { changes: ScheduleChange[]; suffix: string; seq: number }>()
   for (const row of sentDetails) {
     if (!row.payload || !row.enrollment_id || staleByEnrollment.has(row.enrollment_id)) continue
-    const changes = computeChanges(row.payload as Partial<typeof current>, bundle)
-    if (changes.length > 0) staleByEnrollment.set(row.enrollment_id, changes)
+    const snapshot = row.payload as Partial<typeof current> & { seq?: number }
+    const changes = computeChanges(snapshot, bundle)
+    if (changes.length === 0) continue
+    const seq = Number(snapshot.seq ?? 0) + 1
+    const hash = createHash('md5')
+      .update(`${stateKey(snapshot)}>${stateKey(current)}`)
+      .digest('hex')
+      .slice(0, 8)
+    staleByEnrollment.set(row.enrollment_id, { changes, suffix: `${hash}s${seq}`, seq })
   }
   if (staleByEnrollment.size === 0) return
 
-  for (const [enrollmentId, changes] of staleByEnrollment) {
+  for (const [enrollmentId, { changes, suffix }] of staleByEnrollment) {
     const e = bundle.enrollments.find(
       (en) =>
         en.id === enrollmentId &&
@@ -715,18 +728,22 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
       },
       ctx: emailContext(bundle, e),
       counters: c,
-      dedupeSuffix: hash,
+      dedupeSuffix: suffix,
       fyi: { bundle, templateKey: 'SU_SCHEDULE_UPDATE' },
     })
   }
 
-  // Refresh the snapshots so the *next* change triggers again.
-  await supabase
-    .from('email_sends')
-    .update({ payload: current })
-    .eq('template_key', 'E4_CLASS_DETAILS')
-    .in('status', ['sent', 'delivered', 'bounced', 'complained'])
-    .in('enrollment_id', [...staleByEnrollment.keys()])
+  // Refresh the snapshots so the *next* change triggers again. PL-138: the
+  // sequence rides along in the snapshot, so it survives as the enrollment's
+  // own change counter.
+  for (const [enrollmentId, { seq }] of staleByEnrollment) {
+    await supabase
+      .from('email_sends')
+      .update({ payload: { ...current, seq } })
+      .eq('template_key', 'E4_CLASS_DETAILS')
+      .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+      .eq('enrollment_id', enrollmentId)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -848,7 +865,9 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
   // §7.4 rule preserved for the min-met moment: the instructor nudge owns
   // "minimum met, nobody teaching"; min-met with an instructor stays quiet
   // (the IN_DIGEST milestone ping already told everyone the good news).
-  const deadline = bundle.enrollmentDeadline ?? addDaysISO(bundle.firstSession, -7)
+  // PL-141: one shared deadline for the brief, the FP push, and the
+  // FP-status line — this used to default to first session −7 days alone.
+  const deadline = effectiveDeadline(bundle)
   const paidCount = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
   if (paidCount < bundle.minEnrollment && today <= bundle.firstSession && localHour(bundle.timezone) >= 8) {
     const label = `${bundle.schoolLabel} ${bundle.classType}`
@@ -991,6 +1010,21 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
     bump(c, 'instructor_nudge')
     return // never a same-day re-nudge on top of the initial
   }
+
+  // PL-140: re-nudges space off the previous SEND, not off window position.
+  // A class that entered the ≤8-day window used to get the initial nudge at
+  // 9:00 and re-nudge #2 at 10:00 — the initial's send was only suppressed
+  // within its own sweep. Three days is the natural spacing (the -11d and
+  // -8d windows are three days apart).
+  const { data: priorNudges } = await supabase
+    .from('email_sends')
+    .select('sent_at')
+    .like('dedupe_key', `instructor_nudge:${bundle.id}%`)
+    .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+    .order('sent_at', { ascending: false })
+    .limit(1)
+  const lastNudgeAt = priorNudges?.[0]?.sent_at
+  if (lastNudgeAt && Date.now() - new Date(lastNudgeAt).getTime() < 3 * 86400_000) return
 
   for (const [n, days] of [
     [2, 8],
@@ -1360,7 +1394,7 @@ async function sweepDeadlinePush(
 
   const today = localDate(bundle.timezone)
   if (today > registrationCloseFor(bundle)) return
-  const deadline = bundle.enrollmentDeadline ?? bundle.firstSession
+  const deadline = effectiveDeadline(bundle) // PL-141
   const window = [addDaysISO(deadline, -3), addDaysISO(deadline, -1)]
   if (today < window[0] || today > window[1]) return
   if (localHour(bundle.timezone) < 8) return
@@ -1626,6 +1660,10 @@ export async function GET(req: Request) {
   if (qbo.failed > 0) counters.qbo_failed = qbo.failed
   if (qbo.deferred > 0) counters.qbo_deferred = qbo.deferred
   if ((await sweepQboHealth()) === 'alerted') bump(counters, 'qbo_expired_alert')
+  // PL-143: money that landed but never reached the queue (an enqueue that
+  // failed after the paid marker) would otherwise have no receipt, forever.
+  const requeued = await sweepUnsyncedPayments()
+  if (requeued > 0) counters.qbo_reconciled = requeued
 
   // Phase 7a: retry/backup pass over the Google Calendar push queue (the
   // scheduling routes' after() triggers are the fast path).
@@ -1658,14 +1696,16 @@ export async function GET(req: Request) {
   // re-runs and generation-day repeats dedupe away.
   try {
     const cycleSettings = await loadCycleSettings()
-    const denverDay = Number(
-      new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(8, 10)
-    )
-    if (denverDay === cycleSettings.generateDay) {
+    // PL-144: "day >= generateDay and not yet marked complete for the target
+    // month" — a fully-failed generation day (outage, deploy breakage) is
+    // caught up by the next sweep instead of skipping the month; partial
+    // failures keep the marker unset so only the failed families retry.
+    if (await generationDueFor(new Date(), cycleSettings)) {
       const gen = await generateMonthlyCycle()
       if (gen.sessionsCreated > 0) counters.billing_sessions_generated = gen.sessionsCreated
       if (gen.invoicesProposed > 0) counters.billing_invoices_proposed = gen.invoicesProposed
       if (gen.t1Sent > 0) counters.billing_t1_sent = gen.t1Sent
+      if (gen.familiesFailed > 0) counters.billing_generation_failures = gen.familiesFailed
     }
     const proposals = await sweepProposals()
     if (proposals.nudged > 0) counters.billing_nudged = proposals.nudged

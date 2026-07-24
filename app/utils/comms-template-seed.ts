@@ -840,6 +840,8 @@ We'd like to set {studentFirstName} up for regular 1-on-1 tutoring with {tutorNa
 
 **{scheduleSummary}**
 
+{scheduleZoneNote}
+
 If that works, just confirm and we'll lock it in and add it to your calendar:
 
 [button:Confirm this schedule]({approveLink})
@@ -864,6 +866,8 @@ Just circling back on {studentFirstName}'s proposed tutoring schedule with {tuto
 
 **{scheduleSummary}**
 
+{scheduleZoneNote}
+
 A quick tap confirms it and we'll add it to your calendar:
 
 [button:Confirm this schedule]({approveLink})
@@ -887,6 +891,8 @@ If the times don't quite work, reply and we'll find something better.
 Great news — {studentFirstName}'s 1-on-1 tutoring with {tutorName} is all set up. Here's the regular plan:
 
 **{scheduleSummary}**
+
+{scheduleZoneNote}
 
 A couple of things to make life easier:
 

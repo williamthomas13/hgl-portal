@@ -71,7 +71,17 @@ export async function extendWaitlistOffers(bundle: ClassBundle): Promise<number>
       sent++
       open--
     } else if (status === 'duplicate') {
-      open-- // offer already out but flags not yet stamped; still holds a spot
+      // PL-139: 'duplicate' means the email went out on an earlier pass but
+      // the stamp never landed (a crash between send and stamp). Left
+      // unstamped the offer deadlocks — it never expires, so it never rolls
+      // to the next family, while capacity stops counting the spot. Stamp it
+      // now (only when still blank, so a live deadline is never extended).
+      await supabase
+        .from('enrollments')
+        .update({ waitlist_offer_sent_at: new Date(now).toISOString(), waitlist_offer_expires_at: expiresAt })
+        .eq('id', e.id)
+        .is('waitlist_offer_expires_at', null)
+      open-- // offer already out; still holds a spot
     }
   }
   return sent

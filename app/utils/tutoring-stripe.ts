@@ -199,7 +199,25 @@ async function issueHostedInvoice(
 ) {
   const family = inv.family!
   const customerId = await ensureStripeCustomer(family)
-  const due = dueDateFor()
+  // PL-145: a re-issue must never hand a late payer fresh runway. The clock
+  // belongs to the ORIGINAL issuance — an invoice 30 days overdue that gets
+  // a line edited stays 30 days overdue. Only a first issuance sets the date.
+  const due = inv.due_at
+    ? {
+        iso: inv.due_at,
+        label: new Date(inv.due_at).toLocaleDateString('en-US', {
+          timeZone: 'America/Denver',
+          month: 'long',
+          day: 'numeric',
+        }),
+        unix: Math.floor(new Date(inv.due_at).getTime() / 1000),
+      }
+    : dueDateFor()
+  // Stripe refuses a due_date in the past, so its field gets a near-term
+  // floor when we're re-issuing something already overdue. The PORTAL clock
+  // (due_at) keeps the original date — it is what drives the 10/30-day
+  // escalation, the late fee, and every date we quote the family.
+  const stripeDueUnix = Math.max(due.unix, Math.floor((Date.now() + 3 * 86_400_000) / 1000))
   const month = billingMonth(String(inv.period).slice(0, 7))
 
   // PL-114: a re-issue supersedes the previous document — void it if it is
@@ -223,7 +241,7 @@ async function issueHostedInvoice(
     {
       customer: customerId,
       collection_method: 'send_invoice',
-      due_date: due.unix,
+      due_date: stripeDueUnix,
       auto_advance: false, // we deliver the link in HGL voice (T2), Stripe stays quiet
       payment_settings: { payment_method_types: ['card', 'us_bank_account'] },
       pending_invoice_items_behavior: 'exclude',
@@ -305,7 +323,11 @@ async function chargeAutopay(inv: NonNullable<Awaited<ReturnType<typeof loadInvo
   const { data: claimedRows } = await supabase
     .from('tutoring_invoices')
     .update({
-      status: 'invoiced',
+      // PL-146: an invoice that reached the 10-day mark keeps its past_due
+      // standing through a retry — the retry is part of dunning, not a
+      // reset of it. Anything else regresses the escalation state and the
+      // 30-day decision would re-arm from the wrong place.
+      status: inv.status === 'past_due' ? 'past_due' : 'invoiced',
       charge_attempts: attempt,
       sent_at: inv.sent_at ?? new Date().toISOString(),
       due_at: inv.due_at ?? dueDateFor().iso,
@@ -314,7 +336,7 @@ async function chargeAutopay(inv: NonNullable<Awaited<ReturnType<typeof loadInvo
     })
     .eq('id', inv.id)
     .eq('charge_attempts', Number(inv.charge_attempts))
-    .in('status', ['invoicing', 'confirmed', 'invoiced'])
+    .in('status', ['invoicing', 'confirmed', 'invoiced', 'past_due'])
     .select('id')
   if (!claimedRows?.length) return { ok: true, path: 'noop_lost_claim' }
 
@@ -578,11 +600,15 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
       if (r.ok && r.path !== 'noop') result.issued++
     }
 
-    // Autopay retries due.
+    // Autopay retries due. PL-146: 'past_due' belongs in this set. The
+    // 10-day escalation flips the status, which used to lift the invoice
+    // straight out of this query — a family mid-dunning with retries left
+    // silently stopped being retried at exactly the moment collection
+    // mattered most. The attempt counter, not the status, ends dunning.
     const { data: retries } = await supabase
       .from('tutoring_invoices')
       .select('id')
-      .eq('status', 'invoiced')
+      .in('status', ['invoiced', 'past_due'])
       .gt('charge_attempts', 0)
       .lt('charge_attempts', MAX_CHARGE_ATTEMPTS)
       .lte('next_charge_at', now.toISOString())

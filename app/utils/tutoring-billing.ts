@@ -234,6 +234,32 @@ export type GenerateResult = {
   /** §12 guard: families invoiced this run with NO accepted policy agreement
    *  (warn, never block — the Ops Director chases via /admin/agreements). */
   familiesWithoutAgreement: number
+  /** PL-144: families whose generation failed this run (isolated — the rest
+   *  completed; the next sweep retries just these, generation is idempotent). */
+  familiesFailed: number
+}
+
+// PL-144: the cron used to fire only when denverDay === generateDay, so one
+// fully-failed day (outage, deploy breakage) skipped the month until someone
+// noticed. Now the sweep asks "is generation due and not yet complete for the
+// target month?" — day >= generateDay, and no completion marker. The marker
+// is only stamped by a zero-failure run, so partial failures self-heal on the
+// next hourly sweep (idempotency makes the re-run safe).
+const GENERATED_MARKER_KEY = 'tutoring_generated_period'
+
+export async function generationDueFor(
+  now: Date,
+  settings: CycleSettings
+): Promise<BillingMonth | null> {
+  const denverDay = Number(now.toLocaleDateString('en-CA', { timeZone: ORG_TZ }).slice(8, 10))
+  if (denverDay < settings.generateDay) return null
+  const month = nextBillingMonth(now)
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', GENERATED_MARKER_KEY)
+    .maybeSingle()
+  return data?.value === month.period ? null : month
 }
 
 /**
@@ -244,12 +270,18 @@ export type GenerateResult = {
  */
 export async function generateMonthlyCycle(
   now: Date = new Date(),
-  monthOverride?: string // 'YYYY-MM' — staff QA / catch-up runs
+  monthOverride?: string, // 'YYYY-MM' — staff QA / catch-up runs
+  // PL-144 regression harness ONLY: restrict the run to these family ids so
+  // the E2E can exercise generation against the shared DB without touching
+  // real engagements. Production paths never pass this.
+  familyScope?: string[]
 ): Promise<GenerateResult> {
   const month = monthOverride ? billingMonth(monthOverride) : nextBillingMonth(now)
   const settings = await loadCycleSettings()
   const contact = await loadContactInfo()
-  const engagements = (await loadActiveEngagements()).filter((e) => e.family && e.student && e.subject)
+  const engagements = (await loadActiveEngagements())
+    .filter((e) => e.family && e.student && e.subject)
+    .filter((e) => !familyScope || familyScope.includes(e.family!.id))
   const result: GenerateResult = {
     month: month.period,
     families: 0,
@@ -257,8 +289,24 @@ export async function generateMonthlyCycle(
     invoicesProposed: 0,
     t1Sent: 0,
     familiesWithoutAgreement: 0,
+    familiesFailed: 0,
   }
   const unagreedFamilies: string[] = []
+  // PL-144: one poison row must never starve the families after it. Every
+  // per-engagement / per-family unit is caught here; failures roll into one
+  // admin alert and the completion marker stays unset so the next sweep
+  // retries (idempotently) until the month is clean.
+  const failedFamilies = new Map<string, { label: string; errors: string[] }>()
+  const familyFailed = (family: NonNullable<EngagementFull['family']>, e: unknown) => {
+    const name = `${family.parent_first_name} ${family.parent_last_name ?? ''}`.trim()
+    const entry = failedFamilies.get(family.id) ?? {
+      label: `<a href="${appUrl()}/admin/tutoring?family=${family.id}" style="color:#00AEEE">${name}</a> (${family.parent_email})`,
+      errors: [],
+    }
+    entry.errors.push(e instanceof Error ? e.message : String(e))
+    failedFamilies.set(family.id, entry)
+    console.error(`monthly generation failed for family ${family.id} (${name}):`, e)
+  }
 
   // ---- 1. Materialize proposed sessions per engagement -------------------
   type PeriodSession = {
@@ -272,6 +320,7 @@ export async function generateMonthlyCycle(
   const byFamily = new Map<string, { engagements: EngagementFull[]; sessions: PeriodSession[] }>()
 
   for (const eng of engagements) {
+    try {
     const tz = eng.tutor?.timezone ?? ORG_TZ
     const { fromIso, toIso } = engagementPeriodBounds(month, tz)
 
@@ -321,13 +370,21 @@ export async function generateMonthlyCycle(
     const bucket = byFamily.get(famId)!
     bucket.engagements.push(eng)
     for (const s of periodSessions ?? []) bucket.sessions.push({ ...s, engagement: eng })
+    } catch (e) {
+      familyFailed(eng.family!, e)
+    }
   }
 
   // ---- 2. One invoice per family ------------------------------------------
   for (const [familyId, bucket] of byFamily) {
     if (bucket.sessions.length === 0) continue
+    // PL-144: a family whose session materialization failed would get a
+    // partial (wrong) invoice + T1 — skip it entirely; the retry sweep
+    // rebuilds it whole.
+    if (failedFamilies.has(familyId)) continue
     result.families++
     const family = bucket.engagements[0].family!
+    try {
 
     // §12 guard: warn (never block) when billing a family with no accepted
     // policy agreement — the /admin/agreements banner lists them too.
@@ -424,7 +481,11 @@ export async function generateMonthlyCycle(
       .select('id, starts_at, duration_minutes, students ( first_name )')
       .eq('status', 'rescheduled')
       .eq('reschedule_notice', 'late')
-      .lt('starts_at', month.firstDay + 'T00:00:00Z')
+      // PL-148: a UTC month boundary here disagreed with the tutor-local
+      // bounds used everywhere else, so a late reschedule in the last ~7
+      // hours of a Denver month read as "next month" and its fee slipped an
+      // entire billing cycle. Same zoned boundary as the rest of the engine.
+      .lt('starts_at', zonedToUtc(month.firstDay, '00:00', ORG_TZ).toISOString())
       .in('engagement_id', bucket.engagements.map((e) => e.id))
     for (const s of (lateOnes as any[]) ?? []) {
       const { data: charged } = await supabase
@@ -534,6 +595,39 @@ export async function generateMonthlyCycle(
         .in('status', ['draft', 'proposed'])
       result.invoicesProposed++
     }
+    } catch (e) {
+      familyFailed(family, e)
+    }
+  }
+  result.familiesFailed = failedFamilies.size
+
+  // PL-144: stamp the completion marker ONLY on a clean, unscoped run — the
+  // hourly sweep keeps retrying (idempotently) while any family is failing,
+  // and a harness-scoped run never speaks for the whole month.
+  if (failedFamilies.size === 0) {
+    if (!familyScope) {
+      await supabase
+        .from('app_settings')
+        .upsert({ key: GENERATED_MARKER_KEY, value: month.period })
+    }
+  } else {
+    const total = result.families + failedFamilies.size
+    const dayStamp = new Date().toLocaleDateString('en-CA', { timeZone: ORG_TZ })
+    await sendAdminAlert({
+      // Once per Denver day, not per hourly retry — but a failure that
+      // persists into tomorrow alerts again.
+      dedupeKey: `tutoring_gen_failures:${month.period}:${dayStamp}`,
+      adminEmail: ADMIN_EMAIL,
+      subject: `Monthly tutoring generation: ${result.families} of ${total} families completed — ${failedFamilies.size} failed`,
+      body: `<p>The ${month.label} billing cycle generated ${result.families} of ${total} families.
+        These families failed and will be retried automatically on the next hourly sweep
+        (nobody else was affected — each family generates independently):</p>
+        <ul>${[...failedFamilies.values()]
+          .map((f) => `<li>${f.label} — ${f.errors.map((m) => m.replace(/</g, '&lt;')).join('; ')}</li>`)
+          .join('')}</ul>
+        <p>If a family keeps failing, open their row from the link above — the error text
+        usually names the broken record.</p>`,
+    }).catch((e) => console.error('generation-failures alert failed:', e))
   }
 
   if (unagreedFamilies.length > 0) {

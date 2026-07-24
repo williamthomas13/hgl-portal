@@ -117,3 +117,9 @@ Phase-7 spec §4, promised at 7a launch: a daily read-only job comparing portal-
 
 ## PL-155 · Production-send hygiene: unresolved-variable alert · origin-guard cutover note · live-preview parity
 (a) `email.ts` ~1766: a real send with unresolved `{tokens}` only logs — alert instead (state-driven row). (b) Cutover runbook note IN CODE COMMENTS near the origin guard: when the custom domain lands, add the old vercel.app host to the allowlist or every live-template send refuses. (c) Admin comms Preview renders code copy even when the registry template is live (`comms-render.ts`) — preview the live version (the drift the twin system exists to prevent). Verify: seeded unresolved-token send fires the alert; preview of a live-template shows the registry body.
+
+## PL-156 (small) · SUB_COVERAGE_RESULT gains a "send the sub a note" button (Scarlett, Jul 24)
+
+When a coverage request is accepted, the requesting tutor's outcome email should let them respond in one tap — say thanks and/or hand over context. Add a button to SUB_COVERAGE_RESULT (accepted variant): **"Send {subFirstName} a note"** → tokenized link (house pattern, requesting-tutor-scoped) to a tiny form: one text box, one send. The note (a) is emailed to the substitute and (b) is appended to the coverage handoff bundle the sub already receives (PL-112 machinery), so context said once lives with the handoff. Declined/withdrawn variants keep no button (nothing to hand off). Never act-from-email — the button opens the form, the form sends. Update the template body + the PL-137 sample pin accordingly; re-test-send for Scarlett; the SUB_COVERAGE_RESULT template stays DRAFT until she approves the new version.
+
+**Verify:** accepted-variant test-send shows the button (token, test-link in samples) · note → sub's email + handoff bundle E2E · declined variant has no button.

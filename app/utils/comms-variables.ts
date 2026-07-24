@@ -40,6 +40,7 @@ export type ExtraVars = {
   scheduleBlock?: string
   /** PL-40/41: plain-English weekly summary, e.g. "Mondays at 4:00 PM…". */
   scheduleSummary?: string
+  scheduleZoneNote?: string
   /** T1: "Month total: $620.00 — billed once you confirm…" or ''. */
   monthTotalLine?: string
   /** T1: package-covered note or ''. */
@@ -500,6 +501,14 @@ export const VARIABLES: Record<string, VariableDef> = {
   tutoringSubject: { description: 'Tutoring subject, e.g. "SAT"', resolve: (_c, _a, e) => e.tutoringSubject ?? 'tutoring' },
   scheduleBlock: { description: 'Pre-rendered session schedule list', block: true, resolve: (_c, _a, e) => e.scheduleBlock ?? '' },
   scheduleSummary: { description: 'Plain-English weekly plan, e.g. "Mondays at 4:00 PM…"', resolve: (_c, _a, e) => e.scheduleSummary ?? '—' },
+  // PL-147: present only when the family's zone and the tutor's zone can
+  // drift apart (Phoenix, international families) — empty otherwise, so the
+  // sentence never appears where it would just be noise.
+  scheduleZoneNote: {
+    description: 'Daylight-saving anchor note; empty when both zones shift together',
+    block: true,
+    resolve: (_c, _a, e) => e.scheduleZoneNote ?? '',
+  },
   monthTotalLine: { description: 'Month total sentence (empty when package-covered)', block: true, resolve: (_c, _a, e) => e.monthTotalLine ?? '' },
   packageNote: { description: 'Package-covered note (often empty)', block: true, resolve: (_c, _a, e) => e.packageNote ?? '' },
   confirmLink: { description: 'Signed schedule-proposal link', resolve: (_c, _a, e) => e.confirmLink ?? '#' },
@@ -867,6 +876,8 @@ export const SAMPLE_EXTRA: ExtraVars = {
   tutoringSubject: 'SAT',
   tutoringMonthLabel: 'September 2026',
   scheduleSummary: 'Mondays at 4:00 PM, starting September 7 — one hour each week',
+  scheduleZoneNote:
+    '<p style="color:#506171;font-size:14px">These times are anchored to Mountain Daylight Time, so your local time may shift by an hour when daylight saving changes on one side and not the other. We&rsquo;ll always show the current time in your calendar invite.</p>',
   scheduleBlock:
     '<p><strong>Ana — September sessions</strong></p><ul><li>Monday, September 7 — 4:00 to 5:00 PM</li><li>Monday, September 14 — 4:00 to 5:00 PM</li><li>Monday, September 21 — 4:00 to 5:00 PM</li><li>Monday, September 28 — 4:00 to 5:00 PM</li></ul>',
   monthTotalLine:

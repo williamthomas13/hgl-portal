@@ -112,6 +112,32 @@ export async function loadApprovalEngagement(id: string): Promise<ApprovalEngage
 
 const DAY_PLURAL = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays']
 
+/**
+ * PL-147: a recurring session is anchored to the TUTOR's wall clock, so the
+ * family-local time in this email is only permanent while both zones shift
+ * together. They often don't — Phoenix never shifts, and international
+ * families change on different dates than the US. When the two zones can
+ * diverge, the email says so in one plain sentence and names the anchor,
+ * rather than stating a family-local time that quietly becomes wrong.
+ */
+export function anchorZoneNote(tutorTz: string, familyTz: string, at: Date = new Date()): string | null {
+  if (tutorTz === familyTz) return null
+  const offsetGap = (when: Date) => {
+    const read = (tz: string) =>
+      new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(when)
+    return Number(read(tutorTz)) - Number(read(familyTz))
+  }
+  // Compare the zone gap now against the gap six months out — if it changes,
+  // one side observes a transition the other doesn't (or on another date).
+  const sixMonths = new Date(at.getTime() + 182 * 86_400_000)
+  if (offsetGap(at) === offsetGap(sixMonths)) return null
+  const anchorLabel =
+    new Intl.DateTimeFormat('en-US', { timeZone: tutorTz, timeZoneName: 'long' })
+      .formatToParts(at)
+      .find((p) => p.type === 'timeZoneName')?.value ?? tutorTz
+  return `These times are anchored to ${anchorLabel}, so your local time may shift by an hour when daylight saving changes on one side and not the other. We'll always show the current time in your calendar invite.`
+}
+
 /** "Mondays at 4:00 PM and Thursdays at 5:00 PM, starting July 21 — one hour
  *  each" — recurrence is the tutor's wall clock; the summary renders in the
  *  FAMILY's timezone (spec: all times in the family's timezone). */
@@ -161,13 +187,22 @@ const button = (label: string, href: string) =>
     <a href="${href}" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">${label}</a>
   </p>`
 
+/** PL-147: the note as an HTML block, shared by the registry variable and
+ *  the code twin so both renders say the same thing. */
+function zoneNoteBlock(e: ApprovalEngagement): string {
+  const note = anchorZoneNote(e.tutorTz, e.familyTz)
+  return note ? `<p style="color:#506171;font-size:14px">${note}</p>` : ''
+}
+
 function approvalEmailHtml(e: ApprovalEngagement, summary: string, link: string, contact: ContactInfo, nudge: boolean) {
+  const zoneBlock = zoneNoteBlock(e)
   if (!nudge) {
     return wrap(
       `<p>Hi ${e.parentFirst},</p>
        <p>We'd like to set ${e.studentFirst} up for regular 1-on-1 tutoring with ${e.tutorName}.
        Here's the schedule we have in mind:</p>
        <p><strong>${summary}</strong></p>
+       ${zoneBlock}
        <p>If that works, just confirm and we'll lock it in and add it to your calendar:</p>
        ${button('Confirm this schedule', link)}
        <p>Prefer different times, or have a question? Reply to this email or reach us — we're
@@ -180,6 +215,7 @@ function approvalEmailHtml(e: ApprovalEngagement, summary: string, link: string,
     `<p>Hi ${e.parentFirst},</p>
      <p>Just circling back on ${e.studentFirst}'s proposed tutoring schedule with ${e.tutorName}:</p>
      <p><strong>${summary}</strong></p>
+     ${zoneBlock}
      <p>A quick tap confirms it and we'll add it to your calendar:</p>
      ${button('Confirm this schedule', link)}
      <p>If the times don't quite work, reply and we'll find something better.</p>
@@ -207,6 +243,9 @@ export async function sendScheduleApprovalEmail(
       tutorName: e.tutorName,
       tutorFirstName: e.tutorFirst,
       scheduleSummary: summary,
+      // PL-147: empty string when the zones move together — the sentence
+      // only appears where it is actually true.
+      scheduleZoneNote: zoneNoteBlock(e),
       approveLink: link,
       contactBlock: contactBlockHtml(contact),
     },
@@ -258,6 +297,7 @@ export async function sendScheduleSetEmail(
       tutorName: e.tutorName,
       tutorFirstName: e.tutorFirst,
       scheduleSummary: summary,
+      scheduleZoneNote: zoneNoteBlock(e), // PL-147
       schedulePdfLink: pdfLink,
       contactBlock: contactBlockHtml(contact),
     },
@@ -268,6 +308,7 @@ export async function sendScheduleSetEmail(
          <p>Great news — ${e.studentFirst}'s 1-on-1 tutoring with ${e.tutorName} is all set up.
          Here's the regular plan:</p>
          <p><strong>${summary}</strong></p>
+         ${zoneNoteBlock(e)}
          <p>A couple of things to make life easier:</p>
          ${button('Add to your calendar', calendarLink)}
          <p style="color:#64748b;font-size:13px;margin-top:-12px">Subscribe once and every session

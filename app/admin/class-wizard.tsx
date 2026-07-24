@@ -1122,7 +1122,7 @@ export default function ClassWizard({
                       : 'set when the instructor is assigned'))
                   : 'blank — counselor gets asked 14 days out')}
             </p>
-            <p><span className="text-gray-500">Enrollment deadline:</span> {enrollmentDeadline ? formatDateAdmin(enrollmentDeadline) : 'default (7 days before start)'}</p>
+            <p><span className="text-gray-500">Enrollment deadline:</span> {enrollmentDeadline ? formatDateAdmin(enrollmentDeadline) : 'default (registration close, or the first session)'}</p>
             <p><span className="text-gray-500">Registration closes:</span> {registrationClose ? formatDateAdmin(registrationClose) : 'first session (default)'}</p>
             {synapGroup && <p><span className="text-gray-500">Synap group:</span> {synapGroup}</p>}
           </div>

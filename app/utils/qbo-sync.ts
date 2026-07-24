@@ -39,6 +39,10 @@ type SyncRow = {
 type EnrollmentDetail = {
   id: string
   amount_paid: number | null
+  /** PL-142: the class component ACTUALLY PAID, frozen at payment. Null only
+   *  on rows that predate the snapshot columns — those fall back to the live
+   *  class price, which is exactly the drift this replaces. */
+  class_price_paid: number | null
   paid_at: string | null
   stripe_session_id: string | null
   classes: {
@@ -72,12 +76,23 @@ function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
+/**
+ * PL-142: the class amount a receipt (or refund split) may quote. Reading the
+ * class's CURRENT price here posted wrong amounts whenever a price changed
+ * between payment and sync — silently short, or a phantom "promo discount"
+ * once the receipt stopped balancing — and it broke refund matching, which
+ * compares the refunded amount against component prices.
+ */
+function classPricePaid(detail: EnrollmentDetail): number {
+  return Number(detail.class_price_paid ?? detail.classes?.price ?? 0)
+}
+
 async function loadEnrollmentDetail(enrollmentId: string): Promise<EnrollmentDetail | null> {
   const { data, error } = await supabase
     .from('enrollments')
     .select(
       `
-      id, amount_paid, paid_at, stripe_session_id,
+      id, amount_paid, class_price_paid, paid_at, stripe_session_id,
       classes ( class_type, price, schools ( name, nickname, timezone ) ),
       students ( first_name, last_name,
         families ( id, parent_first_name, parent_last_name, parent_email, qbo_customer_id ) ),
@@ -267,7 +282,7 @@ async function syncRow(row: SyncRow, items: ItemMap): Promise<{ id: string; docN
       })
     } else {
       lines.push({
-        amount: Number(detail.classes.price),
+        amount: classPricePaid(detail),
         itemRef: classItem,
         description: `${classLabel} — ${student}`,
       })
@@ -312,7 +327,7 @@ async function syncRow(row: SyncRow, items: ItemMap): Promise<{ id: string; docN
     (a) => a.stripe_payment_intent_id === row.stripe_payment_intent_id
   )
 
-  const classPrice = Number(detail.classes.price)
+  const classPrice = classPricePaid(detail)
   const inCheckoutAddons = detail.enrollment_addons.filter(
     (a) => a.stripe_session_id && a.stripe_session_id === detail.stripe_session_id
   )
@@ -474,6 +489,88 @@ export async function processQboQueue(): Promise<QboQueueResult> {
     console.error('processQboQueue crashed:', e)
     return result
   }
+}
+
+/**
+ * PL-143: paid-but-never-enqueued reconciliation. The enqueue happens AFTER
+ * the paid marker, so a failure in that window (a DB blip, a lambda dying
+ * mid-defer) left the payment permanently invisible to QuickBooks — nothing
+ * retried, nothing alerted, and the receipt simply never existed. This sweep
+ * is the net: money that landed more than two hours ago with no queue row at
+ * all gets one. The two-hour floor keeps it clear of the normal path,
+ * including webhook retries and a slow first drain.
+ *
+ * Returns the number of rows enqueued — the PL-136 health card counts it.
+ */
+export async function sweepUnsyncedPayments(): Promise<number> {
+  const cutoff = new Date(Date.now() - 2 * 3600_000).toISOString()
+  let enqueued = 0
+
+  // --- Class enrollments (and their in-checkout add-ons ride the same PI) ---
+  const { data: paidEnrollments } = await supabase
+    .from('enrollments')
+    .select('id, stripe_payment_intent_id, amount_paid, paid_at')
+    .in('payment_status', ['Paid', 'Completed'])
+    .not('stripe_payment_intent_id', 'is', null)
+    .lt('paid_at', cutoff)
+    .order('paid_at', { ascending: false })
+    .limit(500)
+  for (const e of paidEnrollments ?? []) {
+    const { count } = await supabase
+      .from('qbo_sync_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('stripe_payment_intent_id', e.stripe_payment_intent_id)
+      .eq('kind', 'sale')
+    if ((count ?? 0) > 0) continue
+    const { error } = await supabase.from('qbo_sync_log').insert({
+      enrollment_id: e.id,
+      stripe_payment_intent_id: e.stripe_payment_intent_id,
+      kind: 'sale',
+      amount: e.amount_paid,
+    })
+    if (error) {
+      if (error.code !== '23505') {
+        console.error(`[PL-143] re-enqueue failed for enrollment ${e.id}:`, error.message)
+      }
+      continue
+    }
+    console.log(`[PL-143] re-enqueued missing QBO sale for enrollment ${e.id}`)
+    enqueued++
+  }
+
+  // --- Tutoring invoices ----------------------------------------------------
+  const { data: paidInvoices } = await supabase
+    .from('tutoring_invoices')
+    .select('id, stripe_payment_intent_id, total, paid_at')
+    .eq('status', 'paid')
+    .not('stripe_payment_intent_id', 'is', null)
+    .lt('paid_at', cutoff)
+    .order('paid_at', { ascending: false })
+    .limit(500)
+  for (const inv of paidInvoices ?? []) {
+    const { count } = await supabase
+      .from('qbo_sync_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('stripe_payment_intent_id', inv.stripe_payment_intent_id)
+      .eq('kind', 'tutoring_sale')
+    if ((count ?? 0) > 0) continue
+    const { error } = await supabase.from('qbo_sync_log').insert({
+      tutoring_invoice_id: inv.id,
+      stripe_payment_intent_id: inv.stripe_payment_intent_id,
+      kind: 'tutoring_sale',
+      amount: inv.total,
+    })
+    if (error) {
+      if (error.code !== '23505') {
+        console.error(`[PL-143] re-enqueue failed for tutoring invoice ${inv.id}:`, error.message)
+      }
+      continue
+    }
+    console.log(`[PL-143] re-enqueued missing QBO sale for tutoring invoice ${inv.id}`)
+    enqueued++
+  }
+
+  return enqueued
 }
 
 /**

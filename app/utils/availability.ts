@@ -171,18 +171,46 @@ export function suggestWeeklySlots(opts: {
   }
   if (candidates.size === 0) return []
 
+  // PL-147: does this instant still land inside the family's stated window,
+  // on the FAMILY's clock? Candidates are built from the first seven days
+  // only, but a session recurs for months — and family/tutor zones change
+  // offset on different dates (or one never does: Phoenix, and most
+  // international families). A slot fixed to the tutor's wall clock drifts
+  // an hour on the family's, which is how a 4pm session becomes a 3pm
+  // session the family never agreed to.
+  const insideFamilyWindow = (startsAt: Date, endsAt: Date): boolean => {
+    const wc = wallClockIn(familyTimezone, startsAt)
+    const endWc = wallClockIn(familyTimezone, endsAt)
+    // A session that crosses midnight on the family's clock can't sit inside
+    // a single weekday range.
+    if (endWc.weekday !== wc.weekday && endWc.hhmm !== '00:00') return false
+    const endHHMM = endWc.hhmm === '00:00' ? '24:00' : endWc.hhmm
+    return (byWeekday.get(wc.weekday) ?? []).some(
+      (r) => r.start_time <= wc.hhmm && endHHMM <= r.end_time
+    )
+  }
+
   // 2. Score each candidate across the whole horizon.
   const scored = [...candidates.values()].map((slot) => {
     const occurrences = generateOccurrences([slot], fromIso, toIso, tutorTimezone)
     let conflicts = 0
+    let outsideFamily = 0
     for (const occ of occurrences) {
       const iv = { start: occ.startsAt.getTime(), end: occ.endsAt.getTime() }
       if (busyIntervals.some((b) => overlaps(iv, b))) conflicts++
+      if (!insideFamilyWindow(occ.startsAt, occ.endsAt)) outsideFamily++
     }
-    return { slot, conflicts }
+    return { slot, conflicts, outsideFamily }
   })
-  // Fewest conflicts, then earliest-in-window.
-  scored.sort((a, b) => a.conflicts - b.conflicts || (a.slot.start_time < b.slot.start_time ? -1 : 1))
+  // PL-147: a slot that leaves the family's window at any point in the
+  // horizon ranks below every slot that never does — a DST-stable choice
+  // beats a marginally emptier calendar.
+  scored.sort(
+    (a, b) =>
+      a.outsideFamily - b.outsideFamily ||
+      a.conflicts - b.conflicts ||
+      (a.slot.start_time < b.slot.start_time ? -1 : 1)
+  )
 
   // 3. Best slot per weekday, then distinct-weekday combinations ranked by
   // total conflicts → spread → earliest times.

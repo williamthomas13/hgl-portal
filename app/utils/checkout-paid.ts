@@ -45,7 +45,11 @@ async function recordAddon(
   enrollmentId: string,
   packageId: string,
   stripeSessionId: string,
-  paymentIntentId: string | null
+  paymentIntentId: string | null,
+  /** PL-142: the add-on price at CART BUILD — what the family was charged.
+   *  Reading tutoring_packages here would snapshot the price as it stands at
+   *  webhook time, which drifts the moment a package is repriced. */
+  pricePaidSnapshot?: number | null
 ): Promise<string | null> {
   const { data: pkg } = await supabase
     .from('tutoring_packages')
@@ -63,7 +67,7 @@ async function recordAddon(
         enrollment_id: enrollmentId,
         package_id: packageId,
         hours: pkg.hours,
-        price_paid: pkg.package_price,
+        price_paid: pricePaidSnapshot ?? pkg.package_price,
         stripe_session_id: stripeSessionId,
         stripe_payment_intent_id: paymentIntentId,
       },
@@ -170,6 +174,27 @@ export async function handleClassCheckoutCompleted(
   const packageId = session.metadata?.package_id
   const sessionId = session.id
 
+  // PL-142: promote the cart-build price snapshots to the paid columns. The
+  // receipt (and any later refund split) must quote what the family paid,
+  // never the class price as it stands when the QuickBooks queue drains.
+  const priceSnapshot = enrollmentId
+    ? (
+        await supabase
+          .from('enrollments')
+          .select('class_price_snapshot, pending_addon_price, classes ( price )')
+          .eq('id', enrollmentId)
+          .maybeSingle()
+      ).data
+    : null
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const classPricePaid =
+    priceSnapshot?.class_price_snapshot ??
+    (Array.isArray(priceSnapshot?.classes) ? priceSnapshot?.classes[0] : (priceSnapshot?.classes as any))
+      ?.price ??
+    null
+  const addonPricePaid = priceSnapshot?.pending_addon_price ?? null
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
   const paymentIntentId =
     typeof session.payment_intent === 'string'
       ? session.payment_intent
@@ -180,7 +205,15 @@ export async function handleClassCheckoutCompleted(
   // It is still portal revenue, so it gets its own QBO Sales Receipt.
   if (session.metadata?.addon_only === '1') {
     if (enrollmentId && packageId) {
-      const addonId = await recordAddon(enrollmentId, packageId, sessionId, paymentIntentId)
+      // PL-142: an add-on-only checkout is its own session, so the charged
+      // total IS the add-on price the family agreed to.
+      const addonId = await recordAddon(
+        enrollmentId,
+        packageId,
+        sessionId,
+        paymentIntentId,
+        session.amount_total != null ? session.amount_total / 100 : null
+      )
       console.log(`Recorded addon-only purchase for enrollment ${enrollmentId}.`)
       if (addonId && paymentIntentId) {
         await enqueueQboSync({
@@ -205,6 +238,9 @@ export async function handleClassCheckoutCompleted(
     paid_at: new Date().toISOString(),
     // Real charged total (class + any add-on) for the #0-P order summary.
     amount_paid: session.amount_total != null ? session.amount_total / 100 : null,
+    // PL-142: what was actually paid, per component, frozen here.
+    class_price_paid: classPricePaid,
+    addon_price_paid: addonPricePaid,
     // PL-52: the pending-cart marker has served its purpose.
     pending_package_id: null,
     pending_checkout_total: null,
@@ -341,7 +377,7 @@ export async function handleClassCheckoutCompleted(
   // add-ons ride the enrollment's payment intent; only addon-only purchases
   // (their own checkout) stamp a PI, which is what refund matching keys on.
   if (packageId) {
-    await recordAddon(paidEnrollmentId, packageId, sessionId, null)
+    await recordAddon(paidEnrollmentId, packageId, sessionId, null, addonPricePaid) // PL-142
   }
 
   // Welcome email: normally the thank-you; if the signup happened after
