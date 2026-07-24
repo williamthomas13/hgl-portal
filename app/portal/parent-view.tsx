@@ -48,7 +48,7 @@ export default async function ParentView({
     .select(
       `
       id, first_name, last_name, student_email, grade_level, graduating_year, school_id,
-      schools ( name, nickname ),
+      schools ( name, nickname, timezone ),
       student_scores ( id, test_label, section_scores, total, taken_at, class_id ),
       enrollments (
         id, payment_status, enrolled_at, paid_at, amount_paid, stripe_payment_intent_id,
@@ -396,6 +396,7 @@ export default async function ParentView({
                           sessions={sessions}
                           defaultLocation={cls.default_location}
                           calendarHref={`/classes/${cls.id}/calendar`}
+                          timezone={one<any>(cls.schools)?.timezone ?? null}
                         />
                       </div>
                     )}

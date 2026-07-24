@@ -24,7 +24,7 @@ type ClassDetails = {
   start_date: string
   default_location: string | null
   registration_close_date: string | null
-  schools: { name: string; nickname: string } | null
+  schools: { name: string; nickname: string; timezone: string | null } | null
   sessions: SessionRow[] | null
   isFull: boolean
   /** Cancelled classes render as full with no waitlist (PHASE4_SPEC §12). */
@@ -297,6 +297,7 @@ export default function RegistrationPage() {
         sessions={sessions}
         defaultLocation={classDetails.default_location}
         calendarHref={`/classes/${classDetails.id}/calendar`}
+        timezone={classDetails.schools?.timezone ?? null}
       />
     ) : null
 
@@ -520,6 +521,15 @@ export default function RegistrationPage() {
                 ? 'Join Waitlist (no payment now)'
                 : `Proceed to payment ($${classDetails.price})`}
           </button>
+
+          {/* PL-124: one calm sentence on what follows payment — standing
+              copy rule: "in the days before class starts", never a day count. */}
+          {!isFull && (
+            <p className="mt-3 text-sm text-gray-500 text-center">
+              After payment you&apos;ll get a confirmation email right away, and class details
+              arrive in the days before the first session.
+            </p>
+          )}
         </form>
 
         {message && (

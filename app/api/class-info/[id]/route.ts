@@ -31,7 +31,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     .select(
       `id, slug, status, class_type, price, capacity,
        start_date, default_location, registration_close_date,
-       schools ( name, nickname ),
+       schools ( name, nickname, timezone ),
        sessions ( id, session_date, start_time, end_time, location ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )

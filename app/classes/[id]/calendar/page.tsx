@@ -19,11 +19,11 @@ type ClassInfo = {
   id: string
   class_type: string
   default_location: string | null
-  schools: { nickname: string } | null
+  schools: { nickname: string; timezone: string | null } | null
   sessions: Session[] | null
 }
 
-import { bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
+import { timezoneCityLabel, bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
 
 function formatTime(t: string | null) {
   if (!t) return null
@@ -107,7 +107,13 @@ export default function ClassCalendarPage() {
           </p>
         </div>
 
-        <h3 className="font-semibold text-hgl-slate mb-3">Sessions</h3>
+        <h3 className="font-semibold text-hgl-slate mb-1">Sessions</h3>
+        {/* PL-126: international families should never guess the zone. */}
+        {info.schools?.timezone && (
+          <p className="text-xs text-gray-500 mb-3">
+            (times shown in {timezoneCityLabel(info.schools.timezone)} time)
+          </p>
+        )}
         {sessions.length === 0 ? (
           <p className="text-sm text-gray-500 italic">Session dates to be announced.</p>
         ) : (

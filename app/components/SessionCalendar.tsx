@@ -3,7 +3,7 @@
 // the Phase 4 portal views can reuse it read-only. Pure presentational: no
 // hooks, renders in server and client components alike.
 
-import { bySessionStart, dateParts } from '../utils/dates'
+import { bySessionStart, dateParts, timezoneCityLabel } from '../utils/dates'
 
 export type CalendarSession = {
   session_date: string
@@ -26,6 +26,7 @@ export default function SessionCalendar({
   defaultLocation,
   calendarHref,
   hour24 = false,
+  timezone = null,
 }: {
   sessions: CalendarSession[]
   defaultLocation: string | null
@@ -33,6 +34,9 @@ export default function SessionCalendar({
   calendarHref?: string
   /** 24-hour times (admin renders 24h; public keeps AM/PM). */
   hour24?: boolean
+  /** PL-126: the school's IANA timezone — when set, a "(times shown in
+   *  {city} time)" line renders so an international family never guesses. */
+  timezone?: string | null
 }) {
   const sorted = [...sessions].sort(bySessionStart)
   if (sorted.length === 0) return null
@@ -72,6 +76,11 @@ export default function SessionCalendar({
           )
         })}
       </div>
+      {timezone && (
+        <p className="text-xs text-gray-500 mt-1.5">
+          (times shown in {timezoneCityLabel(timezone)} time)
+        </p>
+      )}
       {calendarHref && (
         <p className="text-sm mt-2">
           <a href={calendarHref} className="text-hgl-blue underline font-semibold">

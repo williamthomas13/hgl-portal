@@ -110,6 +110,11 @@ export function zonedDeadline(iso: string | Date, timezone: string): string {
     timeZone: timezone,
     weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
-  const city = (timezone.split('/').pop() ?? timezone).replace(/_/g, ' ')
-  return `${when} (${city} time)`
+  return `${when} (${timezoneCityLabel(timezone)} time)`
+}
+
+/** "America/Mexico_City" → "Mexico City" — the plain-English city half of an
+ *  IANA zone, shared by deadline copy and the PL-126 calendar label. */
+export function timezoneCityLabel(timezone: string): string {
+  return (timezone.split('/').pop() ?? timezone).replace(/_/g, ' ')
 }
