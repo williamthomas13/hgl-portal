@@ -2,6 +2,8 @@
 
 Seven items, PL-124…130. Scarlett greenlit all off the stakeholder walkthrough — registration-page polish (PL-124…126) plus two cancellation-flow items (PL-127…128). Public-facing, pre-launch. Continues PL-x numbering.
 
+> **STATUS: ALL SEVEN SHIPPED AND PUSHED (Jul 24).** Migrations `20260813000001` (refund request state) and `20260814000001` (shared checkout session — the sibling-cart unblock) **applied**. Full battery green INCLUDING batch 16's gates: `tsc` · `npm run build` · smoke:public · regress:links · regress:pronouns · regress:client-imports · cancel-class 11/11 · resume-addon 13/13 · **regress:tutoring-charge 9/9**. Batch-wide verifies: single-student register/checkout byte-compatible (legacy bodies E2E'd), the add-on step works on both the single path (unchanged UX) and the sibling path (per-student picks), and the CX convert flow is untouched by the refund additions (composer assertions + links suite). Premise corrections flagged inline in PL-130 (the family sessions card + tracked change requests predate this batch; T1 was already tokenized) and PL-125 (the schema needed the session-id uniqueness dropped).
+
 **Note:** the earlier "add-on doesn't appear" finding was a false alarm — the add-on step exists and works per spec §9 (`register/[id]/page.tsx:98,173-185`); it renders after the form, which the walkthrough hadn't reached. Nothing to fix there.
 
 **Standing rules:** plain-English copy · no internal shorthand · realistic samples · "in the days before class starts" (never a hard day count — global copy rule) · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
