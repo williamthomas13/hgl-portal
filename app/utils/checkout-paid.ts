@@ -102,7 +102,7 @@ export async function enqueueQboSync(row: {
 }
 
 export type CheckoutOutcome = {
-  outcome: 'addon_only' | 'matched' | 'mismatch' | 'paid_after_cancel'
+  outcome: 'addon_only' | 'matched' | 'mismatch' | 'paid_after_cancel' | 'replay_noop' | 'refused_refunded'
   enrollmentId?: string
   problem?: string
 }
@@ -161,9 +161,52 @@ export async function handleClassCheckoutCompleted(
     pending_checkout_total: null,
   })
 
+  // PL-121: guard the transition — only a not-yet-paid row may flip to Paid.
+  // A redelivered/dashboard-resent event (or the admin match page re-running
+  // the path) must never re-mark a Refunded or Completed enrollment.
+  const PAYABLE_FROM = ['Pending', 'Expired', 'Waitlisted']
   const { data, error } = enrollmentId
-    ? await enrollmentQuery.eq('id', enrollmentId).select('id, class_id, classes ( status )')
-    : await enrollmentQuery.eq('stripe_session_id', sessionId).select('id, class_id, classes ( status )')
+    ? await enrollmentQuery.eq('id', enrollmentId).in('payment_status', PAYABLE_FROM).select('id, class_id, classes ( status )')
+    : await enrollmentQuery
+        .eq('stripe_session_id', sessionId)
+        .in('payment_status', PAYABLE_FROM)
+        .select('id, class_id, classes ( status )')
+
+  if (!error && (!data || data.length === 0)) {
+    // The guard may have skipped an EXISTING row — tell replays apart from
+    // genuine mismatches before alarming anyone.
+    const lookup = enrollmentId
+      ? supabase.from('enrollments').select('id, payment_status').eq('id', enrollmentId)
+      : supabase.from('enrollments').select('id, payment_status').eq('stripe_session_id', sessionId)
+    const { data: existing } = await lookup.maybeSingle()
+    if (existing) {
+      if (existing.payment_status === 'Refunded') {
+        // A genuine payment against a refunded enrollment is exactly the
+        // mismatch cockpit's business — alert, never silently flip.
+        console.error(
+          `[PL-121] payment event for REFUNDED enrollment ${existing.id} (session ${sessionId}) — refused the status flip`
+        )
+        if (opts.alertOnMismatch !== false) {
+          await sendAdminAlert({
+            dedupeKey: `paid_replay_refunded:${existing.id}:${sessionId}`,
+            adminEmail: ADMIN_EMAIL,
+            templateKey: 'AL_WEBHOOK_FAILURE',
+            subject: 'Payment event arrived for a refunded enrollment',
+            body: `<p>A checkout-completed event (session <code>${sessionId}</code>) matched enrollment
+              <code>${existing.id}</code>, but that enrollment is <strong>Refunded</strong> — the status
+              was NOT flipped back to Paid.</p>
+              <p>If this is a replayed/resent event, nothing to do. If the family genuinely paid again,
+              match the payment deliberately:</p>
+              <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/match-payment?session=${encodeURIComponent(sessionId)}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the payment matcher</a></p>`,
+          })
+        }
+        return { outcome: 'refused_refunded', enrollmentId: existing.id }
+      }
+      // Paid/Completed: a benign replay — everything already happened.
+      console.log(`[PL-121] replayed paid event for enrollment ${existing.id} (already ${existing.payment_status}) — no-op`)
+      return { outcome: 'replay_noop', enrollmentId: existing.id }
+    }
+  }
 
   if (error || !data || data.length === 0) {
     // Payment came in but we couldn't record it — the one failure the

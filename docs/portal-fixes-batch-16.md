@@ -74,7 +74,9 @@ Two fail-open defaults, same root class:
 **Fix:** when `sendOnce` returns `'failed'`, revert the row to `pending` (same as the catch path). Audit the other `sendOnce` callers that pre-claim state for the same throw-vs-returned-failure blind spot; list any siblings fixed.
 **Verify:** E2E with a stubbed failing send → row back to pending → next sweep sends.
 
-## PL-121 · Webhook replay must not flip a Refunded/Completed enrollment back to Paid
+## PL-121 · Webhook replay must not flip a Refunded/Completed enrollment back to Paid ✅
+
+> **Shipped, 4/4 E2E green.** The paid flip now carries `.in('payment_status', ['Pending','Expired','Waitlisted'])`; when the guard skips an EXISTING row, replays are told apart from genuine mismatches: **Paid/Completed → quiet no-op** (logged, `replay_noop`, `paid_at` untouched — no false mismatch alarm), **Refunded → refused + admin alert** with a deep link into the payment matcher ("if this is a replay, nothing to do; if the family genuinely paid again, match it deliberately"), and a truly unmatched session still raises the existing mismatch alert. Verified: fresh Pending→Paid unchanged; same-session replay no-ops with `paid_at` identical; a Refunded row survives a replay Refunded with the alert path exercised; Completed equally protected. **One deliberate semantic note:** the admin attach-payment action re-running against an already-Paid enrollment now no-ops too (it shares this path by design) — half-failed consequence repairs converge via the hourly sweeps instead, and attaching to a Refunded row goes through the alert + deliberate-match flow rather than silently re-flipping.
 
 `checkout-paid.ts:152-166`: the paid update has no status guard; a redelivered/dashboard-resent `checkout.session.completed` (or the admin match page re-running the path) re-marks a Refunded row Paid with a fresh `paid_at`.
 
