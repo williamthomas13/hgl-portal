@@ -44,7 +44,9 @@ Two fail-open defaults, same root class:
 **Fix:** compute `convertedAmount = amount_paid − Σ(enrollment_addons.price_paid for in-checkout addons)`; use it for the balance credit and the conversion addon's `price_paid`. Keep the family's original add-on rows untouched (their hours remain theirs — that's the PL-84 keep-your-hours promise). Update the CX composer's savings math if it reads the same field.
 **Verify:** E2E: enrollment with add-on → convert (both paths) → credit/price equals class fee only; keep-your-hours line still renders; no-addon enrollments unchanged.
 
-## PL-117 · Only `confirmed` sessions auto-complete (never-approved sessions were becoming payable)
+## PL-117 · Only `confirmed` sessions auto-complete (never-approved sessions were becoming payable) ✅
+
+> **Shipped, 4/4 E2E green.** `autoCompleteSessions` now flips `confirmed` only. **Stranded-proposal mechanism (the decision + why):** proposals whose end time passed surface as a state-driven **Needs Attention row** on the PL-100 dashboard — "{student}'s proposed session on {date} passed without approval — confirm it happened, reschedule it, or cancel it" — deep-linking the student's schedule. Chosen over auto-expiry because a proposal paused mid-change-request (the 7c flow) represents an unresolved HUMAN conversation; auto-cancelling would silently decide it, and the house rule is that money and commitments never move themselves. The row clears the moment anyone resolves the session from any path, like every dashboard condition. Verified: a past-end `proposed` session survives the sweep untouched while its `confirmed` sibling completes, and a timecard recompute over the period counts only the confirmed hour — never-approved time is no longer payable or billable.
 
 `timecards.ts:141-153`: `autoCompleteSessions` flips `.in('status',['proposed','confirmed'])` past their end time. `proposed` = explicitly not approved (PL-41 approval hold; 7c pauses auto-confirm while a change request is open) — yet an unresolved month lands on the tutor's timecard AND the family's invoice.
 

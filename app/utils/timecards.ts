@@ -139,10 +139,16 @@ async function payableClassSessions(tutorId: string, p: PayPeriod) {
  * exempt; the tutor's only required action is correcting exceptions.
  */
 export async function autoCompleteSessions(): Promise<number> {
+  // PL-117: CONFIRMED only. A proposed session is explicitly not approved
+  // (PL-41 approval hold; 7c pauses auto-confirm while a change request is
+  // open) — flipping it to completed made never-approved time payable on
+  // the tutor's card AND billable to the family. Stranded proposals whose
+  // date came and went surface as a Needs Attention row on the dashboard
+  // instead; resolving them stays a human decision.
   const { data, error } = await supabase
     .from('tutoring_sessions')
     .update({ status: 'completed', updated_at: new Date().toISOString() })
-    .in('status', ['proposed', 'confirmed'])
+    .eq('status', 'confirmed')
     .lt('ends_at', new Date().toISOString())
     .select('id')
   if (error) {

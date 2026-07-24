@@ -43,6 +43,7 @@ export async function GET() {
     { data: covRaw },
     { data: awaitingCards },
     { data: reschedules },
+    { data: strandedProposals },
     { data: availStudents },
     { data: recentEnrollments },
     { data: recentPaidInvoices },
@@ -79,6 +80,13 @@ export async function GET() {
       .not('reschedule_requested_at', 'is', null)
       .eq('status', 'confirmed')
       .gte('starts_at', now.toISOString()),
+    // PL-117: proposals whose time came and went without ever being
+    // approved — auto-complete now skips them, so a human closes the loop.
+    supabase
+      .from('tutoring_sessions')
+      .select('id, starts_at, student_id, students ( first_name, last_name )')
+      .eq('status', 'proposed')
+      .lt('ends_at', now.toISOString()),
     supabase.from('student_availability').select('student_id').eq('source', 'parent'),
     supabase
       .from('enrollments')
@@ -246,6 +254,16 @@ export async function GET() {
       id: `resched-${s.id}`,
       kind: 'Reschedule request pending',
       text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'} asked to move the ${String(s.starts_at).slice(0, 10)} session${s.reschedule_request_note ? ` — “${String(s.reschedule_request_note).slice(0, 60)}”` : ''}.`,
+      href: `/admin/tutoring?schedule=${s.student_id}`,
+    })
+  }
+
+  for (const s of (strandedProposals as any[]) ?? []) {
+    const st = one<any>(s.students)
+    attention.push({
+      id: `stranded-proposal-${s.id}`,
+      kind: 'Proposed session never resolved',
+      text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'}'s proposed session on ${String(s.starts_at).slice(0, 10)} passed without approval — confirm it happened, reschedule it, or cancel it.`,
       href: `/admin/tutoring?schedule=${s.student_id}`,
     })
   }
