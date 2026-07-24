@@ -22,6 +22,8 @@ export type HandoffView = {
   sessionLabel: string
   location: string | null
   notes: { when: string; note: string; next_time: string | null }[]
+  /** PL-156: the requesting tutor's hand-over note, if they sent one. */
+  handoffNote: { from: string; note: string } | null
 }
 
 export type CoverableSession = { id: string; label: string }
@@ -180,6 +182,14 @@ export default function CoveragePanel({
             <div key={i} className="border border-purple-200 bg-purple-50 rounded p-3 text-xs mb-2">
               <p className="font-semibold text-hgl-slate">{h.sessionLabel}</p>
               {h.location && <p className="text-gray-600">Where: {h.location}</p>}
+              {/* PL-156: the note the requesting tutor wrote — first, because
+                  it's the most specific thing anyone can tell you. */}
+              {h.handoffNote && (
+                <div className="mt-1.5 border-l-2 border-hgl-blue bg-white/70 pl-2 py-1">
+                  <p className="text-gray-500 font-semibold">From {h.handoffNote.from}:</p>
+                  <p className="text-gray-700 whitespace-pre-line">{h.handoffNote.note}</p>
+                </div>
+              )}
               {h.notes.length > 0 ? (
                 <div className="mt-1.5">
                   <p className="text-gray-500 font-semibold">Recent session notes:</p>

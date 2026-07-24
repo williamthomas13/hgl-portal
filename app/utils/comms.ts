@@ -134,6 +134,8 @@ export function templateMetaFor(
       return { key: 'SUB_COVERAGE_OFFER', role: 'instructor' }
     case 'SUB_COVERAGE_RESULT':
       return { key: 'SUB_COVERAGE_RESULT', role: 'instructor' }
+    case 'SUB_COVERAGE_NOTE':
+      return { key: 'SUB_COVERAGE_NOTE', role: 'instructor' }
     // Phase 7c monthly billing cycle (spec §6)
     case 'T1_MONTHLY_PROPOSAL':
       return { key: 'T1_MONTHLY_PROPOSAL', role: 'parent' }
@@ -189,6 +191,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   T6_NOTES_NUDGE: 'T6-N — Session notes nudge (tutor)',
   SUB_COVERAGE_OFFER: 'SUB — Coverage request (candidate tutor)',
   SUB_COVERAGE_RESULT: 'SUB — Coverage outcome (requesting tutor)',
+  SUB_COVERAGE_NOTE: 'SUB — Hand-over note (to the substitute)',
   IN_WELCOME: 'IN — Instructor class assignment welcome',
   IN_DIGEST: 'IN — Instructor enrollment digest / milestone ping',
   IN_FYI: 'IN — Instructor FYI copy (family logistics email)',

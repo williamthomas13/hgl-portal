@@ -1,5 +1,6 @@
 import type { EnrollmentEmailContext, Audience } from './email'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
+import { coverageAlertDetails, type CoverageEvent } from './coverage-copy'
 import { formatDateFull , zonedDeadline } from './dates'
 import type { ResolvedVars } from './comms-md'
 
@@ -131,6 +132,12 @@ export type ExtraVars = {
   coverageRespondLink?: string
   /** PL-112 (SUB): one-sentence outcome for the requesting tutor. */
   coverageOutcomeLine?: string
+  /** PL-156: the hand-over note's rendered paragraphs (sub's email). */
+  coverageNoteBlock?: string
+  /** PL-156: who wrote it. */
+  coverageNoteFrom?: string
+  /** PL-156: the "Send X a note" button — EMPTY on declined/withdrawn. */
+  coverageNoteButton?: string
   /** Tutor-facing what-changed deltas (pre-rendered; PL-81: the whole batch). */
   tutorChangeBlock?: string
   /** PL-81: "Schedule change" or "3 schedule changes" — subject scales. */
@@ -631,6 +638,22 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'SUB: one-sentence outcome for the requesting tutor (computed)',
     resolve: (_c, _a, e) => e.coverageOutcomeLine ?? '—',
   },
+  // PL-156: the hand-over note between the two tutors.
+  coverageNoteBlock: {
+    description: "SUB: the requesting tutor's hand-over note, as paragraphs",
+    block: true,
+    resolve: (_c, _a, e) => e.coverageNoteBlock ?? '',
+  },
+  coverageNoteFrom: {
+    description: 'SUB: name of the tutor who wrote the hand-over note',
+    resolve: (_c, _a, e) => e.coverageNoteFrom ?? 'Your colleague',
+  },
+  coverageNoteButton: {
+    description:
+      'SUB: "Send X a note" button — present ONLY on the accepted outcome; empty when declined or withdrawn (there is nobody to hand off to)',
+    block: true,
+    resolve: (_c, _a, e) => e.coverageNoteButton ?? '',
+  },
   tutorChangeBlock: { description: 'T3-T: the "what changed" delta list (computed, the whole coalesced batch)', block: true, resolve: (_c, _a, e) => e.tutorChangeBlock ?? '' },
   // PL-81: the coalesced tutor notice's composed pieces.
   scheduleChangeCountPhrase: {
@@ -957,6 +980,11 @@ export const SAMPLE_EXTRA: ExtraVars = {
   coverageRespondLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
   coverageOutcomeLine:
     "Jordan Fisher accepted — Ana's SAT Math session on Wednesday, July 29, 4:00 PM has moved to their schedule and calendar. Nothing else to do.",
+  coverageNoteBlock:
+    "<p>Thanks so much for taking this one, Jordan — I owe you.</p><p>Ana is midway through the geometry unit and keeps second-guessing herself on circle theorems; she gets there, she just needs to be told she's right. Her last diagnostic is in the notes. She'll ask to skip the warm-up — it's worth doing anyway.</p>",
+  coverageNoteFrom: 'Billy Thomas',
+  coverageNoteButton:
+    '<p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Send Jordan a note</a></p>',
   tutorChangeBlock:
     "<p>Ana's SAT session on <strong>Mon, Sep 14, 4:00 PM</strong> was rescheduled. Your Google Calendar is already updated.</p>",
   alertStudentName: 'Ana García',
@@ -996,7 +1024,36 @@ export const SAMPLE_EXTRA: ExtraVars = {
 // a sample must read as a plausible real send, never as a bug. Subject
 // variables are covered too ({alertCounts} is a plain number where the real
 // subject uses one). Real sends are untouched — they compose live.
+// PL-137: coverage-alert samples COMPUTED from the real composer (the PL-96
+// drift guard), never hand-written. AL_COVERAGE_REQUEST and
+// AL_COVERAGE_RESOLVED both body as {alertDetailsBlock} and had no pin, so
+// their test-sends rendered the shared REGISTRATION sample — Scarlett
+// reviewed a coverage alert and read "Ana García registered for SIS SAT
+// Prep… 3 enrolled / 8 min / 15 cap". Real sends were always correct; only
+// the review surface lied.
+const SAMPLE_COVERAGE_FACTS = {
+  studentName: 'Ana García',
+  studentFirst: 'Ana',
+  studentId: '00000000-0000-4000-8000-000000000005',
+  subjectName: 'SAT Math',
+  when: 'Thursday, September 10 at 4:00 PM',
+  requesterName: 'Billy Thomas',
+  candidateName: 'Jordan Lee',
+  baseUrl: 'https://hgl-portal.vercel.app',
+}
+const sampleCoverage = (event: CoverageEvent) => ({
+  alertStudentName: SAMPLE_COVERAGE_FACTS.studentName,
+  alertDetailsBlock: coverageAlertDetails({ ...SAMPLE_COVERAGE_FACTS, event }),
+})
+
 export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
+  // coverage.ts opsAlert('requested') — a tutor asking a colleague to cover.
+  AL_COVERAGE_REQUEST: sampleCoverage('requested'),
+  // coverage.ts opsAlert('accepted') — the ACCEPTED variant is pinned; the
+  // declined and withdrawn variants are exercised in the coverage E2E
+  // (regress:coverage-samples renders all three off the same composer).
+  AL_COVERAGE_RESOLVED: sampleCoverage('accepted'),
+
   // sweepInstructorNudges (cron/reminders): min met, nobody teaching yet.
   ADMIN_INSTRUCTOR_NUDGE: {
     alertDetailsBlock:

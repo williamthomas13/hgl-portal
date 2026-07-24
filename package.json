@@ -14,7 +14,9 @@
     "regress:tutoring-charge": "node scripts/regress-tutoring-charge.mjs",
     "regress:monthly-generation": "node scripts/regress-monthly-generation.mjs",
     "regress:token-expiry": "node scripts/regress-token-expiry.mjs",
-    "regress:mutation-buttons": "node scripts/regress-mutation-buttons.mjs"
+    "regress:mutation-buttons": "node scripts/regress-mutation-buttons.mjs",
+    "regress:alert-pins": "node scripts/regress-alert-pins.mjs",
+    "regress:coverage-note": "node scripts/regress-coverage-note.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

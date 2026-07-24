@@ -153,7 +153,7 @@ export default async function TutorView({
   const { data: covRaw } = await supabaseAdmin
     .from('coverage_requests')
     .select(
-      `id, status, note, created_at, requesting_tutor_id, candidate_tutor_id,
+      `id, status, note, handoff_note, created_at, requesting_tutor_id, candidate_tutor_id,
        requester:instructors!coverage_requests_requesting_tutor_id_fkey ( name, email ),
        candidate:instructors!coverage_requests_candidate_tutor_id_fkey ( name, email ),
        tutoring_sessions ( id, starts_at, student_id,
@@ -198,9 +198,20 @@ export default async function TutorView({
       .eq('student_id', ses.student_id)
       .order('created_at', { ascending: false })
       .limit(8)
+    // PL-156: the requesting tutor's hand-over note travels WITH the handoff.
+    let handoffNote: { from: string; note: string } | null = null
+    if (r.handoff_note) {
+      const { data: from } = await supabaseAdmin
+        .from('instructors')
+        .select('name')
+        .eq('id', r.requesting_tutor_id)
+        .maybeSingle()
+      handoffNote = { from: from?.name?.split(' ')[0] ?? 'your colleague', note: r.handoff_note }
+    }
     handoffs.push({
       sessionLabel: `${fmtFull(ses.starts_at)} — ${student?.first_name ?? ''} ${student?.last_name ?? ''} · ${one<any>(eng?.subjects)?.name ?? ''}`,
       location: eng?.location ?? null,
+      handoffNote,
       notes: ((history as any[]) ?? []).map((n) => ({
         when: fmt(one<any>(n.tutoring_sessions)?.starts_at ?? '', { month: 'short', day: 'numeric' }),
         note: n.note,

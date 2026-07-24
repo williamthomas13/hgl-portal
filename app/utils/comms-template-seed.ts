@@ -1326,6 +1326,33 @@ Hi {tutorFirstName},
 
 {coverageOutcomeLine}
 
+{coverageNoteButton}
+
+[Open your portal →]({coverageRespondLink})`,
+  },
+  {
+    // PL-156: the note the requesting tutor sends the substitute after an
+    // accepted handover. Its own template so Scarlett can shape the voice
+    // around someone else's words — the note body is quoted, never rewritten.
+    template_key: 'SUB_COVERAGE_NOTE',
+    display_name: 'SUB — Hand-over note (to the substitute)',
+    sequence_number: 'SUB',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'A note from {coverageNoteFrom} about your covered session',
+    preheader: 'Context from the tutor you are covering for.',
+    footer_note: null,
+    body_markdown: `## Handover note
+
+Hi {tutorFirstName},
+
+{coverageNoteFrom} sent this along about the session you're covering:
+
+{coverageNoteBlock}
+
+It's saved with the rest of the handoff, so you don't need to keep this email.
+
 [Open your portal →]({coverageRespondLink})`,
   },
   {

@@ -57,6 +57,10 @@ try {
     signing.checkToken('refund:', ID, agedToken('refund:', ID, 119), 'family-action') === 'ok')
   check('6. family-action at 121 days: EXPIRED',
     signing.checkToken('refund:', ID, agedToken('refund:', ID, 121), 'family-action') === 'expired')
+  check('6b. tutor-action at 44 days: still ok (coverage is arranged weeks ahead)',
+    signing.checkToken('cov-note:', ID, agedToken('cov-note:', ID, 44), 'tutor-action') === 'ok')
+  check('6c. tutor-action at 46 days: EXPIRED',
+    signing.checkToken('cov-note:', ID, agedToken('cov-note:', ID, 46), 'tutor-action') === 'expired')
   check('7. staff at 15 days: EXPIRED (short by design)',
     signing.checkToken('staff:', ID, agedToken('staff:', ID, 15), 'staff') === 'expired')
   check('8. "never" lifetime at 5 years: still ok (calendar feeds must not die)',

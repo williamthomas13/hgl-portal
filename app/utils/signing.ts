@@ -51,6 +51,8 @@ export function credentialKeySecret(): string {
 //   · family forms — generous (90 days). Families act on their own clock,
 //     and re-minting is a chase email, not a self-serve fix.
 //   · family actions — one term (120 days); these ride the class lifecycle.
+//   · tutor actions — one scheduling horizon (45 days); coverage can be
+//     arranged weeks before the session it covers.
 //   · staff/ops links — short (14 days); they're acted on the same week.
 //   · standing subscriptions (calendar feeds) — no expiry, by design: a
 //     subscribed calendar that silently dies is worse than a live one.
@@ -58,11 +60,12 @@ export function credentialKeySecret(): string {
 // Backward compatible ON PURPOSE. A token minted before this shipped has no
 // issued-at segment, and verifies exactly as it always did — nothing already
 // in a family's inbox breaks. Only newly minted links carry a lifetime.
-export type TokenLifetime = 'family-form' | 'family-action' | 'staff' | 'never'
+export type TokenLifetime = 'family-form' | 'family-action' | 'tutor-action' | 'staff' | 'never'
 
 const TTL_DAYS: Record<TokenLifetime, number | null> = {
   'family-form': 90,
   'family-action': 120,
+  'tutor-action': 45,
   staff: 14,
   never: null,
 }

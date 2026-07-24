@@ -1,4 +1,6 @@
 import { emailBaseUrl } from './base-url'
+import { checkToken, mintToken } from './signing'
+import { coverageAlertDetails, coverageAlertSubject } from './coverage-copy'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendAdminAlert, sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
@@ -106,27 +108,25 @@ async function opsAlert(opts: {
   requesterName: string
   candidateName: string
 }) {
-  const base = emailBaseUrl()
-  const link = `${base}/admin/tutoring?schedule=${opts.session.studentId}`
   const when = fmtWhen(opts.session.startsAt, opts.session.tutor?.timezone)
-  const headline =
-    opts.event === 'requested'
-      ? `${opts.requesterName} asked ${opts.candidateName} to cover ${opts.session.studentName}'s ${opts.session.subjectName} session on ${when}.`
-      : opts.event === 'accepted'
-        ? `${opts.candidateName} accepted coverage of ${opts.session.studentName}'s ${opts.session.subjectName} session on ${when} — the session moved to their schedule and calendar.`
-        : opts.event === 'declined'
-          ? `${opts.candidateName} declined to cover ${opts.session.studentName}'s ${opts.session.subjectName} session on ${when}. The session still needs coverage — ${opts.requesterName} can pick another candidate, or step in to help.`
-          : `${opts.requesterName} withdrew the coverage request for ${opts.session.studentName}'s ${opts.session.subjectName} session on ${when} (they are keeping the session).`
   await sendAdminAlert({
     dedupeKey: `al_coverage:${opts.requestId}:${opts.event}`,
     adminEmail: ADMIN_EMAIL,
     templateKey: opts.event === 'requested' ? 'AL_COVERAGE_REQUEST' : 'AL_COVERAGE_RESOLVED',
-    subject:
-      opts.event === 'requested'
-        ? `Substitute requested: ${opts.session.studentName} — ${when}`
-        : `Substitute request ${opts.event}: ${opts.session.studentName} — ${when}`,
-    body: `<p>${headline}</p>
-      <p style="margin:20px 0"><a href="${link}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open ${opts.session.studentFirst}'s schedule</a></p>`,
+    // PL-137: subject and body both come from the leaf copy module, so the
+    // sample pins can be computed from the exact same code.
+    subject: coverageAlertSubject({ event: opts.event, studentName: opts.session.studentName, when }),
+    body: coverageAlertDetails({
+      baseUrl: emailBaseUrl(),
+      event: opts.event,
+      studentName: opts.session.studentName,
+      studentFirst: opts.session.studentFirst,
+      studentId: opts.session.studentId,
+      subjectName: opts.session.subjectName,
+      when,
+      requesterName: opts.requesterName,
+      candidateName: opts.candidateName,
+    }),
     vars: { alertStudentName: opts.session.studentName },
   })
 }
@@ -310,13 +310,22 @@ export async function respondCoverage(opts: {
     const outcomeLine = accepted
       ? `${candidateName} accepted — ${session.studentFirst}'s ${session.subjectName} session on ${when} has moved to their schedule and calendar. Nothing else to do.`
       : `${candidateName} can't cover ${session.studentFirst}'s ${session.subjectName} session on ${when}. It's still yours — pick another candidate from your portal, or your manager can help find a suitable replacement (${contact.email}).`
+    // PL-156: only the ACCEPTED outcome offers the note button — a declined
+    // or withdrawn request has no substitute to hand anything to. The button
+    // opens a form; it never sends from the email itself.
+    const subFirstName = candidateName.split(' ')[0]
+    const noteButton = accepted
+      ? `<p style="margin:20px 0"><a href="${coverageNoteUrlFor(req.id)}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Send ${subFirstName} a note</a></p>
+         <p style="color:#506171;font-size:14px">Anything ${subFirstName} should know before walking in — where ${session.studentFirst} is stuck, what to bring, what not to repeat. It goes to them and stays with the handoff.</p>`
+      : ''
     const codeTwin = (): Rendered => ({
       subject: accepted ? `Covered: ${session.studentFirst} on ${when}` : `Not covered yet: ${session.studentFirst} on ${when}`,
       html: wrap(
         `<h2 style="color:#334155">Coverage ${accepted ? 'confirmed' : 'declined'}</h2>
          <p>Hi ${first},</p>
          <p>${outcomeLine}</p>
-         <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
+         ${noteButton}
+         <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
         { preheader: outcomeLine.slice(0, 90), footer: footerT() }
       ),
     })
@@ -326,6 +335,7 @@ export async function respondCoverage(opts: {
       {
         tutorFirstName: first,
         coverageOutcomeLine: outcomeLine,
+        coverageNoteButton: noteButton,
         coverageRespondLink: `${emailBaseUrl()}/portal?view=tutor`,
       },
       codeTwin
@@ -380,4 +390,153 @@ export async function cancelCoverage(opts: {
     })
   }
   return { ok: true }
+}
+
+// ---------------------------------------------------------------------------
+// PL-156: the requesting tutor's hand-over note to the substitute
+// ---------------------------------------------------------------------------
+// Coverage is a handoff between two people, and the accepted-outcome email
+// used to end the conversation ("Nothing else to do"). The one thing the
+// requesting tutor most wants at that moment is to say thanks and pass along
+// context — where the student is stuck, what to bring, what not to repeat.
+//
+// The email carries a BUTTON, never the action: it opens a one-box form and
+// the form sends. (Acting straight from an emailed link would let a mail
+// scanner or a prefetcher fire a real send — the house rule since PL-62.)
+// The note is emailed to the substitute AND stored on the request, so it
+// rides the handoff bundle instead of living in one inbox.
+
+export function coverageNoteToken(requestId: string): string {
+  return `${requestId}.${mintToken('coverage-note:', requestId, 'tutor-action')}`
+}
+
+export function coverageNoteUrlFor(requestId: string): string {
+  return `${emailBaseUrl()}/coverage/note/${coverageNoteToken(requestId)}`
+}
+
+/** 'ok' → the request id; otherwise why the link can't be used. */
+export function verifyCoverageNoteToken(token: string): { id: string } | 'expired' | 'invalid' {
+  const dot = token.lastIndexOf('.')
+  if (dot <= 0) return 'invalid'
+  const id = token.slice(0, dot)
+  const state = checkToken('coverage-note:', id, token.slice(dot + 1), 'tutor-action')
+  return state === 'ok' ? { id } : state
+}
+
+export type CoverageNoteContext = {
+  requestId: string
+  subFirstName: string
+  studentFirst: string
+  subjectName: string
+  when: string
+  alreadySent: string | null
+}
+
+/** What the note form needs to render — no emails, no ids beyond the request. */
+export async function coverageNoteContext(requestId: string): Promise<CoverageNoteContext | null> {
+  const { data: req } = await supabase
+    .from('coverage_requests')
+    .select('id, session_id, candidate_tutor_id, status, handoff_note, handoff_note_at')
+    .eq('id', requestId)
+    .maybeSingle()
+  // Only an ACCEPTED request has a substitute to hand off to.
+  if (!req || req.status !== 'accepted') return null
+  const session = await loadSession(req.session_id)
+  if (!session) return null
+  const { data: sub } = await supabase
+    .from('instructors')
+    .select('name, timezone')
+    .eq('id', req.candidate_tutor_id)
+    .maybeSingle()
+  return {
+    requestId: req.id,
+    subFirstName: sub?.name?.split(' ')[0] ?? 'your colleague',
+    studentFirst: session.studentFirst,
+    subjectName: session.subjectName,
+    when: fmtWhen(session.startsAt, sub?.timezone),
+    alreadySent: req.handoff_note_at ?? null,
+  }
+}
+
+/**
+ * Send the note: email the substitute, and store it so the handoff bundle
+ * carries it. Idempotent-ish by design — a second note replaces the stored
+ * one and sends again (a tutor remembering one more thing is a feature),
+ * but the dedupe key is keyed on the note's own timestamp so a double-submit
+ * of the SAME note doesn't double-send.
+ */
+export async function sendCoverageNote(opts: {
+  requestId: string
+  note: string
+}): Promise<Failure | Result<{ subFirstName: string }>> {
+  const note = opts.note.trim()
+  if (!note) return fail(400, 'Write a line or two first.')
+  if (note.length > 4000) return fail(400, 'That note is too long — keep it under 4000 characters.')
+
+  const { data: req } = await supabase
+    .from('coverage_requests')
+    .select('id, session_id, requesting_tutor_id, candidate_tutor_id, status')
+    .eq('id', opts.requestId)
+    .maybeSingle()
+  if (!req) return fail(404, 'That coverage request no longer exists.')
+  if (req.status !== 'accepted') {
+    return fail(400, 'That session was never covered, so there is nobody to hand it to.')
+  }
+  const session = await loadSession(req.session_id)
+  if (!session) return fail(404, 'That session no longer exists.')
+
+  const [{ data: sub }, { data: requester }] = await Promise.all([
+    supabase.from('instructors').select('name, email, timezone').eq('id', req.candidate_tutor_id).maybeSingle(),
+    supabase.from('instructors').select('name, email').eq('id', req.requesting_tutor_id).maybeSingle(),
+  ])
+  if (!sub?.email) return fail(500, 'The substitute has no email on file.')
+
+  const sentAt = new Date().toISOString()
+  await supabase
+    .from('coverage_requests')
+    .update({ handoff_note: note, handoff_note_at: sentAt, updated_at: sentAt })
+    .eq('id', req.id)
+
+  const subFirst = sub.name?.split(' ')[0] ?? 'there'
+  const fromName = requester?.name ?? 'Your colleague'
+  const when = fmtWhen(session.startsAt, sub.timezone)
+  const noteHtml = note
+    .split(/\n{2,}/)
+    .map((para) => `<p>${para.replace(/\n/g, '<br>').replace(/</g, '&lt;')}</p>`)
+    .join('')
+  const codeTwin = (): Rendered => ({
+    subject: `A note from ${fromName} about ${session.studentFirst}`,
+    html: wrap(
+      `<h2 style="color:#334155">Handover note</h2>
+       <p>Hi ${subFirst},</p>
+       <p>${fromName} sent this along about ${session.studentFirst}'s ${session.subjectName} session
+       on ${when}, which you're covering:</p>
+       <blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid #00AEEE;background:#f8fafc">${noteHtml}</blockquote>
+       <p>It's saved with the rest of the handoff, so you don't need to keep this email.</p>
+       <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
+      { preheader: `${fromName} on ${session.studentFirst} — ${when}`, footer: footerT() }
+    ),
+  })
+  const email = await renderRegistered(
+    'SUB_COVERAGE_NOTE',
+    { parentFirstName: subFirst, parentEmail: sub.email },
+    {
+      tutorFirstName: subFirst,
+      coverageNoteBlock: noteHtml,
+      coverageNoteFrom: fromName,
+      coverageRespondLink: `${emailBaseUrl()}/portal?view=tutor`,
+    },
+    codeTwin
+  )
+  await sendOnce({
+    // Keyed on the note's timestamp: re-sending a REVISED note goes out, a
+    // double-submit of the same one does not.
+    dedupeKey: `sub_coverage_note:${req.id}:${sentAt}`,
+    emailType: 'SUB_COVERAGE_NOTE',
+    templateKey: 'SUB_COVERAGE_NOTE',
+    to: [sub.email],
+    subject: email.subject,
+    html: email.html,
+  })
+  return { ok: true, subFirstName: subFirst }
 }
