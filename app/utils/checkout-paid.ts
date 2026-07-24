@@ -117,6 +117,55 @@ export async function handleClassCheckoutCompleted(
     alertOnMismatch?: boolean
   }
 ): Promise<CheckoutOutcome> {
+  // PL-125: sibling carts — ONE Stripe session carrying enrollment_ids
+  // (+ parallel package_ids) fans out to the EXACT single-enrollment path
+  // per student, each with its own per-student amount (stamped as
+  // pending_checkout_total at cart build — amount_paid must never carry a
+  // sibling's money, the PL-116 lesson). Everything inside is dedupe-keyed,
+  // so webhook retries of the whole batch re-run as no-ops.
+  const fanoutIds = (session.metadata?.enrollment_ids ?? '').split(',').filter(Boolean)
+  if (!opts.overrideEnrollmentId && fanoutIds.length > 0) {
+    const fanoutPkgs = (session.metadata?.package_ids ?? '').split(',')
+    const { data: carts } = await supabase
+      .from('enrollments')
+      .select('id, pending_checkout_total, classes ( price )')
+      .in('id', fanoutIds)
+    const cartTotal = new Map(
+      ((carts as any[]) ?? []).map((c) => [
+        c.id,
+        Number(
+          c.pending_checkout_total ??
+            (Array.isArray(c.classes) ? c.classes[0] : c.classes)?.price ??
+            0
+        ),
+      ])
+    )
+    let firstId: string | undefined
+    const problems: string[] = []
+    for (let i = 0; i < fanoutIds.length; i++) {
+      const id = fanoutIds[i]
+      const pkg = fanoutPkgs[i] || undefined
+      const perStudent: Stripe.Checkout.Session = {
+        ...session,
+        amount_total: Math.round((cartTotal.get(id) ?? 0) * 100),
+        metadata: {
+          enrollment_id: id,
+          class_id: session.metadata?.class_id ?? '',
+          ...(pkg ? { package_id: pkg } : {}),
+        },
+      } as Stripe.Checkout.Session
+      const r = await handleClassCheckoutCompleted(perStudent, {
+        defer: opts.defer,
+        alertOnMismatch: opts.alertOnMismatch,
+      })
+      firstId ??= r.enrollmentId
+      if (r.outcome === 'mismatch') problems.push(`${id}: ${r.problem ?? 'no match'}`)
+    }
+    return problems.length > 0
+      ? { outcome: 'mismatch', enrollmentId: firstId, problem: problems.join(' · ') }
+      : { outcome: 'matched', enrollmentId: firstId }
+  }
+
   const enrollmentId = opts.overrideEnrollmentId ?? session.metadata?.enrollment_id
   const packageId = session.metadata?.package_id
   const sessionId = session.id

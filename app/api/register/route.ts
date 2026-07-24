@@ -33,15 +33,58 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
   }
 
-  const classId = (body.classId ?? '').trim()
-  const parentFirst = (body.parentFirst ?? '').trim()
-  const parentLast = (body.parentLast ?? '').trim()
-  const parentEmail = (body.parentEmail ?? '').trim().toLowerCase()
-  const studentFirst = (body.studentFirst ?? '').trim()
-  const studentLast = (body.studentLast ?? '').trim()
-  const studentEmail = (body.studentEmail ?? '').trim().toLowerCase() || null
+  const classId = (String(body.classId ?? '')).trim()
+  const parentFirst = (String(body.parentFirst ?? '')).trim()
+  const parentLast = (String(body.parentLast ?? '')).trim()
+  const parentEmail = (String(body.parentEmail ?? '')).trim().toLowerCase()
 
-  if (!classId || !parentFirst || !parentLast || !parentEmail || !studentFirst || !studentLast) {
+  // PL-125: sibling registration — the page may send `students: [...]`
+  // (one entry per child, parent block shared). The legacy single-student
+  // body keeps working unchanged: it normalizes to a one-element list.
+  type StudentInput = {
+    first: string
+    last: string
+    email: string | null
+    pronouns: string | null
+    graduatingYear: string | null
+    accommodations: string | null
+    previousScores: string | null
+    notes: string | null
+  }
+  const rawStudents: Record<string, unknown>[] = Array.isArray(body.students)
+    ? (body.students as Record<string, unknown>[])
+    : [
+        {
+          studentFirst: body.studentFirst,
+          studentLast: body.studentLast,
+          studentEmail: body.studentEmail,
+          pronouns: body.pronouns,
+          graduatingYear: body.graduatingYear,
+          accommodations: body.accommodations,
+          previousScores: body.previousScores,
+          notes: body.notes,
+        },
+      ]
+  const students: StudentInput[] = rawStudents.map((s) => ({
+    first: String(s.studentFirst ?? '').trim(),
+    last: String(s.studentLast ?? '').trim(),
+    email: (String(s.studentEmail ?? '').trim().toLowerCase() || null) as string | null,
+    pronouns: (s.pronouns as string) || null,
+    graduatingYear: (s.graduatingYear as string) || null,
+    accommodations: (s.accommodations as string) || null,
+    previousScores: (s.previousScores as string) || null,
+    notes: (s.notes as string) || null,
+  }))
+
+  if (
+    !classId ||
+    !parentFirst ||
+    !parentLast ||
+    !parentEmail ||
+    students.length === 0 ||
+    students.length > 6 ||
+    students.some((s) => !s.first || !s.last)
+  ) {
     return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
   }
 
@@ -74,64 +117,120 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Registration for this class has closed.' }, { status: 410 })
   }
 
-  if (spotsTakenRaw((cls.enrollments as Slot[]) ?? []) >= cls.capacity) {
-    return NextResponse.json({ error: 'This class is full.', full: true }, { status: 409 })
-  }
-
-  // 1+2. Family + student: match on parent email and attach to the existing
-  // family (PHASE4_SPEC §7 — siblings and returning families share one row;
-  // repeat registrations never overwrite the parent's name).
-  const PRONOUNS = ['she_her', 'he_him', 'they_them', 'name_only']
-  const result = await upsertFamilyAndStudent({
-    parentFirst,
-    parentLast,
-    parentEmail,
-    studentFirst,
-    studentLast,
-    studentEmail,
-    schoolId: cls.school_id ?? null,
-    graduatingYear: body.graduatingYear || null,
-    // PL-69: optional; anything unrecognized is treated as unset.
-    pronouns: PRONOUNS.includes(body.pronouns as string) ? (body.pronouns as string) : null,
-  })
-  if ('error' in result) {
-    return NextResponse.json({ error: result.error }, { status: 500 })
-  }
-
-  // 3. Create the Enrollment in "Pending" state (holds a capacity spot)
-  const { data: enrollmentData, error: enrollmentError } = await supabase
-    .from('enrollments')
-    .insert([
-      {
-        student_id: result.studentId,
-        class_id: cls.id,
-        payment_status: 'Pending',
-        accommodations: body.accommodations || null,
-        previous_scores: body.previousScores || null,
-        notes: body.notes || null,
-      },
-    ])
-    .select()
-    .single()
-
-  if (enrollmentError || !enrollmentData) {
+  // PL-125: the capacity check counts EVERY sibling in this submission —
+  // two children must not squeeze through a one-seat gap on the read.
+  const seatsFree = cls.capacity - spotsTakenRaw((cls.enrollments as Slot[]) ?? [])
+  if (seatsFree < students.length) {
     return NextResponse.json(
-      { error: 'Error enrolling: ' + (enrollmentError?.message ?? 'unknown') },
-      { status: 500 }
+      {
+        error:
+          seatsFree <= 0
+            ? 'This class is full.'
+            : `Only ${seatsFree} spot${seatsFree === 1 ? '' : 's'} left — not enough for ${students.length} students. You can register ${seatsFree} now and waitlist the other${students.length - seatsFree === 1 ? '' : 's'}.`,
+        full: seatsFree <= 0,
+        seatsFree,
+      },
+      { status: 409 }
     )
   }
 
-  // PL-51: materialize this enrollment's PR rows immediately (and send
+  // 1+2. Family + students: match on parent email and attach every child to
+  // the SAME family row (PHASE4_SPEC §7 — repeat registrations never
+  // overwrite the parent's name). One upsert per student: different names
+  // create siblings; the same student typed twice dedupes to one row.
+  const PRONOUNS = ['she_her', 'he_him', 'they_them', 'name_only']
+  const resolved: { studentId: string; input: StudentInput }[] = []
+  for (const s of students) {
+    const result = await upsertFamilyAndStudent({
+      parentFirst,
+      parentLast,
+      parentEmail,
+      studentFirst: s.first,
+      studentLast: s.last,
+      studentEmail: s.email,
+      schoolId: cls.school_id ?? null,
+      graduatingYear: s.graduatingYear,
+      // PL-69: optional; anything unrecognized is treated as unset.
+      pronouns: PRONOUNS.includes(s.pronouns as string) ? s.pronouns : null,
+    })
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: 500 })
+    }
+    // Same student entered twice in one submission → one enrollment.
+    if (!resolved.some((r) => r.studentId === result.studentId)) {
+      resolved.push({ studentId: result.studentId, input: s })
+    }
+  }
+
+  // 3. Create the Pending enrollments (each holds a capacity spot). A
+  // student already holding a live enrollment on this class reuses it
+  // (typed twice across two visits must not double-book the seat).
+  const enrollmentIds: string[] = []
+  const createdIds: string[] = []
+  for (const r of resolved) {
+    const { data: existing } = await supabase
+      .from('enrollments')
+      .select('id, payment_status')
+      .eq('student_id', r.studentId)
+      .eq('class_id', cls.id)
+      .in('payment_status', ['Pending', 'Paid', 'Completed'])
+      .maybeSingle()
+    if (existing) {
+      enrollmentIds.push(existing.id)
+      continue
+    }
+    const { data: enrollmentData, error: enrollmentError } = await supabase
+      .from('enrollments')
+      .insert([
+        {
+          student_id: r.studentId,
+          class_id: cls.id,
+          payment_status: 'Pending',
+          accommodations: r.input.accommodations,
+          previous_scores: r.input.previousScores,
+          notes: r.input.notes,
+        },
+      ])
+      .select('id')
+      .single()
+    if (enrollmentError || !enrollmentData) {
+      return NextResponse.json(
+        { error: 'Error enrolling: ' + (enrollmentError?.message ?? 'unknown') },
+        { status: 500 }
+      )
+    }
+    enrollmentIds.push(enrollmentData.id)
+    createdIds.push(enrollmentData.id)
+  }
+
+  // PL-125 oversell recount: our read-then-insert can race another family.
+  // Re-count AFTER inserting — if the class is now over capacity, roll back
+  // the rows THIS request created and refuse. Both racers recount after both
+  // inserted, so at least one backs off; seats never oversell.
+  if (createdIds.length > 0) {
+    const { data: after_ } = await supabase
+      .from('enrollments')
+      .select('payment_status, waitlist_offer_expires_at')
+      .eq('class_id', cls.id)
+    if (spotsTakenRaw((after_ as Slot[]) ?? []) > cls.capacity) {
+      await supabase.from('enrollments').delete().in('id', createdIds)
+      return NextResponse.json({ error: 'This class just filled up.', full: true }, { status: 409 })
+    }
+  }
+
+  // PL-51: materialize each enrollment's PR rows immediately (and send
   // anything already due) behind the response — the daily cron remains the
   // batch backstop. Explicit catch: never a floating promise (7c rule).
-  const newEnrollmentId = enrollmentData.id
-  after(() =>
-    runEnrollmentCommsPass(newEnrollmentId).catch((e) =>
-      console.error('inline comms pass failed (cron will catch up):', e)
+  for (const id of createdIds) {
+    after(() =>
+      runEnrollmentCommsPass(id).catch((e) =>
+        console.error('inline comms pass failed (cron will catch up):', e)
+      )
     )
-  )
+  }
 
   // The admin registration notification fires from the Stripe webhook once
-  // this enrollment is PAID — creation alone is silent (July 8 punch list).
-  return NextResponse.json({ enrollmentId: enrollmentData.id })
+  // an enrollment is PAID — creation alone is silent (July 8 punch list).
+  // Legacy single callers read enrollmentId; the sibling page reads the list.
+  return NextResponse.json({ enrollmentId: enrollmentIds[0], enrollmentIds })
 }

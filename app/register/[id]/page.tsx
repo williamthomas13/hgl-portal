@@ -94,12 +94,16 @@ export default function RegistrationPage() {
   const [message, setMessage] = useState('')
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null)
   // PL-69: live label — "Ana's pronouns" once the name is typed.
-  const [studentFirstTyped, setStudentFirstTyped] = useState('')
+  // PL-125: one entry per student block (siblings share the parent block).
+  const [studentFirstTyped, setStudentFirstTyped] = useState<string[]>([''])
+  const [siblingCount, setSiblingCount] = useState(1)
   // Add-on step: shown between the form and Stripe checkout.
   const [packages, setPackages] = useState<TutoringPackage[]>([])
   const [pendingCheckout, setPendingCheckout] = useState<{
-    enrollmentId: string
+    enrollments: { enrollmentId: string; studentFirst: string }[]
   } | null>(null)
+  // PL-125: per-student add-on picks for sibling carts.
+  const [addonPicks, setAddonPicks] = useState<Record<string, string | null>>({})
 
   useEffect(() => {
     async function fetchClass() {
@@ -129,9 +133,20 @@ export default function RegistrationPage() {
     setMessage('Saving family details...')
     const formData = new FormData(e.currentTarget)
 
-    // Family + student + Pending enrollment are created server-side —
-    // the browser has no database access (Phase 3 RLS).
-    let enrollmentId: string
+    // Family + students + Pending enrollments are created server-side —
+    // the browser has no database access (Phase 3 RLS). PL-125: one POST
+    // covers every sibling; the parent block is shared.
+    let enrollmentIds: string[]
+    const studentsPayload = Array.from({ length: siblingCount }).map((_, i) => ({
+      studentFirst: formData.get(`studentFirst_${i}`),
+      studentLast: formData.get(`studentLast_${i}`),
+      studentEmail: formData.get(`studentEmail_${i}`),
+      pronouns: formData.get(`pronouns_${i}`),
+      graduatingYear: formData.get(`graduatingYear_${i}`),
+      accommodations: formData.get(`accommodations_${i}`),
+      previousScores: formData.get(`previousScores_${i}`),
+      notes: formData.get(`notes_${i}`),
+    }))
     try {
       const response = await fetch('/api/register', {
         method: 'POST',
@@ -141,14 +156,7 @@ export default function RegistrationPage() {
           parentFirst: formData.get('parentFirst'),
           parentLast: formData.get('parentLast'),
           parentEmail: formData.get('parentEmail'),
-          studentFirst: formData.get('studentFirst'),
-          studentLast: formData.get('studentLast'),
-          studentEmail: formData.get('studentEmail'),
-          pronouns: formData.get('pronouns'),
-          graduatingYear: formData.get('graduatingYear'),
-          accommodations: formData.get('accommodations'),
-          previousScores: formData.get('previousScores'),
-          notes: formData.get('notes'),
+          students: studentsPayload,
         }),
       })
       const data = await response.json()
@@ -163,7 +171,7 @@ export default function RegistrationPage() {
         setLoading(false)
         return
       }
-      enrollmentId = data.enrollmentId
+      enrollmentIds = data.enrollmentIds ?? [data.enrollmentId]
     } catch {
       setMessage('Error: failed to save your registration.')
       setLoading(false)
@@ -173,25 +181,38 @@ export default function RegistrationPage() {
     // Add-on step: offer pre-class tutoring packages before checkout
     // (only available at registration). If none exist, go straight to Stripe.
     if (packages.length > 0) {
-      setPendingCheckout({ enrollmentId })
+      setPendingCheckout({
+        enrollments: enrollmentIds.map((id, i) => ({
+          enrollmentId: id,
+          studentFirst: String(studentsPayload[i]?.studentFirst ?? '').trim() || `Student ${i + 1}`,
+        })),
+      })
+      setAddonPicks({})
       setMessage('')
       setLoading(false)
     } else {
-      await proceedToCheckout(enrollmentId, null)
+      await proceedToCheckout(enrollmentIds, {})
     }
   }
 
   // Stripe handoff — pass enrollment id so the webhook can mark exactly this
   // row paid; packageId adds the tutoring add-on as a second line item.
   // Price, product name, and billing email all come from the DB server-side.
-  async function proceedToCheckout(enrollmentId: string, packageId: string | null) {
+  async function proceedToCheckout(
+    enrollmentIds: string[],
+    packageSelections: Record<string, string | null>
+  ) {
     setLoading(true)
     setMessage('Redirecting to secure checkout...')
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enrollmentId, packageId }),
+        body: JSON.stringify(
+          enrollmentIds.length === 1
+            ? { enrollmentId: enrollmentIds[0], packageId: packageSelections[enrollmentIds[0]] ?? null }
+            : { enrollmentIds, packageSelections }
+        ),
       })
 
       const data = await response.json()
@@ -342,26 +363,77 @@ export default function RegistrationPage() {
               expire.
             </p>
           </div>
-          <div className="space-y-3 mb-6">
-            {packages.map((p) => (
+          {pendingCheckout.enrollments.length === 1 ? (
+            <>
+              <div className="space-y-3 mb-6">
+                {packages.map((p) => (
+                  <button
+                    key={p.id}
+                    disabled={loading}
+                    onClick={() =>
+                      proceedToCheckout(
+                        [pendingCheckout.enrollments[0].enrollmentId],
+                        { [pendingCheckout.enrollments[0].enrollmentId]: p.id }
+                      )
+                    }
+                    className="w-full text-center border-2 border-hgl-blue text-hgl-blue font-bold rounded-lg p-4 hover:bg-hgl-blue hover:text-white transition disabled:opacity-60"
+                  >
+                    {hoursWord(p.hours)} 1-on-1 Hours @ ${p.hourly_rate}/hour (regularly $
+                    {p.regular_hourly_rate}/hour) — ${p.package_price.toLocaleString()}
+                  </button>
+                ))}
+              </div>
               <button
-                key={p.id}
                 disabled={loading}
-                onClick={() => proceedToCheckout(pendingCheckout.enrollmentId, p.id)}
-                className="w-full text-center border-2 border-hgl-blue text-hgl-blue font-bold rounded-lg p-4 hover:bg-hgl-blue hover:text-white transition disabled:opacity-60"
+                onClick={() => proceedToCheckout([pendingCheckout.enrollments[0].enrollmentId], {})}
+                className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
               >
-                {hoursWord(p.hours)} 1-on-1 Hours @ ${p.hourly_rate}/hour (regularly $
-                {p.regular_hourly_rate}/hour) — ${p.package_price.toLocaleString()}
+                {loading ? 'Preparing secure checkout...' : 'No thanks, just the class'}
               </button>
-            ))}
-          </div>
-          <button
-            disabled={loading}
-            onClick={() => proceedToCheckout(pendingCheckout.enrollmentId, null)}
-            className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
-          >
-            {loading ? 'Preparing secure checkout...' : 'No thanks, just the class'}
-          </button>
+            </>
+          ) : (
+            /* PL-125: siblings — one pick per student, one payment. */
+            <>
+              <div className="space-y-4 mb-6">
+                {pendingCheckout.enrollments.map((en) => (
+                  <div key={en.enrollmentId}>
+                    <label className="block text-sm font-semibold text-hgl-slate mb-1">
+                      1-on-1 hours for {en.studentFirst}
+                    </label>
+                    <select
+                      value={addonPicks[en.enrollmentId] ?? ''}
+                      onChange={(e) =>
+                        setAddonPicks((prev) => ({
+                          ...prev,
+                          [en.enrollmentId]: e.target.value || null,
+                        }))
+                      }
+                      className="w-full border border-gray-300 rounded p-2 bg-white"
+                    >
+                      <option value="">No 1-on-1 hours</option>
+                      {packages.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {hoursWord(p.hours)} hours @ ${p.hourly_rate}/hr — ${p.package_price.toLocaleString()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <button
+                disabled={loading}
+                onClick={() =>
+                  proceedToCheckout(
+                    pendingCheckout.enrollments.map((en) => en.enrollmentId),
+                    addonPicks
+                  )
+                }
+                className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
+              >
+                {loading ? 'Preparing secure checkout...' : 'Continue to payment (one checkout for everyone)'}
+              </button>
+            </>
+          )}
           {message && (
             <div className="mt-6 p-4 rounded-md text-center font-bold bg-blue-50 text-hgl-blue">
               {message}
@@ -442,71 +514,104 @@ export default function RegistrationPage() {
             </div>
           </div>
 
-          {/* Student */}
-          <div className="bg-gray-50 p-4 rounded-md border">
-            <h3 className="font-semibold text-hgl-slate mb-3">Student Information</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-600">First Name</label>
-                <input type="text" name="studentFirst" required onChange={(e) => setStudentFirstTyped(e.target.value)} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+          {/* Students — PL-125: siblings repeat this block; the parent
+              block above is shared and never re-typed. */}
+          {Array.from({ length: siblingCount }).map((_, i) => (
+            <div key={i} className="bg-gray-50 p-4 rounded-md border">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-hgl-slate">
+                  {siblingCount > 1 ? `Student ${i + 1}` : 'Student Information'}
+                </h3>
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSiblingCount((n) => n - 1)
+                      setStudentFirstTyped((prev) => prev.filter((_, j) => j !== i))
+                    }}
+                    className="text-xs text-gray-500 underline"
+                  >
+                    remove
+                  </button>
+                )}
               </div>
-              <div>
-                <label className="block text-sm text-gray-600">Last Name</label>
-                <input type="text" name="studentLast" required className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-gray-600">
-                  Student Email <span className="text-gray-400">(for class reminders & Synap access)</span>
-                </label>
-                <input type="email" name="studentEmail" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
-              </div>
-              <div className="col-span-2">
-                {/* PL-69: optional, no explanatory text — unset simply keeps
-                    the neutral wording in emails. */}
-                <label className="block text-sm text-gray-600">
-                  {studentFirstTyped.trim() ? `${studentFirstTyped.trim()}'s pronouns` : "Student's pronouns"}{' '}
-                  <span className="text-gray-400">(optional)</span>
-                </label>
-                <select
-                  name="pronouns"
-                  defaultValue=""
-                  className="mt-1 w-full border border-gray-300 rounded p-2 bg-white focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
-                >
-                  <option value=""></option>
-                  <option value="she_her">she/her</option>
-                  <option value="he_him">he/him</option>
-                  <option value="they_them">they/them</option>
-                  {/* PL-80: renders the student's name where a pronoun
-                      would go — never a wrong pronoun. */}
-                  <option value="name_only">Something else / rather not say</option>
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-gray-600">
-                  Graduating Year <span className="text-gray-400">(optional)</span>
-                </label>
-                <input type="text" name="graduatingYear" placeholder="e.g. 2027" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-gray-600">
-                  Testing accommodations <span className="text-gray-400">(optional)</span>
-                </label>
-                <input type="text" name="accommodations" placeholder="e.g. extended time" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-gray-600">
-                  Previous test scores <span className="text-gray-400">(optional)</span>
-                </label>
-                <input type="text" name="previousScores" placeholder="e.g. PSAT 1150" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm text-gray-600">
-                  Anything else we should know? <span className="text-gray-400">(optional)</span>
-                </label>
-                <textarea name="notes" rows={2} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600">First Name</label>
+                  <input type="text" name={`studentFirst_${i}`} required onChange={(e) => setStudentFirstTyped((prev) => { const next = [...prev]; next[i] = e.target.value; return next })} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Last Name</label>
+                  <input type="text" name={`studentLast_${i}`} required className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-gray-600">
+                    Student Email <span className="text-gray-400">(for class reminders & Synap access)</span>
+                  </label>
+                  <input type="email" name={`studentEmail_${i}`} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                </div>
+                <div className="col-span-2">
+                  {/* PL-69: optional, no explanatory text — unset simply keeps
+                      the neutral wording in emails. */}
+                  <label className="block text-sm text-gray-600">
+                    {(studentFirstTyped[i] ?? '').trim() ? `${(studentFirstTyped[i] ?? '').trim()}'s pronouns` : "Student's pronouns"}{' '}
+                    <span className="text-gray-400">(optional)</span>
+                  </label>
+                  <select
+                    name={`pronouns_${i}`}
+                    defaultValue=""
+                    className="mt-1 w-full border border-gray-300 rounded p-2 bg-white focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
+                  >
+                    <option value=""></option>
+                    <option value="she_her">she/her</option>
+                    <option value="he_him">he/him</option>
+                    <option value="they_them">they/them</option>
+                    {/* PL-80: renders the student's name where a pronoun
+                        would go — never a wrong pronoun. */}
+                    <option value="name_only">Something else / rather not say</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-gray-600">
+                    Graduating Year <span className="text-gray-400">(optional)</span>
+                  </label>
+                  <input type="text" name={`graduatingYear_${i}`} placeholder="e.g. 2027" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-gray-600">
+                    Testing accommodations <span className="text-gray-400">(optional)</span>
+                  </label>
+                  <input type="text" name={`accommodations_${i}`} placeholder="e.g. extended time" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-gray-600">
+                    Previous test scores <span className="text-gray-400">(optional)</span>
+                  </label>
+                  <input type="text" name={`previousScores_${i}`} placeholder="e.g. PSAT 1150" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm text-gray-600">
+                    Anything else we should know? <span className="text-gray-400">(optional)</span>
+                  </label>
+                  <textarea name={`notes_${i}`} rows={2} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                </div>
               </div>
             </div>
-          </div>
+          ))}
+
+          {/* PL-125: the sibling path — same parent block, one payment. */}
+          {!isFull && siblingCount < 6 && (
+            <button
+              type="button"
+              onClick={() => {
+                setSiblingCount((n) => n + 1)
+                setStudentFirstTyped((prev) => [...prev, ''])
+              }}
+              className="w-full border-2 border-dashed border-gray-300 text-gray-600 font-semibold py-2.5 px-4 rounded-md hover:border-hgl-blue hover:text-hgl-blue transition"
+            >
+              + Add another student (same parent info, one payment)
+            </button>
+          )}
 
           <button
             type="submit"
@@ -519,7 +624,7 @@ export default function RegistrationPage() {
                 : 'Preparing secure checkout...'
               : isFull
                 ? 'Join Waitlist (no payment now)'
-                : `Proceed to payment ($${classDetails.price})`}
+                : `Proceed to payment ($${(classDetails.price * siblingCount).toLocaleString()}${siblingCount > 1 ? ` — ${siblingCount} students` : ''})`}
           </button>
 
           {/* PL-124: one calm sentence on what follows payment — standing
