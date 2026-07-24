@@ -1,6 +1,6 @@
-# Portal fixes — batch 17 (registration-page UX, from the July 23 walkthrough)
+# Portal fixes — batch 17 (family-facing UX, from the July 23 walkthrough)
 
-Three items, PL-124…126. Scarlett greenlit all three off the stakeholder walkthrough (§1, parent-signup journey). Small, public-facing, pre-launch polish on the highest-traffic page. Continues PL-x numbering.
+Five items, PL-124…128. Scarlett greenlit all off the stakeholder walkthrough — registration-page polish (PL-124…126) plus two cancellation-flow items (PL-127…128). Public-facing, pre-launch. Continues PL-x numbering.
 
 **Note:** the earlier "add-on doesn't appear" finding was a false alarm — the add-on step exists and works per spec §9 (`register/[id]/page.tsx:98,173-185`); it renders after the form, which the walkthrough hadn't reached. Nothing to fix there.
 
@@ -31,4 +31,20 @@ Sessions render in school-local time (correct), but an international parent has 
 
 **Verify:** label renders with the correct school timezone for classes in different school zones (e.g. a Mexico City school vs a Rome school); no hardcoded zone.
 
-**Batch-wide verify:** full gate battery green; single-student registration + checkout path unchanged; add-on step still works alongside the sibling path.
+## PL-127 (tiny) · Set the next expectation after availability is shared
+
+After a family self-serve converts and shares availability (the `/convert/{id}` → availability page confirmation state, and the standalone `/availability/{token}` "Saved" state), the page currently ends the family's visibility with no sense of what's next. Add one calm line to the saved/confirmation state: "We'll review your availability and propose specific times within {N} business days — watch your inbox." **By role/team, not a person's name** (PL-112 rule — never "Kelsie"). Pick a realistic N with Scarlett (2–3 business days is typical); keep it one sentence.
+
+**Verify:** the line renders on both the post-conversion availability confirmation and the standalone availability "Saved" state; no hard-coded staff name.
+
+## PL-128 · Refund path: real state, small footprint, retention-aware copy
+
+Today the CX cancellation email's refund option is "just reply." Give it a genuine state without upstaging the conversion:
+- **Refund becomes a stamped self-serve request** — a tokenized link (house HMAC pattern, like convert) that records a refund request with a state (so it can't be lost in an inbox and shows on the admin/family record), rather than relying on an email reply.
+- **Presentation: small text hyperlink, NOT a button.** The "Convert to 1-on-1 tutoring" stays the big blue button — the visual hierarchy should steer toward retention. The refund link sits quietly below (e.g. "Prefer a refund? Request one here.").
+- **Copy revisions (Scarlett):** the family should NOT have to "let us know" / justify to get the refund — the stamped request is enough. BUT add a line that if they're unsure, they should reach out to talk it through (a human off-ramp before refunding). AND add the retention fact: **1-on-1 tutoring hours are transferable and never expire** — surface this near the convert option and again by the refund link, because "never expires / transferable" is exactly the reassurance that turns a refund into a conversion. (Confirm the transferable/never-expire claim is operationally true before it ships in copy.)
+- Admin side: a refund request should surface as a state-driven Needs Attention row (PL-100) with the family/enrollment deep-link, so Ops sees it and issues the actual refund in Stripe (refunds stay Option A — dashboard-issued, portal moves no money; the request is a tracked intent, not an automatic refund).
+
+**Verify:** CX email renders the big convert button + small refund text link + the transferable/never-expire line + the "unsure? talk to us" off-ramp; refund link stamps a tracked request (no money moves); request appears as a Needs Attention row deep-linking the record; convert flow unchanged.
+
+**Batch-wide verify:** full gate battery green; single-student registration + checkout path unchanged; add-on step still works alongside the sibling path; CX convert flow unchanged by the refund additions.

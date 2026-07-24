@@ -782,7 +782,7 @@ export default function LeadsAdmin() {
                   checked={showClosed}
                   onChange={(e) => setShowClosed(e.target.checked)}
                 />
-                Show won &amp; lost
+                Show started &amp; closed
               </label>
               {open.length === 0 && !showClosed && (
                 <p className="text-sm text-gray-500 italic">No open prospective students — nice and quiet.</p>

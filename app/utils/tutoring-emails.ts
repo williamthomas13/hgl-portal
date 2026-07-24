@@ -24,8 +24,11 @@ export async function loadContactInfo(): Promise<ContactInfo> {
     .in('key', ['contact_name', 'contact_email', 'contact_phone'])
   const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]))
   return {
-    name: map.contact_name ?? 'Kelsie Rank',
-    email: map.contact_email ?? 'kelsie@highergroundlearning.com',
+    // PL-123: fallbacks are POSITION-based, never a person — the role
+    // record (app_settings via the contact settings panel) is the source;
+    // an empty record falls back to the shared inbox.
+    name: map.contact_name ?? 'the Higher Ground office',
+    email: map.contact_email ?? 'info@highergroundlearning.com',
     phone: map.contact_phone ?? '+1 (801) 524-0817',
   }
 }

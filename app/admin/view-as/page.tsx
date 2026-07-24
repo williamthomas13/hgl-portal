@@ -41,7 +41,10 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
     )
   }
   const sp = await searchParams
-  const role = typeof sp.role === 'string' ? sp.role : 'parent'
+  // PL-123: an unknown ?role= (typo'd link, stale bookmark) degrades to the
+  // parent tab instead of a broken empty picker.
+  const requestedRole = typeof sp.role === 'string' ? sp.role : 'parent'
+  const role = ROLES.some((r) => r.id === requestedRole) ? requestedRole : 'parent'
   const pickedEmail = typeof sp.email === 'string' ? sp.email : ''
 
   // Picker options per role.
@@ -56,10 +59,13 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
       .select('name, email')
       .eq('tutoring_active', true)
       .order('name'),
+    // PL-123: an ACTIVE affiliation is one whose ended_at is null — the
+    // table has no status column (the walkthrough's empty picker was this
+    // query silently erroring).
     supabaseAdmin
       .from('school_affiliations')
-      .select('status, contacts ( first_name, last_name, email ), schools ( nickname )')
-      .eq('status', 'active')
+      .select('contacts ( first_name, last_name, email ), schools ( nickname )')
+      .is('ended_at', null)
       .limit(200),
   ])
   const options: { value: string; label: string }[] =
@@ -170,7 +176,7 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
               <p className="text-gray-500">
                 On pay: the portal stores pay-type <strong>titles</strong> and <strong>hours</strong> only
                 — no rates, no dollar amounts, for anyone. What a manager sees on a timecard is
-                exactly what you see below. Family <em>billing</em> amounts stay visible to
+                exactly what you see below. Family <em>billing</em>{' '}amounts stay visible to
                 managers by design (that&apos;s invoicing, not payroll).
               </p>
             </div>
