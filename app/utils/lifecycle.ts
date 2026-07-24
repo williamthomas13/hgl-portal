@@ -676,6 +676,34 @@ export function verifyClassroomRequestToken(classId: string, token: string) {
   return expected.length === given.length && timingSafeEqual(expected, given)
 }
 
+// ---------------------------------------------------------------------------
+// PL-131: the counselor's no-login roster link
+// ---------------------------------------------------------------------------
+// Counselors already had tokenized room entry and a login portal. What was
+// missing was the middle: a counselor reading a CD digest who wants to see
+// the roster RIGHT NOW shouldn't have to find their login.
+//
+// The token is scoped to class AND counselor email — a bearer link, so it
+// must never be a skeleton key for a school's other classes. The page it
+// opens bypasses RLS (it renders server-side as admin), which is exactly why
+// the school scoping has to be enforced in that page's own query.
+function counselorRosterSig(classId: string, counselorEmail: string): string {
+  return mintToken('roster:', `${classId}:${counselorEmail.trim().toLowerCase()}`, 'family-form')
+}
+
+export function counselorRosterUrlFor(classId: string, counselorEmail: string): string {
+  return `${emailBaseUrl()}/class-roster/${classId}?t=${counselorRosterSig(classId, counselorEmail)}&ce=${encodeURIComponent(counselorEmail)}`
+}
+
+/** 'ok' | 'expired' | 'invalid' — expiry earns the friendly aged-out page. */
+export function checkCounselorRosterToken(
+  classId: string,
+  counselorEmail: string,
+  token: string
+): 'ok' | 'expired' | 'invalid' {
+  return checkToken('roster:', `${classId}:${counselorEmail.trim().toLowerCase()}`, token, 'family-form')
+}
+
 export function classDetailsSnapshot(bundle: ClassBundle) {
   return {
     first_session: bundle.firstSession,

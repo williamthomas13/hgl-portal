@@ -16,7 +16,8 @@
     "regress:token-expiry": "node scripts/regress-token-expiry.mjs",
     "regress:mutation-buttons": "node scripts/regress-mutation-buttons.mjs",
     "regress:alert-pins": "node scripts/regress-alert-pins.mjs",
-    "regress:coverage-note": "node scripts/regress-coverage-note.mjs"
+    "regress:coverage-note": "node scripts/regress-coverage-note.mjs",
+    "regress:counselor-roster": "node scripts/regress-counselor-roster.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

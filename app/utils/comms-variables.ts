@@ -130,6 +130,8 @@ export type ExtraVars = {
   coverageSessionBlock?: string
   /** PL-112 (SUB): tutor portal link where the candidate answers. */
   coverageRespondLink?: string
+  /** PL-131: this counselor's no-login roster link for the class in hand. */
+  counselorRosterLink?: string
   /** PL-112 (SUB): one-sentence outcome for the requesting tutor. */
   coverageOutcomeLine?: string
   /** PL-156: the hand-over note's rendered paragraphs (sub's email). */
@@ -630,6 +632,14 @@ export const VARIABLES: Record<string, VariableDef> = {
     block: true,
     resolve: (_c, _a, e) => e.coverageSessionBlock ?? '',
   },
+  // PL-131: available to every counselor-facing template. The CD digest
+  // already carries it inside {digestClassListBlock}; CR/FP can place it
+  // wherever Scarlett decides it reads naturally — the value is supplied at
+  // send time, so it resolves the moment she adds it to a body.
+  counselorRosterLink: {
+    description: "Counselor's no-login live-roster link for this class",
+    resolve: (c, _a, e) => e.counselorRosterLink ?? c.portalUrl,
+  },
   coverageRespondLink: {
     description: 'SUB: tutor portal link where the candidate answers',
     resolve: (c, _a, e) => e.coverageRespondLink ?? c.portalUrl,
@@ -977,6 +987,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
   notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
   coverageSessionBlock:
     'Wednesday, July 29, 4:00 PM (your local time)\nAna · SAT Math\nhttps://meet.google.com/sample-link',
+  counselorRosterLink: 'https://hgl-portal.vercel.app/test-link',
   coverageRespondLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
   coverageOutcomeLine:
     "Jordan Fisher accepted — Ana's SAT Math session on Wednesday, July 29, 4:00 PM has moved to their schedule and calendar. Nothing else to do.",

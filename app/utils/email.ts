@@ -1220,6 +1220,8 @@ export type DigestClassInfo = {
   waitlistDepth: number
   newSinceLast: number
   regUrl: string
+  /** PL-131: this counselor's no-login roster link for THIS class. */
+  rosterUrl?: string
   /** Portal link for the Phase 4.5 flyer + letter downloads (auth-gated —
    *  links, never attachments, so the files can't go stale in an inbox). */
   materialsUrl?: string
@@ -1241,6 +1243,13 @@ export function digestClassListHtml(classes: DigestClassInfo[]): string {
         (${c.newSinceLast} new since last update) · Waitlist: ${c.waitlistDepth}</p>
         <p style="margin:6px 0 0;font-size:13px">Registration link to share:
         <a href="${c.regUrl}">${c.regUrl}</a></p>
+        ${
+          // PL-131: the middle step — see the roster right now, no login.
+          c.rosterUrl
+            ? `<p style="margin:6px 0 0;font-size:13px"><a href="${c.rosterUrl}"><strong>See the live roster</strong></a>
+        — who's registered, updated as it changes. No sign-in needed.</p>`
+            : ''
+        }
         ${
           c.materialsUpdated && c.materialsUrl
             ? `<p style="margin:6px 0 0;font-size:13px;color:#b45309"><strong>Class

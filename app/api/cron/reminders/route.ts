@@ -81,6 +81,7 @@ import {
   loadTutoringPackages,
   localDate,
   localHour,
+  counselorRosterUrlFor,
   effectiveDeadline,
   registrationCloseFor,
   registrationUrlFor,
@@ -1344,6 +1345,9 @@ async function sweepCounselorDigests(
           (e) => e.enrolled_at >= since && e.payment_status !== 'Expired'
         ).length,
         regUrl: registrationUrlFor(b),
+        // PL-131: per-class, per-counselor — a bearer link must never open a
+        // class this counselor isn't attached to.
+        rosterUrl: counselorRosterUrlFor(b.id, counselor.email),
         materialsUrl: `${emailBaseUrl()}/portal`,
         // Only meaningful when the counselor has seen a previous digest —
         // otherwise there are no "posted copies" to replace yet.
@@ -1449,6 +1453,7 @@ async function sweepDeadlinePush(
         },
         {
           counselorFirstName: counselor.first_name,
+          counselorRosterLink: counselorRosterUrlFor(bundle.id, counselor.email), // PL-131
           waitlistDepth: String(waitlistDepth(bundle)),
           registrationLink: registrationUrlFor(bundle),
         },
@@ -1482,6 +1487,7 @@ async function sweepDeadlinePush(
         },
         {
           counselorFirstName: counselor.first_name,
+          counselorRosterLink: counselorRosterUrlFor(bundle.id, counselor.email), // PL-131
           deadlineCountdown: daysToDeadline === 1 ? 'Last day' : `${daysToDeadline} days left`,
           spotsLeftPhrase: `${spotsLeft} spot${spotsLeft === 1 ? '' : 's'}`,
           enrolledCountLine: `${paid} of ${bundle.capacity} enrolled`,
@@ -1566,7 +1572,13 @@ async function sweepClassroomRequests(
           schoolName: bundle.schoolName,
           firstSession: bundle.firstSession,
         },
-        { counselorFirstName: counselor.first_name, classroomFormLink: formUrl },
+        {
+          counselorFirstName: counselor.first_name,
+          classroomFormLink: formUrl,
+          // PL-131: supplied, not yet placed — the CR bodies are Scarlett's
+          // live copy. The moment she adds {counselorRosterLink} it resolves.
+          counselorRosterLink: counselorRosterUrlFor(bundle.id, counselor.email),
+        },
         () =>
           classroomRequestEmail({
             counselorFirst: counselor.first_name,
