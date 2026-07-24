@@ -146,6 +146,8 @@ export function t1ProposalEmail(opts: {
        <a href="${opts.link}?confirm=1" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Confirm schedule</a>
        &nbsp;&nbsp;<a href="${opts.link}" style="color:#00AEEE">Request changes →</a>
      </p>
+     <p style="color:#64748b;font-size:13px">Requesting changes takes one tap per session on that
+     page — or just reply to this email if that's easier; both reach us the same way.</p>
      <p style="color:#64748b;font-size:13px">If we don't hear from you within ${opts.autoconfirmDays} days,
      the schedule confirms automatically and stays exactly as shown — same as our usual policy
      (schedule changes for the coming month need to reach us before month-end).</p>

@@ -2,6 +2,7 @@ import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import {
   autopayToken,
   billingMonth,
+  packageHoursUsedBefore,
   proposalToken,
   tutoringIcsToken,
 } from '../utils/tutoring-billing'
@@ -19,6 +20,13 @@ import RescheduleRequest from './reschedule-request'
 // 12-hour style everywhere else on this surface (times are the tutor's wall
 // clock, per the "Times shown in …" note above the cards).
 const WEEKDAY_PLURALS = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays']
+
+/** "2026-07" → the first instant of the NEXT month (UTC ISO). */
+function nextMonthIso(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m, 1)) // JS months are 0-based: m = next month
+  return d.toISOString()
+}
 
 function fmtSlotTime(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number)
@@ -99,20 +107,51 @@ export default async function TutoringSection({ email }: { email: string }) {
     new Date(iso).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' })
 
   // Package draw-down (C3 contract: purchased / remaining / next session).
+  // PL-130: remaining comes from the SAME function the billing cycle uses
+  // (packageHoursUsedBefore) — one source of truth, never a parallel count.
   const packageInfo = new Map<string, { purchased: number; remaining: number }>()
   for (const e of (engagements as any[]) ?? []) {
     if (e.funding !== 'package' || !e.addon_id) continue
     const purchased = Number(one<any>(e.enrollment_addons)?.hours ?? 0)
-    const { data: consuming } = await supabase
-      .from('tutoring_sessions')
-      .select('duration_minutes, status, reschedule_notice')
-      .eq('engagement_id', e.id)
-      .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
-    const used = (consuming ?? [])
-      .filter((s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late')
-      .reduce((sum, s) => sum + s.duration_minutes / 60, 0)
+    const used = await packageHoursUsedBefore(e.id, '2999-01-01')
     packageInfo.set(e.id, { purchased, remaining: Math.max(0, Number((purchased - used).toFixed(1))) })
   }
+
+  // PL-130 "Your month at a glance": this month's sessions, the invoice
+  // total when one exists (the SAME number the family is billed), and a
+  // labeled line for every non-session decrement — no silent hour loss.
+  const monthStart = new Date().toLocaleDateString('en-CA', { timeZone: tz }).slice(0, 7)
+  const { data: monthSessions } = await supabase
+    .from('tutoring_sessions')
+    .select('id, starts_at, status, reschedule_notice, duration_minutes, students!inner ( first_name, family_id )')
+    .in('students.family_id', familyIds)
+    .gte('starts_at', `${monthStart}-01T00:00:00Z`)
+    .lt('starts_at', nextMonthIso(monthStart))
+  const monthRows = ((monthSessions as any[]) ?? []).filter(
+    (s) => !['cancelled'].includes(s.status) && (s.status !== 'rescheduled' || s.reschedule_notice === 'late')
+  )
+  const monthCount = monthRows.length
+  const { data: monthInvoice } = await supabase
+    .from('tutoring_invoices')
+    .select('total, status')
+    .in('family_id', familyIds)
+    .eq('period', `${monthStart}-01`)
+    .neq('status', 'void')
+    .limit(1)
+    .maybeSingle()
+  const DECREMENT_LABELS: Record<string, string> = {
+    forfeited: 'late cancellation',
+    no_show: 'missed session',
+    rescheduled: 'late reschedule (original time kept its cost)',
+  }
+  const decrements = monthRows
+    .filter((s) => s.status in DECREMENT_LABELS)
+    .map((s) => ({
+      hours: Number((s.duration_minutes / 60).toFixed(1)),
+      label: DECREMENT_LABELS[s.status],
+      when: new Date(s.starts_at).toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' }),
+      student: one<any>(s.students)?.first_name ?? '',
+    }))
 
   // PL-111: session notes — what the tutor and student worked on, straight
   // from the tutor after each session. Parent-visible by design.
@@ -237,7 +276,15 @@ export default async function TutoringSection({ email }: { email: string }) {
                 </span>
                 <span className="text-gray-600">
                   {one<any>(s.students)?.first_name} · {one<any>(one<any>(s.tutoring_engagements)?.subjects)?.name}
+                  {one<any>(s.instructors)?.name
+                    ? ` · with ${String(one<any>(s.instructors).name).split(' ')[0]}`
+                    : ''}
                 </span>
+                {(one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_location) && (
+                  <span className="text-gray-400 text-xs truncate max-w-56">
+                    {one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_location}
+                  </span>
+                )}
                 <span className="ml-auto">
                   <RescheduleRequest
                     sessionId={s.id}
@@ -251,6 +298,48 @@ export default async function TutoringSection({ email }: { email: string }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* PL-130: "Your month at a glance" — the same numbers billing uses. */}
+      {(monthCount > 0 || monthInvoice) && (
+        <div className="mb-6">
+          <h3 className="font-semibold text-hgl-slate text-sm mb-1">Your month at a glance</h3>
+          <div className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded p-3 space-y-1">
+            <p>
+              {billingMonth(monthStart).label}: <strong>{monthCount}</strong> session{monthCount === 1 ? '' : 's'}
+              {monthInvoice ? (
+                <>
+                  {' '}· month total <strong>${Number(monthInvoice.total).toFixed(2)}</strong>{' '}
+                  <span className="text-gray-400">
+                    ({(INVOICE_STATUS_COPY[monthInvoice.status]?.label ?? monthInvoice.status).toLowerCase()})
+                  </span>
+                </>
+              ) : (
+                <span className="text-gray-400"> · invoice not prepared yet</span>
+              )}
+            </p>
+            {[...packageInfo.entries()].map(([engId, pkg]) => {
+              const eng = ((engagements as any[]) ?? []).find((e) => e.id === engId)
+              const st = one<any>(eng?.students)
+              return (
+                <p key={engId}>
+                  Package hours remaining{st ? ` (${st.first_name})` : ''}:{' '}
+                  <strong>{pkg.remaining}</strong> of {pkg.purchased}
+                </p>
+              )
+            })}
+            {decrements.length > 0 && (
+              <div className="text-xs text-gray-500 pt-1 border-t border-gray-200">
+                {decrements.map((d, i) => (
+                  <p key={i}>
+                    {d.hours} hour{d.hours === 1 ? '' : 's'} — {d.label}, {d.when}
+                    {d.student ? ` (${d.student})` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

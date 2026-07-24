@@ -210,7 +210,10 @@ function engagementPeriodBounds(month: BillingMonth, tutorTz: string) {
 }
 
 /** Hours already drawn from a package addon by sessions BEFORE the period. */
-async function packageHoursUsedBefore(engagementId: string, beforeIso: string): Promise<number> {
+/** PL-130: EXPORTED — the family portal's hours-remaining figure must come
+ *  from this exact function (the same decrement machinery that bills),
+ *  never a parallel count. */
+export async function packageHoursUsedBefore(engagementId: string, beforeIso: string): Promise<number> {
   const { data } = await supabase
     .from('tutoring_sessions')
     .select('duration_minutes, status, reschedule_notice')
