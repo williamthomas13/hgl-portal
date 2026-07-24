@@ -53,7 +53,9 @@ Today the CX cancellation email's refund option is "just reply." Give it a genui
 
 **Verify:** CX email renders the big convert button + small refund text link + the transferable/never-expire line + the "unsure? talk to us" off-ramp; refund link stamps a tracked request (no money moves); request appears as a Needs Attention row deep-linking the record; convert flow unchanged.
 
-## PL-129 (small) · Leads page: always-visible mid-call "quick add"
+## PL-129 (small) · Leads page: always-visible mid-call "quick add" ✅
+
+> **Shipped, browser-verified end to end.** A compact "📞 On a call?" bar sits at the top of the leads page — always visible, nothing to expand: parent name + phone + Add (Enter submits too), with the hint "Lands in the pipeline instantly — fill in the rest after the call." Submit creates the lead immediately (`source: 'call'`, status `new` — verified on the row) and the new record is **expanded and focus-ringed** via the same `useDeepLinkFocus` machinery the deep links use, so follow-up details go straight in. The full "Add a prospective student" form is untouched below it. The pipeline "untouched for 4+ days" nudge applies by construction — quick-added leads are ordinary pipeline rows.
 
 The phone-intake reality: Ops types the parent's name while talking, and the current "Add a prospective student" is an expandable form with many fields — mid-call friction is where leads get lost. Add a compact, **always-visible** quick-add at the top of the leads page: parent name + phone (email optional), one "Add" button, done in two fields. The row lands in the pipeline as a new lead immediately (source = phone call), and everything else — student name, school, what-they-want — gets filled in on the lead record after the call (the record's edit surface already exists). Keep the full expandable form for the deliberate-entry case; quick-add is the fast path, not a replacement. The new lead should be focused/highlighted after add (the `useDeepLinkFocus` machinery) so the follow-up details go straight in.
 

@@ -164,6 +164,81 @@ async function post(body: Record<string, unknown>): Promise<{ ok: boolean; error
 }
 
 // ---------------------------------------------------------------------------
+// PL-129: mid-call quick add — two fields, always visible, zero expanding.
+// Ops types the parent's name while talking; everything else goes onto the
+// lead record after the call. The full form below stays for deliberate entry.
+// ---------------------------------------------------------------------------
+
+function QuickAddLead({ onCreated }: { onCreated: (id: string) => void }) {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function add() {
+    if (!name.trim()) return
+    setBusy(true)
+    setError('')
+    const res = await post({
+      action: 'create',
+      source: 'call',
+      status: 'new',
+      contact_name: name.trim(),
+      contact_phone: phone.trim() || null,
+    })
+    setBusy(false)
+    if (!res.ok) {
+      setError(res.error ?? 'Could not add — try the full form below.')
+      return
+    }
+    setName('')
+    setPhone('')
+    onCreated((res as { id?: string }).id ?? '')
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-md border-l-4 border-hgl-blue p-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          add()
+        }}
+        className="flex flex-wrap items-center gap-2"
+      >
+        <span className="text-sm font-semibold text-hgl-slate whitespace-nowrap">
+          📞 On a call?
+        </span>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Parent name"
+          className="border border-gray-300 rounded p-2 text-sm flex-1 min-w-40"
+        />
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone"
+          className="border border-gray-300 rounded p-2 text-sm w-40"
+        />
+        <button
+          type="submit"
+          disabled={busy || !name.trim()}
+          className="bg-hgl-blue text-white font-semibold rounded px-4 py-2 text-sm disabled:opacity-40"
+        >
+          {busy ? 'Adding…' : 'Add'}
+        </button>
+        <span className="text-xs text-gray-400 w-full sm:w-auto">
+          Lands in the pipeline instantly — fill in the rest after the call.
+        </span>
+      </form>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // New-lead form
 // ---------------------------------------------------------------------------
 
@@ -765,6 +840,18 @@ export default function LeadsAdmin() {
           <p className="text-sm text-gray-500">Loading…</p>
         ) : (
           <>
+            {/* PL-129: the fast path — always visible, focused after add so
+                the follow-up details go straight in. */}
+            <QuickAddLead
+              onCreated={(id) => {
+                refresh()
+                if (id) {
+                  setExpanded(id)
+                  setFocusLead(`lead-${id}`)
+                }
+              }}
+            />
+
             <CollapsibleSection title="Add a prospective student" accent="border-hgl-blue">
               <NewLeadForm onCreated={refresh} />
             </CollapsibleSection>
