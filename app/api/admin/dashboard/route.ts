@@ -25,8 +25,42 @@ export type AttentionRow = {
   text: string
   href: string
   urgent?: boolean
+  /**
+   * PL-135: when the CONDITION started, from the underlying record's own
+   * timestamp — never from when the dashboard first noticed it (the
+   * state-driven discipline applies to the clock too). Triage self-ranks
+   * without any sorting UI.
+   */
+  since?: string
+  /** PL-135: a promised date beats an age wherever both exist (PL-127). */
+  deadline?: string
+  /** PL-133: a human-pinned sticky note, not a derived condition. */
+  manual?: { by: string; at: string }
 }
-export type ActivityRow = { id: string; when: string; text: string; href: string }
+export type ActivityRow = {
+  id: string
+  when: string
+  text: string
+  href: string
+  /** PL-134: the filter chips derive from this set — a new type appears
+   *  automatically rather than needing the chip list edited. */
+  type?: string
+  /** PL-134: day + type + target; rows sharing one collapse into a group. */
+  groupKey?: string
+  /** PL-134: the class/school label a grouped row names. */
+  groupLabel?: string
+}
+
+/**
+ * PL-136: three numbers, one glance — the pre-launch card. The motivating
+ * incident is the July 23 quota exhaustion: sends failed silently until an
+ * external email happened to arrive. Read-only, no graphs, no history.
+ */
+export type SystemHealth = {
+  sends: { today: number; cap: number; state: 'ok' | 'warn' | 'full' }
+  qbo: { pending: number; failed: number }
+  sweep: { lastFinishedAt: string | null; stale: boolean; hanging: boolean }
+}
 
 export async function GET() {
   const caller = await sessionRole('staff')
@@ -58,7 +92,7 @@ export async function GET() {
     supabase
       .from('classes')
       .select(
-        `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, default_location, delivery_mode, start_date,
+        `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, default_location, delivery_mode, start_date, created_at,
          schools ( nickname ), sessions ( session_date ), enrollments ( payment_status )`
       )
       .neq('status', 'cancelled'),
@@ -66,8 +100,8 @@ export async function GET() {
       .from('tutoring_invoices')
       .select('id, family_id, status, due_at, total, families ( parent_first_name, parent_last_name )')
       .in('status', ['invoiced', 'past_due']),
-    supabase.from('qbo_sync_log').select('id, kind, last_error').eq('status', 'failed').limit(20),
-    supabase.from('leads').select('id, student_name, status').eq('status', 'intake_complete'),
+    supabase.from('qbo_sync_log').select('id, kind, last_error, created_at').eq('status', 'failed').limit(20),
+    supabase.from('leads').select('id, student_name, status, created_at, updated_at').eq('status', 'intake_complete'),
     supabase
       .from('coverage_requests')
       .select('id, session_id, status, created_at, tutoring_sessions!inner ( starts_at, student_id, students ( first_name, last_name ) )')
@@ -76,7 +110,7 @@ export async function GET() {
       .order('created_at', { ascending: false }),
     supabase
       .from('timecards')
-      .select('id, period_start, period_end, instructors ( name, email )')
+      .select('id, period_start, period_end, tutor_confirmed_at, instructors ( name, email )')
       .eq('status', 'tutor_confirmed'),
     supabase
       .from('tutoring_sessions')
@@ -104,13 +138,13 @@ export async function GET() {
       .from('enrollments')
       .select('id, enrolled_at, class_id, payment_status, students ( first_name, last_name ), classes ( class_type, schools ( nickname ) )')
       .order('enrolled_at', { ascending: false })
-      .limit(8),
+      .limit(25), // PL-134: grouping needs a day's worth to collapse
     supabase
       .from('tutoring_invoices')
       .select('id, paid_at, total, families ( parent_first_name, parent_last_name )')
       .not('paid_at', 'is', null)
       .order('paid_at', { ascending: false })
-      .limit(5),
+      .limit(15),
     supabase
       .from('student_availability')
       .select('student_id, updated_at, students ( first_name, last_name )')
@@ -127,7 +161,7 @@ export async function GET() {
       .from('leads')
       .select('id, student_name, created_at, source')
       .order('created_at', { ascending: false })
-      .limit(5),
+      .limit(15),
     // PL-155a: real sends whose body still carried {placeholders} — a broken
     // template keeps breaking every send until someone fixes it, so this is
     // a live condition, not a past event. Clears when no recent send has any.
@@ -156,6 +190,7 @@ export async function GET() {
       kind: 'Class needs an instructor',
       text: `${label(c)} (starts ${c.start_date}) has no instructor assigned.`,
       href: `/admin?class=${c.id}`,
+      since: c.created_at, // PL-135: since the class was created
     })
   }
   const in3d = new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10)
@@ -174,6 +209,7 @@ export async function GET() {
         text: `${label(c)}: ${paid} of ${c.min_enrollment} minimum with the deadline ${c.enrollment_deadline} — run, extend, or cancel.`,
         href: `/admin?class=${c.id}`,
         urgent: true,
+        deadline: c.enrollment_deadline, // PL-135: a promise beats an age
       })
     }
   }
@@ -198,6 +234,7 @@ export async function GET() {
     const fam = one<any>(inv.families)
     attention.push({
       id: `overdue-${inv.id}`,
+      since: inv.due_at, // PL-135: overdue since the due date
       kind: daysLate >= 30 ? 'Invoice 30+ days past due' : 'Invoice 10+ days past due',
       text: `${fam ? `${fam.parent_first_name} ${fam.parent_last_name}` : 'A family'} — $${Number(inv.total).toFixed(2)} unpaid, ${daysLate} days past due.`,
       href: `/admin/tutoring?invoice=${inv.id}`,
@@ -229,6 +266,7 @@ export async function GET() {
   for (const q of (qboFailed as any[]) ?? []) {
     attention.push({
       id: `qbo-${q.id}`,
+      since: q.created_at, // PL-135
       kind: 'QuickBooks sync failed',
       text: `A ${q.kind ?? 'sync'} row failed to post${q.last_error ? ` — ${String(q.last_error).slice(0, 90)}` : ''}.`,
       href: `/admin?qbo=${q.id}`,
@@ -276,6 +314,7 @@ export async function GET() {
   for (const l of (intakeLeads as any[]) ?? []) {
     attention.push({
       id: `intake-${l.id}`,
+      since: l.updated_at ?? l.created_at, // PL-135
       kind: 'Intake complete — ready to schedule',
       text: `${l.student_name ?? 'A prospective student'}'s intake form is complete; nothing is scheduled yet.`,
       href: `/admin/leads?lead=${l.id}`,
@@ -293,6 +332,7 @@ export async function GET() {
     const st = one<any>(ses?.students)
     attention.push({
       id: `coverage-${r.session_id}`,
+      since: r.created_at, // PL-135: waiting since the request went out
       kind: 'Session still needs coverage',
       text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'}'s session on ${String(ses?.starts_at ?? '').slice(0, 10)} — substitute request ${r.status === 'offered' ? 'waiting on an answer' : 'was declined; nobody is lined up'}.`,
       href: `/admin/tutoring?schedule=${ses?.student_id}`,
@@ -304,6 +344,7 @@ export async function GET() {
     const ins = one<any>(t.instructors)
     attention.push({
       id: `timecard-${t.id}`,
+      since: t.tutor_confirmed_at, // PL-135: waiting since the tutor confirmed
       kind: 'Timecard awaiting approval',
       text: `${ins?.name ?? ins?.email ?? 'A tutor'} confirmed ${t.period_start} → ${t.period_end}; it needs office approval.`,
       href: `/admin/tutoring`,
@@ -377,11 +418,87 @@ export async function GET() {
         text: `${nameOf.get(id) ?? 'A student'}'s family shared availability ${shared} — the family was told to expect proposed times by ${proposeBy}${overdue ? ', which has passed' : ''}.`,
         href: `/admin/tutoring?schedule=${id}`,
         urgent: overdue,
+        // PL-135/127: this row already carries a promised date — the
+        // countdown wins, the age is not shown.
+        deadline: proposeBy,
       })
     }
   }
 
-  attention.sort((a, b) => Number(b.urgent ?? false) - Number(a.urgent ?? false))
+  // PL-133: the sticky-note layer — human-pinned, human-cleared, and the ONE
+  // exception to the state-driven rule. Tagged in the UI so nobody mistakes
+  // a note for a system condition.
+  const { data: manualNotes } = await supabase
+    .from('dashboard_notes')
+    .select('id, body, created_by, created_at')
+    .is('cleared_at', null)
+    .order('created_at', { ascending: false })
+    .limit(50)
+  for (const n of (manualNotes as any[]) ?? []) {
+    attention.push({
+      id: `note-${n.id}`,
+      kind: 'Note',
+      text: n.body,
+      href: '',
+      manual: { by: n.created_by, at: n.created_at },
+    })
+  }
+
+  // PL-135: oldest-first WITHIN severity — triage self-ranks without any
+  // sorting controls. Notes carry no age, so they sort by when they were
+  // pinned. Undated rows keep their existing relative order.
+  const rowClock = (r: AttentionRow) => r.deadline ?? r.since ?? r.manual?.at ?? ''
+  attention.sort(
+    (a, b) =>
+      Number(b.urgent ?? false) - Number(a.urgent ?? false) ||
+      (rowClock(a) && rowClock(b) ? rowClock(a).localeCompare(rowClock(b)) : 0)
+  )
+
+  // --- PL-136: system health ------------------------------------------------
+  const dayStartDenver = new Date(
+    new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }) + 'T00:00:00-06:00'
+  ).toISOString()
+  const [{ data: capRow }, { count: sendsToday }, { count: qboPendingCount }, { count: qboFailedCount }, { data: sweepRows }] =
+    await Promise.all([
+      supabase.from('app_settings').select('value').eq('key', 'resend_daily_cap').maybeSingle(),
+      // Real sends AND test sends both consume the plan's quota.
+      supabase
+        .from('email_sends')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+        .gte('sent_at', dayStartDenver),
+      supabase.from('qbo_sync_log').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('qbo_sync_log').select('id', { count: 'exact', head: true }).eq('status', 'failed'),
+      supabase
+        .from('app_settings')
+        .select('key, value')
+        .in('key', ['cron_sweep_started_at', 'cron_sweep_finished_at']),
+    ])
+  const sweepMap = Object.fromEntries(((sweepRows as any[]) ?? []).map((r) => [r.key, r.value]))
+  const finishedAt = sweepMap.cron_sweep_finished_at ?? null
+  const startedAt = sweepMap.cron_sweep_started_at ?? null
+  const cap = Number(capRow?.value ?? 100)
+  const used = sendsToday ?? 0
+  const health: SystemHealth = {
+    sends: {
+      today: used,
+      cap,
+      state: used >= cap ? 'full' : used >= cap * 0.8 ? 'warn' : 'ok',
+    },
+    qbo: { pending: qboPendingCount ?? 0, failed: qboFailedCount ?? 0 },
+    sweep: {
+      lastFinishedAt: finishedAt,
+      // Hourly cron: more than two hours without finishing is a stall, and a
+      // stalled sweep stops the whole email lifecycle silently.
+      stale: !finishedAt || now.getTime() - new Date(finishedAt).getTime() > 2 * 3600_000,
+      // Started much later than it finished = the current run is hanging.
+      hanging: Boolean(
+        startedAt &&
+          (!finishedAt || startedAt > finishedAt) &&
+          now.getTime() - new Date(startedAt).getTime() > 20 * 60_000
+      ),
+    },
+  }
 
   // --- Recent Activity (read-only) ------------------------------------------
   for (const e of (recentEnrollments as any[]) ?? []) {
@@ -389,8 +506,12 @@ export async function GET() {
     const cls = one<any>(e.classes)
     activity.push({
       id: `en-${e.id}`,
+      type: 'Registrations',
+      // PL-134: same day + same type + same class collapses to one row.
+      groupKey: `Registrations|${e.class_id}`,
       when: e.enrolled_at,
       text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'} registered for ${one<any>(cls?.schools)?.nickname ?? ''} ${cls?.class_type ?? 'a class'} (${e.payment_status}).`,
+      groupLabel: `${one<any>(cls?.schools)?.nickname ?? ''} ${cls?.class_type ?? 'a class'}`.trim(),
       href: `/admin?class=${e.class_id}`,
     })
   }
@@ -398,6 +519,8 @@ export async function GET() {
     const fam = one<any>(i.families)
     activity.push({
       id: `paid-${i.id}`,
+      type: 'Payments',
+      groupKey: 'Payments',
       when: i.paid_at,
       text: `Payment received — ${fam ? `${fam.parent_first_name} ${fam.parent_last_name}` : 'a family'} paid $${Number(i.total).toFixed(2)}.`,
       href: `/admin/tutoring?invoice=${i.id}`,
@@ -410,6 +533,8 @@ export async function GET() {
     const st = one<any>(a.students)
     activity.push({
       id: `av-${a.student_id}`,
+      type: 'Availability',
+      groupKey: 'Availability',
       when: a.updated_at,
       text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'}'s family shared availability.`,
       href: `/admin/tutoring?schedule=${a.student_id}`,
@@ -419,6 +544,8 @@ export async function GET() {
     const ins = one<any>(t.instructors)
     activity.push({
       id: `tc-${t.id}`,
+      type: 'Timecards',
+      groupKey: 'Timecards',
       when: t.tutor_confirmed_at,
       text: `${ins?.name ?? ins?.email ?? 'A tutor'} confirmed their timecard (${Number(t.total_hours)} hours).`,
       href: `/admin/tutoring`,
@@ -427,6 +554,8 @@ export async function GET() {
   for (const l of (recentLeads as any[]) ?? []) {
     activity.push({
       id: `lead-${l.id}`,
+      type: 'Prospective students',
+      groupKey: 'Prospective students',
       when: l.created_at,
       text: `New prospective student — ${l.student_name ?? 'name pending'}${l.source ? ` (via ${l.source})` : ''}.`,
       href: `/admin/leads?lead=${l.id}`,
@@ -458,8 +587,9 @@ export async function GET() {
 
   return NextResponse.json({
     attention,
-    activity: activity.slice(0, 15),
+    activity: activity.slice(0, 40), // PL-134: grouping collapses these
     upcoming,
     weekSessions: weekSessions ?? 0,
+    health,
   })
 }

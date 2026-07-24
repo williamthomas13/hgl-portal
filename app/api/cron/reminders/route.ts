@@ -1624,6 +1624,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // PL-136: stamp the sweep so the dashboard health card can say when it
+  // last ran. A stalled sweep silently stops the ENTIRE email lifecycle —
+  // reminders, sequences, digests, billing generation, coverage nudges —
+  // and nothing errors; everything just quietly stops. The start stamp is
+  // what makes a HANGING sweep visible, not only a dead one.
+  await supabase
+    .from('app_settings')
+    .upsert({ key: 'cron_sweep_started_at', value: new Date().toISOString() })
+
   const bundles = await loadClassBundles()
   const packages = await loadTutoringPackages()
   const counselorsBySchool = await loadCounselorsBySchool()
@@ -1762,6 +1771,13 @@ export async function GET(req: Request) {
   } catch (e) {
     console.error('tutoring billing sweep failed (continuing):', e)
   }
+
+  // PL-136: only a sweep that reached here finished. (A throw above leaves
+  // the start stamp newer than the finish stamp — which is exactly the
+  // "sweep is hanging" signal the card reads.)
+  await supabase
+    .from('app_settings')
+    .upsert({ key: 'cron_sweep_finished_at', value: new Date().toISOString() })
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })
 }

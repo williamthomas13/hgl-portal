@@ -27,6 +27,7 @@ type Body =
   | { action: 'request_coverage'; session_id: string; candidate_id: string; note?: string }
   | { action: 'respond_coverage'; request_id: string; response: 'accept' | 'decline' }
   | { action: 'cancel_coverage'; request_id: string }
+  | { action: 'student_notes'; student_id: string }
 
 const MIN_MINUTES = 15
 const MAX_MINUTES = 240
@@ -140,6 +141,38 @@ export async function POST(req: Request) {
       const out = await cancelCoverage({ requestId: body.request_id, callerIds: caller.instructorIds })
       if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status })
       return NextResponse.json(out)
+    }
+
+    // PL-132: a tutor's own memory of a student — the same note history a
+    // substitute receives at handoff (PL-111/112). One tap from the schedule
+    // list rather than a hunt. Scoped: only a tutor who actually teaches (or
+    // is covering) this student can read it.
+    if (body.action === 'student_notes') {
+      const { data: mine } = await supabase
+        .from('tutoring_sessions')
+        .select('id')
+        .eq('student_id', body.student_id)
+        .in('tutor_id', caller.instructorIds)
+        .limit(1)
+      if (!mine?.length) {
+        return NextResponse.json({ error: 'Not your student.' }, { status: 403 })
+      }
+      const { data: notes } = await supabase
+        .from('session_notes')
+        .select('note, next_time, created_at, tutoring_sessions!inner ( starts_at )')
+        .eq('student_id', body.student_id)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      return NextResponse.json({
+        ok: true,
+        notes: ((notes as any[]) ?? []).map((n) => ({
+          startsAt: (Array.isArray(n.tutoring_sessions) ? n.tutoring_sessions[0] : n.tutoring_sessions)?.starts_at ?? null,
+          note: n.note,
+          nextTime: n.next_time,
+        })),
+      })
+      /* eslint-enable @typescript-eslint/no-explicit-any */
     }
 
     // PL-111: the short session note — what we worked on, parent-visible.

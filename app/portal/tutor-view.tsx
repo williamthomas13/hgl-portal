@@ -5,8 +5,10 @@ import TimecardPanel, {
   type TimecardClassSession,
 } from './timecard-panel'
 import { one } from './shared'
+import { zonedToUtc } from '../utils/tutoring'
 import { workTypeOptions } from '../utils/work-types'
 import SessionNotesPanel, { type NoteSession } from './session-notes-panel'
+import UpcomingSessions, { type UpcomingRow } from './upcoming-sessions'
 import CoveragePanel, {
   type CoverageRow,
   type CoverableSession,
@@ -40,7 +42,7 @@ export default async function TutorView({
   }
   const tz = tutor.timezone ?? 'America/Denver'
 
-  const [{ data: upcoming }, { data: timecards }] = await Promise.all([
+  const [{ data: upcoming }, { data: timecards }, { data: upcomingClasses }] = await Promise.all([
     supabase
       .from('tutoring_sessions')
       .select(
@@ -59,6 +61,20 @@ export default async function TutorView({
       .eq('tutor_id', tutor.id)
       .order('period_start', { ascending: false })
       .limit(6),
+    // PL-132: the class/workshop sessions this instructor teaches. They were
+    // missing from the schedule list entirely even though the timecard has
+    // always counted them (PL-103) — different prep, different pay type.
+    supabase
+      .from('sessions')
+      .select(
+        `id, session_date, start_time, end_time,
+         classes!inner ( class_type, default_location, instructor_id, status, schools ( nickname ) )`
+      )
+      .eq('classes.instructor_id', tutor.id)
+      .neq('classes.status', 'cancelled')
+      .gte('session_date', new Date().toISOString().slice(0, 10))
+      .order('session_date')
+      .limit(10),
   ])
 
   // Sessions on the most recent actionable (not yet approved) timecard.
@@ -220,6 +236,43 @@ export default async function TutorView({
     })
   }
 
+  // PL-132: one schedule list, both kinds of work, sorted together — the
+  // tutor's day doesn't separate them, so the list shouldn't either.
+  const upcomingRows: UpcomingRow[] = [
+    ...((upcoming as any[]) ?? []).map((s) => {
+      const eng = one<any>(s.tutoring_engagements)
+      const student = one<any>(s.students)
+      return {
+        id: s.id as string,
+        kind: 'one_on_one' as const,
+        startsAt: s.starts_at as string,
+        endsAt: s.ends_at as string,
+        who: student ? `${student.first_name} ${student.last_name}` : '',
+        subject: one<any>(eng?.subjects)?.name ?? '',
+        location: eng?.location ?? null,
+        studentId: student?.id ?? null,
+      }
+    }),
+    ...((upcomingClasses as any[]) ?? []).map((s) => {
+      const cls = one<any>(s.classes)
+      const label = [one<any>(cls?.schools)?.nickname, cls?.class_type].filter(Boolean).join(' ') || 'Class'
+      // `sessions` stores a date + wall-clock times; build instants on the
+      // tutor's own clock so the row reads like every other row.
+      const toIso = (t: string | null) =>
+        zonedToUtc(String(s.session_date).slice(0, 10), (t ?? '00:00').slice(0, 5), tz).toISOString()
+      return {
+        id: s.id as string,
+        kind: 'class' as const,
+        startsAt: toIso(s.start_time),
+        endsAt: toIso(s.end_time),
+        who: label,
+        subject: '',
+        location: cls?.default_location ?? null,
+        studentId: null,
+      }
+    }),
+  ].sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+
   const coverable: CoverableSession[] = ((upcoming as any[]) ?? []).map((s) => {
     const student = one<any>(s.students)
     const subject = one<any>(one<any>(s.tutoring_engagements)?.subjects)?.name ?? ''
@@ -261,32 +314,7 @@ export default async function TutorView({
             </div>
           )
         })()}
-        {upcoming && upcoming.length > 0 ? (
-          <ul className="divide-y divide-gray-100 text-sm">
-            {(upcoming as any[]).map((s) => {
-              const eng = one<any>(s.tutoring_engagements)
-              const student = one<any>(s.students)
-              return (
-                <li key={s.id} className="py-2 flex flex-wrap gap-x-3 gap-y-0.5 items-baseline">
-                  <span className="font-semibold text-hgl-slate">
-                    {fmt(s.starts_at, { weekday: 'short', month: 'short', day: 'numeric' })}
-                  </span>
-                  <span>
-                    {fmt(s.starts_at, { hour: 'numeric', minute: '2-digit' })}–
-                    {fmt(s.ends_at, { hour: 'numeric', minute: '2-digit' })}
-                  </span>
-                  <span className="text-gray-600">
-                    {student ? `${student.first_name} ${student.last_name}` : ''} ·{' '}
-                    {one<any>(eng?.subjects)?.name ?? ''}
-                  </span>
-                  {eng?.location && <span className="text-gray-400 text-xs truncate max-w-56">{eng.location}</span>}
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-500 italic">No upcoming sessions on the books.</p>
-        )}
+        <UpcomingSessions rows={upcomingRows} timezone={tz} />
       </div>
 
       <CoveragePanel
