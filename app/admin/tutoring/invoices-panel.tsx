@@ -264,16 +264,24 @@ export default function InvoicesPanel() {
                             >
                               add adjustment/credit…
                             </button>
-                            {r.late_fee_flagged_at && (
-                              <ConfirmAction
-                                label="apply 10% late fee"
-                                message={`Add $${(Number(r.total) * 0.1).toFixed(2)} (10%) per the signed policy? Your call — never automatic.`}
-                                confirmLabel="Yes, apply"
-                                className="text-red-700 underline"
-                                disabled={busy}
-                                onConfirm={() => invoiceCall({ action: 'apply_late_fee', id: r.id }, 'Late fee applied and the invoice re-issued.')}
-                              />
-                            )}
+                            {/* PL-115: applies once — fee off the pre-fee
+                                subtotal, button gone once a fee line exists
+                                (the API refuses regardless). */}
+                            {r.late_fee_flagged_at &&
+                              (r.tutoring_invoice_lines.some((l) => l.kind === 'late_payment_fee') ? (
+                                <span className="text-gray-400">late fee applied ✓</span>
+                              ) : (
+                                <ConfirmAction
+                                  label="apply 10% late fee"
+                                  message={`Add $${(
+                                    r.tutoring_invoice_lines.reduce((sum, l) => sum + Number(l.amount), 0) * 0.1
+                                  ).toFixed(2)} (10% of the invoice) per the signed policy? Your call — never automatic.`}
+                                  confirmLabel="Yes, apply"
+                                  className="text-red-700 underline"
+                                  disabled={busy}
+                                  onConfirm={() => invoiceCall({ action: 'apply_late_fee', id: r.id }, 'Late fee applied and the invoice re-issued.')}
+                                />
+                              ))}
                             <ConfirmAction
                               label="void"
                               message="Void this month's invoice? Sessions are untouched; use for do-overs."

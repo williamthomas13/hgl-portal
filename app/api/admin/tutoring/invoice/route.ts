@@ -81,6 +81,27 @@ export async function POST(req: Request) {
           { status: 400 }
         )
       }
+      // PL-115: one late fee per invoice, computed off the PRE-FEE subtotal —
+      // a double-click must not stack a second line (which would also
+      // compound off the already-fee'd total).
+      let lateFeeAmount = 0
+      if (body.action === 'apply_late_fee') {
+        const { data: existingLines } = await supabase
+          .from('tutoring_invoice_lines')
+          .select('amount, kind')
+          .eq('invoice_id', invoice.id)
+        if ((existingLines ?? []).some((l) => l.kind === 'late_payment_fee')) {
+          return NextResponse.json(
+            { error: 'This invoice already carries the late fee — it applies once.' },
+            { status: 400 }
+          )
+        }
+        const preFeeSubtotal = (existingLines ?? []).reduce((sum, l) => sum + Number(l.amount), 0)
+        lateFeeAmount = Number((preFeeSubtotal * 0.1).toFixed(2))
+        if (lateFeeAmount <= 0) {
+          return NextResponse.json({ error: 'Nothing to apply a fee to on this invoice.' }, { status: 400 })
+        }
+      }
       const line =
         body.action === 'apply_late_fee'
           ? {
@@ -88,7 +109,7 @@ export async function POST(req: Request) {
               description: `Late payment fee (10%, per the signed policy — 30+ days past due)`,
               qty_hours: 0,
               rate: null,
-              amount: Number((Number(invoice.total) * 0.1).toFixed(2)),
+              amount: lateFeeAmount,
               kind: 'late_payment_fee',
             }
           : {
@@ -104,7 +125,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Amount must be non-zero.' }, { status: 400 })
       }
       const { error } = await supabase.from('tutoring_invoice_lines').insert(line)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) {
+        // PL-115: the partial unique index is the last line of defense
+        // against a concurrent double-apply — read it back as the same
+        // friendly refusal the pre-check gives.
+        if (error.code === '23505' && body.action === 'apply_late_fee') {
+          return NextResponse.json(
+            { error: 'This invoice already carries the late fee — it applies once.' },
+            { status: 400 }
+          )
+        }
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
       const total = await recomputeInvoiceTotals(invoice.id)
       await reissueStripeInvoiceIfNeeded(invoice.id)
       return NextResponse.json({ ok: true, total })

@@ -26,7 +26,9 @@ Two fail-open defaults, same root class:
 **Fix:** claim FIRST and atomically — `update({status:'invoicing'}).eq('status','confirmed').select()`, proceed only if the row came back (loser no-ops); pass `{idempotencyKey: 'tutoring:'+invoiceId+':'+attempt}` to every PaymentIntent/invoice create; on the hosted-invoice path, create the Stripe invoice only after the claim, and void the old document if a new one is minted.
 **Verify:** E2E: two concurrent `issueOrCharge` calls on one confirmed invoice → exactly one PI/invoice; admin double-click → one charge; replayed idempotency key returns the same PI.
 
-## PL-115 · Late fee: refuse a second application
+## PL-115 · Late fee: refuse a second application ✅
+
+> **Shipped, 6/6 E2E green.** `apply_late_fee` now (1) refuses when a `late_payment_fee` line exists ("This invoice already carries the late fee — it applies once."), (2) computes the fee off the **pre-fee subtotal** (sum of non-fee lines, never the possibly-fee'd total), and (3) — beyond the spec — is race-proof: a **partial unique index** (`tutoring_invoice_lines_one_late_fee`, migration `20260812000001` **applied**) makes the database refuse a concurrent double-apply that slips past the read-then-insert check, with the 23505 mapped back to the same friendly message. The UI button becomes "late fee applied ✓" once the line exists and the confirm message quotes the correct pre-fee-based amount. Verified: sequential re-apply 400s; a true concurrent double-apply returns one 200 + one 400 with exactly one $20 line on a $200 invoice; total lands 220, never 242.
 
 `app/api/admin/tutoring/invoice/route.ts:85-92`: `apply_late_fee` inserts 10% of the current total with no existing-line check — two clicks = two fee lines (and the second computes off the already-fee'd total: 21%).
 
