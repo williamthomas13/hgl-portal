@@ -570,6 +570,30 @@ export function convertUrlFor(enrollmentId: string) {
   return `${base}/convert/${enrollmentId}?t=${convertToken(enrollmentId)}`
 }
 
+// PL-128: the refund REQUEST link — distinct HMAC prefix (a refund token can
+// never double as a convert token). The page is GET-safe (bot prefetchers
+// stamp nothing); the confirm button POSTs the actual request. Refunds stay
+// Option A: the request is tracked intent, the money moves only in Stripe.
+function refundToken(enrollmentId: string) {
+  return createHmac('sha256', signingSecret())
+    .update(`refund:${enrollmentId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+export function refundRequestUrlFor(enrollmentId: string) {
+  const base = emailBaseUrl()
+  return `${base}/refund/${enrollmentId}?t=${refundToken(enrollmentId)}`
+}
+
+export function verifyRefundToken(enrollmentId: string, token: string) {
+  const expected = refundToken(enrollmentId)
+  return (
+    token.length === expected.length &&
+    timingSafeEqual(Buffer.from(token), Buffer.from(expected))
+  )
+}
+
 /** PL-53b: the family's signed share-your-availability page. */
 export function availabilityUrlFor(familyId: string) {
   const base = emailBaseUrl()

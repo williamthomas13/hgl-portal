@@ -46,6 +46,7 @@ export async function GET() {
     { data: reschedules },
     { data: strandedProposals },
     { data: availStudents },
+    { data: refundRequests },
     { data: recentEnrollments },
     { data: recentPaidInvoices },
     { data: recentAvail },
@@ -89,6 +90,14 @@ export async function GET() {
       .eq('status', 'proposed')
       .lt('ends_at', now.toISOString()),
     supabase.from('student_availability').select('student_id, updated_at').eq('source', 'parent'),
+    // PL-128: refund requested but not yet issued — clears when staff mark
+    // the row Refunded after the Stripe-dashboard refund, or when the
+    // family converts instead (outcome moves off 'refund_requested').
+    supabase
+      .from('enrollments')
+      .select('id, class_id, refund_requested_at, students ( first_name, last_name ), classes ( class_type, schools ( nickname ) )')
+      .eq('cancellation_outcome', 'refund_requested')
+      .neq('payment_status', 'Refunded'),
     supabase
       .from('enrollments')
       .select('id, enrolled_at, class_id, payment_status, students ( first_name, last_name ), classes ( class_type, schools ( nickname ) )')
@@ -266,6 +275,17 @@ export async function GET() {
       kind: 'Proposed session never resolved',
       text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'}'s proposed session on ${String(s.starts_at).slice(0, 10)} passed without approval — confirm it happened, reschedule it, or cancel it.`,
       href: `/admin/tutoring?schedule=${s.student_id}`,
+    })
+  }
+
+  for (const e of (refundRequests as any[]) ?? []) {
+    const st = one<any>(e.students)
+    const cls = one<any>(e.classes)
+    attention.push({
+      id: `refund-${e.id}`,
+      kind: 'Refund requested',
+      text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'} requested a refund of the cancelled ${one<any>(cls?.schools)?.nickname ?? ''} ${cls?.class_type ?? 'class'} fee (${String(e.refund_requested_at).slice(0, 10)}) — issue it in Stripe, then mark the enrollment Refunded.`,
+      href: `/admin?class=${e.class_id}&enrollment=${e.id}`,
     })
   }
 

@@ -16,7 +16,7 @@ import {
 } from '../../../utils/email'
 import { renderEmail } from '../../../utils/comms-db-render'
 import { cancelScheduledForClass } from '../../../utils/comms-projector'
-import { ADMIN_EMAIL, convertUrlFor, emailContext, loadClassBundles } from '../../../utils/lifecycle'
+import { ADMIN_EMAIL, convertUrlFor, refundRequestUrlFor, emailContext, loadClassBundles } from '../../../utils/lifecycle'
 
 // Class cancellation (PHASE4_SPEC §12). Staff-authenticated; mutations run on
 // the service role so everything moves together. `classes.status =
@@ -192,7 +192,7 @@ export async function POST(request: Request) {
         'CX_FAMILY',
         ctx,
         t.audience,
-        { cancellationOptionsBlock: cancellationOptionsHtml(ctx, t.audience, offer, creditTerm, { convertUrl: convertUrlFor(e.id) }) },
+        { cancellationOptionsBlock: cancellationOptionsHtml(ctx, t.audience, offer, creditTerm, { convertUrl: convertUrlFor(e.id), refundUrl: refundRequestUrlFor(e.id) }) },
         () => classCancellationEmail(ctx, t.audience, offer, creditTerm)
       )
       const status = await sendOnce({

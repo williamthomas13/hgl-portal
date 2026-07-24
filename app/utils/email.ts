@@ -2,7 +2,7 @@ import { Resend } from 'resend'
 import { nonProductionOrigins } from './base-url'
 import { classLocationTailText } from './comms-variables'
 import { supabaseAdmin as supabase } from "./supabase-admin"
-import { convertUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
+import { convertUrlFor, refundRequestUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 import { templateMetaFor, type RecipientRole } from './comms'
 import { formatDateFull } from './dates'
 
@@ -1549,7 +1549,7 @@ export function classCancellationEmail(
       number of students required to offer the ${ctx.className} class that ${you} signed up
       for. As a result, we've unfortunately had to cancel the course. I understand that this
       cancellation can be worrisome, and I sincerely apologize for the inconvenience.</p>`
-  const middle = cancellationOptionsHtml(ctx, audience, offer, creditTerm, { convertUrl: convertUrlFor(ctx.enrollmentId) })
+  const middle = cancellationOptionsHtml(ctx, audience, offer, creditTerm, { convertUrl: convertUrlFor(ctx.enrollmentId), refundUrl: refundRequestUrlFor(ctx.enrollmentId) })
 
   return {
     from: PERSONAL_FROM,

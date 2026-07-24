@@ -37,10 +37,11 @@ export function cancellationOptionsHtml(
   audience: Audience,
   offer: CancellationOffer | null,
   creditTerm: string | null,
-  /** REQUIRED: server callers mint the real /convert link (convertUrlFor);
-   *  the editor sample passes the test link. Caller-supplied so this module
-   *  stays client-safe (no lifecycle/crypto/secret imports). */
-  opts: { convertUrl: string }
+  /** REQUIRED: server callers mint the real /convert and /refund links
+   *  (convertUrlFor / refundRequestUrlFor); the editor sample passes test
+   *  links. Caller-supplied so this module stays client-safe (no
+   *  lifecycle/crypto/secret imports). */
+  opts: { convertUrl: string; refundUrl: string }
 ): string {
   const isStudent = audience === 'student'
   const s = ctx.studentFirstName
@@ -72,7 +73,8 @@ export function cancellationOptionsHtml(
       the first diagnostic test score).
       <span style="display:block;margin:14px 0"><a href="${opts.convertUrl}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Convert my ${ctx.className} payment to ${offer.hours} hours of 1-on-1 tutoring</a></span>
       <span style="color:#64748b;font-size:13px">One tap to confirm on the next page — then pick the
-      times that work. Prefer to talk it through first? Just reply.</span>`
+      times that work. 1-on-1 hours are transferable and never expire. Prefer to talk it
+      through first? Just reply.</span>`
     )
   }
   if (creditTerm) {
@@ -94,8 +96,9 @@ export function cancellationOptionsHtml(
 
   if (blocks.length === 0) {
     return `
-      <p>We'll be issuing you a full refund — just reply to confirm the best way to reach you
-      if any details are needed, and please accept our apologies again.</p>
+      <p>We'll be issuing you a full refund — <a href="${opts.refundUrl}" style="color:#00AEEE">confirm
+      your refund request here</a> (one tap, nothing to justify) and it goes straight on our
+      list. Please accept our apologies again.</p>
       ${keepHours}`
   }
   const rendered =
@@ -105,9 +108,11 @@ export function cancellationOptionsHtml(
   return `
       <p>However, I have a couple of other options for you:</p>
       ${rendered}
-      <p>If you prefer, of course we can also offer you a <strong>full refund</strong> instead.
-      <strong>Please let me know your preference by replying to this email — and reach out with
-      any questions at all.</strong></p>
+      <p style="font-size:14px;color:#475569">Prefer a refund?
+      <a href="${opts.refundUrl}" style="color:#00AEEE">Request one here</a> — one tap, nothing
+      to justify, and it goes straight on our list. (Worth knowing either way: 1-on-1 tutoring
+      hours are transferable and never expire.) Unsure which way to go? Just reply and we'll
+      talk it through — no rush, no pressure.</p>
       ${keepHours}`
 }
 

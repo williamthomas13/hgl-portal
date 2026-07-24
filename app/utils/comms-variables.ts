@@ -843,7 +843,7 @@ const SAMPLE_CANCELLATION_OPTIONS = cancellationOptionsHtml(
   'parent',
   SAMPLE_CX_OFFER,
   'January 2027',
-  { convertUrl: 'https://hgl-portal.vercel.app/test-link' }
+  { convertUrl: 'https://hgl-portal.vercel.app/test-link', refundUrl: 'https://hgl-portal.vercel.app/test-link' }
 )
 
 // PL-56: previews must read like real sends — placeholder-ish samples
