@@ -10,6 +10,8 @@ import {
   hoursByWorkType,
   sessionMinutes,
 } from '../../utils/work-types'
+import { renderVersion } from '../../utils/comms-db-render'
+import { SAMPLE_CONTEXT, sampleExtraFor } from '../../utils/comms-variables'
 
 // PL-102: "View as" — the admin sees exactly what each role's portal
 // renders, clearly bannered, READ-ONLY (pointer events disabled on the
@@ -48,7 +50,11 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
   const pickedEmail = typeof sp.email === 'string' ? sp.email : ''
 
   // Picker options per role.
-  const [{ data: families }, { data: tutors }, { data: contacts }] = await Promise.all([
+  const [
+    { data: families, error: familiesErr },
+    { data: tutors, error: tutorsErr },
+    { data: contacts, error: contactsErr },
+  ] = await Promise.all([
     supabaseAdmin
       .from('families')
       .select('parent_first_name, parent_last_name, parent_email')
@@ -83,8 +89,44 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
               return { value: c?.email ?? '', label: `${c?.first_name} ${c?.last_name} — ${s?.nickname}` }
             })
           : []
+  const pickerError =
+    role === 'parent' ? familiesErr : role === 'tutor' ? tutorsErr : role === 'school-contact' ? contactsErr : null
   const dedupedOptions = [...new Map(options.filter((o) => o.value).map((o) => [o.value, o])).values()]
   const pickedLabel = dedupedOptions.find((o) => o.value === pickedEmail)?.label ?? pickedEmail
+
+  // PL-123 (Scarlett greenlit): the school-contact tab carries "what they
+  // receive" — the rendered CD/CR/FP email set with sample data, through the
+  // SAME sample-variable pipeline as the template editor (PL-96 rules:
+  // composed blocks come from composers via sampleExtraFor). Drafts render
+  // too (marked), since this doubles as a training aid for new staff.
+  let counselorEmails: { key: string; label: string; subject: string; html: string; live: boolean }[] = []
+  if (role === 'school-contact') {
+    const { data: tpls } = await supabaseAdmin
+      .from('email_templates')
+      .select(
+        `template_key, display_name, from_identity, category, live,
+         version:email_template_versions!email_templates_active_version_fk
+           ( subject, preheader, body_markdown, footer_note )`
+      )
+      .or('template_key.like.CD_%,template_key.like.CR_%,template_key.like.FP_%')
+      .order('template_key')
+    for (const t of (tpls as any[]) ?? []) {
+      const v = Array.isArray(t.version) ? t.version[0] : t.version
+      if (!v) continue
+      try {
+        const rendered = renderVersion(v, t, SAMPLE_CONTEXT, 'parent', sampleExtraFor(t.template_key))
+        counselorEmails.push({
+          key: t.template_key,
+          label: t.display_name ?? t.template_key,
+          subject: rendered.subject,
+          html: rendered.html,
+          live: Boolean(t.live),
+        })
+      } catch (e) {
+        console.error(`view-as sample render failed for ${t.template_key}:`, e)
+      }
+    }
+  }
 
   // Manager view: live pay-surface proof, computed from the same tables the
   // manager-facing panels read — hours and TITLES only, by construction.
@@ -161,6 +203,12 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
             </button>
           </form>
         )}
+        {/* PL-123: an erroring admin query must never look like "no data". */}
+        {pickerError && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
+            This picker hit a database error instead of returning records: {pickerError.message}
+          </p>
+        )}
 
         {/* The preview — the REAL portal components, pointer events off. */}
         {role === 'manager' ? (
@@ -213,6 +261,43 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
             )}
             {role === 'tutor' && <TutorView supabase={supabaseAdmin} email={pickedEmail} />}
             {role === 'school-contact' && <CounselorView supabase={supabaseAdmin} email={pickedEmail} />}
+          </div>
+        )}
+
+        {/* PL-123: "what they receive" — the emails ARE most of the counselor
+            relationship, and this doubles as a training aid for new staff.
+            Rendered through the template editor's own sample pipeline. */}
+        {role === 'school-contact' && (
+          <div className="space-y-3">
+            <div className="bg-white rounded-lg border p-5 text-sm text-gray-700 space-y-2">
+              <h2 className="font-bold text-hgl-slate">What a school contact receives</h2>
+              <p>
+                Beyond their portal view above, most of the school relationship happens in email:
+                the enrollment digest, the classroom-request loop, and the final-days pushes.
+                Below is each one rendered with sample data — exactly the sample pipeline the
+                template editor uses, so what you see here is what the copy ships as.
+              </p>
+            </div>
+            {counselorEmails.length === 0 ? (
+              <p className="text-sm text-gray-500 italic">No school-contact templates found in the registry.</p>
+            ) : (
+              counselorEmails.map((e) => (
+                <details key={e.key} className="bg-white rounded-lg border">
+                  <summary className="cursor-pointer p-4 text-sm">
+                    <span className="font-semibold text-hgl-slate">{e.label}</span>
+                    {!e.live && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide font-bold bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">
+                        draft — code copy sends until this goes live
+                      </span>
+                    )}
+                    <span className="block text-gray-500 mt-0.5">Subject: {e.subject}</span>
+                  </summary>
+                  <div className="border-t border-gray-200 p-4 overflow-x-auto">
+                    <div dangerouslySetInnerHTML={{ __html: e.html }} />
+                  </div>
+                </details>
+              ))
+            )}
           </div>
         )}
       </div>
