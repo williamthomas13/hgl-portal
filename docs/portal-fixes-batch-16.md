@@ -67,7 +67,9 @@ Two fail-open defaults, same root class:
 **Fix:** for enrollments whose `paid_at` postdates a pre-start step's target date, mark those steps superseded (or skip `anchor:'first'` negative-offset steps once class-local today > their target). The LR welcome already carries the essential content. Post-start steps (#6/#7/#8) keep normal behavior.
 **Verify:** E2E: pay after session 2 → LR welcome only, no #4/#5; pay before start → sequence unchanged (existing suites green).
 
-## PL-120 · A Resend failure must not permanently lose a tutor batch notice
+## PL-120 · A Resend failure must not permanently lose a tutor batch notice ✅
+
+> **Shipped, 3/3 E2E green (stubbed failing send).** `deliverPendingTutorNotice` now treats a RETURNED `'failed'`/`'suppressed'` from `sendOnce` exactly like the thrown-error catch: the claimed row un-claims back to `pending` (guarded, so a landed-then-reverted send is absorbed by the dedupe key as documented). Verified: with sends failing, the row reverts to pending with `sent_at` null and the next sweep re-attempts it — genuinely "one sweep late" now. **Sibling audit result:** tutor-notices was the ONLY pre-claim-then-send site; every other stateful `sendOnce` caller (waitlist offers, agreement nudges, T1 proposals, nudge stamps, instructor comms) stamps its state only on `status === 'sent'` — the safe direction — and sweep-driven senders self-heal because sendOnce's claim treats `'failed'` email rows as re-claimable. One adjacent observation parked for the hardening batch 17: **one-shot sends with no driving sweep** (the PL-112 coverage offer/result emails, instructor class messages) leave a `'failed'` email_sends row that nothing re-attempts — not a pre-claim bug (no state is lost, the row is visibly failed), but worth a retry pass or a dashboard surface.
 
 `tutor-notices.ts:192-200`: `sendOnce` returns `'failed'` without throwing, so the pending row (already claimed `sent`) never reverts and no sweep retries — the notice is lost forever, not "one sweep late" as the comment claims.
 

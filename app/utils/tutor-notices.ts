@@ -197,7 +197,17 @@ export async function deliverPendingTutorNotice(rowId: string): Promise<boolean>
       subject: email.subject,
       html: email.html,
     })
-    return status === 'sent'
+    if (status === 'sent' || status === 'duplicate') return status === 'sent'
+    // PL-120: sendOnce reports failure by RETURN VALUE ('failed' /
+    // 'suppressed'), not by throwing — without this branch the claimed row
+    // stayed 'sent' forever and the notice was lost, not "one sweep late".
+    // Un-claim exactly like the catch path so the next sweep retries.
+    await supabase
+      .from('tutor_pending_notices')
+      .update({ status: 'pending', sent_at: null, updated_at: new Date().toISOString() })
+      .eq('id', rowId)
+      .eq('status', 'sent')
+    return false
   } catch (e) {
     // Un-claim so the next sweep retries; sendOnce's dedupe absorbs the case
     // where the send actually landed before the failure.
