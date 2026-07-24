@@ -353,13 +353,21 @@ export async function handleClassCheckoutCompleted(
         )
       )
 
-      // Late registration test: would the pre-start emails (#2/#3) already
-      // have fired? If so, the LR welcome replaces the whole confirmation
-      // flow (#0-P/#0-S spacing, #1, #2, #3) in one email per audience —
-      // the parent variant carries the #0-style order summary.
+      // Late registration test: would any pre-start email already have
+      // fired? If so, the LR welcome replaces the whole confirmation flow
+      // (#0-P/#0-S spacing, #1, plus every ALREADY-DUE pre-start step) in
+      // one email per audience — the parent variant carries the #0-style
+      // order summary.
+      // PL-119: EVERY first-anchored pre-start step whose target date has
+      // passed is superseded, not just #2/#3 — isDue() is true forever, so
+      // without the claim a family paying after the class started also got
+      // #4 ("class starts soon") and #5 for dates in the past on the next
+      // hourly sweep. Steps still ahead (and every post-start step) keep
+      // their normal schedule.
       const supersededSteps = SEQUENCE.filter(
         (s) =>
-          (s.type === 'synap_access' || s.type === 'faq') &&
+          s.anchor === 'first' &&
+          s.offsetDays < 0 &&
           isDue(bundle.timezone, stepTargetDate(s, bundle), s.hour)
       )
 

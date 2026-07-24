@@ -62,7 +62,9 @@ Two fail-open defaults, same root class:
 **Fix:** thread the class/school timezone into both renders, include the zone label in copy ("by Thursday, 3:00 PM (Mexico City time)"); PR4 gets a datetime, not a bare weekday. Grep for any other `toLocaleString`/`toLocaleDateString` without `timeZone` in email-facing code and fix the stragglers (the rest of the codebase passes it deliberately).
 **Verify:** render tests pin a non-UTC school and assert the stated time equals the enforced instant in that zone.
 
-## PL-119 · Late registrants must not receive past-dated pre-start emails
+## PL-119 · Late registrants must not receive past-dated pre-start emails ✅
+
+> **Shipped, 8/8 checks green (4 pure + 4 through the real paid path with live LR sends to a QA address).** The supersede filter generalizes from the hard-coded `#2/#3` pair to **every `anchor:'first'` negative-offset step whose target date is already due at pay time** — so a family paying after the class started gets the LR welcome only, with `#4` and `#5` claimed `cancelled` alongside `#2/#3/#1` (the existing claim-row mechanism, which the comms dashboard already explains). The boundary case behaves exactly right: paying at start−2d supersedes `#2/#3/#4` but leaves `#5` (location reminder, still a day ahead) to send normally — steps still in the future keep their schedule, as do all post-start steps (`#6/#7/#8`, verified unclaimed). Pay-before-start supersedes nothing (sequence unchanged; links/pronouns suites green). One harness note for the record: the first "failure" was my probe selecting a nonexistent `email_sends.email_type` column — the feature had worked on the first run.
 
 `checkout-paid.ts:318-322` supersedes only `synap_access`+`faq` for the LR welcome; `isDue` (`lifecycle.ts:126-129`) is true forever, so a family paying after the class starts also gets #4 ("class starts soon") and #5 for dates in the past on the next hourly sweep.
 
