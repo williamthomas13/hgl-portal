@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import AvailabilityGrid from '../../components/AvailabilityGrid'
 import type { AvailabilityRange } from '../../utils/availability'
+import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS } from '../../utils/dates'
 
 // PL-53b client form: one grid per student (families usually have one),
 // saved per student. Same grid component as intake and the wizard.
@@ -50,7 +51,7 @@ export default function AvailabilityShareForm({
       patch(s.id, {
         saving: false,
         message: res.ok
-          ? "Saved — we'll be in touch with proposed times."
+          ? `Saved — we'll review your availability and propose specific times within ${AVAILABILITY_PROPOSAL_BUSINESS_DAYS} business days. Watch your inbox.`
           : 'Error: ' + (json.error ?? 'something went wrong — please try again.'),
       })
     } catch {

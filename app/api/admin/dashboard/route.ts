@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
+import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../utils/dates'
 
 // PL-100: the dashboard's data. Needs Attention mirrors the internal alert
 // family but is STATE-DRIVEN, never send-driven (Scarlett's explicit
@@ -87,7 +88,7 @@ export async function GET() {
       .select('id, starts_at, student_id, students ( first_name, last_name )')
       .eq('status', 'proposed')
       .lt('ends_at', now.toISOString()),
-    supabase.from('student_availability').select('student_id').eq('source', 'parent'),
+    supabase.from('student_availability').select('student_id, updated_at').eq('source', 'parent'),
     supabase
       .from('enrollments')
       .select('id, enrolled_at, class_id, payment_status, students ( first_name, last_name ), classes ( class_type, schools ( nickname ) )')
@@ -270,7 +271,15 @@ export async function GET() {
 
   // Availability shared but nothing scheduled (state: parent-source
   // availability + an active engagement + zero upcoming sessions).
-  const availIds = [...new Set((((availStudents as any[]) ?? []).map((a) => a.student_id)))]
+  // PL-127: the row carries the SAME promise clock the family saw — "propose
+  // times by {date}" from AVAILABILITY_PROPOSAL_BUSINESS_DAYS — and reads
+  // overdue once the promised date passes.
+  const sharedAt = new Map<string, string>()
+  for (const a of (availStudents as any[]) ?? []) {
+    const day = String(a.updated_at).slice(0, 10)
+    if (!sharedAt.has(a.student_id) || day > sharedAt.get(a.student_id)!) sharedAt.set(a.student_id, day)
+  }
+  const availIds = [...sharedAt.keys()]
   if (availIds.length) {
     const [{ data: engs }, { data: upcomingSes }, { data: studs }] = await Promise.all([
       supabase.from('tutoring_engagements').select('student_id').in('student_id', availIds).eq('status', 'active'),
@@ -287,11 +296,15 @@ export async function GET() {
     const nameOf = new Map((studs ?? []).map((s: any) => [s.id, `${s.first_name} ${s.last_name}`]))
     for (const id of availIds) {
       if (!hasEng.has(id) || hasUpcoming.has(id)) continue
+      const shared = sharedAt.get(id)!
+      const proposeBy = addBusinessDays(shared, AVAILABILITY_PROPOSAL_BUSINESS_DAYS)
+      const overdue = todayIso > proposeBy
       attention.push({
         id: `avail-${id}`,
-        kind: 'Availability shared, nothing scheduled',
-        text: `${nameOf.get(id) ?? 'A student'}'s family shared availability; no upcoming session is on the books.`,
+        kind: overdue ? 'Availability promise OVERDUE' : 'Availability shared, nothing scheduled',
+        text: `${nameOf.get(id) ?? 'A student'}'s family shared availability ${shared} — the family was told to expect proposed times by ${proposeBy}${overdue ? ', which has passed' : ''}.`,
         href: `/admin/tutoring?schedule=${id}`,
+        urgent: overdue,
       })
     }
   }

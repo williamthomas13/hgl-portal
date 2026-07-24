@@ -35,7 +35,9 @@ Sessions render in school-local time (correct), but an international parent has 
 
 **Verify:** label renders with the correct school timezone for classes in different school zones (e.g. a Mexico City school vs a Rome school); no hardcoded zone.
 
-## PL-127 (tiny) · Set the next expectation after availability is shared
+## PL-127 (tiny) · Set the next expectation after availability is shared ✅
+
+> **Shipped, verified on both surfaces + the overdue flip.** ONE clock: `AVAILABILITY_PROPOSAL_BUSINESS_DAYS = 3` in `dates.ts` (leaf) with `addBusinessDays()` (weekend-skipping, unit-checked) — **N=3 chosen as the conservative end of Scarlett's 2–3 range; changing it is a one-line edit and every surface moves together.** Family side: the shared `AvailabilityShareForm` (used by BOTH the standalone `/availability/{token}` page and the `/convert/{id}` flow, one edit point) now saves with "Saved — we'll review your availability and propose specific times within 3 business days. Watch your inbox." — no staff name anywhere. Ops side: the Needs Attention row reads "shared {date} — the family was told to expect proposed times by {date}" from the SAME constant, and once the promise passes it becomes "Availability promise OVERDUE", urgent-styled and sorted first (verified: live share showed "by 2026-07-29"; backdating the share 9 days flipped the row to OVERDUE at the top). The share-time alert (AL_AVAILABILITY_SHARED) also states the promise date and names the same clock.
 
 After a family self-serve converts and shares availability (the `/convert/{id}` → availability page confirmation state, and the standalone `/availability/{token}` "Saved" state), the page currently ends the family's visibility with no sense of what's next. Add one calm line to the saved/confirmation state: "We'll review your availability and propose specific times within {N} business days — watch your inbox." **By role/team, not a person's name** (PL-112 rule — never "Kelsie"). Pick a realistic N with Scarlett (2–3 business days is typical); keep it one sentence.
 

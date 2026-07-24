@@ -118,3 +118,21 @@ export function zonedDeadline(iso: string | Date, timezone: string): string {
 export function timezoneCityLabel(timezone: string): string {
   return (timezone.split('/').pop() ?? timezone).replace(/_/g, ' ')
 }
+
+// PL-127: ONE clock for the availability promise — the family-facing "we'll
+// propose times within N business days" line and the ops-side "propose times
+// by {date}" countdown both derive from this constant, so they can never
+// disagree. Change the N here and both surfaces move together.
+export const AVAILABILITY_PROPOSAL_BUSINESS_DAYS = 3
+
+/** N business days (Mon–Fri) after a YYYY-MM-DD date, as YYYY-MM-DD. */
+export function addBusinessDays(iso: string, n: number): string {
+  const d = new Date(iso.slice(0, 10) + 'T12:00:00Z')
+  let left = n
+  while (left > 0) {
+    d.setUTCDate(d.getUTCDate() + 1)
+    const dow = d.getUTCDay()
+    if (dow !== 0 && dow !== 6) left--
+  }
+  return d.toISOString().slice(0, 10)
+}

@@ -5,6 +5,7 @@ import { verifyAvailabilityToken } from '../../utils/intake'
 import { validAvailabilityRanges } from '../../utils/availability'
 import { sendAdminAlert } from '../../utils/email'
 import { ADMIN_EMAIL } from '../../utils/lifecycle'
+import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../utils/dates'
 
 // PL-53b: the add-on family's availability submission (from the tokenized
 // /availability/{token} page, linked in #0 and the #8 scheduling fork).
@@ -87,7 +88,10 @@ export async function POST(req: Request) {
       shared ${student.first_name}'s availability${body.availability.length === 0 ? ' (cleared it, actually)' : ''}.</p>
       <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/tutoring?schedule=${studentId}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule ${student.first_name} now</a></p>
       <p>The wizard opens with ${student.first_name} preselected and the just-shared windows
-      loaded${fam?.id ? ` · <a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="color:#00AEEE">the family record</a> shows the shared windows` : ''}.</p>`,
+      loaded${fam?.id ? ` · <a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="color:#00AEEE">the family record</a> shows the shared windows` : ''}.</p>
+      <p><strong>The family has been told to expect proposed times by
+      ${addBusinessDays(new Date().toISOString(), AVAILABILITY_PROPOSAL_BUSINESS_DAYS)}</strong>
+      (${AVAILABILITY_PROPOSAL_BUSINESS_DAYS} business days — the same clock the dashboard counts down).</p>`,
   }).catch((e) => console.error('availability alert failed (rows stand):', e))
 
   return NextResponse.json({ ok: true })
