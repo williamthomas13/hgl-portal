@@ -2,6 +2,8 @@
 
 Eleven items, PL-113…123. Sourced from a six-pass audit (security, email logic, money paths, scheduling, frontend, spec coverage); every claim was re-verified in source. These are the fix-before-launch tier; a hardening batch 17 follows separately.
 
+> **STATUS: ALL ELEVEN SHIPPED AND PUSHED (Jul 23).** Migrations `20260811000001` (invoicing claim + issue_attempts) and `20260812000001` (one-late-fee index) **applied**. New standing gate: **`npm run regress:tutoring-charge`** (9 checks vs real Stripe test mode, self-compiling, send-light). Full battery green: `tsc` · `npm run build` · smoke:public · regress:links · regress:pronouns · regress:client-imports · cancel-class 11/11 · resume-addon 13/13 · tutoring-charge 9/9. **ACTION FOR BILLY/SCARLETT (PL-113):** add `TOKEN_SIGNING_SECRET` in Vercel — until then, link tokens keep signing with `CRON_SECRET` (no public fallback survives either way; see the PL-113 checkoff for the deliberate deviation and why). Premise corrections flagged inline: PL-122's "dangling ids" can't exist (FK set-null — the damage was silent chain loss, now prevented); PL-123's /inquire was record-driven, not hard-coded (the record itself holds kelsie@ — Scarlett's one-edit call in Contact settings).
+
 **Standing rules:** plain-English statuses · "Ops Director" · no internal shorthand in reader-facing bodies · every alert deep-links its record · `git push` after committing · PL-x IDs in commits · check items off here when shipped · keep `regress:client-imports` and the full battery green.
 
 ## PL-113 · Secrets fail CLOSED: kill the `'dev-secret'` fallback and the cron auth skip ✅

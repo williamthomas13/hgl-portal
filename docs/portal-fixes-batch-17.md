@@ -1,6 +1,6 @@
 # Portal fixes — batch 17 (family-facing UX, from the July 23 walkthrough)
 
-Five items, PL-124…128. Scarlett greenlit all off the stakeholder walkthrough — registration-page polish (PL-124…126) plus two cancellation-flow items (PL-127…128). Public-facing, pre-launch. Continues PL-x numbering.
+Six items, PL-124…129. Scarlett greenlit all off the stakeholder walkthrough — registration-page polish (PL-124…126) plus two cancellation-flow items (PL-127…128). Public-facing, pre-launch. Continues PL-x numbering.
 
 **Note:** the earlier "add-on doesn't appear" finding was a false alarm — the add-on step exists and works per spec §9 (`register/[id]/page.tsx:98,173-185`); it renders after the form, which the walkthrough hadn't reached. Nothing to fix there.
 
@@ -46,5 +46,11 @@ Today the CX cancellation email's refund option is "just reply." Give it a genui
 - Admin side: a refund request should surface as a state-driven Needs Attention row (PL-100) with the family/enrollment deep-link, so Ops sees it and issues the actual refund in Stripe (refunds stay Option A — dashboard-issued, portal moves no money; the request is a tracked intent, not an automatic refund).
 
 **Verify:** CX email renders the big convert button + small refund text link + the transferable/never-expire line + the "unsure? talk to us" off-ramp; refund link stamps a tracked request (no money moves); request appears as a Needs Attention row deep-linking the record; convert flow unchanged.
+
+## PL-129 (small) · Leads page: always-visible mid-call "quick add"
+
+The phone-intake reality: Ops types the parent's name while talking, and the current "Add a prospective student" is an expandable form with many fields — mid-call friction is where leads get lost. Add a compact, **always-visible** quick-add at the top of the leads page: parent name + phone (email optional), one "Add" button, done in two fields. The row lands in the pipeline as a new lead immediately (source = phone call), and everything else — student name, school, what-they-want — gets filled in on the lead record after the call (the record's edit surface already exists). Keep the full expandable form for the deliberate-entry case; quick-add is the fast path, not a replacement. The new lead should be focused/highlighted after add (the `useDeepLinkFocus` machinery) so the follow-up details go straight in.
+
+**Verify:** quick-add visible without expanding anything · two-field submit creates a pipeline lead (source recorded) and focuses it · full form unchanged · pipeline nudge ("no touch in 4+ days") applies to quick-added leads.
 
 **Batch-wide verify:** full gate battery green; single-student registration + checkout path unchanged; add-on step still works alongside the sibling path; CX convert flow unchanged by the refund additions.
