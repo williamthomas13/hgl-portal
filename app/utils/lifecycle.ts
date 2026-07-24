@@ -328,6 +328,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
   return {
     enrollmentId: e.id,
     classId: bundle.id,
+    timezone: bundle.timezone,
     calendarPageUrl: calendarPageUrlFor(bundle.id),
     resumePaymentUrl: resumePaymentUrlFor(e.id),
     portalUrl: portalDeepLinkFor(e.id, e.parentEmail),

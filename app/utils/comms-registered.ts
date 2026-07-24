@@ -36,6 +36,7 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
   return {
     enrollmentId: '00000000-0000-4000-8000-000000000013',
     classId: '00000000-0000-4000-8000-000000000113',
+    timezone: 'America/Denver',
     calendarPageUrl: stub.calendarPageUrl ?? `${base}/portal`,
     resumePaymentUrl: `${base}/portal`,
     portalUrl: `${base}/portal`,

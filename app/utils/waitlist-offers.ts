@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { sendOnce, waitlistOfferEmail } from './email'
+import { sendOnce, waitlistOfferEmail, zonedDeadline } from './email'
 import { renderEmail } from './comms-db-render'
 import { emailBaseUrl } from './base-url'
 import type { EnrollmentRow } from './lifecycle'
@@ -39,9 +39,9 @@ export async function extendWaitlistOffers(bundle: ClassBundle): Promise<number>
     const ctx = emailContext(bundle, e)
     const claimLink = claimUrlFor(e.id)
     const declineLink = declineUrlFor(e.id)
-    const claimDeadline = new Date(expiresAt).toLocaleString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })
+    // PL-118: the stated deadline must match the enforced instant, in the
+    // class's own zone with a label.
+    const claimDeadline = zonedDeadline(expiresAt, ctx.timezone)
     const { subject, html, versionId } = await renderEmail(
       'W2_SPOT_OPEN',
       ctx,
@@ -96,7 +96,7 @@ export async function waitlistRolloverAlertBody(
     .order('sent_at', { ascending: false })
     .limit(1)
   const row = data?.[0]
-  const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })
   const offerStatus = !row?.sent_at
     ? 'no offer email on record'
     : row.status === 'bounced'

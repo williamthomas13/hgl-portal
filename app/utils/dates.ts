@@ -100,3 +100,16 @@ export function formatTimestampAdmin(iso: string): string {
     year: 'numeric',
   })
 }
+
+/** PL-118: a deadline a recipient reads must equal the instant we enforce —
+ *  rendered in the given IANA zone WITH a plain-English zone label:
+ *  "Thursday, July 30, 3:00 PM (Mexico City time)". Leaf-safe on purpose:
+ *  registry variables (client-reachable) and email composers share it. */
+export function zonedDeadline(iso: string | Date, timezone: string): string {
+  const when = new Date(iso).toLocaleString('en-US', {
+    timeZone: timezone,
+    weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+  const city = (timezone.split('/').pop() ?? timezone).replace(/_/g, ' ')
+  return `${when} (${city} time)`
+}

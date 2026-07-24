@@ -41,6 +41,9 @@ export type SessionInfo = {
 export type EnrollmentEmailContext = {
   enrollmentId: string
   classId: string
+  /** PL-118: the class/school IANA timezone — every deadline a family reads
+   *  must render in THEIR class's zone, matching the enforced instant. */
+  timezone: string
   calendarPageUrl: string
   resumePaymentUrl: string
   /** /portal deep link with signed login prefill (#0 button, PHASE4_SPEC §9). */
@@ -366,9 +369,11 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
     n === 4
       ? `Last reminder: ${ctx.studentFirstName}'s ${ctx.className} registration expires soon`
       : `${ctx.studentFirstName}'s registration for ${ctx.className} isn't confirmed yet`
-  // Expiry = 7 days after registration (PAYMENT_EXPIRY_HOURS).
+  // Expiry = 7 days after registration (PAYMENT_EXPIRY_HOURS). PL-118: a
+  // datetime in the class's zone with a label — the sweep enforces the exact
+  // instant, so a bare weekday could read a day off for the family.
   const expiry = new Date(new Date(ctx.enrolledAt).getTime() + 168 * 3_600_000)
-  const expiryDate = expiry.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  const expiryDate = zonedDeadline(expiry, ctx.timezone)
   const preheader =
     n === 4
       ? `After ${expiryDate}, the spot returns to the pool.`
@@ -1039,9 +1044,7 @@ export function waitlistOfferEmail(
   declineUrl: string
 ): Rendered {
   const s = ctx.studentFirstName
-  const deadline = new Date(expiresAt).toLocaleString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  })
+  const deadline = zonedDeadline(expiresAt, ctx.timezone)
   return {
     subject: `A spot just opened in ${ctx.className} 🎉`,
     html: wrap(
@@ -1528,6 +1531,8 @@ export function classroomRequestEmail(opts: {
 // composer and sample can never drift silently again. Re-exported here for
 // the existing callers.
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
+import { zonedDeadline } from './dates'
+export { zonedDeadline }
 export { cancellationOptionsHtml }
 export type { CancellationOffer }
 

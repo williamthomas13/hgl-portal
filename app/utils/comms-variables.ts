@@ -1,6 +1,6 @@
 import type { EnrollmentEmailContext, Audience } from './email'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
-import { formatDateFull } from './dates'
+import { formatDateFull , zonedDeadline } from './dates'
 import type { ResolvedVars } from './comms-md'
 
 // Feature A4 variable registry (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4):
@@ -389,13 +389,9 @@ export const VARIABLES: Record<string, VariableDef> = {
   },
   paymentDate: { description: 'Date payment landed', resolve: (c) => (c.paidAt ? fmt(c.paidAt) : '—') },
   expiryDate: {
-    description: 'When a pending registration expires (7 days after signup)',
+    description: 'When a pending registration expires (7 days after signup) — zoned datetime (PL-118)',
     resolve: (c) =>
-      new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000).toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-      }),
+      zonedDeadline(new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000), c.timezone),
   },
 
   // --- links ------------------------------------------------------------------
@@ -787,6 +783,7 @@ export function resolveVariables(
 export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   enrollmentId: '00000000-0000-4000-8000-000000000000',
   classId: '00000000-0000-4000-8000-000000000001',
+  timezone: 'America/Denver',
   calendarPageUrl: 'https://hgl-portal.vercel.app/test-link',
   resumePaymentUrl: 'https://hgl-portal.vercel.app/test-link',
   portalUrl: 'https://hgl-portal.vercel.app/portal',
