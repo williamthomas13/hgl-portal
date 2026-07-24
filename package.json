@@ -12,7 +12,9 @@
     "regress:pronouns": "node scripts/regress-pronouns.mjs",
     "regress:client-imports": "node scripts/regress-client-imports.mjs",
     "regress:tutoring-charge": "node scripts/regress-tutoring-charge.mjs",
-    "regress:monthly-generation": "node scripts/regress-monthly-generation.mjs"
+    "regress:monthly-generation": "node scripts/regress-monthly-generation.mjs",
+    "regress:token-expiry": "node scripts/regress-token-expiry.mjs",
+    "regress:mutation-buttons": "node scripts/regress-mutation-buttons.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

@@ -115,7 +115,7 @@ export default function TemplateEditor() {
           }),
         })
         if (res.ok) {
-          const out = await res.json()
+          const out = await res.json().catch(() => ({}))
           setPreviewHtml(out.html)
           setPreviewSubject(out.subject)
           setUnknownVars(out.unknownVariables ?? [])

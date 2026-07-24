@@ -53,7 +53,7 @@ export default function ConvertConfirm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enrollmentId, token }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) setError(json.error ?? 'Something went wrong — please try again or reply to our email.')
       else setDone(true)
     } catch {

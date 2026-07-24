@@ -47,30 +47,55 @@ export default function MatchPayment() {
     setSessionId(s)
     fetch(`/api/admin/attach-payment?session=${encodeURIComponent(s)}&email=${encodeURIComponent(q.get('email') ?? '')}`)
       .then(async (r) => {
-        const json = await r.json()
+        const json = await r.json().catch(() => ({}))
         if (!r.ok) setError(json.error ?? 'Could not load the payment.')
         else setData(json)
       })
       .catch(() => setError('Could not load the payment.'))
   }, [])
 
-  async function attach(c: Candidate) {
+  // PL-150: the route refuses an email mismatch with a 409 that describes
+  // it. Only then do we ask — and only an admin may say yes. A manager sees
+  // the reason and stops there, which is the point: this marks a family paid.
+  async function attach(c: Candidate, overrideEmailMismatch = false) {
     if (
+      !overrideEmailMismatch &&
       !confirm(
         `Attach this payment to ${c.student} — ${c.classLabel}?\n\nThis runs everything the webhook would have: confirmation email, class sequence, payment-reminder cancellation, QuickBooks.`
       )
     )
       return
     setBusy(c.id)
-    const res = await fetch('/api/admin/attach-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, enrollmentId: c.id }),
-    })
-    const json = await res.json()
-    setBusy('')
-    if (!res.ok) setError(json.error ?? 'Attach failed.')
-    else setDone(`${c.student} — ${c.classLabel}${json.already ? ' (was already attached)' : ''}`)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/attach-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, enrollmentId: c.id, overrideEmailMismatch }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setDone(`${c.student} — ${c.classLabel}${json.already ? ' (was already attached)' : ''}`)
+        return
+      }
+      if (json.emailMismatch && json.canOverride) {
+        if (
+          confirm(
+            `${json.error}\n\nAttach anyway? This is right when someone else paid — a grandparent, a second address. The override is logged and the Ops Director is notified.`
+          )
+        ) {
+          setBusy('')
+          return attach(c, true)
+        }
+        setError(json.error)
+        return
+      }
+      setError(json.error ?? `Attach failed (the server returned ${res.status}).`)
+    } catch {
+      setError("Couldn't reach the server — nothing was attached. Try again.")
+    } finally {
+      setBusy('')
+    }
   }
 
   const Row = ({ c }: { c: Candidate }) => (

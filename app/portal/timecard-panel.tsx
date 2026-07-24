@@ -94,7 +94,7 @@ export default function TimecardPanel({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setBusy(false)
     setAdjusting('')
     setNoShowArming('')

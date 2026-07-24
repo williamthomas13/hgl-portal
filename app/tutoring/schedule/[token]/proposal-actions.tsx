@@ -58,7 +58,7 @@ export default function ProposalActions({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, ...payload }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     return { ok: res.ok, json }
   }
 

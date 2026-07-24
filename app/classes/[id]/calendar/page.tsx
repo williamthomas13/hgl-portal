@@ -44,7 +44,7 @@ export default function ClassCalendarPage() {
       // Sanitized server payload — the browser has no DB access (Phase 3 RLS).
       try {
         const response = await fetch(`/api/class-info/${classId}`)
-        if (response.ok) setInfo((await response.json()) as ClassInfo)
+        if (response.ok) setInfo((await response.json().catch(() => ({}))) as ClassInfo)
       } catch {
         // fall through to "Class not found"
       }

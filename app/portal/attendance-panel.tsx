@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../utils/supabase'
 import { bySessionStart } from '../utils/dates'
+import { useVisibleInterval } from '../components/use-visible-interval'
 import {
   MIN_TRACKABLE_MINUTES,
   isPastSession,
@@ -133,11 +134,11 @@ export default function AttendancePanel({
 
   // PL-106: keep the admin reflection live while instructors mark attendance
   // (records only — never touches an in-progress override's drafts).
-  useEffect(() => {
-    if (!adminReadOnly) return
-    const t = setInterval(fetchRecords, 20000)
-    return () => clearInterval(t)
-  }, [adminReadOnly, fetchRecords])
+  // PL-152: only while this panel is actually on screen. The admin sections
+  // are hidden, not unmounted, so every class card used to poll from every
+  // tab — including all the "Past & cancelled" ones.
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  useVisibleInterval(panelRef, fetchRecords, 20000, adminReadOnly)
 
   function recordFor(sessionId: string, enrollmentId: string) {
     return records.find((r) => r.session_id === sessionId && r.enrollment_id === enrollmentId) ?? null
@@ -200,7 +201,7 @@ export default function AttendancePanel({
   if (roster.length === 0) return null
 
   return (
-    <div className="mt-3">
+    <div className="mt-3" ref={panelRef}>
       <h4 className="text-sm font-semibold text-hgl-slate mb-1">Attendance</h4>
       {adminReadOnly && (
         <p className="text-xs text-gray-400 mb-2">

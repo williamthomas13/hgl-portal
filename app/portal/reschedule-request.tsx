@@ -69,7 +69,7 @@ export default function RescheduleRequest({
     setMode('loading')
     try {
       const res = await post({ action: 'offer_slots' })
-      const json = res.ok ? await res.json() : { slots: [] }
+      const json = res.ok ? await res.json().catch(() => ({})) : { slots: [] }
       if (Array.isArray(json.slots) && json.slots.length > 0) {
         setSlots(json.slots)
         setMode('pick')
@@ -87,7 +87,7 @@ export default function RescheduleRequest({
     const res = await post({ action: 'pick_slot', starts_at: slot.starts_at })
     setBusy(false)
     if (res.ok) {
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       setMovedTo(json.new_starts_at ?? slot.starts_at)
       setMode('moved')
       router.refresh()

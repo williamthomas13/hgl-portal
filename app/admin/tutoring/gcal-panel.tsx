@@ -38,7 +38,7 @@ export default function GcalPanel() {
 
   const load = useCallback(async () => {
     const res = await fetch('/api/gcal/status')
-    if (res.ok) setStatus(await res.json())
+    if (res.ok) setStatus(await res.json().catch(() => ({})))
     const { data } = await supabase
       .from('gcal_sync_log')
       .select('id, session_id, reason, last_error, attempts, created_at')
@@ -60,7 +60,7 @@ export default function GcalPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ saJson }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
       setMessage(`Error: ${json.error}`)
     } else if (json.dwdOk) {
@@ -92,7 +92,7 @@ export default function GcalPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ allFailed: true }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setMessage(res.ok ? `Retried: ${json.reset} rows reset, ${json.synced} pushed.` : `Error: ${json.error}`)
     setBusy(false)
     load()

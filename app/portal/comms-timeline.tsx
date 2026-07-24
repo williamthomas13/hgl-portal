@@ -43,7 +43,7 @@ export default function CommsTimeline({ items }: { items: TimelineItem[] }) {
     setLoading(true)
     try {
       const res = await fetch(`/api/portal/comms-preview?id=${item.previewId}`)
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) setError(json.error ?? 'Could not load the email.')
       else setPreview(json)
     } catch {

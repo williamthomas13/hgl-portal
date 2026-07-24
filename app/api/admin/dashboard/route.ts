@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
+import { auditXclDrift } from '../../../utils/gcal-sync'
 import { sessionRole } from '../../../utils/staff-gate'
 import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../utils/dates'
 
@@ -52,6 +53,7 @@ export async function GET() {
     { data: recentAvail },
     { data: recentTimecards },
     { data: recentLeads },
+    { data: brokenTemplateSends },
   ] = await Promise.all([
     supabase
       .from('classes')
@@ -126,6 +128,18 @@ export async function GET() {
       .select('id, student_name, created_at, source')
       .order('created_at', { ascending: false })
       .limit(5),
+    // PL-155a: real sends whose body still carried {placeholders} — a broken
+    // template keeps breaking every send until someone fixes it, so this is
+    // a live condition, not a past event. Clears when no recent send has any.
+    supabase
+      .from('email_sends')
+      .select('id, template_key, payload, sent_at')
+      .eq('is_test', false)
+      .in('status', ['sent', 'delivered'])
+      .gte('sent_at', new Date(now.getTime() - 7 * 86400000).toISOString())
+      .not('payload->unresolved_tokens', 'is', null)
+      .order('sent_at', { ascending: false })
+      .limit(50)
   ])
 
   // --- Needs Attention (state-driven) ---------------------------------------
@@ -218,6 +232,44 @@ export async function GET() {
       kind: 'QuickBooks sync failed',
       text: `A ${q.kind ?? 'sync'} row failed to post${q.last_error ? ` — ${String(q.last_error).slice(0, 90)}` : ''}.`,
       href: `/admin?qbo=${q.id}`,
+    })
+  }
+
+  // PL-154: sessions the portal still believes in whose Google event was
+  // hand-marked XCL-. Read-only and state-driven: fix it in the portal (or
+  // restore the calendar event) and the row disappears on its own. A
+  // calendar read failure yields nothing, so this never cries wolf.
+  try {
+    for (const d of await auditXclDrift()) {
+      attention.push({
+        id: `xcl-${d.sessionId}`,
+        kind: 'Cancelled on the calendar, not in the portal',
+        text: `${d.tutorName} marked ${d.studentName}'s ${new Date(d.startsAt).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })} session "${d.eventTitle}" in Google, but it's still scheduled here — it will bill and count on the timecard as-is.`,
+        href: `/admin/tutoring?schedule=${d.sessionId}`,
+        urgent: new Date(d.startsAt).getTime() < now.getTime(),
+      })
+    }
+  } catch (e) {
+    console.error('[PL-154] XCL audit failed (dashboard continues):', e)
+  }
+
+  // PL-155a: one row per broken TEMPLATE (not per send) — the fix is in the
+  // template, and a bad one can hit dozens of families in a single sweep.
+  const brokenByTemplate = new Map<string, { tokens: Set<string>; sends: number }>()
+  for (const row of (brokenTemplateSends as any[]) ?? []) {
+    const key = row.template_key ?? 'unknown template'
+    const entry = brokenByTemplate.get(key) ?? { tokens: new Set<string>(), sends: 0 }
+    for (const t of (row.payload?.unresolved_tokens as string[]) ?? []) entry.tokens.add(t)
+    entry.sends++
+    brokenByTemplate.set(key, entry)
+  }
+  for (const [templateKey, entry] of brokenByTemplate) {
+    attention.push({
+      id: `unresolved-${templateKey}`,
+      kind: 'Email sent with unfilled placeholders',
+      text: `${templateKey} went out ${entry.sends} time${entry.sends === 1 ? '' : 's'} in the last week still showing ${[...entry.tokens].map((t) => `{${t}}`).join(', ')} — recipients see the placeholder text.`,
+      href: `/admin/communications/templates`,
+      urgent: true,
     })
   }
 

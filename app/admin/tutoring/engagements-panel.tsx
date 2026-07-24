@@ -39,6 +39,25 @@ export default function EngagementsPanel({
 
   const currentRows = engagements.filter((e) => e.status !== 'ended')
   const pastRows = engagements.filter((e) => e.status === 'ended')
+
+  // PL-153d: a ?family= deep-link whose only schedules have ENDED used to
+  // land on an empty "current" view — the alert appeared to point at
+  // nothing. If the target family exists only under "past", switch there.
+  // (Adjust-during-render, the PL-99 pattern: no effect, no double render.)
+  const [deepLinkFamily, setDeepLinkFamily] = useState<string | null>(null)
+  const [checkedDeepLink, setCheckedDeepLink] = useState(false)
+  if (!checkedDeepLink && typeof window !== 'undefined') {
+    setCheckedDeepLink(true)
+    setDeepLinkFamily(new URLSearchParams(window.location.search).get('family'))
+  }
+  const [switchedForDeepLink, setSwitchedForDeepLink] = useState(false)
+  if (deepLinkFamily && !switchedForDeepLink && engagements.length > 0) {
+    setSwitchedForDeepLink(true)
+    const inCurrent = currentRows.some((e) => e.students?.families?.id === deepLinkFamily)
+    const inPast = pastRows.some((e) => e.students?.families?.id === deepLinkFamily)
+    if (!inCurrent && inPast) setView('past')
+  }
+
   const visible = view === 'current' ? currentRows : pastRows
 
   // Group by family.
@@ -57,7 +76,7 @@ export default function EngagementsPanel({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'update', id, ...body }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setMessage(res.ok ? done : 'Error: ' + json.error)
     setBusyId('')
     if (res.ok) onChange()
@@ -71,7 +90,7 @@ export default function EngagementsPanel({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: act, id }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setMessage(res.ok ? done : 'Error: ' + json.error)
     setBusyId('')
     if (res.ok) onChange()

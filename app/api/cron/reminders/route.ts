@@ -2,7 +2,7 @@ import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
-import { processGcalQueue } from '../../../utils/gcal-sync'
+import { auditXclDrift, processGcalQueue } from '../../../utils/gcal-sync'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { sweepSessionNoteReminders } from '../../../utils/session-notes'
 import { generateMonthlyCycle, generationDueFor, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
@@ -1181,6 +1181,30 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
         .join('')
       sections.push(`<p><strong>Spam complaints</strong> — consider opting these families out:</p><ul>${items}</ul>`)
     }
+  }
+
+  // PL-154: the habit-lapse net, in the weekly report as well as on the
+  // dashboard — a tutor who cancels in Google instead of the portal leaves a
+  // session that still bills. Read-only: this reports, nobody's calendar is
+  // touched.
+  try {
+    const drift = await auditXclDrift()
+    if (drift.length > 0) {
+      const items = drift
+        .map(
+          (d) =>
+            `<li><a href="${emailBaseUrl()}/admin/tutoring?schedule=${d.sessionId}" style="color:#00AEEE">${d.studentName} with ${d.tutorName}</a>, ${new Date(d.startsAt).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })} — calendar says "${d.eventTitle}"</li>`
+        )
+        .join('')
+      sections.push(
+        `<p><strong>Cancelled on the calendar, not in the portal</strong> — these sessions were
+         marked XCL- (or deleted) in Google but are still scheduled here, so they will bill and
+         count on the timecard as they stand. Cancel them in the portal to settle it:</p>
+         <ul>${items}</ul>`
+      )
+    }
+  } catch (e) {
+    console.error('[PL-154] XCL audit failed (digest continues):', e)
   }
 
   if (sections.length === 0) return

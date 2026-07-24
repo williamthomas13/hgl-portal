@@ -48,7 +48,7 @@ export function SchoolCommsTimeline({ schoolId, email }: { schoolId: string; ema
       try {
         const qs = `schoolId=${schoolId}${email ? `&email=${encodeURIComponent(email)}` : ''}`
         const res = await fetch(`/api/admin/school-comms?${qs}`)
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (!res.ok) setError(json.error ?? 'Could not load.')
         else setItems(json.items)
       } catch {
@@ -67,7 +67,7 @@ export function SchoolCommsTimeline({ schoolId, email }: { schoolId: string; ema
     setPreview(null)
     try {
       const res = await fetch(`/api/portal/comms-preview?id=${item.id}`)
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       setPreview(res.ok ? json : { subject: item.subject ?? item.label, html: null, note: json.error })
     } catch {
       setPreview({ subject: item.subject ?? item.label, html: null, note: 'Could not load the email.' })
@@ -154,8 +154,9 @@ export function ChaseStatus({ classId }: { classId: string }) {
   const [line, setLine] = useState<string | null>(null)
   useEffect(() => {
     fetch(`/api/admin/school-comms?chaseClassId=${classId}`)
-      .then((r) => r.json())
-      .then((j) => setLine(j.line ?? null))
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((j) => setLine(j?.line ?? null))
       .catch(() => setLine(null))
   }, [classId])
   if (!line) return null

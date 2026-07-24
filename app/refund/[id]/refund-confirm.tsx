@@ -36,7 +36,7 @@ export default function RefundConfirm({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enrollmentId, token }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setBusy(false)
     if (!res.ok) {
       setError(json.error ?? 'Something went wrong — please reply to our email instead.')

@@ -19,7 +19,7 @@ export default function AutopayConsent({ token }: { token: string }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
       setError(json.error ?? 'Something went wrong — please try again or get in touch.')
       setBusy(false)

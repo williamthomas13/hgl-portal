@@ -322,7 +322,7 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ classId }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) alert('Problem: ' + (json.error ?? res.status))
       else alert(`Done — ${json.notified} notified.`)
     } finally {
@@ -390,7 +390,7 @@ export default function AdminDashboard() {
   const [qboStatus, setQboStatus] = useState<QboStatus | null>(null)
   const fetchQboStatus = useCallback(async () => {
     const res = await fetch('/api/qbo/status')
-    if (res.ok) setQboStatus(await res.json())
+    if (res.ok) setQboStatus(await res.json().catch(() => ({})))
   }, [])
 
   // Classroom-request status per class (PHASE4_SPEC §4b/§10).

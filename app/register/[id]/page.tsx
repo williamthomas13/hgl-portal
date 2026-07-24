@@ -113,7 +113,7 @@ export default function RegistrationPage() {
           setNotFound(true)
           return
         }
-        const data: ClassDetails = await response.json()
+        const data: ClassDetails = await response.json().catch(() => ({}))
         setClassDetails(data)
         setIsFull(data.isFull)
         setPackages(data.packages ?? [])
@@ -159,7 +159,7 @@ export default function RegistrationPage() {
           students: studentsPayload,
         }),
       })
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
         if (data.full) {
           // Someone took the last spot while the form was open.
@@ -215,7 +215,7 @@ export default function RegistrationPage() {
         ),
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
 
       if (data.url) {
         window.location.assign(data.url)
@@ -257,7 +257,7 @@ export default function RegistrationPage() {
           notes: formData.get('notes'),
         }),
       })
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
       if (response.ok) {
         setWaitlistPosition(data.position)
         setMessage('')

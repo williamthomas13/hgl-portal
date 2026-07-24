@@ -47,7 +47,7 @@ export default function InquiryForm({ src }: { src: string | null }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...f, src }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(json.error ?? 'Something went wrong — please try again.')
         return

@@ -3,7 +3,7 @@ import {
   loadTutoringPackages,
   localDate,
   packageSavings,
-  verifyAddonToken,
+  checkAddonToken,
 } from '../../utils/lifecycle'
 import { formatDateOnly } from '../../utils/dates'
 
@@ -35,7 +35,18 @@ export default async function AddonPage({
   const { id: enrollmentId } = await params
   const { t: token } = await searchParams
 
-  if (!token || !verifyAddonToken(enrollmentId, token)) {
+  // PL-149: aged-out links get their own page.
+  const tokenState = token ? checkAddonToken(enrollmentId, token) : 'invalid'
+  if (tokenState === 'expired') {
+    return (
+      <Shell title="This link has aged out">
+        <p className="text-gray-600">Links in our emails retire themselves after a few months, so an old message can&apos;t
+        be used later by someone it was forwarded to. Nothing is wrong with your account — reply
+        to any of our emails and we&apos;ll send you a fresh one right away.</p>
+      </Shell>
+    )
+  }
+  if (!token || tokenState !== 'ok') {
     return (
       <Shell title="Invalid link">
         <p className="text-gray-600">This link isn&apos;t valid. Check the link in your email, or reply to it for help.</p>

@@ -5,6 +5,7 @@ import {
   createGcalEvent,
   deleteGcalEvent,
   patchGcalEvent,
+  getGcalEvent,
   loadGcalConnection,
   type GcalEventInput,
   type ServiceAccountKey,
@@ -305,4 +306,80 @@ export async function processGcalQueue(): Promise<GcalQueueResult> {
     console.error('processGcalQueue crashed:', e)
     return result
   }
+}
+
+// ---------------------------------------------------------------------------
+// PL-154: the XCL- calendar audit (Phase-7 spec §4, promised at 7a launch)
+// ---------------------------------------------------------------------------
+// Tutors still live in Google during the transition, and the habit that
+// predates the portal is to cancel a session by prefixing its calendar event
+// "XCL-". When they do that instead of cancelling in the portal, the session
+// stays 'confirmed' here: it bills, it counts on the timecard, it shows on
+// the family's schedule. Nobody notices until an invoice is wrong.
+//
+// This is a READ-ONLY reconciler. It never mutates a calendar or a session —
+// a tutor's calendar edit is a signal, not an instruction, and auto-cancelling
+// a paid session from a title string is exactly the kind of silent action
+// this codebase avoids. It reports; a human decides.
+
+export type XclDrift = {
+  sessionId: string
+  startsAt: string
+  studentName: string
+  tutorName: string
+  eventTitle: string
+}
+
+/**
+ * Sessions the portal believes are happening whose Google event has been
+ * hand-marked XCL- (or hand-deleted). Looks at the near horizon only —
+ * recent past (where a wrong bill is imminent) plus everything upcoming.
+ */
+export async function auditXclDrift(): Promise<XclDrift[]> {
+  const conn = await loadGcalConnection()
+  if (!conn || conn.status !== 'connected' || !conn.key) return []
+
+  const from = new Date(Date.now() - 14 * 86_400_000).toISOString()
+  const to = new Date(Date.now() + 30 * 86_400_000).toISOString()
+  const { data: rows } = await supabase
+    .from('tutoring_sessions')
+    .select(
+      `id, starts_at, gcal_event_id, status,
+       students ( first_name, last_name ),
+       instructors ( name, email, google_calendar_id )`
+    )
+    .in('status', ['confirmed', 'completed'])
+    .not('gcal_event_id', 'is', null)
+    .gte('starts_at', from)
+    .lte('starts_at', to)
+    .order('starts_at')
+    .limit(400)
+
+  const drift: XclDrift[] = []
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  for (const row of (rows as any[]) ?? []) {
+    const student = Array.isArray(row.students) ? row.students[0] : row.students
+    const tutor = Array.isArray(row.instructors) ? row.instructors[0] : row.instructors
+    if (!tutor?.email) continue
+    try {
+      const event = await getGcalEvent(conn.key, tutor.email, tutor.google_calendar_id, row.gcal_event_id)
+      // Hand-deleted or Google-cancelled counts as the same signal: the
+      // tutor's calendar says this session isn't happening.
+      const title = event?.summary ?? ''
+      const handCancelled = !event || event.status === 'cancelled' || /^\s*XCL-/i.test(title)
+      if (!handCancelled) continue
+      drift.push({
+        sessionId: row.id,
+        startsAt: row.starts_at,
+        studentName: student ? `${student.first_name} ${student.last_name ?? ''}`.trim() : 'a student',
+        tutorName: tutor.name ?? tutor.email,
+        eventTitle: event ? title || '(no title)' : '(event deleted from the calendar)',
+      })
+    } catch (e) {
+      // A read failure is not drift — say nothing rather than cry wolf.
+      console.error(`[PL-154] calendar read failed for session ${row.id}:`, e)
+    }
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  return drift
 }

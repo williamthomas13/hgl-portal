@@ -152,7 +152,7 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
       setCatalogError(body.error ?? 'Could not load QuickBooks items.')
       return
     }
-    setCatalog(await res.json())
+    setCatalog(await res.json().catch(() => ({})))
   }
 
   async function saveMapping(key: string, source: 'items' | 'accounts') {

@@ -12,6 +12,27 @@ export type RecurrenceSlot = {
   duration_minutes: number
 }
 
+/**
+ * PL-153a: do any two weekly slots collide on the same weekday? Overlapping
+ * slots double-book the tutor and double-bill the family — every generated
+ * occurrence charges twice for one hour of teaching — so both the wizard and
+ * the route refuse them.
+ */
+export function overlappingSlots(recurrence: RecurrenceSlot[]): boolean {
+  const mins = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+  for (let i = 0; i < recurrence.length; i++) {
+    for (let j = i + 1; j < recurrence.length; j++) {
+      const a = recurrence[i]
+      const b = recurrence[j]
+      if (a.weekday !== b.weekday) continue
+      const aStart = mins(a.start_time)
+      const bStart = mins(b.start_time)
+      if (aStart < bStart + b.duration_minutes && bStart < aStart + a.duration_minutes) return true
+    }
+  }
+  return false
+}
+
 export function validRecurrence(value: unknown): value is RecurrenceSlot[] {
   if (!Array.isArray(value)) return false
   return value.every(

@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
-import { verifyDeclineToken } from '../../utils/lifecycle'
+import { checkDeclineToken } from '../../utils/lifecycle'
 import { loadContactInfo } from '../../utils/tutoring-emails'
 import { PublicNoticeCard } from '../../components/PublicNotice'
 import DeclineConfirm from './decline-confirm'
@@ -19,7 +19,18 @@ export default async function DeclinePage({
   const { e: enrollmentId, t: token } = await searchParams
   const contact = await loadContactInfo()
 
-  if (!enrollmentId || !token || !verifyDeclineToken(enrollmentId, token)) {
+  // PL-149: an aged-out link gets its own honest page, not "didn't work".
+  const tokenState = enrollmentId && token ? checkDeclineToken(enrollmentId, token) : 'invalid'
+  if (tokenState === 'expired') {
+    return (
+      <PublicNoticeCard title="This link has aged out">
+        Links in our emails retire themselves after a few months, so an old message can&apos;t be
+        used later by someone it was forwarded to. Nothing is wrong with your account — reply to
+        any of our emails and we&apos;ll send you a fresh one right away.
+      </PublicNoticeCard>
+    )
+  }
+  if (!enrollmentId || !token || tokenState !== 'ok') {
     return (
       <PublicNoticeCard title="That link didn't work">
         The link looks incomplete or out of date. Try the button in the email again, or reply to

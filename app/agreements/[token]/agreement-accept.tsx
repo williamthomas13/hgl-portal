@@ -30,7 +30,7 @@ export default function AgreementAccept({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, name, email }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(json.error ?? 'Something went wrong — please try again.')
         return

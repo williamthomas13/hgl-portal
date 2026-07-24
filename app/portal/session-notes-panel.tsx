@@ -51,23 +51,30 @@ export default function SessionNotesPanel({
     setMessage('')
   }
 
+  // PL-151: a failed save must never brick the button — the note text stays
+  // in the box so the tutor can retry without retyping it.
   async function save(sessionId: string) {
     setBusy(true)
     setMessage('')
-    const res = await fetch('/api/portal/tutoring', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'add_note', session_id: sessionId, note, next_time: nextTime }),
-    })
-    const json = await res.json()
-    setBusy(false)
-    if (!res.ok) {
-      setMessage('Error: ' + json.error)
-      return
+    try {
+      const res = await fetch('/api/portal/tutoring', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add_note', session_id: sessionId, note, next_time: nextTime }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage('Error: ' + (json.error ?? `the server returned ${res.status}`))
+        return
+      }
+      setOpenId(null)
+      setMessage('✓ Note saved.')
+      router.refresh()
+    } catch {
+      setMessage("Error: couldn't reach the server — check your connection and try again.")
+    } finally {
+      setBusy(false)
     }
-    setOpenId(null)
-    setMessage('✓ Note saved.')
-    router.refresh()
   }
 
   return (

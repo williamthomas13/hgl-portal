@@ -34,6 +34,25 @@ export const EXAM_SECTIONS: Record<string, string[]> = {
   ACT: ['English', 'Math', 'Reading', 'Science'],
 }
 
+/** PL-153b: the real per-exam score range. A typo (a 780 entered as 7800, or
+ *  an ACT section given an SAT-sized number) used to save silently and then
+ *  show a nonsense total on the family portal — and the score history is
+ *  what counseling conversations are built on. */
+export const EXAM_SECTION_RANGE: Record<string, { min: number; max: number }> = {
+  SAT: { min: 200, max: 800 },
+  PSAT: { min: 160, max: 760 },
+  ACT: { min: 1, max: 36 },
+}
+
+/** The section values that fall outside their exam's range, by section. */
+export function outOfRangeSections(exam: string, scores: Record<string, number>): string[] {
+  const range = EXAM_SECTION_RANGE[exam]
+  if (!range) return []
+  return Object.entries(scores)
+    .filter(([, v]) => Number.isFinite(v) && (v < range.min || v > range.max))
+    .map(([section]) => section)
+}
+
 /** SAT/PSAT: sum. ACT: rounded average of the four sections (composite). */
 export function computedTotal(exam: string, scores: Record<string, number>): number | null {
   const sections = EXAM_SECTIONS[exam]
@@ -101,9 +120,18 @@ export default function ScoresEntry({
   }, [sections, sectionValues])
   const liveTotal = computedTotal(exam, parsedSections)
   const allSectionsFilled = sections.every((s) => s in parsedSections)
+  // PL-153b: bounds checked as you type, named in plain English.
+  const outOfRange = outOfRangeSections(exam, parsedSections)
+  const range = EXAM_SECTION_RANGE[exam]
 
   async function save() {
     if (!studentId || !allSectionsFilled || liveTotal == null) return
+    if (outOfRange.length > 0) {
+      setMessage(
+        `${outOfRange.join(' and ')} ${outOfRange.length === 1 ? 'is' : 'are'} outside the ${exam} range (${range.min}–${range.max}) — check the number before saving.`
+      )
+      return
+    }
     setBusy(true)
     setMessage('')
     const label = labelFor(milestone, exam, practiceNumber)
@@ -142,7 +170,13 @@ export default function ScoresEntry({
     setBusy(false)
   }
 
+  // PL-153b: a diagnostic is the baseline every later score is measured
+  // against — deleting one silently rewrites a student's whole progress
+  // story, so it asks first.
   async function remove(id: string) {
+    const row = rows.find((r) => r.id === id)
+    const label = row?.test_label ?? 'this score'
+    if (!confirm(`Delete ${label} for ${nameOf(row?.student_id ?? '')}? This can't be undone.`)) return
     const { error } = await supabase.from('student_scores').delete().eq('id', id)
     if (error) setMessage('Error: ' + error.message)
     else load()
@@ -235,9 +269,13 @@ export default function ScoresEntry({
                 <label className="text-gray-500">{s}</label>
                 <input
                   type="number"
+                  min={range?.min}
+                  max={range?.max}
                   value={sectionValues[s] ?? ''}
                   onChange={(e) => setSectionValues({ ...sectionValues, [s]: e.target.value })}
-                  className="border border-gray-300 rounded p-1.5 w-20"
+                  className={`border rounded p-1.5 w-20 ${
+                    outOfRange.includes(s) ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                  }`}
                 />
               </span>
             ))}
@@ -260,12 +298,19 @@ export default function ScoresEntry({
             <button
               type="button"
               onClick={save}
-              disabled={busy || !studentId || !allSectionsFilled}
+              disabled={busy || !studentId || !allSectionsFilled || outOfRange.length > 0}
               className="bg-hgl-slate text-white rounded px-3 py-1.5 disabled:opacity-40"
             >
               Record score
             </button>
           </div>
+          {/* PL-153b: say the range before the save is attempted. */}
+          {outOfRange.length > 0 && range && (
+            <p className="text-xs text-red-600">
+              {outOfRange.join(' and ')} {outOfRange.length === 1 ? 'is' : 'are'} outside the {exam}{' '}
+              range ({range.min}–{range.max}).
+            </p>
+          )}
           {message && (
             <p className={`text-xs ${message.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{message}</p>
           )}

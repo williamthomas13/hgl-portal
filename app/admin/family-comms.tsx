@@ -61,7 +61,7 @@ export function FamilyCommsTimeline({ studentId, familyId }: { studentId?: strin
       try {
         const qs = familyId ? `familyId=${familyId}` : `studentId=${studentId}`
         const res = await fetch(`/api/admin/family-comms?${qs}`)
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (!res.ok) setError(json.error ?? 'Could not load the timeline.')
         else setItems(json.items)
       } catch {
@@ -82,7 +82,7 @@ export function FamilyCommsTimeline({ studentId, familyId }: { studentId?: strin
     setPreviewLoading(true)
     try {
       const res = await fetch(`/api/portal/comms-preview?id=${item.id}`)
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       setPreview(res.ok ? json : { subject: item.subject ?? item.label, html: null, note: json.error })
     } catch {
       setPreview({ subject: item.subject ?? item.label, html: null, note: 'Could not load the email.' })

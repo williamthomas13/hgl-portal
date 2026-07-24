@@ -32,7 +32,7 @@ export default function InterestCapture({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ classId, email, studentName, company }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(json.error ?? 'Something went wrong — please try again.')
         return

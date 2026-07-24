@@ -37,7 +37,7 @@ export default function ContactSettingsPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(contact),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setMessage(res.ok ? 'Saved — every parent surface and email sender now uses this contact.' : 'Error: ' + json.error)
     setSaving(false)
   }

@@ -20,6 +20,19 @@ export default async function LinkHelpPage({
       </PublicNoticeCard>
     )
   }
+  // PL-149: a signed link that aged out. The signature was ours and valid —
+  // this is a real family holding a real (old) email, so the copy says what
+  // happened and hands them a person, never a bare error.
+  if (reason === 'expired') {
+    return (
+      <PublicNoticeCard title="This link has aged out">
+        Links in our emails stay active for a few months and then retire themselves, so an old
+        message can&apos;t be used later by someone it was forwarded to. Nothing is wrong with
+        your account. Reply to any of our emails and we&apos;ll send you a fresh link right
+        away — it takes us a minute.
+      </PublicNoticeCard>
+    )
+  }
   if (reason === 'addon-ended') {
     return (
       <PublicNoticeCard title="That offer has ended">

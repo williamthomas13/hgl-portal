@@ -47,7 +47,7 @@ export default function AvailabilityShareForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, studentId: s.id, availability: s.ranges, timezone: s.timezone }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       patch(s.id, {
         saving: false,
         message: res.ok

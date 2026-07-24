@@ -32,7 +32,7 @@ export default function HandoffNotes({ students }: { students: HandoffStudent[] 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId: s.id, note: s.draft }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       patch(s.id, {
         saving: false,
         note: res.ok ? s.draft : s.note,

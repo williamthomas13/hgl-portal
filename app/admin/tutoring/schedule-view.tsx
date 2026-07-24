@@ -135,8 +135,9 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
         timeMax: new Date(rangeEnd).toISOString(),
       }),
     })
-      .then((r) => r.json())
-      .then((json) => setBusy(json.available ? json.busy : []))
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((json) => setBusy(json?.available ? json.busy : []))
       .catch(() => setBusy([]))
   }, [mode, tutor, rangeStart, rangeEnd])
 
@@ -368,7 +369,7 @@ function SessionDialog({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setBusy(false)
     onClose(res.ok ? done : 'Error: ' + json.error)
   }

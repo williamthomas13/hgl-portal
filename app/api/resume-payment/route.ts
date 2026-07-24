@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
-import { loadClassBundles, verifyResumeToken, ADMIN_EMAIL } from '../../utils/lifecycle'
+import { checkResumeToken, loadClassBundles, ADMIN_EMAIL } from '../../utils/lifecycle'
 import { sendAdminAlert } from '../../utils/email'
 
 // "Finalize Registration" button in payment reminders PR1–4. Creates a fresh
@@ -23,7 +23,12 @@ export async function GET(request: Request) {
   const token = url.searchParams.get('t')
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-  if (!enrollmentId || !token || !verifyResumeToken(enrollmentId, token)) {
+  // PL-149: aged-out links get the friendly page.
+  const tokenState = enrollmentId && token ? checkResumeToken(enrollmentId, token) : 'invalid'
+  if (tokenState === 'expired') {
+    return NextResponse.redirect(`${baseUrl}/link-help?reason=expired`, 303)
+  }
+  if (!enrollmentId || !token || tokenState !== 'ok') {
     // PL-70b: humans hit invalid links (truncated URLs, forwards) — land
     // them on help, never raw JSON.
     return NextResponse.redirect(`${baseUrl}/link-help`, 303)

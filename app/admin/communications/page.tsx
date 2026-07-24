@@ -168,7 +168,7 @@ export default function CommunicationsDashboard() {
       alert(out.error ?? 'Preview unavailable.')
       return
     }
-    const data = await res.json()
+    const data = await res.json().catch(() => ({}))
     setPreview({
       ...data,
       note:

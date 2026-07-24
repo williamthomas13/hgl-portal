@@ -203,7 +203,7 @@ export default function TimecardsPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     setBusy(false)
     // PL-111: the approval gate names each session missing its note — show
     // them right here so the fix is a glance, not a hunt.

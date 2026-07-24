@@ -54,21 +54,29 @@ export default function CoveragePanel({
   const [pickCandidate, setPickCandidate] = useState('')
   const [note, setNote] = useState('')
 
+  // PL-151: busy resets in a finally and the message is always readable, so
+  // a failed request can't strand the buttons or print "Error: undefined".
   async function call(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
     setBusy(true)
     setMessage('')
-    const res = await fetch('/api/portal/tutoring', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const json = await res.json()
-    setBusy(false)
-    if (!res.ok) {
-      setMessage('Error: ' + json.error)
+    try {
+      const res = await fetch('/api/portal/tutoring', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage('Error: ' + (json.error ?? `the server returned ${res.status}`))
+        return null
+      }
+      return json
+    } catch {
+      setMessage("Error: couldn't reach the server — check your connection and try again.")
       return null
+    } finally {
+      setBusy(false)
     }
-    return json
   }
 
   async function loadCandidates(sessionId: string) {

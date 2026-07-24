@@ -94,27 +94,59 @@ export default function InvoicesPanel() {
       )
       .order('period', { ascending: false })
       .limit(120)
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    setRows(((data as any[]) ?? []).map((r) => ({ ...r, families: one(r.families) })))
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const loaded = ((data as any[]) ?? []).map((r) => ({ ...r, families: one(r.families) }))
+
+    // PL-153d: a chase email can link an invoice older than the 120 most
+    // recent — exactly the invoices those emails are about. Fetch the
+    // deep-linked one explicitly so the link never lands on nothing.
+    const target =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('invoice') : null
+    if (target && !loaded.some((r) => r.id === target)) {
+      const { data: extra } = await supabase
+        .from('tutoring_invoices')
+        .select(
+          `id, family_id, period, status, total, due_at, paid_at, proposal_sent_at, auto_confirmed,
+           change_request_note, change_requested_at, stripe_hosted_invoice_url, charge_attempts,
+           late_fee_flagged_at,
+           families ( parent_first_name, parent_last_name, parent_email, autopay ),
+           tutoring_invoice_lines ( id, description, amount, kind )`
+        )
+        .eq('id', target)
+        .maybeSingle()
+      if (extra) loaded.push({ ...(extra as any), families: one((extra as any).families) })
+    }
+    setRows(loaded)
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   }, [])
 
   useEffect(() => {
     load()
   }, [load])
 
+  // PL-151: the busy flag resets in a finally, so a network failure (or a
+  // gateway 500 with an HTML body) leaves the buttons usable instead of
+  // bricking the panel until a reload. The error text is always readable —
+  // never "Error: undefined".
   async function call(path: string, body: Record<string, unknown>, done: string) {
     setBusy(true)
-    const res = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const json = await res.json()
-    setBusy(false)
-    setMessage(res.ok ? done : 'Error: ' + json.error)
-    setLineForm(null)
-    load()
-    return res.ok
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json().catch(() => ({}))
+      setMessage(res.ok ? done : 'Error: ' + (json.error ?? `the server returned ${res.status}`))
+      setLineForm(null)
+      load()
+      return res.ok
+    } catch {
+      setMessage("Error: couldn't reach the server — check your connection and try again.")
+      return false
+    } finally {
+      setBusy(false)
+    }
   }
 
   const invoiceCall = (body: Record<string, unknown>, done: string) =>

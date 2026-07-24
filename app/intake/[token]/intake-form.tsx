@@ -121,7 +121,7 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, ...f, availability, availabilityTimezone }),
       })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(json.error ?? 'Something went wrong — please try again.')
         return

@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
-import { verifyRefundToken } from '../../utils/lifecycle'
+import { checkRefundToken } from '../../utils/lifecycle'
 import { loadContactInfo } from '../../utils/tutoring-emails'
 import RefundConfirm from './refund-confirm'
 
@@ -33,7 +33,16 @@ export default async function RefundRequestPage({
     </div>
   )
 
-  if (!token || !verifyRefundToken(id, token)) {
+  // PL-149: aged-out links get their own page.
+  const tokenState = token ? checkRefundToken(id, token) : 'invalid'
+  if (tokenState === 'expired') {
+    return shell(
+      <p className="text-gray-700">Links in our emails retire themselves after a few months, so an old message can&apos;t
+        be used later by someone it was forwarded to. Nothing is wrong with your account — reply
+        to any of our emails and we&apos;ll send you a fresh one right away.</p>
+    )
+  }
+  if (!token || tokenState !== 'ok') {
     return shell(
       <p className="text-gray-700">
         This link is no longer valid. If you meant to request a refund, just reply to our

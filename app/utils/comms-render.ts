@@ -5,6 +5,7 @@ import {
   loadTutoringPackages,
 } from './lifecycle'
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { renderEmail } from './comms-db-render'
 import {
   classDetailsEmail,
   faqEmail,
@@ -55,45 +56,57 @@ export async function renderSendRow(
   const ctx = emailContext(bundle, enrollment)
   const audience: Audience = /_s:/.test(row.dedupe_key) ? 'student' : 'parent'
 
-  const wrap = (r: Rendered, emailType: string) => ({ ...r, emailType })
+  // PL-155c: Preview must show what would ACTUALLY be sent. This used to
+  // call the code twins directly, so a template Scarlett had published and
+  // made live previewed as the old hard-coded copy — the exact drift the
+  // twin system exists to prevent, on the one surface built for checking
+  // copy. renderEmail() serves the live registry body when there is one and
+  // falls back to the same code twin when there isn't, which is precisely
+  // what the pipeline does at send time.
+  const wrap = async (
+    templateKey: string,
+    audienceForRender: Audience,
+    fallback: () => Rendered,
+    emailType: string
+  ) => ({ ...(await renderEmail(templateKey, ctx, audienceForRender, {}, fallback)), emailType })
 
   switch (row.template_key) {
     case 'E0_CONFIRM_PARENT':
-      return wrap(parentConfirmationEmail(ctx), 'parent_confirmation')
+      return wrap('E0_CONFIRM_PARENT', 'parent', () => parentConfirmationEmail(ctx), 'parent_confirmation')
     case 'E0_CONFIRM_STUDENT':
-      return wrap(studentConfirmationEmail(ctx), 'student_confirmation')
+      return wrap('E0_CONFIRM_STUDENT', 'student', () => studentConfirmationEmail(ctx), 'student_confirmation')
     case 'PR1':
     case 'PR2':
     case 'PR3':
     case 'PR4':
-      return wrap(paymentReminderEmail(ctx, Number(row.template_key.slice(2))), 'payment_reminder')
+      return wrap(row.template_key, 'parent', () => paymentReminderEmail(ctx, Number(row.template_key.slice(2))), 'payment_reminder')
     case 'E1_THANKS':
-      return wrap(thankYouEmail(ctx), 'thank_you')
+      return wrap('E1_THANKS', 'parent', () => thankYouEmail(ctx), 'thank_you')
     case 'E2_DIAG_PARENT':
-      return wrap(synapAccessParentEmail(ctx), 'synap_access')
+      return wrap('E2_DIAG_PARENT', 'parent', () => synapAccessParentEmail(ctx), 'synap_access')
     case 'E2_DIAG_STUDENT':
-      return wrap(synapAccessStudentEmail(ctx), 'synap_access')
+      return wrap('E2_DIAG_STUDENT', 'student', () => synapAccessStudentEmail(ctx), 'synap_access')
     case 'E3_VFAQ':
-      return wrap(faqEmail(ctx, audience), 'faq')
+      return wrap('E3_VFAQ', audience, () => faqEmail(ctx, audience), 'faq')
     case 'E4_CLASS_DETAILS':
-      return wrap(classDetailsEmail(ctx, audience), 'class_details')
+      return wrap('E4_CLASS_DETAILS', audience, () => classDetailsEmail(ctx, audience), 'class_details')
     case 'E5_LOCATION':
-      return wrap(locationReminderEmail(ctx, audience), 'location_reminder')
+      return wrap('E5_LOCATION', audience, () => locationReminderEmail(ctx, audience), 'location_reminder')
     case 'E6_DIAG2':
-      return wrap(secondDiagnosticEmail(ctx, audience), 'second_diagnostic')
+      return wrap('E6_DIAG2', audience, () => secondDiagnosticEmail(ctx, audience), 'second_diagnostic')
     case 'E7_REVIEW':
-      return wrap(reviewRequestEmail(ctx), 'review_request')
+      return wrap('E7_REVIEW', 'parent', () => reviewRequestEmail(ctx), 'review_request')
     case 'E8_POSTCLASS_TUTORING': {
       const { post } = await loadTutoringPackages()
-      return wrap(tutoringOfferEmail(ctx, post, audience), 'tutoring_offer')
+      return wrap('E8_POSTCLASS_TUTORING', audience, () => tutoringOfferEmail(ctx, post, audience), 'tutoring_offer')
     }
     case 'E9_UPSELL': {
       const { pre } = await loadTutoringPackages()
       if (pre.length === 0) return null
-      return wrap(tutoringUpsellEmail(ctx, pre, addonPageUrlFor(enrollment.id)), 'tutoring_upsell')
+      return wrap('E9_UPSELL', 'parent', () => tutoringUpsellEmail(ctx, pre, addonPageUrlFor(enrollment.id)), 'tutoring_upsell')
     }
     case 'LR_WELCOME':
-      return wrap(lateRegistrationWelcomeEmail(ctx, audience), 'late_welcome')
+      return wrap('LR_WELCOME', audience, () => lateRegistrationWelcomeEmail(ctx, audience), 'late_welcome')
     default:
       return null
   }

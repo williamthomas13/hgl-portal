@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useVisibleInterval } from '../components/use-visible-interval'
 
 // PL-100: the landing dashboard. Needs Attention mirrors the alert family
 // but is STATE-DRIVEN — the API recomputes every row from live state, and
@@ -26,31 +27,43 @@ export default function DashboardPanel() {
   const [weekSessions, setWeekSessions] = useState(0)
   const [error, setError] = useState('')
 
+  // PL-153c: a failed load must SAY so and offer a retry. This is the admin
+  // landing page — leaving "Checking every condition…" pulsing forever reads
+  // as "nothing needs attention", which is the one thing it must never imply.
   const load = useCallback(async () => {
-    const res = await fetch('/api/admin/dashboard')
-    if (!res.ok) {
-      setError('Could not load the dashboard.')
-      return
+    try {
+      const res = await fetch('/api/admin/dashboard')
+      if (!res.ok) {
+        setError(`Could not load the dashboard (the server returned ${res.status}).`)
+        return
+      }
+      const json = await res.json().catch(() => null)
+      if (!json) {
+        setError('Could not load the dashboard — the response was unreadable.')
+        return
+      }
+      setAttention(json.attention ?? [])
+      setActivity(json.activity ?? [])
+      setUpcoming(json.upcoming ?? [])
+      setWeekSessions(json.weekSessions ?? 0)
+      setError('')
+    } catch {
+      setError("Could not reach the server — check your connection.")
     }
-    const json = await res.json()
-    setAttention(json.attention)
-    setActivity(json.activity)
-    setUpcoming(json.upcoming)
-    setWeekSessions(json.weekSessions)
-    setError('')
   }, [])
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 60000) // rows clear as conditions resolve anywhere
-    return () => clearInterval(t)
   }, [load])
+  // PL-152: the refresh only runs while the dashboard section is on screen.
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  useVisibleInterval(panelRef, load, 60000) // rows clear as conditions resolve anywhere
 
   const fmtWhen = (iso: string) =>
     new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start" ref={panelRef}>
       {/* Needs Attention — the star */}
       <div className="bg-white rounded-lg shadow-md border-t-4 border-amber-500 p-5 lg:row-span-2">
         <h2 className="text-lg font-bold text-hgl-slate mb-1">
@@ -64,8 +77,18 @@ export default function DashboardPanel() {
         <p className="text-xs text-gray-400 mb-3">
           Live conditions, not sent emails — fixing something anywhere clears its row here.
         </p>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {attention === null ? (
+        {error ? (
+          <div className="text-sm">
+            <p className="text-red-600">{error}</p>
+            <button
+              type="button"
+              onClick={load}
+              className="mt-2 font-semibold text-hgl-blue underline hover:text-hgl-slate"
+            >
+              Try again
+            </button>
+          </div>
+        ) : attention === null ? (
           <p className="text-sm text-gray-400 animate-pulse">Checking every condition…</p>
         ) : attention.length === 0 ? (
           <p className="text-sm text-green-700">✓ Nothing needs attention right now.</p>

@@ -12,6 +12,7 @@ import { deleteGcalEvent, loadGcalConnection } from '../../../../utils/gcal'
 import {
   generateOccurrences,
   horizonEndIso,
+  overlappingSlots,
   validRecurrence,
   type RecurrenceSlot,
 } from '../../../../utils/tutoring'
@@ -203,6 +204,14 @@ export async function POST(req: Request) {
       if (!validRecurrence(recurrence)) {
         return NextResponse.json({ error: 'Invalid weekly slots.' }, { status: 400 })
       }
+      // PL-153a: the wizard blocks this, but the route is the authority —
+      // overlapping slots double-book the tutor and double-bill the family.
+      if (overlappingSlots(recurrence)) {
+        return NextResponse.json(
+          { error: 'Two weekly slots overlap on the same day — fix them before saving.' },
+          { status: 400 }
+        )
+      }
       if (body.funding === 'package' && !body.addon_id) {
         return NextResponse.json({ error: 'Package funding needs the package (add-on) to draw from.' }, { status: 400 })
       }
@@ -322,6 +331,13 @@ export async function POST(req: Request) {
       if (!body.id) return NextResponse.json({ error: 'Missing engagement id.' }, { status: 400 })
       if (body.recurrence !== undefined && !validRecurrence(body.recurrence)) {
         return NextResponse.json({ error: 'Invalid weekly slots.' }, { status: 400 })
+      }
+      // PL-153a: same rule on edit as on create.
+      if (body.recurrence !== undefined && overlappingSlots(body.recurrence)) {
+        return NextResponse.json(
+          { error: 'Two weekly slots overlap on the same day — fix them before saving.' },
+          { status: 400 }
+        )
       }
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       for (const k of ['hourly_rate', 'funding', 'addon_id', 'recurrence', 'location', 'notes', 'status', 'end_date'] as const) {

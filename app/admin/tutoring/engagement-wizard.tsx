@@ -398,7 +398,7 @@ export default function EngagementWizard({
             timeMax: new Date(chunkEnd).toISOString(),
           }),
         })
-        const json = await res.json()
+        const json = await res.json().catch(() => ({}))
         if (cancelled) return
         if (!json.available) {
           if (first) setBusyUnavailable(true)
@@ -475,9 +475,42 @@ export default function EngagementWizard({
     setSlots((s) => s.map((slot, j) => (j === i ? { ...slot, ...patch } : slot)))
   }
 
+  // PL-153a: two weekly slots that overlap on the same weekday produce a
+  // double-booked tutor AND a double-billed family — every generated
+  // occurrence bills twice for one hour of teaching. The wizard names the
+  // clash instead of creating it.
+  const slotClashes = useMemo(() => {
+    const clashes: string[] = []
+    const mins = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+    for (let i = 0; i < slots.length; i++) {
+      for (let j = i + 1; j < slots.length; j++) {
+        const a = slots[i]
+        const b = slots[j]
+        if (a.weekday !== b.weekday) continue
+        const aStart = mins(a.start_time)
+        const bStart = mins(b.start_time)
+        if (aStart < bStart + b.duration_minutes && bStart < aStart + a.duration_minutes) {
+          const day = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][
+            a.weekday - 1
+          ]
+          clashes.push(
+            aStart === bStart && a.duration_minutes === b.duration_minutes
+              ? `${day} at ${a.start_time} is listed twice`
+              : `${day} ${a.start_time} and ${b.start_time} overlap`
+          )
+        }
+      }
+    }
+    return [...new Set(clashes)]
+  }, [slots])
+
+  // PL-151: try/finally around the busy flag — a failed request used to
+  // leave the Create button stuck mid-save with every field still filled in,
+  // so the only way out was a reload (which lost the whole wizard state).
   async function submit() {
     setSaving(true)
     setMessage('')
+    try {
     const res = await fetch('/api/admin/tutoring/engagement', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -496,9 +529,9 @@ export default function EngagementWizard({
         require_approval: requireApproval,
       }),
     })
-    const json = await res.json()
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
-      setMessage('Error: ' + json.error)
+      setMessage('Error: ' + (json.error ?? `the server returned ${res.status}`))
     } else {
       setMessage(
         json.pendingParentConfirmation
@@ -513,10 +546,15 @@ export default function EngagementWizard({
       setNotes('')
       onCreated()
     }
-    setSaving(false)
+    } catch {
+      setMessage("Error: couldn't reach the server — nothing was saved. Your entries are still here; try again.")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const ready = studentId && subjectId && tutorId && Number(rate) > 0 && (funding !== 'package' || addonId)
+  const ready =
+    studentId && subjectId && tutorId && Number(rate) > 0 && (funding !== 'package' || addonId) && slotClashes.length === 0
 
   // PL-27: a gray Create button must say why. The classic trap: an empty
   // tutor subject list means no default rate ever lands, so everything looks
@@ -527,6 +565,8 @@ export default function EngagementWizard({
     !tutorId && 'pick a tutor',
     !(Number(rate) > 0) && 'set an hourly rate (it defaults from the subject once one is picked)',
     funding === 'package' && !addonId && 'pick which purchased package this draws from',
+    // PL-153a: say which slots clash, not just that something is wrong.
+    ...slotClashes.map((c) => `fix the overlapping weekly slots — ${c}`),
   ].filter(Boolean) as string[]
 
   return (

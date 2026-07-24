@@ -1,5 +1,5 @@
 import { Resend } from 'resend'
-import { nonProductionOrigins } from './base-url'
+import { emailBaseUrl, nonProductionOrigins } from './base-url'
 import { classLocationTailText } from './comms-variables'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { convertUrlFor, refundRequestUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
@@ -1775,6 +1775,37 @@ export async function sendOnce(opts: {
     if (devEnvironment) return 'failed'
   }
 
+  // PL-155a: a real send whose body still carries {variableName} means a
+  // template referenced something the composer never supplied — the family
+  // reads literal curly braces. This used to only console.error, which
+  // nobody sees. The send still goes (a transactional email with one ugly
+  // token beats no email at all), but it ALERTS, and the unresolved names
+  // are recorded on the send row so the dashboard can derive a live row.
+  const unresolvedTokens = [
+    ...new Set(
+      [...`${opts.subject} ${opts.html}`.matchAll(/\{([a-zA-Z][a-zA-Z0-9_]{2,})\}/g)].map((m) => m[1])
+    ),
+  ]
+  if (unresolvedTokens.length > 0 && !opts.isTest) {
+    console.error(
+      `[PL-155] unresolved variable(s) in ${opts.dedupeKey}: ${unresolvedTokens.join(', ')}`
+    )
+    await sendAdminAlert({
+      // Per template per day: a broken template hits many recipients at once.
+      dedupeKey: `unresolved_vars:${opts.templateKey ?? opts.emailType}:${new Date().toISOString().slice(0, 10)}`,
+      adminEmail: process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmail.com',
+      subject: `Email sent with unfilled placeholders (${opts.templateKey ?? opts.emailType})`,
+      body: `<p>An email went out with placeholder text still in the body — the recipient sees
+        literal curly braces where a name or date should be.</p>
+        <p>Unfilled: <strong>${unresolvedTokens.map((t) => `{${t}}`).join(', ')}</strong><br>
+        Template: ${opts.templateKey ?? opts.emailType} · first send: <code>${opts.dedupeKey}</code></p>
+        <p>This usually means the template was edited to use a variable the sending code doesn't
+        supply. Fix it in
+        <a href="${emailBaseUrl()}/admin/communications/templates" style="color:#00AEEE">the templates page</a>
+        — every later send of this template has the same problem until it's corrected.</p>`,
+    }).catch((e) => console.error('unresolved-variable alert failed:', e))
+  }
+
   const meta = templateMetaFor(opts.emailType, opts.dedupeKey)
   const nowIso = new Date().toISOString()
 
@@ -1815,7 +1846,12 @@ export async function sendOnce(opts: {
           cc: opts.cc ?? null,
           scheduled_for: nowIso,
           status: 'sending',
-          payload: opts.payload ?? null,
+          // PL-155a: the unfilled names ride the send row, so the dashboard
+          // derives its Needs Attention row from state, not from a log line.
+          payload:
+            unresolvedTokens.length > 0
+              ? { ...(opts.payload ?? {}), unresolved_tokens: unresolvedTokens }
+              : opts.payload ?? null,
           is_test: opts.isTest ?? false,
           body_snapshot_id: opts.bodySnapshotId ?? null,
         },

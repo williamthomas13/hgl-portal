@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
-import { loadClassBundles, verifyClaimToken } from '../../../utils/lifecycle'
+import { checkClaimToken, loadClassBundles } from '../../../utils/lifecycle'
 
 // The link inside a waitlist offer email. Validates the signed token and the
 // 48h window, then creates a Stripe checkout session for the held enrollment
@@ -16,7 +16,13 @@ export async function GET(request: Request) {
   const token = url.searchParams.get('t')
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-  if (!enrollmentId || !token || !verifyClaimToken(enrollmentId, token)) {
+  // PL-149: an aged-out link is a real family with an old email — send
+  // them to the friendly page, not the generic one.
+  const tokenState = enrollmentId && token ? checkClaimToken(enrollmentId, token) : 'invalid'
+  if (tokenState === 'expired') {
+    return NextResponse.redirect(`${baseUrl}/link-help?reason=expired`, 303)
+  }
+  if (!enrollmentId || !token || tokenState !== 'ok') {
     // PL-70b: friendly landings for humans, never raw JSON.
     return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }

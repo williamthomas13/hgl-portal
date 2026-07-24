@@ -4,7 +4,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { availabilityToken } from './intake'
 import type { EnrollmentEmailContext, SessionInfo } from './email'
 import { bySessionStart } from './dates'
-import { signingSecret } from './signing'
+import { checkToken, mintToken, signingSecret } from './signing'
 
 // Shared plumbing for the email lifecycle: loads every class with its school,
 // sessions, and enrollments in one query, and provides the timezone-aware
@@ -409,10 +409,10 @@ export function spotsTaken(bundle: ClassBundle): number {
 // ---------------------------------------------------------------------------
 
 function claimToken(enrollmentId: string) {
-  return createHmac('sha256', signingSecret())
-    .update(enrollmentId)
-    .digest('hex')
-    .slice(0, 32)
+  // PL-149: minted with an issued-at + lifetime. (The offer's own 48-hour
+  // deadline is the real gate here; the lifetime just stops an ancient
+  // forwarded link from ever being a live entry point.)
+  return mintToken('', enrollmentId, 'family-action')
 }
 
 export function claimUrlFor(enrollmentId: string) {
@@ -420,19 +420,20 @@ export function claimUrlFor(enrollmentId: string) {
   return `${base}/api/waitlist/claim?e=${enrollmentId}&t=${claimToken(enrollmentId)}`
 }
 
-export function verifyClaimToken(enrollmentId: string, token: string) {
-  const expected = Buffer.from(claimToken(enrollmentId))
-  const given = Buffer.from(token)
-  return expected.length === given.length && timingSafeEqual(expected, given)
+/** PL-149: tri-state — 'expired' earns the friendly aged-out page. */
+export function checkClaimToken(enrollmentId: string, token: string): 'ok' | 'expired' | 'invalid' {
+  return checkToken('', enrollmentId, token, 'family-action')
+}
+
+export function verifyClaimToken(enrollmentId: string, token: string): boolean {
+  return checkClaimToken(enrollmentId, token) === 'ok'
 }
 
 // PL-72: decline links — distinct HMAC prefix so a decline token can never
 // double as a claim token (or vice versa).
 function declineToken(enrollmentId: string) {
-  return createHmac('sha256', signingSecret())
-    .update(`decline:${enrollmentId}`)
-    .digest('hex')
-    .slice(0, 32)
+  // PL-149: minted with an issued-at + lifetime.
+  return mintToken('decline:', enrollmentId, 'family-action')
 }
 
 export function declineUrlFor(enrollmentId: string) {
@@ -440,10 +441,13 @@ export function declineUrlFor(enrollmentId: string) {
   return `${base}/waitlist/decline?e=${enrollmentId}&t=${declineToken(enrollmentId)}`
 }
 
-export function verifyDeclineToken(enrollmentId: string, token: string) {
-  const expected = Buffer.from(declineToken(enrollmentId))
-  const given = Buffer.from(token)
-  return expected.length === given.length && timingSafeEqual(expected, given)
+/** PL-149: tri-state — 'expired' earns the friendly aged-out page. */
+export function checkDeclineToken(enrollmentId: string, token: string): 'ok' | 'expired' | 'invalid' {
+  return checkToken('decline:', enrollmentId, token, 'family-action')
+}
+
+export function verifyDeclineToken(enrollmentId: string, token: string): boolean {
+  return checkDeclineToken(enrollmentId, token) === 'ok'
 }
 
 /** Active tutoring packages, split by phase. All pricing comes from here. */
@@ -514,10 +518,8 @@ export function examInfoFor(classType: string): { examName: string; regLabel: st
 // Resume-payment links for the PR1-4 "Finalize Registration" buttons.
 // Distinct HMAC prefix, as with claim/unsubscribe/addon tokens.
 function resumeToken(enrollmentId: string) {
-  return createHmac('sha256', signingSecret())
-    .update(`resume:${enrollmentId}`)
-    .digest('hex')
-    .slice(0, 32)
+  // PL-149: minted with an issued-at + lifetime.
+  return mintToken('resume:', enrollmentId, 'family-action')
 }
 
 export function resumePaymentUrlFor(enrollmentId: string) {
@@ -525,19 +527,20 @@ export function resumePaymentUrlFor(enrollmentId: string) {
   return `${base}/api/resume-payment?e=${enrollmentId}&t=${resumeToken(enrollmentId)}`
 }
 
-export function verifyResumeToken(enrollmentId: string, token: string) {
-  const expected = Buffer.from(resumeToken(enrollmentId))
-  const given = Buffer.from(token)
-  return expected.length === given.length && timingSafeEqual(expected, given)
+/** PL-149: tri-state — 'expired' earns the friendly aged-out page. */
+export function checkResumeToken(enrollmentId: string, token: string): 'ok' | 'expired' | 'invalid' {
+  return checkToken('resume:', enrollmentId, token, 'family-action')
+}
+
+export function verifyResumeToken(enrollmentId: string, token: string): boolean {
+  return checkResumeToken(enrollmentId, token) === 'ok'
 }
 
 // Per-enrollment add-on page links (email #9). Distinct HMAC prefix, as with
 // claim and unsubscribe tokens.
 function addonToken(enrollmentId: string) {
-  return createHmac('sha256', signingSecret())
-    .update(`addon:${enrollmentId}`)
-    .digest('hex')
-    .slice(0, 32)
+  // PL-149: minted with an issued-at + lifetime.
+  return mintToken('addon:', enrollmentId, 'family-form')
 }
 
 export function addonPageUrlFor(enrollmentId: string) {
@@ -545,10 +548,13 @@ export function addonPageUrlFor(enrollmentId: string) {
   return `${base}/addons/${enrollmentId}?t=${addonToken(enrollmentId)}`
 }
 
-export function verifyAddonToken(enrollmentId: string, token: string) {
-  const expected = Buffer.from(addonToken(enrollmentId))
-  const given = Buffer.from(token)
-  return expected.length === given.length && timingSafeEqual(expected, given)
+/** PL-149: tri-state — 'expired' earns the friendly aged-out page. */
+export function checkAddonToken(enrollmentId: string, token: string): 'ok' | 'expired' | 'invalid' {
+  return checkToken('addon:', enrollmentId, token, 'family-form')
+}
+
+export function verifyAddonToken(enrollmentId: string, token: string): boolean {
+  return checkAddonToken(enrollmentId, token) === 'ok'
 }
 
 // Unsubscribe links (relationship emails only). Distinct HMAC input prefix so
@@ -564,18 +570,17 @@ function unsubToken(familyId: string) {
 // as claim/decline — enrollment-scoped; the page itself is read-only and
 // the conversion fires only on a JS-executed POST behind one visible tap).
 export function convertToken(enrollmentId: string) {
-  return createHmac('sha256', signingSecret())
-    .update(`convert:${enrollmentId}`)
-    .digest('hex')
-    .slice(0, 32)
+  // PL-149: minted with an issued-at + lifetime.
+  return mintToken('convert:', enrollmentId, 'family-action')
+}
+
+/** PL-149: tri-state — 'expired' earns the friendly aged-out page. */
+export function checkConvertToken(enrollmentId: string, token: string): 'ok' | 'expired' | 'invalid' {
+  return checkToken('convert:', enrollmentId, token, 'family-action')
 }
 
 export function verifyConvertToken(enrollmentId: string, token: string): boolean {
-  const expected = convertToken(enrollmentId)
-  return (
-    token.length === expected.length &&
-    timingSafeEqual(Buffer.from(token), Buffer.from(expected))
-  )
+  return checkConvertToken(enrollmentId, token) === 'ok'
 }
 
 export function convertUrlFor(enrollmentId: string) {
@@ -588,10 +593,8 @@ export function convertUrlFor(enrollmentId: string) {
 // stamp nothing); the confirm button POSTs the actual request. Refunds stay
 // Option A: the request is tracked intent, the money moves only in Stripe.
 function refundToken(enrollmentId: string) {
-  return createHmac('sha256', signingSecret())
-    .update(`refund:${enrollmentId}`)
-    .digest('hex')
-    .slice(0, 32)
+  // PL-149: minted with an issued-at + lifetime.
+  return mintToken('refund:', enrollmentId, 'family-action')
 }
 
 export function refundRequestUrlFor(enrollmentId: string) {
@@ -599,12 +602,13 @@ export function refundRequestUrlFor(enrollmentId: string) {
   return `${base}/refund/${enrollmentId}?t=${refundToken(enrollmentId)}`
 }
 
-export function verifyRefundToken(enrollmentId: string, token: string) {
-  const expected = refundToken(enrollmentId)
-  return (
-    token.length === expected.length &&
-    timingSafeEqual(Buffer.from(token), Buffer.from(expected))
-  )
+/** PL-149: tri-state — 'expired' earns the friendly aged-out page. */
+export function checkRefundToken(enrollmentId: string, token: string): 'ok' | 'expired' | 'invalid' {
+  return checkToken('refund:', enrollmentId, token, 'family-action')
+}
+
+export function verifyRefundToken(enrollmentId: string, token: string): boolean {
+  return checkRefundToken(enrollmentId, token) === 'ok'
 }
 
 /** PL-53b: the family's signed share-your-availability page. */
