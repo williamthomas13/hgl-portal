@@ -1,6 +1,13 @@
 import type { EnrollmentEmailContext, Audience } from './email'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
-import { coverageAlertDetails, type CoverageEvent } from './coverage-copy'
+import {
+  coverageAlertDetails,
+  coverageNoteButtonHtml,
+  coverageNoteHtml,
+  coverageOutcomeLine,
+  coverageSessionLines,
+  type CoverageEvent,
+} from './coverage-copy'
 import { formatDateFull , zonedDeadline } from './dates'
 import type { ResolvedVars } from './comms-md'
 
@@ -888,6 +895,58 @@ const SAMPLE_CANCELLATION_OPTIONS = cancellationOptionsHtml(
   { convertUrl: 'https://hgl-portal.vercel.app/test-link', refundUrl: 'https://hgl-portal.vercel.app/test-link' }
 )
 
+// PL-137/PL-157: ONE scenario drives every substitute-coverage sample — the
+// AL_* alert pins AND the SUB_* tutor-trio pins below all derive from this
+// object through the real composers in coverage-copy.ts. Before PL-157 the
+// SUB_COVERAGE_NOTE preview mixed sources: {tutorFirstName} came from the
+// shared pool ("Billy") while the pinned {coverageNoteBlock} prose thanked
+// Jordan — one person writing to themselves (the PL-80b failure exactly).
+// Deriving all of it from one facts object is the PL-80c lesson: make the
+// collision structurally impossible, don't re-sample one value.
+//
+// The scenario: Billy Thomas asked Jordan Lee to cover Ana's SAT Math
+// session; Jordan accepted; Billy sends Jordan the hand-over note.
+export const SAMPLE_COVERAGE_FACTS = {
+  studentName: 'Ana García',
+  studentFirst: 'Ana',
+  studentId: '00000000-0000-4000-8000-000000000005',
+  subjectName: 'SAT Math',
+  when: 'Thursday, September 10 at 4:00 PM',
+  requesterName: 'Billy Thomas',
+  candidateName: 'Jordan Lee',
+  baseUrl: 'https://hgl-portal.vercel.app',
+}
+// First names split exactly the way coverage.ts splits them for real sends.
+const COVERAGE_REQUESTER_FIRST = SAMPLE_COVERAGE_FACTS.requesterName.split(' ')[0]
+const COVERAGE_CANDIDATE_FIRST = SAMPLE_COVERAGE_FACTS.candidateName.split(' ')[0]
+// The note prose is user-authored free text in real sends, so the sample
+// prose is hand-written — but every name in it comes from the facts object,
+// and the HTML wrapping runs through the real coverageNoteHtml composer.
+export const SAMPLE_COVERAGE_NOTE_PROSE = `Thanks so much for taking this one, ${COVERAGE_CANDIDATE_FIRST} — I owe you.
+
+${SAMPLE_COVERAGE_FACTS.studentFirst} is midway through the geometry unit and keeps second-guessing herself on circle theorems; she gets there, she just needs to be told she's right. Her last diagnostic is in the notes. She'll ask to skip the warm-up — it's worth doing anyway.`
+const SAMPLE_COVERAGE_SESSION_BLOCK = coverageSessionLines({
+  when: SAMPLE_COVERAGE_FACTS.when,
+  studentFirst: SAMPLE_COVERAGE_FACTS.studentFirst,
+  subjectName: SAMPLE_COVERAGE_FACTS.subjectName,
+  location: 'https://meet.google.com/sample-link',
+  requesterName: SAMPLE_COVERAGE_FACTS.requesterName,
+}).join('\n')
+const SAMPLE_COVERAGE_OUTCOME_LINE = coverageOutcomeLine({
+  accepted: true,
+  candidateName: SAMPLE_COVERAGE_FACTS.candidateName,
+  studentFirst: SAMPLE_COVERAGE_FACTS.studentFirst,
+  subjectName: SAMPLE_COVERAGE_FACTS.subjectName,
+  when: SAMPLE_COVERAGE_FACTS.when,
+  contactEmail: 'info@highergroundlearning.com',
+})
+const SAMPLE_COVERAGE_NOTE_BUTTON = coverageNoteButtonHtml({
+  noteUrl: 'https://hgl-portal.vercel.app/test-link',
+  subFirstName: COVERAGE_CANDIDATE_FIRST,
+  studentFirst: SAMPLE_COVERAGE_FACTS.studentFirst,
+})
+const SAMPLE_COVERAGE_NOTE_BLOCK = coverageNoteHtml(SAMPLE_COVERAGE_NOTE_PROSE)
+
 // PL-56: previews must read like real sends — placeholder-ish samples
 // ("your tutor", "tutoring", "—") impersonated bugs during template review.
 // Composed blocks carry worked examples mirroring what the send code
@@ -985,17 +1044,16 @@ export const SAMPLE_EXTRA: ExtraVars = {
   sessionDate: 'Wednesday, July 22',
   missingSessionsBlock: '4:00 PM — Ana García\n6:00 PM — Marcus Lee',
   notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
-  coverageSessionBlock:
-    'Wednesday, July 29, 4:00 PM (your local time)\nAna · SAT Math\nhttps://meet.google.com/sample-link',
+  // PL-157: the coverage/handoff values below are the SAME derived constants
+  // the SUB_* per-template pins use — shared pool and pins literally cannot
+  // disagree about the scenario.
+  coverageSessionBlock: SAMPLE_COVERAGE_SESSION_BLOCK,
   counselorRosterLink: 'https://hgl-portal.vercel.app/test-link',
   coverageRespondLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
-  coverageOutcomeLine:
-    "Jordan Fisher accepted — Ana's SAT Math session on Wednesday, July 29, 4:00 PM has moved to their schedule and calendar. Nothing else to do.",
-  coverageNoteBlock:
-    "<p>Thanks so much for taking this one, Jordan — I owe you.</p><p>Ana is midway through the geometry unit and keeps second-guessing herself on circle theorems; she gets there, she just needs to be told she's right. Her last diagnostic is in the notes. She'll ask to skip the warm-up — it's worth doing anyway.</p>",
-  coverageNoteFrom: 'Billy Thomas',
-  coverageNoteButton:
-    '<p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Send Jordan a note</a></p>',
+  coverageOutcomeLine: SAMPLE_COVERAGE_OUTCOME_LINE,
+  coverageNoteBlock: SAMPLE_COVERAGE_NOTE_BLOCK,
+  coverageNoteFrom: SAMPLE_COVERAGE_FACTS.requesterName,
+  coverageNoteButton: SAMPLE_COVERAGE_NOTE_BUTTON,
   tutorChangeBlock:
     "<p>Ana's SAT session on <strong>Mon, Sep 14, 4:00 PM</strong> was rescheduled. Your Google Calendar is already updated.</p>",
   alertStudentName: 'Ana García',
@@ -1042,16 +1100,6 @@ export const SAMPLE_EXTRA: ExtraVars = {
 // reviewed a coverage alert and read "Ana García registered for SIS SAT
 // Prep… 3 enrolled / 8 min / 15 cap". Real sends were always correct; only
 // the review surface lied.
-const SAMPLE_COVERAGE_FACTS = {
-  studentName: 'Ana García',
-  studentFirst: 'Ana',
-  studentId: '00000000-0000-4000-8000-000000000005',
-  subjectName: 'SAT Math',
-  when: 'Thursday, September 10 at 4:00 PM',
-  requesterName: 'Billy Thomas',
-  candidateName: 'Jordan Lee',
-  baseUrl: 'https://hgl-portal.vercel.app',
-}
 const sampleCoverage = (event: CoverageEvent) => ({
   alertStudentName: SAMPLE_COVERAGE_FACTS.studentName,
   alertDetailsBlock: coverageAlertDetails({ ...SAMPLE_COVERAGE_FACTS, event }),
@@ -1064,6 +1112,34 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   // declined and withdrawn variants are exercised in the coverage E2E
   // (regress:coverage-samples renders all three off the same composer).
   AL_COVERAGE_RESOLVED: sampleCoverage('accepted'),
+
+  // PL-157: the substitute-coverage tutor trio previews as ONE handoff —
+  // Billy Thomas asked, Jordan Lee accepted and covers Ana's session, Billy
+  // sends the note. Each pin covers EVERY scenario-bearing variable its
+  // template renders — the greeting included — so a shared-pool value can
+  // never recombine into "one person writing to themselves" again
+  // (regress:alert-pins enforces this).
+  // coverage.ts requestCoverage → renderRegistered('SUB_COVERAGE_OFFER'):
+  // the recipient is the CANDIDATE being asked.
+  SUB_COVERAGE_OFFER: {
+    tutorFirstName: COVERAGE_CANDIDATE_FIRST,
+    coverageSessionBlock: SAMPLE_COVERAGE_SESSION_BLOCK,
+  },
+  // coverage.ts respondCoverage → renderRegistered('SUB_COVERAGE_RESULT'):
+  // the recipient is the REQUESTING tutor hearing the outcome.
+  SUB_COVERAGE_RESULT: {
+    tutorFirstName: COVERAGE_REQUESTER_FIRST,
+    coverageOutcomeLine: SAMPLE_COVERAGE_OUTCOME_LINE,
+    coverageNoteButton: SAMPLE_COVERAGE_NOTE_BUTTON,
+  },
+  // coverage.ts sendCoverageNote → renderRegistered('SUB_COVERAGE_NOTE'):
+  // the recipient is the SUBSTITUTE; the note is FROM the requesting tutor
+  // and its prose addresses the substitute by name.
+  SUB_COVERAGE_NOTE: {
+    tutorFirstName: COVERAGE_CANDIDATE_FIRST,
+    coverageNoteFrom: SAMPLE_COVERAGE_FACTS.requesterName,
+    coverageNoteBlock: SAMPLE_COVERAGE_NOTE_BLOCK,
+  },
 
   // sweepInstructorNudges (cron/reminders): min met, nobody teaching yet.
   ADMIN_INSTRUCTOR_NUDGE: {

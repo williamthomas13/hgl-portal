@@ -1,6 +1,13 @@
 import { emailBaseUrl } from './base-url'
 import { checkToken, mintToken } from './signing'
-import { coverageAlertDetails, coverageAlertSubject } from './coverage-copy'
+import {
+  coverageAlertDetails,
+  coverageAlertSubject,
+  coverageNoteButtonHtml,
+  coverageNoteHtml,
+  coverageOutcomeLine,
+  coverageSessionLines,
+} from './coverage-copy'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendAdminAlert, sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
@@ -180,12 +187,16 @@ export async function requestCoverage(opts: {
   const requesterName = session.tutor?.name ?? 'A colleague'
   const when = fmtWhen(session.startsAt, candidate.timezone)
   const first = candidate.name?.split(' ')[0] ?? 'there'
-  const sessionLines = [
-    `${when} (your local time)`,
-    `${session.studentFirst} · ${session.subjectName}`,
-    ...(session.location ? [session.location] : []),
-    ...(opts.note?.trim() ? [`From ${requesterName}: ${opts.note.trim()}`] : []),
-  ]
+  // PL-157: composed in coverage-copy.ts so the template sample derives from
+  // the same code path.
+  const sessionLines = coverageSessionLines({
+    when,
+    studentFirst: session.studentFirst,
+    subjectName: session.subjectName,
+    location: session.location,
+    requesterName,
+    note: opts.note,
+  })
   const codeTwin = (): Rendered => ({
     subject: `Can you cover a session? ${when} — ${session.subjectName}`,
     html: wrap(
@@ -307,16 +318,26 @@ export async function respondCoverage(opts: {
     const when = fmtWhen(session.startsAt, requester.timezone)
     const first = requester.name?.split(' ')[0] ?? 'there'
     const contact = await loadContactInfo()
-    const outcomeLine = accepted
-      ? `${candidateName} accepted — ${session.studentFirst}'s ${session.subjectName} session on ${when} has moved to their schedule and calendar. Nothing else to do.`
-      : `${candidateName} can't cover ${session.studentFirst}'s ${session.subjectName} session on ${when}. It's still yours — pick another candidate from your portal, or your manager can help find a suitable replacement (${contact.email}).`
+    // PL-157: composed in coverage-copy.ts so the template sample derives
+    // from the same code path.
+    const outcomeLine = coverageOutcomeLine({
+      accepted,
+      candidateName,
+      studentFirst: session.studentFirst,
+      subjectName: session.subjectName,
+      when,
+      contactEmail: contact.email,
+    })
     // PL-156: only the ACCEPTED outcome offers the note button — a declined
     // or withdrawn request has no substitute to hand anything to. The button
     // opens a form; it never sends from the email itself.
     const subFirstName = candidateName.split(' ')[0]
     const noteButton = accepted
-      ? `<p style="margin:20px 0"><a href="${coverageNoteUrlFor(req.id)}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Send ${subFirstName} a note</a></p>
-         <p style="color:#506171;font-size:14px">Anything ${subFirstName} should know before walking in — where ${session.studentFirst} is stuck, what to bring, what not to repeat. It goes to them and stays with the handoff.</p>`
+      ? coverageNoteButtonHtml({
+          noteUrl: coverageNoteUrlFor(req.id),
+          subFirstName,
+          studentFirst: session.studentFirst,
+        })
       : ''
     const codeTwin = (): Rendered => ({
       subject: accepted ? `Covered: ${session.studentFirst} on ${when}` : `Not covered yet: ${session.studentFirst} on ${when}`,
@@ -500,10 +521,9 @@ export async function sendCoverageNote(opts: {
   const subFirst = sub.name?.split(' ')[0] ?? 'there'
   const fromName = requester?.name ?? 'Your colleague'
   const when = fmtWhen(session.startsAt, sub.timezone)
-  const noteHtml = note
-    .split(/\n{2,}/)
-    .map((para) => `<p>${para.replace(/\n/g, '<br>').replace(/</g, '&lt;')}</p>`)
-    .join('')
+  // PL-157: composed in coverage-copy.ts (which also fixes the escape order —
+  // the inline version escaped its own <br> tags into visible text).
+  const noteHtml = coverageNoteHtml(note)
   const codeTwin = (): Rendered => ({
     subject: `A note from ${fromName} about ${session.studentFirst}`,
     html: wrap(
