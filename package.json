@@ -12,6 +12,7 @@
     "regress:pronouns": "node scripts/regress-pronouns.mjs",
     "regress:client-imports": "node scripts/regress-client-imports.mjs",
     "regress:tutoring-charge": "node scripts/regress-tutoring-charge.mjs",
+    "regress:quo": "node scripts/regress-quo.mjs",
     "regress:campaigns": "node scripts/regress-campaigns.mjs",
     "regress:report": "node scripts/regress-report.mjs",
     "regress:package-overdraw": "node scripts/regress-package-overdraw.mjs",

@@ -118,6 +118,35 @@ export async function GET(req: Request) {
   const rows = new Map<string, any>()
   for (const r of [...(byEnrollment.data ?? []), ...(byAddress.data ?? [])]) rows.set(r.id, r)
 
+  // PL-202: phone calls join the family timeline — the call history Scarlett
+  // could never get out of Dialpad, on the record where it belongs.
+  const { data: calls } = await supabase
+    .from('call_events')
+    .select('id, event_type, direction, phone_e164, duration_seconds, voicemail_url, occurred_at')
+    .eq('family_id', familyId)
+    .order('occurred_at', { ascending: false })
+    .limit(50)
+  const callItems: FamilyCommsItem[] = ((calls as any[]) ?? []).map((c) => {
+    const mins = c.duration_seconds ? `${Math.max(1, Math.round(c.duration_seconds / 60))} min` : null
+    const what =
+      c.event_type === 'missed'
+        ? 'Missed call'
+        : c.event_type === 'voicemail'
+          ? 'Voicemail'
+          : `${c.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} call`
+    return {
+      id: `call-${c.id}`,
+      label: `📞 ${what}`,
+      templateKey: 'CALL',
+      subject: [mins, c.voicemail_url ? `voicemail: ${c.voicemail_url}` : null].filter(Boolean).join(' · ') || null,
+      recipient: c.phone_e164,
+      recipientRole: 'parent',
+      state: 'delivered' as const,
+      origin: 'automatic' as const,
+      when: c.occurred_at,
+    }
+  })
+
   const items: FamilyCommsItem[] = [...rows.values()]
     .map((r) => ({
       id: r.id,
@@ -131,6 +160,8 @@ export async function GET(req: Request) {
       when: r.sent_at ?? r.scheduled_for ?? null,
     }))
     .sort((a, b) => (a.when ?? '').localeCompare(b.when ?? ''))
+  items.push(...callItems)
+  items.sort((a, b) => (a.when ?? '').localeCompare(b.when ?? ''))
 
   return NextResponse.json({
     familyLabel: `${family.parent_first_name ?? ''} ${family.parent_last_name ?? ''}`.trim() || family.parent_email,

@@ -292,6 +292,29 @@ export default function DashboardPanel() {
                         done
                       </button>
                     </div>
+                  ) : r.id.startsWith('missed-call-') ? (
+                    /* PL-202: missed calls clear on an outbound call — or
+                       this manual dismiss ("handled it another way"). */
+                    <div className="flex items-start gap-2">
+                      <a href={r.href} className="flex-1 block group hover:[&_span]:text-hgl-blue">
+                        {inner}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await fetch('/api/admin/calls', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'dismiss_missed', id: r.id }),
+                          })
+                          load()
+                        }}
+                        className="text-[11px] font-semibold text-hgl-blue underline hover:text-hgl-slate shrink-0 mt-0.5"
+                        title="Handled — clear without logging a call"
+                      >
+                        handled
+                      </button>
+                    </div>
                   ) : (
                     <a href={r.href} className="block group hover:[&_span]:text-hgl-blue">
                       {inner}

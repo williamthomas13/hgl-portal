@@ -2,7 +2,7 @@
 
 Opened July 29, empty. Scarlett will say when it's ready to pull; if extended after you've pulled it, wait for an explicit re-read ask.
 
-Next PL after this batch: **PL-209**.
+Next PL after this batch: **PL-212**.
 
 **Standing rules:** plain-English statuses · no internal shorthand · every alert deep-links its record · samples from composers · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
 
@@ -45,5 +45,9 @@ Current subtext: "These also live on your Google Calendar — reschedules and ca
 ## PL-210 — Join buttons only live near session time (reported Jul 28)
 
 Every session with a meeting-URL location currently shows an enabled Join button, even a week out — noise, and invites mis-clicks. Make Join active only within ~30 minutes of the session on either side (30 min before start through 30 min after end, or after start +30 — Code's call, say which). Outside the window, either hide the button or show a muted/disabled state so the tutor still knows it's an online session (muted state preferred — the online/in-person distinction is information). File: `app/portal/upcoming-sessions.tsx` (client component — window check can be client-side; no security concern, the URL is already the tutor's).
+
+## PL-211 — Warn when an engagement is scheduled with no location anywhere (reported Jul 28)
+
+Engagement `location` is optional and falls back to the tutor's `default_location`; when both are empty, the tutor's upcoming list shows a row with no location and no Join, and the ICS/PDF schedule surfaces have no LOCATION either. Add a warning at engagement create/edit (wizard + `app/api/admin/tutoring/engagement/route.ts` path) when the engagement has no location AND the tutor has no default: don't hard-block (some setups may be legitimately TBD), but make the admin explicitly acknowledge "no location set — tutor and family won't see where/how to meet," and surface still-missing-location engagements as a Needs Attention row (deep-linked, per standing rule) so a TBD can't silently ride into session day. Current location-less rows in QA are the Roman fixture — intentional, don't "fix" the data.
 
 *(Still on the radar from prior sessions: the Students-header mixed-units count ("3 students" vs "Current (4)") · duplicate identical weekly slots accepted without warning · anything from the batch-21 verification pass.)*

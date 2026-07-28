@@ -518,6 +518,45 @@ export async function GET() {
     }
   }
 
+  // PL-202: a KNOWN family called and got nobody — exactly what the
+  // dashboard exists to surface. State-driven: clears on a later outbound
+  // call to the family or a manual dismiss.
+  try {
+    const { data: missedCalls } = await supabase
+      .from('call_events')
+      .select('id, family_id, phone_e164, occurred_at, families ( parent_first_name, parent_last_name )')
+      .eq('event_type', 'missed')
+      .not('family_id', 'is', null)
+      .is('dismissed_at', null)
+      .order('occurred_at', { ascending: false })
+      .limit(20)
+    if ((missedCalls ?? []).length > 0) {
+      const famIds = [...new Set((missedCalls as any[]).map((c) => c.family_id))]
+      const { data: outbound } = await supabase
+        .from('call_events')
+        .select('family_id, occurred_at')
+        .eq('direction', 'outgoing')
+        .in('family_id', famIds)
+      const lastOut = new Map<string, string>()
+      for (const o of (outbound as any[]) ?? []) {
+        if ((lastOut.get(o.family_id) ?? '') < o.occurred_at) lastOut.set(o.family_id, o.occurred_at)
+      }
+      for (const c of (missedCalls as any[]) ?? []) {
+        if ((lastOut.get(c.family_id) ?? '') > c.occurred_at) continue // called back
+        const fam = one<any>(c.families)
+        attention.push({
+          id: `missed-call-${c.id}`,
+          kind: 'Missed call',
+          text: `${`${fam?.parent_first_name ?? ''} ${fam?.parent_last_name ?? ''}`.trim() || c.phone_e164} called and got nobody — call them back.`,
+          href: `/admin/tutoring?family=${c.family_id}`,
+          since: c.occurred_at,
+        })
+      }
+    }
+  } catch (e) {
+    console.error('missed-call rows failed (dashboard stands):', e)
+  }
+
   // PL-180: calendar-side session edits awaiting a human decision —
   // attributional (on the tutor's own calendar, the tutor moved it).
   const { data: calDrift } = await supabase

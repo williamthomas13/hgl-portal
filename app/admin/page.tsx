@@ -18,6 +18,7 @@ import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
 import ClassScoresGrid from '../components/ClassScoresGrid'
 import ContactsDirectory from './contacts-directory'
+import CallsPanel from './calls-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h, useDeepLinkFocus } from './ui'
 import { FamilyCommsRow } from './family-comms'
@@ -253,6 +254,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'qbo', label: 'QuickBooks' },
       { id: 'gcal', label: 'Google Calendar' },
       { id: 'settings', label: 'Contact settings' },
+      // PL-202: the Quo calls integration (setup + enable switch).
+      { id: 'calls', label: 'Phone calls' },
       // PL-198: View-as files here (Scarlett's Jul 29 filing).
       { id: 'view-as', label: 'View as…', href: '/admin/view-as' },
     ],
@@ -1666,6 +1669,17 @@ export default function AdminDashboard() {
           <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
         </CollapsibleSection>
 
+        </div>
+
+        {/* PL-202: Quo calls setup — configure, verify, enable. */}
+        <div className={activeSection === 'calls' ? '' : 'hidden'}>
+          <CollapsibleSection
+            title="Phone calls (Quo)"
+            subtitle="Calls sync into family records; unknown callers join the pipeline"
+            defaultOpen
+          >
+            <CallsPanel />
+          </CollapsibleSection>
         </div>
 
         {/* PL-192: the two-way Contacts directory — two indexes, one truth. */}
