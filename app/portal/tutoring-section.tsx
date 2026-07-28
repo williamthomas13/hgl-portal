@@ -67,7 +67,7 @@ export default async function TutoringSection({ email }: { email: string }) {
         `id, status, funding, addon_id, hourly_rate, recurrence, location, student_id,
          students!inner ( first_name, last_name, family_id ),
          subjects ( name ),
-         instructors ( name, timezone, default_location ),
+         instructors ( name, timezone, default_meeting_link ),
          enrollment_addons:addon_id ( hours )`
       )
       .in('students.family_id', familyIds)
@@ -78,7 +78,7 @@ export default async function TutoringSection({ email }: { email: string }) {
         `id, engagement_id, starts_at, ends_at, status, reschedule_requested_at,
          students!inner ( first_name, family_id ),
          tutoring_engagements ( location, subjects ( name ) ),
-         instructors ( name, timezone, default_location )`
+         instructors ( name, timezone, default_meeting_link )`
       )
       .in('students.family_id', familyIds)
       .eq('status', 'confirmed')
@@ -232,9 +232,9 @@ export default async function TutoringSection({ email }: { email: string }) {
                   Next: {fmtDay(next.starts_at)} {fmtTime(next.starts_at)}
                 </div>
               )}
-              {(e.location ?? tutor?.default_location) && (
+              {(e.location ?? tutor?.default_meeting_link) && (
                 <div className="text-xs text-gray-400 mt-1 truncate">
-                  {e.location ?? tutor?.default_location}
+                  {e.location ?? tutor?.default_meeting_link}
                 </div>
               )}
               {pkg && (
@@ -281,9 +281,9 @@ export default async function TutoringSection({ email }: { email: string }) {
                     ? ` · with ${String(one<any>(s.instructors).name).split(' ')[0]}`
                     : ''}
                 </span>
-                {(one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_location) && (
+                {(one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_meeting_link) && (
                   <span className="text-gray-400 text-xs truncate max-w-56">
-                    {one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_location}
+                    {one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_meeting_link}
                   </span>
                 )}
                 <span className="ml-auto">

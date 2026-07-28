@@ -31,7 +31,7 @@ export type Tutor = {
   subjects_with_prep: string[]
   timezone: string
   google_calendar_id: string | null
-  default_location: string | null
+  default_meeting_link: string | null
   offer_windows: OfferWindowUI[]
   /** PL-104: the tutor's QBO pay-type TITLES (never amounts — rates live in
    *  QBO Payroll only). Base pay = the 1-on-1/Test Prep default, implicit. */

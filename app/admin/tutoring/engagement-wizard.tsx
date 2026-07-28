@@ -343,7 +343,7 @@ export default function EngagementWizard({
       return
     }
     if (locationMode === 'in_person') setLocation('Higher Ground Learning')
-    else setLocation(tutor?.default_location ?? '')
+    else setLocation(tutor?.default_meeting_link ?? '')
   }, [tutor, locationMode])
 
   // PL-171: debounced autosave — anything meaningful persists; a cleared
@@ -1340,7 +1340,7 @@ export default function EngagementWizard({
             placeholder={locationMode === 'online' ? 'Meeting link' : 'Address / room'}
             className="w-full border border-gray-300 rounded-md p-2"
           />
-          {locationMode === 'online' && tutor && !tutor.default_location && !location && (
+          {locationMode === 'online' && tutor && !tutor.default_meeting_link && !location && (
             <p className="text-xs text-gray-400 mt-1">
               {tutor.name ?? 'This tutor'} has no saved meeting link — paste one here (and add a
               default in the Tutors panel).

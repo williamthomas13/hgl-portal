@@ -85,7 +85,7 @@ export default function TutorsPanel({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
-              {['Tutor', 'Subjects', 'Timezone', 'Offer windows', 'Default location', 'Matching notes', ''].map((h) => (
+              {['Tutor', 'Subjects', 'Timezone', 'Offer windows', 'Default Zoom link', 'Matching notes', ''].map((h) => (
                 <th key={h} className="px-3 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -125,7 +125,7 @@ export default function TutorsPanel({
                     <span className="italic text-gray-400 text-xs">session hours ±2h (default)</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-gray-600 max-w-40 truncate">{t.default_location ?? '—'}</td>
+                <td className="px-3 py-2 text-gray-600 max-w-40 truncate">{t.default_meeting_link ?? '—'}</td>
                 <td className="px-3 py-2 text-gray-600 max-w-56">
                   <span className="line-clamp-2">{notes[t.id] || <span className="italic text-gray-400">—</span>}</span>
                 </td>
@@ -185,7 +185,7 @@ function TutorEditor({
   const [pickedPrep, setPickedPrep] = useState<string[]>(tutor.subjects_with_prep ?? [])
   const [timezone, setTimezone] = useState(tutor.timezone)
   const [calendarId, setCalendarId] = useState(tutor.google_calendar_id ?? '')
-  const [location, setLocation] = useState(tutor.default_location ?? '')
+  const [location, setLocation] = useState(tutor.default_meeting_link ?? '')
   const [windows, setWindows] = useState<OfferWindowUI[]>(tutor.offer_windows ?? [])
   const [payTitles, setPayTitles] = useState<string[]>(tutor.pay_type_titles ?? [])
   const [newTitle, setNewTitle] = useState('')
@@ -207,7 +207,7 @@ function TutorEditor({
         subjects_with_prep: pickedPrep,
         timezone: timezone || 'America/Denver',
         google_calendar_id: calendarId.trim() || null,
-        default_location: location.trim() || null,
+        default_meeting_link: location.trim() || null,
         offer_windows: windows,
         // Managers must not touch titles (the DB trigger would refuse the
         // whole update) — only include the field when the caller may edit.
@@ -365,7 +365,7 @@ function TutorEditor({
 
         <div>
           <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Default location (online link or address — prefills new student schedules)
+            Default Zoom link (PL-175: one field with the Instructors page — prefills online schedules and online classes)
           </label>
           <input
             type="text"

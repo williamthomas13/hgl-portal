@@ -125,7 +125,7 @@ export async function sendWelcomeHandoff(
        students ( first_name,
          families ( id, parent_first_name, parent_email, billing_cc_emails, timezone ) ),
        subjects ( name ),
-       instructors ( name, email, timezone, default_location )`
+       instructors ( name, email, timezone, default_meeting_link )`
     )
     .eq('id', engagementId)
     .maybeSingle()
@@ -156,7 +156,7 @@ export async function sendWelcomeHandoff(
     return `${day} · ${t1}–${t2}`
   })
 
-  const location = eng.location ?? tutor.default_location ?? null
+  const location = eng.location ?? tutor.default_meeting_link ?? null
   const isLink = location ? /^https?:\/\//i.test(location) : false
   const locationHtml = location
     ? isLink

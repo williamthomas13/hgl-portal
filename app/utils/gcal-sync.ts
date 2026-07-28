@@ -101,7 +101,7 @@ async function loadSessionDetail(sessionId: string): Promise<SessionDetail | nul
       id, status, starts_at, ends_at, gcal_event_id, rescheduled_to_id, reschedule_notice,
       tutoring_engagements ( location, status, approval_requested_at, subjects ( name ) ),
       students ( first_name, student_email, families ( parent_email, gcal_invite_attendees ) ),
-      instructors ( email, google_calendar_id, timezone, name, default_location )
+      instructors ( email, google_calendar_id, timezone, name, default_meeting_link )
     `
     )
     .eq('id', sessionId)
@@ -121,7 +121,7 @@ async function loadSessionDetail(sessionId: string): Promise<SessionDetail | nul
     gcal_event_id: raw.gcal_event_id,
     rescheduled_to_id: raw.rescheduled_to_id,
     reschedule_notice: raw.reschedule_notice,
-    location_effective: engagement.location ?? tutor.default_location ?? null,
+    location_effective: engagement.location ?? tutor.default_meeting_link ?? null,
     tutor: {
       email: tutor.email,
       google_calendar_id: tutor.google_calendar_id,
