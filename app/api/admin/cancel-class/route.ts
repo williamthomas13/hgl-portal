@@ -1,5 +1,6 @@
 import { emailBaseUrl } from '../../../utils/base-url'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
+import { syncInternationalCalendar } from '../../../utils/intl-calendar'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { renderRegistered } from '../../../utils/comms-registered'
 import { maybeSendInstructorFyi } from '../../../utils/instructor-comms'
@@ -304,6 +305,11 @@ export async function POST(request: Request) {
       if (status === 'sent') cxcSent++
     }
   }
+
+  // PL-161: a cancelled class RECOLORS red on the shared International
+  // Classes calendar (matching Kelsie's hand practice) — fast path here,
+  // daily sweep as backstop.
+  after(() => syncInternationalCalendar(classId).catch((e) => console.error('intl sync after cancel failed:', e)))
 
   return NextResponse.json({
     ok: true,

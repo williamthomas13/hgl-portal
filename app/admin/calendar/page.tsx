@@ -54,12 +54,67 @@ const denverHour = (instant: string) => {
   return h + m / 60
 }
 
+type FitCandidate = {
+  id: string
+  name: string
+  current: boolean
+  available: boolean
+  googleChecked: boolean
+  hardConflicts: string[]
+  travelConflicts: string[]
+}
+type FitResult = {
+  classLabel: string
+  classId: string
+  inPerson: boolean
+  sessionCount: number
+  googleUp: boolean
+  note?: string
+  candidates: FitCandidate[]
+}
+
 export default function AdminCalendarPage() {
   const [view, setView] = useState<'week' | 'month'>('week')
   const [anchor, setAnchor] = useState(() => dayIso(new Date()))
   const [blocks, setBlocks] = useState<Block[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // PL-161: the instructor-fit suggester overlays this view — visual-first,
+  // because trust is earned: the candidate's busy/free renders against the
+  // class blocks so Kelsie sees exactly what the ranking saw. Advisory only;
+  // assignment stays on the class page.
+  const [suggestClassId, setSuggestClassId] = useState('')
+  const [fit, setFit] = useState<FitResult | null>(null)
+  const [fitLoading, setFitLoading] = useState(false)
+  const [overlayTutor, setOverlayTutor] = useState('')
+  const [overlayBusy, setOverlayBusy] = useState<{ start: string; end: string; title: string | null }[]>([])
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('suggest')
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (c) setSuggestClassId(c)
+  }, [])
+  useEffect(() => {
+    if (!suggestClassId) {
+      setFit(null)
+      return
+    }
+    let stale = false
+    setFitLoading(true)
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/admin/instructor-fit?classId=${suggestClassId}`)
+        const json = await res.json().catch(() => ({}))
+        if (!stale) setFit(res.ok ? json : null)
+      } catch {
+        if (!stale) setFit(null)
+      }
+      if (!stale) setFitLoading(false)
+    })()
+    return () => {
+      stale = true
+    }
+  }, [suggestClassId])
 
   // Filters (compose): person, school/class, status.
   const [personFilter, setPersonFilter] = useState('')
@@ -89,6 +144,34 @@ export default function AdminCalendarPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  // PL-161: the picked candidate's Google busy for the visible range.
+  useEffect(() => {
+    if (!overlayTutor) {
+      setOverlayBusy([])
+      return
+    }
+    let stale = false
+    ;(async () => {
+      try {
+        const from = new Date(rangeStartIso + 'T00:00:00-07:00').toISOString()
+        const to = new Date(addDays(rangeStartIso, Math.min(days, 42)) + 'T23:59:59-06:00').toISOString()
+        const res = await fetch('/api/gcal/freebusy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tutorId: overlayTutor, timeMin: from, timeMax: to }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!stale) setOverlayBusy(json.busy ?? [])
+      } catch {
+        if (!stale) setOverlayBusy([])
+      }
+    })()
+    return () => {
+      stale = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayTutor, rangeStartIso, days])
 
   const people = useMemo(() => {
     const m = new Map<string, string>()
@@ -148,7 +231,13 @@ export default function AdminCalendarPage() {
         href={b.href}
         title={`${b.title} · ${fmtTime(b.startsAt)}–${fmtTime(b.endsAt)} · ${b.portalStatus}${b.tutorName ? ` · ${b.tutorName}` : ''}`}
         className="block rounded px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden hover:opacity-85"
-        style={{ background: c.bg, color: c.text }}
+        style={{
+          background: c.bg,
+          color: c.text,
+          // PL-161: the suggested-for class's blocks are outlined so the
+          // overlay comparison reads at a glance.
+          ...(suggestClassId && b.classId === suggestClassId ? { outline: '2px solid #7C3AED', outlineOffset: '-1px' } : {}),
+        }}
       >
         {compact ? (
           <span className="truncate block">
@@ -255,6 +344,78 @@ export default function AdminCalendarPage() {
           ))}
         </div>
 
+        {/* PL-161: instructor-fit suggester panel (advisory only) */}
+        {suggestClassId && (
+          <div className="bg-white border border-purple-200 rounded-lg p-4 text-sm">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <h2 className="font-bold text-hgl-slate">
+                Who could teach {fit?.classLabel ?? 'this class'}?
+                {fit ? ` · ${fit.sessionCount} session${fit.sessionCount === 1 ? '' : 's'}` : ''}
+                {fit?.inPerson ? ' · in person (travel window applies)' : ''}
+              </h2>
+              <button
+                onClick={() => {
+                  setSuggestClassId('')
+                  setOverlayTutor('')
+                }}
+                className="text-xs text-gray-500 underline"
+              >
+                close suggestions
+              </button>
+            </div>
+            {fitLoading && <p className="text-xs text-gray-400 animate-pulse">Checking every active instructor…</p>}
+            {fit?.note && <p className="text-xs text-gray-500 italic">{fit.note}</p>}
+            {fit && !fit.googleUp && (
+              <p className="text-xs text-amber-700 mb-2">
+                Google availability is unreachable right now — rankings below use portal commitments only.
+              </p>
+            )}
+            {fit && (
+              <ul className="divide-y divide-gray-100">
+                {fit.candidates.map((c) => (
+                  <li key={c.id} className="py-2 flex flex-wrap items-start gap-2">
+                    <button
+                      onClick={() => setOverlayTutor(overlayTutor === c.id ? '' : c.id)}
+                      className={`text-xs font-bold px-2 py-1 rounded ${
+                        overlayTutor === c.id ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-700'
+                      }`}
+                      title="Show this instructor's busy time on the calendar below — see exactly what the ranking saw"
+                    >
+                      {overlayTutor === c.id ? 'shown below' : 'show on calendar'}
+                    </button>
+                    <span className="font-semibold text-hgl-slate">{c.name}</span>
+                    {c.current && <span className="text-[10px] uppercase font-bold bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">currently assigned</span>}
+                    {c.available ? (
+                      <span className="text-xs text-green-700 font-semibold">
+                        free for every session{c.googleChecked ? '' : ' (portal data only — Google not checked)'}
+                        {c.travelConflicts.length > 0 ? ` · ${c.travelConflicts.length} travel-window overlap${c.travelConflicts.length === 1 ? '' : 's'}` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-red-700 font-semibold">
+                        conflicts with {c.hardConflicts.length} session{c.hardConflicts.length === 1 ? '' : 's'}
+                      </span>
+                    )}
+                    {(c.hardConflicts.length > 0 || c.travelConflicts.length > 0) && (
+                      <ul className="w-full ml-6 text-xs text-gray-600 list-disc">
+                        {c.hardConflicts.map((x, i) => (
+                          <li key={`h${i}`} className="text-red-700">{x}</li>
+                        ))}
+                        {c.travelConflicts.map((x, i) => (
+                          <li key={`t${i}`} className="text-amber-700">{x}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-xs text-gray-400 mt-2">
+              Suggestions are advisory — assignment stays your explicit choice on the class page.
+              Class sessions are outlined in purple below{overlayTutor ? '; the selected instructor’s busy time is shaded gray' : ''}.
+            </p>
+          </div>
+        )}
+
         {error && <div className="p-3 rounded bg-red-100 text-red-700 text-sm font-semibold">{error}</div>}
         {loading && <p className="text-sm text-gray-400 animate-pulse">Loading…</p>}
 
@@ -281,11 +442,26 @@ export default function AdminCalendarPage() {
                 </div>
                 {weekDays.map((d) => {
                   const dayBlocks = (byDay.get(d) ?? []).slice().sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+                  const dayOverlay = overlayBusy.filter((o) => denverDay(o.start) === d)
                   return (
                     <div key={d} className="relative border-l border-gray-100" style={{ height: (HOUR_END - HOUR_START) * HOUR_PX }}>
                       {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
                         <div key={i} className="absolute left-0 right-0 border-t border-gray-100" style={{ top: i * HOUR_PX }} />
                       ))}
+                      {/* PL-161: the picked candidate's busy time, shaded so
+                          the fit (or the clash) is visible, not asserted. */}
+                      {dayOverlay.map((o, i) => {
+                        const startH = Math.max(denverHour(o.start), HOUR_START)
+                        const endH = Math.min(Math.max(denverHour(o.end), startH + 0.3), HOUR_END)
+                        return (
+                          <div
+                            key={`ov-${i}`}
+                            className="absolute left-0 right-0 bg-gray-500/25 border border-gray-400/40 rounded-sm"
+                            style={{ top: (startH - HOUR_START) * HOUR_PX, height: (endH - startH) * HOUR_PX }}
+                            title={`busy: ${o.title ?? 'private event'}`}
+                          />
+                        )
+                      })}
                       {dayBlocks.map((b, i) => {
                         const startH = Math.max(denverHour(b.startsAt), HOUR_START)
                         const endH = Math.min(Math.max(denverHour(b.endsAt), startH + 0.4), HOUR_END)

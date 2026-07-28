@@ -867,6 +867,14 @@ export default function AdminDashboard() {
               ) : (
                 <span className="italic text-amber-700">Not yet assigned</span>
               )}{' '}
+              {/* PL-161: the fit suggester — advisory, overlaid on the calendar */}
+              <a
+                href={`/admin/calendar?suggest=${c.id}`}
+                className="text-xs text-purple-700 underline"
+                title="Rank every active instructor against this class's session times — Google busy, portal commitments, and travel windows, shown on the calendar"
+              >
+                who&apos;s free to teach it?
+              </a>{' '}
               · Starts: {formatDateAdmin(effectiveStartDate(c.start_date, sortedSessions))}
             </p>
             {sortedSessions.length > 0 && sortedSessions[0].session_date !== c.start_date && (

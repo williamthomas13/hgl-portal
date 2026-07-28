@@ -181,6 +181,8 @@ export default function GcalPanel() {
         </div>
       )}
 
+      <IntlCalendarSection />
+
       {message && (
         <div
           className={`p-3 rounded text-center font-semibold ${
@@ -192,4 +194,129 @@ export default function GcalPanel() {
       )}
     </div>
   )
+}
+
+/** PL-161: the International Classes shared calendar — point the portal at
+ *  the SAME calendar everyone already subscribes to, adopt the hand-made
+ *  events once (report, never delete), and sync/audit on demand (the daily
+ *  cron does both automatically once configured). */
+function IntlCalendarSection() {
+  const [calendarId, setCalendarId] = useState('')
+  const [configured, setConfigured] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  const [report, setReport] = useState<{ summary: string | null; start: string | null }[] | null>(null)
+
+  useEffect(() => {
+    fetch('/api/admin/intl-calendar')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (json?.config) {
+          setCalendarId(json.config.calendarId)
+          setConfigured(true)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  async function act(body: Record<string, unknown>, describe: (json: Record<string, unknown>) => string) {
+    setBusy(true)
+    setNote('')
+    try {
+      const res = await fetch('/api/admin/intl-calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json().catch(() => ({}))
+      setNote(res.ok ? describe(json) : 'Error: ' + (json.error ?? res.status))
+      if (res.ok && body.action === 'configure') setConfigured(true)
+    } catch {
+      setNote("Error: couldn't reach the server.")
+    }
+    setBusy(false)
+  }
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return (
+    <div className="mt-6 pt-4 border-t border-gray-200 text-sm">
+      <h3 className="font-bold text-hgl-slate mb-1">International Classes calendar</h3>
+      <p className="text-xs text-gray-500 mb-2">
+        The portal writes to the SAME shared calendar everyone already subscribes to — class spans
+        and session blocks, in the established colors (yellow proposed · dark green in-person ·
+        light green online · red cancelled — cancelled recolors, never deletes). Configure the
+        calendar id, run &ldquo;adopt hand-made events&rdquo; ONCE, and the daily sweep keeps it in
+        step. Hand edits are reported by the drift audit, never overwritten.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={calendarId}
+          onChange={(e) => setCalendarId(e.target.value)}
+          placeholder="Shared calendar id (…@group.calendar.google.com)"
+          className="border border-gray-300 rounded p-1.5 text-xs flex-1 min-w-72"
+        />
+        <button
+          disabled={busy || !calendarId.trim()}
+          onClick={() => act({ action: 'configure', calendarId: calendarId.trim() }, () => 'Saved — the daily sweep now manages this calendar.')}
+          className="text-xs font-semibold bg-hgl-slate text-white rounded px-3 py-1.5 disabled:opacity-50"
+        >
+          Save
+        </button>
+        {configured && (
+          <>
+            <button
+              disabled={busy}
+              onClick={() =>
+                act({ action: 'reconcile' }, (j: any) => {
+                  setReport(j.result?.unmatched ?? [])
+                  return `Adopted ${j.result?.adoptedSpans ?? 0} span event(s) and ${j.result?.adoptedSessions ?? 0} session event(s); ${j.result?.unmatched?.length ?? 0} hand event(s) matched nothing (listed below — nothing was deleted).`
+                })
+              }
+              className="text-xs font-semibold text-purple-700 underline disabled:opacity-50"
+            >
+              adopt hand-made events
+            </button>
+            <button
+              disabled={busy}
+              onClick={() =>
+                act({ action: 'sync' }, (j: any) =>
+                  `Synced — ${j.result?.created ?? 0} created, ${j.result?.patched ?? 0} updated, ${j.result?.unchanged ?? 0} already right${j.result?.errors?.length ? `, ${j.result.errors.length} error(s)` : ''}.`
+                )
+              }
+              className="text-xs font-semibold text-hgl-blue underline disabled:opacity-50"
+            >
+              sync now
+            </button>
+            <button
+              disabled={busy}
+              onClick={() =>
+                act({ action: 'audit' }, (j: any) =>
+                  j.result?.drift?.length
+                    ? `Drift: ${j.result.drift.length} hand-edited event(s) — ${j.result.drift.map((d: any) => d.what).join('; ')}`
+                    : 'No drift — the calendar matches the portal.'
+                )
+              }
+              className="text-xs font-semibold text-gray-600 underline disabled:opacity-50"
+            >
+              run drift audit
+            </button>
+          </>
+        )}
+      </div>
+      {note && <p className={`text-xs mt-2 ${note.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{note}</p>}
+      {report && report.length > 0 && (
+        <ul className="mt-2 text-xs text-gray-600 list-disc ml-5">
+          {report.slice(0, 20).map((r, i) => (
+            <li key={i}>
+              &ldquo;{r.summary ?? '(untitled)'}&rdquo; {r.start ? `· ${r.start.slice(0, 10)}` : ''} — matched no
+              portal class or session; resolve by hand
+            </li>
+          ))}
+          {report.length > 20 && <li>…and {report.length - 20} more</li>}
+        </ul>
+      )}
+    </div>
+  )
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }

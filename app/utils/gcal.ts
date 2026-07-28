@@ -211,6 +211,11 @@ export type GcalEventInput = {
   /** PL-159: true = a visibly tentative HOLD event; patching with false
    *  flips the SAME event back to confirmed (id stays stable). */
   tentative?: boolean
+  /** PL-161: Google palette colorId (the International Classes color code). */
+  colorId?: string
+  /** PL-161: date-only span event (start inclusive, end EXCLUSIVE per
+   *  Google). When set, startsAt/endsAt are ignored. */
+  allDay?: { startDate: string; endDate: string }
 }
 
 function eventBody(input: GcalEventInput) {
@@ -218,11 +223,12 @@ function eventBody(input: GcalEventInput) {
     summary: input.summary,
     description: input.description,
     location: input.location ?? undefined,
-    start: { dateTime: input.startsAt, timeZone: input.timezone },
-    end: { dateTime: input.endsAt, timeZone: input.timezone },
+    start: input.allDay ? { date: input.allDay.startDate } : { dateTime: input.startsAt, timeZone: input.timezone },
+    end: input.allDay ? { date: input.allDay.endDate } : { dateTime: input.endsAt, timeZone: input.timezone },
     attendees: input.attendees.length ? input.attendees.map((email) => ({ email })) : undefined,
     // PL-159: always explicit so a hold→confirmed patch flips it back.
     status: input.tentative ? 'tentative' : 'confirmed',
+    colorId: input.colorId,
   }
 }
 
@@ -363,6 +369,74 @@ export async function listBusyEvents(
     blocks.push({ start, end, title: isPrivate ? null : (item.summary ?? null), private: isPrivate, allDay })
   }
   return blocks
+}
+
+/** PL-161: raw event listing WITH ids — the reconciliation and drift audit
+ *  need to know WHICH event, not just when it is. */
+export type ListedEvent = {
+  id: string
+  summary: string | null
+  status: string
+  colorId: string | null
+  start: string | null // instant, or resolved from a date-only start
+  end: string | null
+  allDay: boolean
+}
+
+export async function listCalendarEvents(
+  key: ServiceAccountKey,
+  ownerEmail: string,
+  calendarId: string,
+  timeMinIso: string,
+  timeMaxIso: string,
+  timezone: string = 'America/Denver'
+): Promise<ListedEvent[]> {
+  const cal = encodeURIComponent(calendarId)
+  const out: ListedEvent[] = []
+  let pageToken: string | undefined
+  do {
+    const params = new URLSearchParams({
+      timeMin: timeMinIso,
+      timeMax: timeMaxIso,
+      singleEvents: 'true',
+      orderBy: 'startTime',
+      maxResults: '250',
+      fields: 'nextPageToken,items(id,status,summary,colorId,start,end)',
+      ...(pageToken ? { pageToken } : {}),
+    })
+    const res = await gcalFetch(ownerEmail, key, `/calendars/${cal}/events?${params}`)
+    await expectOk(res, 'events list (ids)')
+    const json = (await res.json()) as {
+      nextPageToken?: string
+      items?: {
+        id: string
+        status?: string
+        summary?: string
+        colorId?: string
+        start?: { dateTime?: string; date?: string }
+        end?: { dateTime?: string; date?: string }
+      }[]
+    }
+    for (const item of json.items ?? []) {
+      if (item.status === 'cancelled') continue
+      const allDay = !item.start?.dateTime && !!item.start?.date
+      out.push({
+        id: item.id,
+        summary: item.summary ?? null,
+        status: item.status ?? 'confirmed',
+        colorId: item.colorId ?? null,
+        start:
+          item.start?.dateTime ??
+          (item.start?.date ? zonedToUtc(item.start.date, '00:00', timezone).toISOString() : null),
+        end:
+          item.end?.dateTime ??
+          (item.end?.date ? zonedToUtc(item.end.date, '00:00', timezone).toISOString() : null),
+        allDay,
+      })
+    }
+    pageToken = json.nextPageToken
+  } while (pageToken)
+  return out
 }
 
 export async function freeBusy(

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
 import { auditXclDrift, processGcalQueue } from '../../../utils/gcal-sync'
+import { auditInternationalCalendar, syncInternationalCalendar } from '../../../utils/intl-calendar'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { sweepSessionNoteReminders } from '../../../utils/session-notes'
 import { generateMonthlyCycle, generationDueFor, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
@@ -1716,6 +1717,31 @@ export async function GET(req: Request) {
   if (gcal.synced > 0) counters.gcal_synced = gcal.synced
   if (gcal.failed > 0) counters.gcal_failed = gcal.failed
   if (gcal.deferred > 0) counters.gcal_deferred = gcal.deferred
+
+  // PL-161: the International Classes shared calendar — daily sync (class
+  // status transitions recolor/create events) + the hand-edit drift audit.
+  // Both no-op until ops configures intl_classes_calendar_id.
+  try {
+    const intl = await syncInternationalCalendar()
+    if (intl.created > 0) counters.intl_cal_created = intl.created
+    if (intl.patched > 0) counters.intl_cal_patched = intl.patched
+    if (intl.errors.length > 0) counters.intl_cal_errors = intl.errors.length
+    const intlAudit = await auditInternationalCalendar()
+    if (intlAudit.drift.length > 0) {
+      counters.intl_cal_drift = intlAudit.drift.length
+      await sendAdminAlert({
+        dedupeKey: `intl_cal_drift:${new Date().toISOString().slice(0, 10)}`,
+        adminEmail: ADMIN_EMAIL,
+        subject: `International Classes calendar: ${intlAudit.drift.length} hand edit${intlAudit.drift.length === 1 ? '' : 's'} detected`,
+        body: `<p>These events on the shared calendar no longer match the portal — someone edited
+          them by hand in Google. The portal is NOT overwriting them; resolve each by editing the
+          class in the portal (which re-syncs) or restoring the event:</p>
+          <ul>${intlAudit.drift.map((d) => `<li><strong>${d.what}</strong> — ${d.problem}</li>`).join('')}</ul>`,
+      }).catch((e) => console.error('intl drift alert failed:', e))
+    }
+  } catch (e) {
+    console.error('intl calendar sweep failed:', e)
+  }
 
   // Phase 7b: past sessions auto-complete (tutors only correct exceptions),
   // then the daily timecard sweep — builds cards for the last closed
