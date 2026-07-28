@@ -1,8 +1,10 @@
-# Portal fixes — batch 20 (🚧 OPEN — accumulating, do not start yet)
+# Portal fixes — batch 20 (COMPLETE — 17 items, PL-178…194 — awaiting hand-off; Code is on batch 19)
 
-Opened July 27, first item from Scarlett's email review. Scarlett will say when it's ready to pull; if it's extended after you've pulled it, wait for an explicit re-read ask.
+Opened July 27 from Scarlett's email + UI review; completed July 28 with the navigation/IA restructure and the student profile page. **Do not start until Scarlett hands it off** (batch 19 first). If this doc changes after you've pulled it, wait for an explicit re-read ask.
 
-Next PL after this batch: **PL-183**.
+Internal dependencies: PL-185/188 share one state machine (propose→confirm→started) — build together · PL-181 (scores) before PL-193 (profile shows scores) · PL-182 (merged form) before PL-194 (suggestions live in that form) · PL-190 (nav frame) before PL-192/193 (the surfaces it houses) · PL-186 likely falls out of PL-185 — diagnose before fixing separately.
+
+Next PL after this batch: **PL-195**.
 
 **Standing rules:** plain-English statuses · no internal shorthand · every alert deep-links its record · samples from composers · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
 
@@ -64,3 +66,127 @@ The quick add "on a phone call" flow and the full add-prospective-student form a
 - **Completeness still gates the right things downstream:** whatever currently requires full info before a student starts (intake complete markers, scheduling) keeps requiring it — this changes where data ENTERS, not what's required to proceed.
 
 **Verify:** add with name only → saves, appears in pipeline · intake sheet later fills the gaps onto the same record (no duplicate) · downstream gates still hold · the old quick-add path is gone and nothing references it.
+
+## PL-183 (small) · Intake form: conditional required phone + a real submission landing
+
+Two findings from Scarlett running the intake form (Jul 28):
+
+- **Conditional requirement:** choosing "If the student hasn't arrived, contact the student" makes the student's phone number REQUIRED — you can't promise to contact someone you have no number for. Enforce at selection time (field marked required the moment that option is picked, plain inline explanation: "you chose contact-the-student, so we need their number") and at submit. The other arrival options leave the field optional as today.
+- **Submission must land somewhere:** submitting currently ends in a blank white screen. Replace with a success page: confirmation that it went through, and WHAT HAPPENS NEXT in plain language (who reviews it, what email to expect, rough timeline). A form that ends in white space reads as "did that even work?" — the family's very first interaction with the portal should not end in doubt. (Batch-18 `regress:mutation-buttons` discipline applied to public forms: every submit produces a visible outcome.)
+
+**Verify:** contact-student option → phone required both live and at submit, other options unaffected · successful submit → success page with next-steps copy · failed submit → visible error, never white.
+
+## PL-184 (small) · "Schedule {student} now" pre-fills the subject — and the availability guard applies HERE
+
+From the admin/manager email button into the scheduling form: the student pre-fills but the subject doesn't. Scarlett picked a wrong subject and built sessions outside the student's availability without any warning — the resulting welcome email carried bad info to the family (see PL-185 for the sequencing half).
+
+- **Pre-fill subject to the closest match** from what the portal already knows (intake sheet's stated subject/goal, the class they came from, prior engagements). Editable — prefill is a default, not a decision.
+- **Make sure PL-169's outside-availability warning (batch 19) fires on THIS entry path too** — same form or not, the deep-linked schedule-now flow must run the same availability comparison and warning. If batch 19 already lands it structurally (one shared form), this is a verify-only line; if the flows diverge anywhere, unify them.
+
+**Verify:** email button → form arrives with student AND subject pre-filled · wrong-subject still selectable (with the prefill making it deliberate) · out-of-availability slot warns on this path exactly as PL-169 specifies.
+
+## PL-185 · Welcome email must wait for confirmation — it raced the confirm request
+
+The sequencing failure (Jul 28): the family's tutoring welcome email went out AT THE SAME MOMENT as "Please confirm {student}'s tutoring schedule." The welcome presumes a schedule the family was simultaneously being asked to approve — and in Scarlett's test it carried wrong info (wrong subject, out-of-availability times), so the family's first impression was a confident email about a schedule nobody had confirmed.
+
+- **Gate the welcome on confirmation:** when send-to-confirm is ON, the welcome sends only after the family confirms (or after staff manually confirm in the portal on their behalf). Proposal email at propose time; welcome at confirm time. Never both at once.
+- **When send-to-confirm is OFF** (already-agreed path, PL-172): the welcome may send immediately — that's the meaning of off — but then no confirm email should exist at all. The invariant: **a family never holds a welcome for a schedule they're still being asked to approve.**
+- Audit the trigger site: whatever fires on schedule creation currently treats "created" as "done." The state machine already knows proposed vs confirmed — the sends must key off the right transition.
+
+**Verify:** ON path → propose sends only the confirm request; family (or staff) confirm → welcome sends once · OFF path → welcome immediately, no confirm email · no path sends both simultaneously · dedupe holds on re-confirmation.
+
+## PL-186 (small) · "Confirm this schedule" button: find and fix the initial failure
+
+Scarlett's first press of the confirm button in the "Please confirm" email did nothing; it worked later. Intermittent failures on THE conversion-critical button — the one action we ask of the family — can't be shrugged off, and "worked the second time" usually means a race.
+
+- **Reproduce and diagnose first** (standing lesson: drive flows to completion before calling gaps defects — but this one Scarlett hit directly). Likely suspects, in order: the tokenized page depending on a record/state not yet committed when the email arrives instantly (the PL-185 race would do exactly this — proposal email sent in the same breath as record creation); token minted against state that changes; the GET-safe/JS-executed-POST pattern failing silently on first load.
+- **Whatever the cause: the button must never silently do nothing.** Failure states get the friendly tokenized-page treatment (aged-out / not-ready / already-confirmed), never a dead click.
+- Add the first-click case to the E2E: email link followed IMMEDIATELY on arrival (the real family behavior — they click when it lands).
+
+**Verify:** repro attempt documented · root cause fixed · immediate-click E2E green · every failure mode renders a plain-English state page.
+
+## PL-187 (small) · Schedule phrasing: end times, and batch same-time days
+
+Everywhere a weekly schedule is written out (emails, portal, proposals), the composer currently produces: "Wednesdays at 4:00 PM and Fridays at 4:00 PM and Saturdays at 4:00 PM, starting July 24 — 90 minutes each."
+
+- **Batch days that share the same time AND duration, and show the range:** "Wednesdays, Fridays, and Saturdays from 4:00 – 5:30 PM, starting July 24." No repeating the time per day, no "90 minutes each" — the end time carries the duration.
+- **Mixed schedules group naturally:** a student with 90-min and 60-min sessions gets one clause per group — "Wednesdays from 4:00 – 5:30 PM and Saturdays from 4:00 – 5:00 PM, starting July 24."
+- One composer function, used by every surface that writes a schedule (emails, T1 proposal, portal displays, welcome) so the phrasing can't fork — find existing schedule-phrase call sites and unify on it.
+- Oxford-comma list join per the existing list-join helper if one exists; times in the family's timezone per PL-118.
+
+**Verify:** same-time-same-length 3-day case renders the batched single clause · mixed-duration case renders grouped clauses · single-day unchanged-but-with-end-time · every emitting surface uses the shared composer (grep proves no stragglers).
+
+## PL-188 · Pipeline rows tell the truth: a "proposal sent" stage, and actions that know the state
+
+Four findings from one test student (Scarlett, Jul 28), all the same disease — the pipeline row and its actions don't track the student's actual state:
+
+- **Wrong stage:** sending the schedule out for approval moved the student to "started." It should read **"proposal sent"** — a distinct stage between scheduling and started. "Started" happens on confirmation (family confirms, or staff confirm in-portal — the PL-185 transition), not on proposal. Same premature "created = done" root as PL-185; fix them against the same state machine.
+- **"Re-send intake form" offered when intake is already complete** — the answers were visible right below the button. When intake is complete, that action becomes "View intake answers" (or disappears); re-send only shows while intake is actually outstanding.
+- **Stale "Schedule Student" button after scheduling** — the blue button persisted and the student needed several refreshes to drop off the pipeline. Actions and pipeline membership re-derive from current state on every render, and the mutation that schedules/graduates the student refreshes the row immediately (the deep-link/late-mount discipline applied to state: no surface shows an action the state no longer supports).
+- **Consultation greys out once a proposal has been sent** — by that point the consultation moment has passed; offering it implies a step backward. Greyed with a plain reason ("proposal already sent"), not hidden, so the sequence stays legible.
+
+**Verify:** propose → stage reads "proposal sent," started only on confirm · completed intake shows view-not-resend · scheduling immediately clears the button and (on the right transition) removes the row without manual refresh · consultation greyed with reason after proposal · every action's visibility matches a state predicate, asserted in the E2E.
+
+## PL-189 (small) · Phone consultations: record the fact, skip the calendar
+
+Kelsie runs consultations two ways: sometimes she schedules a formal meeting for later (belongs on calendars), and sometimes the consultation just HAPPENS on the phone when a family calls. Today the scheduler only models the first.
+
+- **Add a "phone consultation — already happened" option** alongside scheduling one: date (defaults to today), optional notes. No calendar event for anyone, no scheduling machinery — it's a record, not an appointment.
+- **It lands on the family record** like any other consultation: visible in the timeline/history, satisfies whatever "consultation done" state the pipeline tracks (so the pipeline stage advances exactly as if a scheduled consultation had completed).
+- The scheduled-meeting path is unchanged; this is a second door into the same recorded fact.
+
+**Verify:** phone consult recorded → family record shows it, pipeline treats consultation as done, no calendar event exists anywhere · scheduled path unchanged · notes visible to admin/manager per existing visibility rules.
+
+## PL-190 · Navigation restructure: six topline tabs, everything filed
+
+The sidebar has grown one link per feature; Scarlett's IA (Jul 28) reorganizes it into topline tabs that are always clickable, with today's pages filed under them:
+
+- **Topline: Dashboard · Prospective Students · Tutoring · Classes · Contacts · Settings.**
+- **Classes** ← Add a new class · Live class rosters · School contacts · Branding & Collateral.
+- **Contacts** ← Students · Parents · Instructors · School contacts (second home — it lives BOTH under Classes and Contacts) · Communications · Agreements.
+- **Settings** ← QuickBooks · Google Calendar · Contact Settings.
+- Topline tabs are always clickable (land on the section's most useful default — e.g. Contacts → Students); filed pages reachable as sub-navigation within the tab. Existing deep links (`/admin?class=…`, `/admin/tutoring?family=…`, every emailed alert URL) MUST keep working — alerts in old emails outlive any nav change (deep-link-survives standing rule).
+- "Students" and "Parents" as Contacts entries are NEW surfaces — they're PL-192/193; this item is the frame they land in.
+
+**Verify:** all six tabs clickable → sensible defaults · every pre-restructure URL still lands (crawl the emailed-link inventory) · School contacts reachable from both homes · no orphaned pages.
+
+## PL-191 (tiny) · Recent Activity gains a Schedule category
+
+The dashboard's Recent Activity chips are All / Availability / Payments / Prospective students / Registrations. Schedule events (currently living in 1-on-1 Tutoring's "recent parent activity") join the dashboard feed as a **Schedule** chip — proposals sent, confirmations, reschedules, cancellations. Same feed machinery, one more source; the tutoring-page view can stay as the family-scoped subset.
+
+**Verify:** schedule events appear in All and under the Schedule chip · chips still compose · tutoring page unaffected.
+
+## PL-192 · Contacts is a two-way directory: Students ↔ Parents
+
+Kelsie's referential habit comes from QBO, where Students are the main contacts with parents attached — so student-first search must work. But parent-first must too (a parent calls; you know the parent's name).
+
+- **Contacts → Students:** search by student name → student entry shows their parents AND siblings (other students sharing the family).
+- **Contacts → Parents:** search by parent name → parent entry shows their connected students.
+- Both directions land on the same underlying records (family machinery) — two indexes into one truth, not two lists. Clicking a student anywhere opens the PL-193 profile; clicking a parent shows the family view.
+
+**Verify:** student search surfaces parents + siblings · parent search surfaces students · both reach the same records (edit via one path, visible via the other) · search handles partial/typo'd names reasonably.
+
+## PL-193 · The student profile page: everything we know, one organized place
+
+Clicking a student — from Contacts, the pipeline, a roster, anywhere — opens a profile page with all we know, organized:
+
+- **People:** parents (with contact info), siblings.
+- **Contact information:** student's own (email, phone, school, grade).
+- **Money:** rates, packages, past invoices — the family billing slice scoped to this student where per-student, family-level where shared.
+- **Agreements:** status + history.
+- **Communications:** the family-scoped comms timeline (PL-83 machinery; PL-164's surfacing), filtered to this student's family.
+- **Schedule, past and current:** consultation (when, who conducted it — including PL-189 phone consults) · 1-on-1 tutoring (engagements, sessions) · classes taken · with the two class diagnostics' scores inline on the class entries (PL-181's store) · any other test scores.
+- **Entry behavior stays familiar:** the Students list keeps current/most-recent students auto-visible with recent activity (as today) and is searchable by name; the CLICK now lands on this profile instead of dead-ending.
+- Role visibility follows existing rules throughout — this page aggregates, it does not widen access.
+
+**Verify:** every listed section renders from its existing store (no new duplicated data) · profile reachable from Contacts, pipeline, rosters · scores/consults/comms match their source surfaces exactly · role-gated.
+
+## PL-194 (small) · Pipeline stops letting you add the same student twice
+
+Because nothing suggested existing students while typing, Scarlett added the same test student three times — once with a typo, once exactly identical. Every duplicate is a future data-merge headache.
+
+- **As-you-type suggestions in the add-prospective-student form** (the PL-182 merged form): matching existing students/leads appear while typing the name — including fuzzy/typo matches — with enough context to recognize them (parent name, school, stage). Selecting one opens the existing record instead of creating.
+- **Exact-match guard at save:** creating anyway (legitimate: two different Ana Garcías) requires walking past a plain warning — never silent.
+- Match against BOTH pipeline leads and enrolled/active students — the duplicate Scarlett created existed in the pipeline itself, but a lead duplicating an enrolled student is the same disease.
+
+**Verify:** typing an existing name surfaces the suggestion with context · selecting opens the record · exact-name save warns and requires explicit proceed · typo'd near-match still suggests · distinct same-name students remain creatable.

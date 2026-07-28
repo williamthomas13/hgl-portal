@@ -1,6 +1,11 @@
-# Portal fixes — batch 19 (READY FOR CODE — handed off July 27)
+# Portal fixes — batch 19 (✅ ALL 21 SHIPPED — July 27)
 
-Post-batch-18 items: prod-verification findings (Jul 24-27) + Scarlett's full UI review (billing, students, new-schedule form, pipeline, instructors, contact settings) + the calendar/holds/suggester feature trio. **COMPLETE — 21 items, PL-157…177. Ready to build.** If this doc changes after you've pulled it, Scarlett will send an explicit re-read ask.
+Post-batch-18 items: prod-verification findings (Jul 24-27) + Scarlett's full UI review (billing, students, new-schedule form, pipeline, instructors, contact settings) + the calendar/holds/suggester feature trio. **All 21 items (PL-157…177) shipped, verified, and pushed July 27.** Migrations 20260818000001–4 applied (the PL-175 column drop applied after the deploy settled).
+
+**Open asks:**
+- **Scarlett:** `SUB_COVERAGE_NOTE` re-test-sent from prod after the PL-157 fix (subject "A note from Billy Thomas…", greeting Jordan — one coherent handoff) — review and flip when it reads right. `AL_LEAD_ASSIGNED` (PL-174) is also seeded as a draft for your copy review.
+- **You/Kelsie (one config step):** paste the real International Classes calendar id into the Google Calendar panel and press "adopt hand-made events" once (PL-161) — the sync/audit no-op safely until then.
+- **Done for the Aug 20 dry run:** one seeded PL-144 generation-failure alert is in the admin inbox (clearly marked seeded) with a real family deep link to click.
 
 Next PL after this batch: **PL-178**.
 
