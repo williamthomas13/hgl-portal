@@ -92,6 +92,9 @@ export function templateMetaFor(
       return { key: 'LR_WELCOME', role: student ? 'student' : 'parent' }
     case 'counselor_digest':
       return { key: 'CD_COUNSELOR_DIGEST', role: 'counselor' }
+    // PL-214: admin-initiated class-confirmed welcome (button, not automation).
+    case 'counselor_class_confirmed':
+      return { key: 'CS_CLASS_CONFIRMED', role: 'counselor' }
     case 'classroom_request':
       return { key: 'CR_CLASSROOM_REQUEST', role: 'counselor' }
     case 'deadline_push':
@@ -220,6 +223,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   SU_SCHEDULE_UPDATE: 'SU — Schedule update',
   LR_WELCOME: 'LR — Late-registration welcome',
   CD_COUNSELOR_DIGEST: 'CD — Counselor digest',
+  CS_CLASS_CONFIRMED: 'CS — Counselor class-confirmed welcome',
   CR_CLASSROOM_REQUEST: 'CR — Classroom request',
   FP_DEADLINE_PUSH: 'FP — Final-days push',
   FP_ALT_CLASS_FULL: 'FP-alt — Class full notice',
@@ -283,7 +287,7 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
   },
   {
     name: 'Counselors & schools',
-    match: (k) => /^CD_|^FP_|^CR_/.test(k) || k === 'CX_C_CANCELLATION',
+    match: (k) => /^CD_|^FP_|^CR_|^CS_/.test(k) || k === 'CX_C_CANCELLATION',
   },
   {
     name: 'Tutors & staff',

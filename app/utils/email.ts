@@ -1368,6 +1368,9 @@ export function counselorDigestEmail(opts: {
       <p>Here's where enrollment stands for the upcoming Higher Ground Learning
       class${plEs(opts.classes.length)} at ${opts.schoolName}:</p>
       ${classListBlock}
+      <p>See live counts and scores any time — sign in at
+      <a href="${emailBaseUrl()}/portal" style="color:#00AEEE">${emailBaseUrl()}/portal</a> with
+      this email.</p>
       <p>Know a student who's still on the fence? Forwarding them (or their parents) the
       registration link is the single most helpful thing you can do — everything after the
       click is automatic.</p>
@@ -1773,6 +1776,9 @@ export async function sendOnce(opts: {
    *  marketing identity, with one-click unsubscribe headers. Transactional
    *  sends never set this and are never suppressed. */
   marketing?: boolean
+  /** PL-214: file attachments (CS collateral). Generated fresh at send —
+   *  most emails deliberately link instead so files can't go stale. */
+  attachments?: { filename: string; content: Buffer }[]
 }): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
   // PL-201: the suppression gate runs before ANYTHING else — a suppressed
   // address must not even claim a dedupe row.
@@ -1970,6 +1976,7 @@ export async function sendOnce(opts: {
     subject: opts.subject,
     html: opts.html,
     headers: marketingHeaders,
+    attachments: opts.attachments,
   })
 
   if (sendError) {

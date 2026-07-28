@@ -122,6 +122,18 @@ export type ExtraVars = {
   waitlistDepth?: string
   /** Signed tell-us-the-room form link (CS classroom request). */
   classroomFormLink?: string
+
+  // --- PL-214: CS class-confirmed welcome + SA sample announcement -----------
+  /** The school's SALES page (hgl.co short link with protocol) — never the raw /register link. */
+  salesPageLink?: string
+  /** " and language (English and Spanish)" when a second collateral language exists; empty otherwise. */
+  collateralLanguagesPhrase?: string
+  /** SA: "from September 14 to October 1" (single-day: "on September 14"). */
+  courseDatesPhrase?: string
+  /** Enrollment deadline written out, e.g. "August 22, 2026". */
+  enrollmentDeadline?: string
+  /** Class capacity as text, e.g. "15". */
+  classCapacity?: string
   /** "September 1 – September 15" (T5 timecard). */
   payPeriodRange?: string
   /** "14.5" (T5 timecard hours). */
@@ -648,6 +660,27 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: "Counselor's no-login live-roster link for this class",
     resolve: (c, _a, e) => e.counselorRosterLink ?? c.portalUrl,
   },
+  // PL-214: CS class-confirmed welcome + its SA sample-announcement block.
+  salesPageLink: {
+    description: 'CS/SA: the school sales page (the hgl.co short link) — never the raw register link',
+    resolve: (_c, _a, e) => e.salesPageLink ?? '—',
+  },
+  collateralLanguagesPhrase: {
+    description: 'CS: " and language (English and Spanish)" for two-language schools; empty otherwise',
+    resolve: (_c, _a, e) => e.collateralLanguagesPhrase ?? '',
+  },
+  courseDatesPhrase: {
+    description: 'SA: "from September 14 to October 1" (computed from the session calendar)',
+    resolve: (_c, _a, e) => e.courseDatesPhrase ?? '—',
+  },
+  enrollmentDeadline: {
+    description: 'Enrollment deadline, written out (e.g. "August 22, 2026")',
+    resolve: (_c, _a, e) => e.enrollmentDeadline ?? '—',
+  },
+  classCapacity: {
+    description: 'Class capacity (e.g. "15")',
+    resolve: (_c, _a, e) => e.classCapacity ?? '—',
+  },
   coverageRespondLink: {
     description: 'SUB: tutor portal link where the candidate answers',
     resolve: (c, _a, e) => e.coverageRespondLink ?? c.portalUrl,
@@ -954,6 +987,12 @@ const SAMPLE_COVERAGE_NOTE_BLOCK = coverageNoteHtml(SAMPLE_COVERAGE_NOTE_PROSE)
 // actually builds; T4's is the attempt-3 (retries exhausted) render — the
 // highest-stakes email in the set.
 export const SAMPLE_EXTRA: ExtraVars = {
+  // PL-214: CS class-confirmed welcome + SA block samples.
+  salesPageLink: 'https://hgl.co/aisj',
+  collateralLanguagesPhrase: ' and language (English and Spanish)',
+  courseDatesPhrase: 'from September 14 to October 1',
+  enrollmentDeadline: 'August 22, 2026',
+  classCapacity: '15',
   changesBlock:
     '<p><strong>First day of class:</strong> now Saturday, 12 September 2026<br/><strong>Location:</strong> now Room 301</p>',
   upsellPackagesBlock:

@@ -1062,6 +1062,55 @@ Already accepted them? Then our systems are just catching up — you can ignore 
   // ---------------------------------------------------------------------------
 
   // --- Counselors & schools --------------------------------------------------
+  // PL-214: the "your class is set up" welcome the sequence never had —
+  // replaces Billy's manual email. Admin-initiated (button on the class's
+  // collateral card, never a blind automation); attaches the parent letter
+  // PDF + student flyer PDF/JPG generated fresh at send. Copy is Scarlett's
+  // batch-22 appendix, verbatim. The SA sample announcement renders at the
+  // bottom for the counselor to forward.
+  {
+    template_key: 'CS_CLASS_CONFIRMED',
+    display_name: 'CS — Counselor class-confirmed welcome',
+    sequence_number: 'CS',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'transactional',
+    subject: "Everything's ready for {className} at {schoolNickname}",
+    preheader: 'Registration is live — materials attached, and a sample announcement you can forward.',
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+Good news — everything is set up for the {className} class at {schoolName}. Registration is live, the course calendar is set, and families can sign up here:
+
+[{salesPageLink}]({salesPageLink})
+
+Registration closes **{enrollmentDeadline}**, and the first session is {firstSessionDate}. I've attached the materials for you:
+
+- A **letter** meant to be shared with parents (forward it in your parent communications, or print it)
+- A **flyer** meant for students — it works well on bulletin boards, hallway screens, and in student newsletters
+
+One more thing that makes your life easier: you have a **school portal** with Higher Ground. Sign in at [{portalLink}]({portalLink}) with just this email address — no password, we'll send you a login link. In it you'll find live enrollment for {className} (no more asking us for a count), your student roster, attendance, and diagnostic scores once the class is underway, every past class at {schoolNickname} with its results, and fresh downloads of the letter and flyer in every format{collateralLanguagesPhrase} — always reflecting the latest class details, so you never have to worry about a stale copy.
+
+Below is a sample email you could use to introduce the course to students and parents. And as always — if you'd like any changes to the schedule or anything else, just reply. I'm happy to help however I can.
+
+Best,
+
+William Thomas
+
+**A sample announcement you can forward to students and parents:**
+
+Greetings Students and Parents,
+
+I have some exciting news to share: {schoolNickname} is partnering with Higher Ground Learning ([www.highergroundlearning.com](https://www.highergroundlearning.com)), a US-based test preparation company, to offer {classType} prep to our students.
+
+We selected Higher Ground for many reasons, including excellent references from peer international schools, a long-standing record of integrity in preparing students for college admission exams, highly qualified tutors who provide both group and one-on-one support, and a teaching approach aligned with what {schoolNickname} believes is best practice.
+
+The course runs {courseDatesPhrase}, with all sessions held outside of school hours. As this is a partnership and not a school-offered course, registration is managed directly by Higher Ground. To provide personalized attention, the class is capped at {classCapacity} students, first come, first served.
+
+**Register here: [{salesPageLink}]({salesPageLink})** — registration closes {enrollmentDeadline}.
+
+If you have questions about the course, feel free to reach out to Higher Ground directly at [info@highergroundlearning.com](mailto:info@highergroundlearning.com).`,
+  },
   {
     template_key: 'CD_COUNSELOR_DIGEST',
     display_name: 'CD — Counselor enrollment digest',
@@ -1077,6 +1126,8 @@ Already accepted them? Then our systems are just catching up — you can ignore 
 Here's where enrollment stands for the upcoming Higher Ground Learning classes at {schoolName}:
 
 {digestClassListBlock}
+
+See live counts and scores any time — sign in at [{portalLink}]({portalLink}) with this email.
 
 Know a student who's still on the fence? Forwarding them (or their parents) the registration link is the single most helpful thing you can do — everything after the click is automatic.
 

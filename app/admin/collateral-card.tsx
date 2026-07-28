@@ -54,6 +54,8 @@ export default function CollateralCard({
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [showPreviews, setShowPreviews] = useState(false)
+  // PL-214: the admin-initiated CS welcome send (button, never automation).
+  const [sendingCs, setSendingCs] = useState(false)
   // Cache-buster so reopened previews reflect saved edits.
   const [previewNonce, setPreviewNonce] = useState(0)
 
@@ -147,6 +149,45 @@ export default function CollateralCard({
         >
           {showPreviews ? 'Hide previews' : 'Show previews'}
         </button>
+      </div>
+
+      {/* PL-214: the "class is ready" welcome to the school's counselor(s) —
+          sales-page link + deadline, letter + flyer attached (generated
+          fresh), the portal intro, and a forwardable sample announcement. */}
+      <div className="mb-3 flex items-center gap-3">
+        <button
+          type="button"
+          disabled={sendingCs}
+          onClick={async () => {
+            if (
+              !window.confirm(
+                'Send the "everything\'s ready" welcome email to every active contact at this school? It carries the sales-page link, the enrollment deadline, the parent letter + student flyer as attachments, the portal intro, and a sample announcement they can forward.'
+              )
+            )
+              return
+            setSendingCs(true)
+            setMessage('')
+            try {
+              const res = await fetch('/api/admin/class-confirmed', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ class_id: classId }),
+              })
+              const json = await res.json().catch(() => ({}))
+              setMessage(res.ok ? json.message : 'Error: ' + json.error)
+            } catch {
+              setMessage("Error: couldn't reach the server — nothing was sent.")
+            } finally {
+              setSendingCs(false)
+            }
+          }}
+          className="text-xs font-semibold bg-hgl-slate text-white rounded px-3 py-1.5 disabled:opacity-50"
+        >
+          {sendingCs ? 'Sending…' : 'Send "class is ready" welcome to the school'}
+        </button>
+        <span className="text-xs text-gray-500">
+          Letter + flyer attached, generated fresh. Needs the short link and deadline set.
+        </span>
       </div>
 
       {/* PL-15: the urgency date on the printed pieces is deliberately the
