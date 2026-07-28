@@ -36,6 +36,16 @@ export const PRODUCTION_ORIGIN = (
 //   2. Then set PRODUCTION_BASE_URL to the custom domain.
 // Leave step 1 in place until a sweep of the registry confirms no live
 // template body still references the old host; only then remove it.
+//
+// CRON CADENCE (Billy, Jul 29 2026 — decide before Aug 20): the hourly sweep
+// runs from GitHub Actions (.github/workflows/hourly-sweep.yml) because
+// Vercel Hobby caps crons at daily; vercel.json's daily cron is the
+// backstop. AT THE VERCEL PRO UPGRADE, as part of the cutover:
+//   3. Flip vercel.json's cron schedule to "0 * * * *".
+//   4. Delete .github/workflows/hourly-sweep.yml (and the CRON_SECRET
+//      GitHub Actions secret with it).
+// The hourly assumption is load-bearing (PL-144 catch-up, failed-send
+// flushing, PL-201 campaign resumes) — never relax it; move its home.
 const EXTRA_PRODUCTION_HOSTS = (process.env.ADDITIONAL_PRODUCTION_HOSTS ?? '')
   .split(',')
   .map((h) => h.trim().toLowerCase())

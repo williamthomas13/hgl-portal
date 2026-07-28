@@ -677,9 +677,13 @@ export async function GET() {
     qbo: { pending: qboPendingCount ?? 0, failed: qboFailedCount ?? 0 },
     sweep: {
       lastFinishedAt: finishedAt,
-      // Hourly cron: more than two hours without finishing is a stall, and a
-      // stalled sweep stops the whole email lifecycle silently.
-      stale: !finishedAt || now.getTime() - new Date(finishedAt).getTime() > 2 * 3600_000,
+      // The sweep is HOURLY (GitHub Actions; the daily Vercel cron is only a
+      // backstop) and the hourly assumption is load-bearing — PL-144 catch-up,
+      // failed-send flushing, campaign resumes. GH Actions cron is
+      // best-effort, so allow ~15 minutes of start slack: more than 75
+      // minutes without finishing is a stall, and a stalled sweep stops the
+      // whole email lifecycle silently.
+      stale: !finishedAt || now.getTime() - new Date(finishedAt).getTime() > 75 * 60_000,
       // Started much later than it finished = the current run is hanging.
       hanging: Boolean(
         startedAt &&

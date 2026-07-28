@@ -1,0 +1,35 @@
+# The hourly sweep (Billy's cron-cadence decision, Jul 29 2026).
+#
+# Vercel Hobby caps crons at once daily, but the portal's architecture
+# assumes an HOURLY sweep and that assumption is load-bearing: the PL-144
+# generation catch-up gate, failed/scheduled email flushing, and PL-201
+# campaign resumes all retry "on the next hourly sweep". So:
+#   - vercel.json keeps its DAILY cron as the backstop (do not remove);
+#   - this workflow provides the hourly cadence via GitHub Actions.
+# GH Actions cron is best-effort (runs can start minutes late) — the health
+# card allows ~15 minutes of slack for exactly that reason.
+#
+# CUTOVER (decide before Aug 20): on Vercel Pro, flip vercel.json to
+# "0 * * * *" and DELETE this workflow. The runbook line lives beside the
+# origin-guard runbook in app/utils/base-url.ts.
+name: hourly-sweep
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Hit the sweep endpoint
+        run: |
+          code=$(curl -s -o /tmp/sweep-body -w "%{http_code}" --max-time 600 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://hgl-portal.vercel.app/api/cron/reminders")
+          echo "HTTP $code"
+          cat /tmp/sweep-body
+          # Fail the job on anything but 200 so a broken sweep is VISIBLE in
+          # the Actions tab instead of silently skipped.
+          [ "$code" = "200" ]
