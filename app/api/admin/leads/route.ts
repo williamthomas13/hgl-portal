@@ -56,6 +56,7 @@ type Body =
   | { action: 'send_intake'; id: string }
   | { action: 'create_family'; id: string }
   | { action: 'schedule_consult'; id: string; consult_at: string; consult_owner_email: string }
+  | { action: 'record_phone_consult'; id: string; happened_at: string; notes?: string }
   | { action: 'create_offer'; name: string; kind: string; value: number; notes?: string }
   | { action: 'update_offer'; id: string; active?: boolean; name?: string; value?: number; notes?: string }
 
@@ -337,6 +338,7 @@ export async function POST(req: Request) {
         .update({
           consult_at: consultAtIso,
           consult_owner_email: body.consult_owner_email,
+          consult_mode: 'scheduled', // PL-189: the other door records 'phone'
           ...(['new', 'contacted', 'intake_sent', 'intake_complete', 'consult_scheduled'].includes(lead.status)
             ? { status: 'consult_scheduled' }
             : {}),
@@ -390,6 +392,44 @@ export async function POST(req: Request) {
         gcal = 'failed'
       }
       return NextResponse.json({ ok: true, gcal })
+    }
+
+    // PL-189: the consultation that just HAPPENED on the phone — a record,
+    // not an appointment. No calendar event for anyone, no scheduling
+    // machinery; the pipeline treats consultation as done exactly as if a
+    // scheduled one had completed.
+    if (body.action === 'record_phone_consult') {
+      if (!body.id || !body.happened_at) {
+        return NextResponse.json({ error: 'Need the date it happened.' }, { status: 400 })
+      }
+      const whenMs = new Date(body.happened_at).getTime()
+      if (!Number.isFinite(whenMs)) return NextResponse.json({ error: 'Invalid date.' }, { status: 400 })
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('id, status, notes')
+        .eq('id', body.id)
+        .maybeSingle()
+      if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
+      const note = (body.notes ?? '').trim()
+      const dayLabel = new Date(whenMs).toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+      const { error } = await supabase
+        .from('leads')
+        .update({
+          consult_at: new Date(whenMs).toISOString(),
+          consult_owner_email: caller.email,
+          consult_mode: 'phone',
+          ...(note
+            ? { notes: [lead.notes, `Phone consult ${dayLabel}: ${note}`].filter(Boolean).join('\n') }
+            : {}),
+          // Advances exactly as a scheduled consultation completing would.
+          ...(['new', 'contacted', 'intake_sent', 'intake_complete', 'consult_scheduled'].includes(lead.status)
+            ? { status: 'consult_done' }
+            : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', lead.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
     }
 
     if (body.action === 'create_offer') {

@@ -143,6 +143,8 @@ Four findings from one test student (Scarlett, Jul 28), all the same disease —
 
 ## PL-189 (small) · Phone consultations: record the fact, skip the calendar
 
+**✅ SHIPPED (Jul 28).** The consult block in the lead detail gained the second door: "…or it already happened on the phone" — date (defaults today) + optional notes → `record_phone_consult`. It's a record, not an appointment: no calendar event for anyone, no scheduling machinery; the caller is stamped as the owner, notes append to the lead record ("Phone consult 2026-07-27: …"), and the pipeline advances to Consult done exactly as if a scheduled one had completed. New `consult_mode` column (migration `20260818000005`, applied) so surfaces SAY which kind it was — the detail line reads "· by phone (already happened — no calendar event)" instead of guessing from a missing event id; the scheduled path stamps 'scheduled' and is otherwise unchanged. Verified E2E: record → status consult_done, mode phone, owner stamped, notes on the record, `consult_gcal_event_id` null.
+
 Kelsie runs consultations two ways: sometimes she schedules a formal meeting for later (belongs on calendars), and sometimes the consultation just HAPPENS on the phone when a family calls. Today the scheduler only models the first.
 
 - **Add a "phone consultation — already happened" option** alongside scheduling one: date (defaults to today), optional notes. No calendar event for anyone, no scheduling machinery — it's a record, not an appointment.
@@ -165,6 +167,8 @@ The sidebar has grown one link per feature; Scarlett's IA (Jul 28) reorganizes i
 **Verify:** all six tabs clickable → sensible defaults · every pre-restructure URL still lands (crawl the emailed-link inventory) · School contacts reachable from both homes · no orphaned pages.
 
 ## PL-191 (tiny) · Recent Activity gains a Schedule category
+
+**✅ SHIPPED (Jul 28).** The dashboard feed now carries Schedule events — proposals sent ("Schedule proposed to {family} ({subject}) — awaiting their confirmation"), confirmations, and session moves/cancellations (family self-serve moves labeled as such), each deep-linking the family. Same feed machinery, one more source: the chip derives automatically from the type (PL-134), day-grouping collapses busy days ("3 schedule ▸"), and the tutoring page's family-scoped list is untouched. Verified live: the Schedule chip renders, filters, and its rows group/expand like every other category.
 
 The dashboard's Recent Activity chips are All / Availability / Payments / Prospective students / Registrations. Schedule events (currently living in 1-on-1 Tutoring's "recent parent activity") join the dashboard feed as a **Schedule** chip — proposals sent, confirmations, reschedules, cancellations. Same feed machinery, one more source; the tutoring-page view can stay as the family-scoped subset.
 

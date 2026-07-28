@@ -637,6 +637,75 @@ export async function GET() {
       href: `/admin/leads?lead=${l.id}`,
     })
   }
+
+  // PL-191: Schedule events join the feed — proposals sent, confirmations,
+  // family reschedules, cancellations. The chip derives automatically from
+  // the type (PL-134); the tutoring page keeps its family-scoped subset.
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString()
+  const [{ data: schedEngs }, { data: schedMoves }] = await Promise.all([
+    supabase
+      .from('tutoring_engagements')
+      .select(
+        `id, status, approval_requested_at, parent_approved_at, updated_at,
+         students ( first_name, last_name, family_id ), subjects ( name )`
+      )
+      .or(`approval_requested_at.gte.${fourteenDaysAgo},parent_approved_at.gte.${fourteenDaysAgo}`)
+      .limit(30),
+    supabase
+      .from('tutoring_sessions')
+      .select(
+        `id, status, starts_at, updated_at, parent_rescheduled_at,
+         students ( first_name, last_name, family_id ),
+         replacement:rescheduled_to_id ( starts_at )`
+      )
+      .in('status', ['rescheduled', 'cancelled'])
+      .gte('updated_at', fourteenDaysAgo)
+      .order('updated_at', { ascending: false })
+      .limit(20),
+  ])
+  for (const eng of (schedEngs as any[]) ?? []) {
+    const st = one<any>(eng.students)
+    const who = st ? `${st.first_name} ${st.last_name}` : 'a student'
+    const subj = one<any>(eng.subjects)?.name ?? 'tutoring'
+    const href = `/admin/tutoring?family=${st?.family_id ?? ''}`
+    if (eng.approval_requested_at && eng.approval_requested_at >= fourteenDaysAgo) {
+      activity.push({
+        id: `sched-prop-${eng.id}`,
+        type: 'Schedule',
+        groupKey: 'Schedule',
+        when: eng.approval_requested_at,
+        text: `Schedule proposed to ${who}'s family (${subj}) — awaiting their confirmation.`,
+        href,
+      })
+    }
+    if (eng.parent_approved_at && eng.parent_approved_at >= fourteenDaysAgo) {
+      activity.push({
+        id: `sched-conf-${eng.id}`,
+        type: 'Schedule',
+        groupKey: 'Schedule',
+        when: eng.parent_approved_at,
+        text: `${who}'s family confirmed the ${subj} schedule.`,
+        href,
+      })
+    }
+  }
+  for (const s of (schedMoves as any[]) ?? []) {
+    const st = one<any>(s.students)
+    const who = st ? `${st.first_name} ${st.last_name}` : 'a student'
+    const moved = one<any>(s.replacement)
+    activity.push({
+      id: `sched-${s.status}-${s.id}`,
+      type: 'Schedule',
+      groupKey: 'Schedule',
+      when: s.updated_at,
+      text:
+        s.status === 'rescheduled'
+          ? `${who}'s session moved${moved ? ` to ${new Date(moved.starts_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })}` : ''}${s.parent_rescheduled_at ? ' (family self-serve)' : ''}.`
+          : `${who}'s session was cancelled.`,
+      href: `/admin/tutoring?family=${st?.family_id ?? ''}`,
+    })
+  }
+
   activity.sort((a, b) => String(b.when).localeCompare(String(a.when)))
 
   // --- Restrained extras ------------------------------------------------------

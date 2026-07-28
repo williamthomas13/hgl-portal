@@ -36,6 +36,8 @@ type Lead = {
   consult_at: string | null
   consult_owner_email: string | null
   consult_gcal_event_id: string | null
+  /** PL-189: 'scheduled' (calendar meeting) or 'phone' (recorded after the fact). */
+  consult_mode: string | null
   notes: string | null
   intake_token_sent_at: string | null
   lost_reason_kind: string | null
@@ -474,6 +476,11 @@ function LeadDetail({
     return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
   })
   const [consultOwner, setConsultOwner] = useState(lead.consult_owner_email ?? '')
+  // PL-189: the phone-consult second door (defaults to today).
+  const [phoneConsultDate, setPhoneConsultDate] = useState(() =>
+    new Date().toLocaleDateString('en-CA')
+  )
+  const [phoneConsultNotes, setPhoneConsultNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -656,7 +663,11 @@ function LeadDetail({
           {lead.consult_at && (
             <span className="ml-2 font-normal text-gray-500">
               currently {fmtWhen(lead.consult_at)} with {lead.consult_owner_email ?? '—'}
-              {lead.consult_gcal_event_id ? ' · on their Google Calendar' : ''}
+              {lead.consult_mode === 'phone'
+                ? ' · by phone (already happened — no calendar event)'
+                : lead.consult_gcal_event_id
+                  ? ' · on their Google Calendar'
+                  : ''}
             </span>
           )}
         </p>
@@ -697,6 +708,46 @@ function LeadDetail({
             className="bg-white border border-hgl-slate text-hgl-slate font-bold py-1.5 px-4 rounded-md hover:bg-gray-100 disabled:opacity-50"
           >
             {lead.consult_at ? 'Update consult' : 'Schedule consult'}
+          </button>
+        </div>
+        {/* PL-189: the second door — the consultation just HAPPENED on the
+            phone. A record, not an appointment: no calendar event, no
+            scheduling machinery; the pipeline advances exactly as if a
+            scheduled consultation had completed. */}
+        <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-end gap-3">
+          <span className="text-xs text-gray-500 w-full">
+            …or it already happened on the phone:
+          </span>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">When</label>
+            <input type="date" className={inputCls} value={phoneConsultDate} onChange={(e) => setPhoneConsultDate(e.target.value)} />
+          </div>
+          <div className="flex-1 min-w-48">
+            <label className="block text-xs text-gray-500 mb-1">Notes (optional)</label>
+            <input
+              className={inputCls}
+              placeholder="e.g. wants SAT prep before the October test"
+              value={phoneConsultNotes}
+              onChange={(e) => setPhoneConsultNotes(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            disabled={busy || !phoneConsultDate}
+            onClick={() =>
+              run(
+                {
+                  action: 'record_phone_consult',
+                  id: lead.id,
+                  happened_at: new Date(phoneConsultDate + 'T12:00:00').toISOString(),
+                  notes: phoneConsultNotes.trim() || undefined,
+                },
+                'Phone consult recorded — no calendar event, pipeline advanced.'
+              )
+            }
+            className="bg-white border border-gray-400 text-gray-700 font-bold py-1.5 px-4 rounded-md hover:bg-gray-100 disabled:opacity-50"
+          >
+            Record phone consult
           </button>
         </div>
       </div>
