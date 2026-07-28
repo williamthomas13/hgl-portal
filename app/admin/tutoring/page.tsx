@@ -10,6 +10,7 @@ import EngagementWizard from './engagement-wizard'
 import EngagementsPanel from './engagements-panel'
 import ScheduleView from './schedule-view'
 import ActivityFeed from './activity-feed'
+import DriftBanner from './drift-banner'
 import type { Engagement, StudentOption, Subject, Tutor } from './types'
 
 // Ops Director scheduling surface (Phase 7a, docs/PHASE7_SPEC.md §5). Reads run on the
@@ -194,6 +195,9 @@ export default function TutoringAdmin() {
           <p className="text-sm text-gray-500">Loading…</p>
         ) : (
           <>
+            {/* PL-180: calendar-side edits surface FIRST — a decision is
+                pending and everything below may be affected by it. */}
+            <DriftBanner />
             {/* PL-20: the wizard sits above the calendars — it's the "start
                 here" action when a family calls. */}
             <CollapsibleSection

@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
 import { deleteGcalEvent, loadGcalConnection } from '../../../../utils/gcal'
-import { classifyNotice } from '../../../../utils/tutoring'
+import { rescheduleSession } from '../../../../utils/reschedule'
 import { sendScheduleChangeNotices } from '../../../../utils/tutoring-emails'
 
 // Session actions (Phase 7a §5): one-off create, time edit, reschedule
@@ -104,69 +104,21 @@ export async function POST(req: Request) {
       if (!body.id || !validSpan(body.new_starts_at, body.new_ends_at)) {
         return NextResponse.json({ error: 'Invalid replacement times.' }, { status: 400 })
       }
-      const { data: original } = await supabase
-        .from('tutoring_sessions')
-        .select('id, engagement_id, student_id, tutor_id, starts_at, rate_snapshot, status, gcal_event_id')
-        .eq('id', body.id)
-        .maybeSingle()
-      if (!original) return NextResponse.json({ error: 'Unknown session.' }, { status: 404 })
-      if (original.status !== 'confirmed' && original.status !== 'proposed') {
-        return NextResponse.json({ error: `A ${original.status} session cannot be rescheduled.` }, { status: 400 })
-      }
-      const notice = body.notice ?? classifyNotice(new Date(original.starts_at))
-
-      const { data: replacement, error: insertError } = await supabase
-        .from('tutoring_sessions')
-        .insert({
-          engagement_id: original.engagement_id,
-          student_id: original.student_id,
-          tutor_id: original.tutor_id,
-          starts_at: body.new_starts_at,
-          ends_at: body.new_ends_at,
-          status: 'confirmed',
-          rate_snapshot: original.rate_snapshot,
-          // Free reschedule MOVES the Google event (spec §4): the replacement
-          // inherits the id and the push patches it to the new time. Late
-          // reschedule keeps the original event (XCL-marked — the tutor is
-          // paid for the reserved slot) and this row gets a fresh event.
-          gcal_event_id: notice === 'ok' ? original.gcal_event_id : null,
-        })
-        .select('id')
-        .single()
-      if (insertError || !replacement) {
-        return NextResponse.json({ error: insertError?.message ?? 'Insert failed.' }, { status: 500 })
-      }
-
-      const { error: updateError } = await supabase
-        .from('tutoring_sessions')
-        .update({
-          status: 'rescheduled',
-          rescheduled_to_id: replacement.id,
-          reschedule_notice: notice,
-          gcal_event_id: notice === 'ok' ? null : original.gcal_event_id,
-          cancelled_at: new Date().toISOString(),
-          cancelled_by: body.requested_by ?? 'staff',
-          cancel_note: body.note ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', original.id)
-      if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
-
-      await enqueueGcalSync(replacement.id, `reschedule (${notice})`)
-      if (notice === 'late') await enqueueGcalSync(original.id, 'late reschedule — XCL original')
-      const wasConfirmed = original.status === 'confirmed'
+      // PL-180: the machinery lives in rescheduleSession — the ONE code path
+      // this route and the calendar-edit Adopt both run through.
+      const result = await rescheduleSession({
+        id: body.id,
+        newStartsAt: body.new_starts_at,
+        newEndsAt: body.new_ends_at,
+        notice: body.notice,
+        note: body.note ?? null,
+        requestedBy: body.requested_by ?? 'staff',
+      })
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
       // after() callbacks must RETURN their promises or the work dies with
-      // the frozen lambda. T3 (§6.5): confirmed-session changes notify the
-      // family + tutor.
-      after(() =>
-        Promise.allSettled([
-          processGcalQueue(),
-          ...(wasConfirmed
-            ? [sendScheduleChangeNotices({ sessionId: original.id, kind: 'reschedule', notice, replacementId: replacement.id })]
-            : []),
-        ])
-      )
-      return NextResponse.json({ ok: true, replacementId: replacement.id, notice })
+      // the frozen lambda.
+      after(() => Promise.allSettled([processGcalQueue(), result.followUp()]))
+      return NextResponse.json({ ok: true, replacementId: result.replacementId, notice: result.notice })
     }
 
     if (body.action === 'cancel') {

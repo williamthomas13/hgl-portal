@@ -501,6 +501,32 @@ export async function GET() {
     }
   }
 
+  // PL-180: calendar-side session edits awaiting a human decision —
+  // attributional (on the tutor's own calendar, the tutor moved it).
+  const { data: calDrift } = await supabase
+    .from('calendar_drift')
+    .select(
+      `session_id, cal_starts_at, portal_starts_at, detected_at,
+       instructors ( name ),
+       tutoring_sessions ( students ( first_name, family_id ) )`
+    )
+  for (const d of (calDrift as any[]) ?? []) {
+    const tutorFirst = (one<any>(d.instructors)?.name ?? 'The tutor').split(' ')[0]
+    const stu = one<any>(one<any>(d.tutoring_sessions)?.students)
+    const fmtDrift = (iso: string) =>
+      new Date(iso).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    attention.push({
+      id: `cal-drift-${d.session_id}`,
+      kind: 'Calendar edited outside the portal',
+      text: d.cal_starts_at
+        ? `${tutorFirst} moved ${stu?.first_name ?? 'a student'}'s session in their Google Calendar — ${fmtDrift(d.portal_starts_at)} → ${fmtDrift(d.cal_starts_at)}. The family hasn't been told and billing hasn't changed. Adopt or revert from the tutoring page.`
+        : `${tutorFirst} deleted ${stu?.first_name ?? 'a student'}'s session event (${fmtDrift(d.portal_starts_at)}) from their Google Calendar. Revert restores it; the portal still expects the session.`,
+      href: `/admin/tutoring?family=${stu?.family_id ?? ''}`,
+      urgent: true,
+      since: d.detected_at,
+    })
+  }
+
   // PL-195: families whose generation is FAILING — discovery must not
   // depend on the alert email. State-driven: the row exists exactly while a
   // generation_failures record does (cleared by any later successful run).

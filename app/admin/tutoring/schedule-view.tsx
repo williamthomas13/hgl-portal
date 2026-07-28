@@ -105,6 +105,9 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
     [range]
   )
 
+  // PL-180: sessions whose calendar event was edited outside the portal —
+  // the grid marks them so the pending decision is visible in place.
+  const [driftIds, setDriftIds] = useState<Set<string>>(new Set())
   const load = useCallback(async () => {
     let q = supabase
       .from('tutoring_sessions')
@@ -115,6 +118,8 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
     if (mode === 'week' && tutor) q = q.eq('tutor_id', tutor.id)
     const { data, error } = await q
     if (!error) setSessions(normalize(data ?? []))
+    const { data: drift } = await supabase.from('calendar_drift').select('session_id')
+    setDriftIds(new Set(((drift ?? []) as { session_id: string }[]).map((d) => d.session_id)))
   }, [mode, tutor, rangeStart, rangeEnd])
 
   useEffect(() => {
@@ -294,11 +299,12 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
                             STATUS_STYLES[s.status] ?? 'bg-gray-100 border-gray-300'
                           }`}
                           style={{ top, height }}
-                          title={`${s.students?.first_name ?? ''} ${s.students?.last_name ?? ''} · ${s.status}`}
+                          title={`${s.students?.first_name ?? ''} ${s.students?.last_name ?? ''} · ${s.status}${driftIds.has(s.id) ? ' · calendar edited outside the portal — decide on the banner above' : ''}`}
                         >
                           <span className="font-semibold">
                             {fmtTime(s.starts_at, tz)} {s.students?.first_name}
                             {s.reschedule_requested_at && s.status === 'confirmed' && ' ⟳'}
+                            {driftIds.has(s.id) && <span className="text-amber-600"> ⚠</span>}
                           </span>
                           <br />
                           {s.tutoring_engagements?.subjects?.name}

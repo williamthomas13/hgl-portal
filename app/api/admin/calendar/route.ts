@@ -69,6 +69,21 @@ export async function GET(req: Request) {
 
   const blocks: CalendarBlock[] = []
 
+  // PL-179: covered sessions carry the marker on the calendar too — same
+  // state source as the tutor portal (accepted coverage_requests).
+  const tutoringIds = ((tutoring as any[]) ?? []).map((s) => s.id)
+  const coveredBySession = new Map<string, string>()
+  if (tutoringIds.length > 0) {
+    const { data: covered } = await supabase
+      .from('coverage_requests')
+      .select(`session_id, requester:instructors!coverage_requests_requesting_tutor_id_fkey ( name )`)
+      .eq('status', 'accepted')
+      .in('session_id', tutoringIds)
+    for (const r of (covered as any[]) ?? []) {
+      coveredBySession.set(r.session_id, one<any>(r.requester)?.name?.split(' ')[0] ?? 'a colleague')
+    }
+  }
+
   for (const s of (tutoring as any[]) ?? []) {
     const stu = one<any>(s.students)
     const eng = one<any>(s.tutoring_engagements)
@@ -79,17 +94,18 @@ export async function GET(req: Request) {
       s.status === 'proposed' && !holdActive(eng?.status ?? 'active', eng?.approval_requested_at ?? null)
         ? 'proposed (hold released)'
         : s.status
+    const coveredFrom = coveredBySession.get(s.id)
     blocks.push({
       id: `t-${s.id}`,
       kind: 'tutoring',
-      title: `${stu?.first_name ?? '?'} ${stu?.last_name ?? ''} — ${one<any>(eng?.subjects)?.name ?? 'Tutoring'}`,
+      title: `${coveredFrom ? '↷ ' : ''}${stu?.first_name ?? '?'} ${stu?.last_name ?? ''} — ${one<any>(eng?.subjects)?.name ?? 'Tutoring'}`,
       startsAt: s.starts_at,
       endsAt: s.ends_at,
       status: statusFor({
         status: ['no_show', 'forfeited'].includes(s.status) ? 'confirmed' : s.status,
         location: eng?.location ?? null,
       }),
-      portalStatus,
+      portalStatus: coveredFrom ? `${portalStatus} · covered (substitute for ${coveredFrom})` : portalStatus,
       tutorId: s.tutor_id,
       tutorName: tut?.name ?? tut?.email ?? null,
       classId: null,

@@ -26,6 +26,9 @@ export type UpcomingRow = {
   location: string | null
   /** Only 1-on-1 rows can open a note history. */
   studentId: string | null
+  /** PL-179: set when this session is COVERED — someone else's student is
+   *  where autopilot fails, so the context finds the substitute here. */
+  covering?: { from: string; note: string | null } | null
 }
 
 type NoteRow = { startsAt: string | null; note: string; nextTime: string | null }
@@ -86,6 +89,13 @@ export default function UpcomingSessions({ rows, timezone }: { rows: UpcomingRow
                   Class
                 </span>
               )}
+              {/* PL-179: a covered session announces itself — same visual
+                  weight as the Class badge, one glance. */}
+              {s.covering && (
+                <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-800 rounded-full px-2 py-0.5">
+                  Covering for {s.covering.from}
+                </span>
+              )}
               <span className="text-gray-600">
                 {s.studentId ? (
                   <button
@@ -113,6 +123,33 @@ export default function UpcomingSessions({ rows, timezone }: { rows: UpcomingRow
                 s.location && <span className="text-gray-400 text-xs truncate max-w-56">{s.location}</span>
               )}
             </div>
+
+            {/* PL-179: the hand-over note's EXISTENCE is visible without a
+                tap — short notes render inline; the full handoff bundle
+                (note + the student's history) is one anchor away. */}
+            {s.covering && (
+              <div className="mt-1 ml-1 text-xs bg-amber-50 border border-amber-200 rounded px-2 py-1 text-amber-900">
+                {s.covering.note ? (
+                  <>
+                    <span className="font-semibold">{s.covering.from}&apos;s note:</span>{' '}
+                    {s.covering.note.length > 180 ? `${s.covering.note.slice(0, 180)}…` : s.covering.note}{' '}
+                  </>
+                ) : (
+                  <span>No hand-over note yet from {s.covering.from}. </span>
+                )}
+                <a href="#covered-handoff" className="underline font-semibold">
+                  full handoff ↓
+                </a>
+                {s.studentId && (
+                  <>
+                    {' · '}
+                    <button type="button" onClick={() => toggleNotes(s.studentId!)} className="underline font-semibold">
+                      {s.who.split(' ')[0]}&apos;s note history
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             {s.studentId && openStudent === s.studentId && (
               <div className="mt-2 ml-1 border-l-2 border-gray-200 pl-3 text-xs">

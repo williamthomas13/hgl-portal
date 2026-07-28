@@ -2,7 +2,7 @@ import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
-import { auditXclDrift, processGcalQueue } from '../../../utils/gcal-sync'
+import { auditXclDrift, processGcalQueue, syncTutoringDriftTable } from '../../../utils/gcal-sync'
 import { auditInternationalCalendar, syncInternationalCalendar } from '../../../utils/intl-calendar'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { sweepSessionNoteReminders } from '../../../utils/session-notes'
@@ -1717,6 +1717,39 @@ export async function GET(req: Request) {
   if (gcal.synced > 0) counters.gcal_synced = gcal.synced
   if (gcal.failed > 0) counters.gcal_failed = gcal.failed
   if (gcal.deferred > 0) counters.gcal_deferred = gcal.deferred
+
+  // PL-180: calendar-side edits to tutoring session events — detect always,
+  // adopt deliberately. The alert is ATTRIBUTIONAL: on the tutor's own
+  // calendar, a differing event means the tutor moved it.
+  try {
+    const drift = await syncTutoringDriftTable()
+    if (drift.length > 0) {
+      counters.tutoring_calendar_drift = drift.length
+      const fmtT = (iso: string) =>
+        new Date(iso).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', hour: 'numeric', minute: '2-digit' })
+      for (const d of drift) {
+        await sendAdminAlert({
+          // Re-alerts only if the calendar time moves again.
+          dedupeKey: `cal_drift:${d.sessionId}:${d.calStartsAt ?? 'deleted'}`,
+          adminEmail: ADMIN_EMAIL,
+          subject: d.calStartsAt
+            ? `${d.tutorFirst} moved ${d.studentFirst}'s session in their Google Calendar`
+            : `${d.tutorFirst} deleted ${d.studentFirst}'s session event in their Google Calendar`,
+          body: `<p><strong>${d.tutorFirst} ${
+            d.calStartsAt
+              ? `moved ${d.studentFirst}'s ${fmtT(d.portalStartsAt).split(' ')[0]} ${d.subjectName} session in their Google Calendar — ${fmtT(d.portalStartsAt)} → ${fmtT(d.calStartsAt)}.`
+              : `deleted ${d.studentFirst}'s ${d.subjectName} session event (${fmtT(d.portalStartsAt)}) from their Google Calendar.`
+          }</strong></p>
+          <p>The family hasn't been told and billing hasn't changed — none of the machinery has run.
+          <strong>Adopt</strong> (runs the normal reschedule: parent notice, fee logic, timecards) or
+          <strong> revert</strong> their calendar, from the banner on
+          <a href="${emailBaseUrl()}/admin/tutoring?family=${d.familyId ?? ''}" style="color:#00AEEE">the tutoring page</a>.</p>`,
+        }).catch((e) => console.error('drift alert failed:', e))
+      }
+    }
+  } catch (e) {
+    console.error('tutoring drift sweep failed:', e)
+  }
 
   // PL-161: the International Classes shared calendar — daily sync (class
   // status transitions recolor/create events) + the hand-edit drift audit.

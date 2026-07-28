@@ -6,8 +6,10 @@ import {
   deleteGcalEvent,
   patchGcalEvent,
   getGcalEvent,
+  listCalendarEvents,
   loadGcalConnection,
   type GcalEventInput,
+  type ListedEvent,
   type ServiceAccountKey,
 } from './gcal'
 import { sendAdminAlert } from './email'
@@ -439,3 +441,142 @@ export async function auditXclDrift(): Promise<XclDrift[]> {
   /* eslint-enable @typescript-eslint/no-explicit-any */
   return drift
 }
+
+// ---------------------------------------------------------------------------
+// PL-180: calendar-side TIME edits flow back — detect always, adopt
+// deliberately. A session time drives parent notices, billing lines,
+// timecards; a silent adopt would let one drag in Google bypass all of it.
+// This audit compares future portal sessions against their live calendar
+// events and maintains the calendar_drift table (state-driven: rows appear
+// while the drift exists, disappear when it resolves either way). Sessions
+// with a PENDING sync-queue row are skipped — the portal is about to patch
+// them, which also breaks any adopt/revert detection loop.
+// ---------------------------------------------------------------------------
+
+export type TimeDriftRow = {
+  sessionId: string
+  tutorId: string
+  tutorFirst: string
+  studentFirst: string
+  studentLast: string
+  familyId: string | null
+  subjectName: string
+  portalStartsAt: string
+  portalEndsAt: string
+  /** null = the event was deleted by hand in Google. */
+  calStartsAt: string | null
+  calEndsAt: string | null
+  gcalEventId: string
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export async function auditTutoringTimeDrift(tutorId?: string): Promise<TimeDriftRow[]> {
+  const conn = await loadGcalConnection()
+  if (!conn?.key || conn.status !== 'connected') return []
+
+  const now = Date.now()
+  let q = supabase
+    .from('tutoring_sessions')
+    .select(
+      `id, tutor_id, starts_at, ends_at, status, gcal_event_id,
+       students ( first_name, last_name, family_id ),
+       tutoring_engagements ( subjects ( name ) ),
+       instructors ( name, email, google_calendar_id, timezone )`
+    )
+    .in('status', ['confirmed', 'proposed'])
+    .not('gcal_event_id', 'is', null)
+    .gt('starts_at', new Date(now).toISOString())
+    .lt('starts_at', new Date(now + 60 * 86_400_000).toISOString())
+  if (tutorId) q = q.eq('tutor_id', tutorId)
+  const { data: sessions } = await q
+  const rows = (sessions as any[]) ?? []
+  if (rows.length === 0) return []
+
+  // A pending queue row means the portal is mid-push — not drift.
+  const { data: pending } = await supabase
+    .from('gcal_sync_log')
+    .select('session_id')
+    .eq('status', 'pending')
+    .in('session_id', rows.map((s) => s.id))
+  const pendingIds = new Set((pending ?? []).map((p) => p.session_id))
+
+  const byTutor = new Map<string, any[]>()
+  for (const s of rows) {
+    if (pendingIds.has(s.id)) continue
+    byTutor.set(s.tutor_id, [...(byTutor.get(s.tutor_id) ?? []), s])
+  }
+
+  const drift: TimeDriftRow[] = []
+  for (const [, tutorSessions] of byTutor) {
+    const tutor = one<any>(tutorSessions[0].instructors)
+    if (!tutor?.email) continue
+    let events
+    try {
+      events = await listCalendarEvents(
+        conn.key,
+        tutor.email,
+        tutor.google_calendar_id || 'primary',
+        new Date(now - 86_400_000).toISOString(),
+        new Date(now + 61 * 86_400_000).toISOString(),
+        tutor.timezone ?? 'America/Denver'
+      )
+    } catch (e) {
+      console.error(`drift audit: events list failed for ${tutor.email} (skipping):`, e)
+      continue
+    }
+    const byId = new Map<string, ListedEvent>(events.map((e: ListedEvent) => [e.id, e]))
+    for (const s of tutorSessions) {
+      const live = byId.get(s.gcal_event_id)
+      const student = one<any>(s.students)
+      const base = {
+        sessionId: s.id as string,
+        tutorId: s.tutor_id as string,
+        tutorFirst: (tutor.name ?? tutor.email).split(' ')[0] as string,
+        studentFirst: student?.first_name ?? 'a student',
+        studentLast: student?.last_name ?? '',
+        familyId: student?.family_id ?? null,
+        subjectName: one<any>(one<any>(s.tutoring_engagements)?.subjects)?.name ?? 'tutoring',
+        portalStartsAt: s.starts_at as string,
+        portalEndsAt: s.ends_at as string,
+        gcalEventId: s.gcal_event_id as string,
+      }
+      if (!live || !live.start || !live.end) {
+        drift.push({ ...base, calStartsAt: null, calEndsAt: null })
+        continue
+      }
+      const moved =
+        Math.abs(new Date(live.start).getTime() - new Date(s.starts_at).getTime()) > 60_000 ||
+        Math.abs(new Date(live.end).getTime() - new Date(s.ends_at).getTime()) > 60_000
+      if (moved) drift.push({ ...base, calStartsAt: live.start, calEndsAt: live.end })
+    }
+  }
+  return drift
+}
+
+/** Refresh calendar_drift to match the audit result — rows for scanned
+ *  tutors that are no longer drifted disappear; current drift upserts. */
+export async function syncTutoringDriftTable(tutorId?: string): Promise<TimeDriftRow[]> {
+  const drift = await auditTutoringTimeDrift(tutorId)
+  const driftedIds = drift.map((d) => d.sessionId)
+  let del = supabase.from('calendar_drift').delete()
+  if (tutorId) del = del.eq('tutor_id', tutorId)
+  if (driftedIds.length > 0) {
+    await del.not('session_id', 'in', `(${driftedIds.join(',')})`)
+    await supabase.from('calendar_drift').upsert(
+      drift.map((d) => ({
+        session_id: d.sessionId,
+        tutor_id: d.tutorId,
+        gcal_event_id: d.gcalEventId,
+        portal_starts_at: d.portalStartsAt,
+        portal_ends_at: d.portalEndsAt,
+        cal_starts_at: d.calStartsAt,
+        cal_ends_at: d.calEndsAt,
+      })),
+      { onConflict: 'session_id' }
+    )
+  } else {
+    await del.gte('detected_at', '1970-01-01') // delete all (scoped) rows
+  }
+  return drift
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */

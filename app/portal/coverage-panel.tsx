@@ -176,7 +176,8 @@ export default function CoveragePanel({
       )}
 
       {handoffs.length > 0 && (
-        <div className="mb-5">
+        // PL-179: the upcoming list's "full handoff ↓" links land here.
+        <div className="mb-5" id="covered-handoff">
           <h3 className="text-sm font-semibold text-hgl-slate mb-1">Your covered sessions — the handoff</h3>
           {handoffs.map((h, i) => (
             <div key={i} className="border border-purple-200 bg-purple-50 rounded p-3 text-xs mb-2">

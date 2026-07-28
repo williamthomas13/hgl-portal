@@ -237,6 +237,26 @@ export default async function TutorView({
     })
   }
 
+  // PL-179: covered sessions ANNOUNCE themselves on the regular list —
+  // someone else's student is exactly where autopilot fails. State-driven
+  // from coverage_requests (accepted + candidate = me): a withdrawn or
+  // onward-reassigned coverage drops the marker on its own.
+  const { data: coveringRaw } = await supabaseAdmin
+    .from('coverage_requests')
+    .select(
+      `session_id, handoff_note,
+       requester:instructors!coverage_requests_requesting_tutor_id_fkey ( name )`
+    )
+    .eq('status', 'accepted')
+    .eq('candidate_tutor_id', tutor.id)
+  const coveringBySession = new Map<string, { from: string; note: string | null }>()
+  for (const r of (coveringRaw as any[]) ?? []) {
+    coveringBySession.set(r.session_id, {
+      from: one<any>(r.requester)?.name?.split(' ')[0] ?? 'a colleague',
+      note: r.handoff_note ?? null,
+    })
+  }
+
   // PL-132: one schedule list, both kinds of work, sorted together — the
   // tutor's day doesn't separate them, so the list shouldn't either.
   const upcomingRows: UpcomingRow[] = [
@@ -252,6 +272,7 @@ export default async function TutorView({
         subject: one<any>(eng?.subjects)?.name ?? '',
         location: eng?.location ?? null,
         studentId: student?.id ?? null,
+        covering: coveringBySession.get(s.id) ?? null,
       }
     }),
     ...((upcomingClasses as any[]) ?? []).map((s) => {
@@ -270,6 +291,7 @@ export default async function TutorView({
         subject: '',
         location: cls?.default_location ?? null,
         studentId: null,
+        covering: null,
       }
     }),
   ].sort((a, b) => a.startsAt.localeCompare(b.startsAt))
