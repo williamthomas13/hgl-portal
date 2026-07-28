@@ -70,6 +70,8 @@ Scores exist (the milestone machinery, counselor-view display), but entry/viewin
 
 ## PL-182 (small) · One prospective-student form: quick add and full add merge
 
+**✅ SHIPPED (Jul 28).** The `QuickAddLead` card is gone; `NewLeadForm` is now the one form, always visible ("Add a prospective student — mid-call, a name is enough"). Identity fields lead (parent/contact name autofocused, phone, email, student name); everything below sits under a "the intake sheet fills whatever's missing" comment — source, school, grade, interest, subjects, notes — with zero required-field markings. The Add button enables on the same minimum the server already enforced (a name — parent or student — or an email) and the helper line says so quietly ("Just a name (or an email) is enough to start" → "Whatever you have right now is enough — the intake sheet fills in the rest"). The quick-add's best behavior survived the merge: after add, the new row expands and scroll-focuses so follow-up details go straight in. Verified live: button disabled empty → typed a name only → add landed in the pipeline, row expanded, and the downstream gate held ("next: get a contact email" before the intake form can send — completeness still gates where it always did; entry just stopped pretending to). No server changes (create already accepted partial records), no migrations; nothing references the old quick-add path.
+
 The quick add "on a phone call" flow and the full add-prospective-student form are nearly the same thing with an arbitrary wall between them. Remove the wall (Scarlett, Jul 27):
 
 - **Remove the separate "on a phone call" quick add.**

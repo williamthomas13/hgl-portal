@@ -158,85 +158,15 @@ async function post(body: Record<string, unknown>): Promise<{ ok: boolean; error
 }
 
 // ---------------------------------------------------------------------------
-// PL-129: mid-call quick add — two fields, always visible, zero expanding.
-// Ops types the parent's name while talking; everything else goes onto the
-// lead record after the call. The full form below stays for deliberate entry.
+// PL-182: ONE add-prospective-student form (Scarlett, Jul 27) — the separate
+// "on a phone call" quick add and the full form were the same thing with an
+// arbitrary wall between them. Everything except enough-to-identify-them is
+// optional: Kelsie enters whatever she has at the time, and the intake sheet
+// (where completeness is actually enforced) fills in the rest. Partial entry
+// is the NORMAL case here, not an error state — no required-field noise.
 // ---------------------------------------------------------------------------
 
-function QuickAddLead({ onCreated }: { onCreated: (id: string) => void }) {
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  async function add() {
-    if (!name.trim()) return
-    setBusy(true)
-    setError('')
-    const res = await post({
-      action: 'create',
-      source: 'call',
-      status: 'new',
-      contact_name: name.trim(),
-      contact_phone: phone.trim() || null,
-    })
-    setBusy(false)
-    if (!res.ok) {
-      setError(res.error ?? 'Could not add — try the full form below.')
-      return
-    }
-    setName('')
-    setPhone('')
-    onCreated((res as { id?: string }).id ?? '')
-  }
-
-  return (
-    <div className="bg-white rounded-lg shadow-md border-l-4 border-hgl-blue p-4">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          add()
-        }}
-        className="flex flex-wrap items-center gap-2"
-      >
-        <span className="text-sm font-semibold text-hgl-slate whitespace-nowrap">
-          📞 On a call?
-        </span>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Parent name"
-          className="border border-gray-300 rounded p-2 text-sm flex-1 min-w-40"
-        />
-        <input
-          type="tel"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="Phone"
-          className="border border-gray-300 rounded p-2 text-sm w-40"
-        />
-        <button
-          type="submit"
-          disabled={busy || !name.trim()}
-          className="bg-hgl-blue text-white font-semibold rounded px-4 py-2 text-sm disabled:opacity-40"
-        >
-          {busy ? 'Adding…' : 'Add'}
-        </button>
-        <span className="text-xs text-gray-400 w-full sm:w-auto">
-          Lands in the pipeline instantly — fill in the rest after the call.
-        </span>
-      </form>
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// New-lead form
-// ---------------------------------------------------------------------------
-
-function NewLeadForm({ onCreated }: { onCreated: () => void }) {
+function NewLeadForm({ onCreated }: { onCreated: (id: string) => void }) {
   const blank = {
     source: 'call',
     contact_name: '',
@@ -253,6 +183,9 @@ function NewLeadForm({ onCreated }: { onCreated: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const set = (k: keyof typeof blank) => (v: string) => setF((p) => ({ ...p, [k]: v }))
+  // The bare minimum: enough to identify them — a name (parent or student)
+  // or an email. Same rule the server enforces.
+  const identified = !!(f.contact_name.trim() || f.contact_email.trim() || f.student_name.trim())
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -262,11 +195,33 @@ function NewLeadForm({ onCreated }: { onCreated: () => void }) {
     setSaving(false)
     if (!res.ok) return setError(res.error ?? 'Failed.')
     setF(blank)
-    onCreated()
+    onCreated((res as { id?: string }).id ?? '')
   }
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      {/* Who they are — the only part that's ever needed. Mid-call, type a
+          name, hit Add, done; the rest of the form is there when you have it. */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Parent / contact name</label>
+          <input className={inputCls} autoFocus value={f.contact_name} onChange={(e) => set('contact_name')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Phone</label>
+          <input className={inputCls} type="tel" value={f.contact_phone} onChange={(e) => set('contact_phone')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Email</label>
+          <input className={inputCls} type="email" value={f.contact_email} onChange={(e) => set('contact_email')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Student name</label>
+          <input className={inputCls} value={f.student_name} onChange={(e) => set('student_name')(e.target.value)} />
+        </div>
+      </div>
+      {/* Everything below is optional — the intake sheet fills whatever's
+          missing, so blank fields here are normal, not a problem. */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Source</label>
@@ -275,22 +230,6 @@ function NewLeadForm({ onCreated }: { onCreated: () => void }) {
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Contact name</label>
-          <input className={inputCls} value={f.contact_name} onChange={(e) => set('contact_name')(e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Contact email</label>
-          <input className={inputCls} type="email" value={f.contact_email} onChange={(e) => set('contact_email')(e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Contact phone</label>
-          <input className={inputCls} value={f.contact_phone} onChange={(e) => set('contact_phone')(e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Student name</label>
-          <input className={inputCls} value={f.student_name} onChange={(e) => set('student_name')(e.target.value)} />
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">School</label>
@@ -320,13 +259,20 @@ function NewLeadForm({ onCreated }: { onCreated: () => void }) {
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <button
-        type="submit"
-        disabled={saving}
-        className="bg-hgl-slate text-white font-bold py-2 px-5 rounded-md hover:opacity-90 disabled:opacity-50 text-sm"
-      >
-        {saving ? 'Adding…' : 'Add lead'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={saving || !identified}
+          className="bg-hgl-slate text-white font-bold py-2 px-5 rounded-md hover:opacity-90 disabled:opacity-50 text-sm"
+        >
+          {saving ? 'Adding…' : 'Add to pipeline'}
+        </button>
+        <span className="text-xs text-gray-400">
+          {identified
+            ? 'Whatever you have right now is enough — the intake sheet fills in the rest.'
+            : 'Just a name (or an email) is enough to start.'}
+        </span>
+      </div>
     </form>
   )
 }
@@ -976,20 +922,19 @@ export default function LeadsAdmin() {
           <p className="text-sm text-gray-500">Loading…</p>
         ) : (
           <>
-            {/* PL-129: the fast path — always visible, focused after add so
-                the follow-up details go straight in. */}
-            <QuickAddLead
-              onCreated={(id) => {
-                refresh()
-                if (id) {
-                  setExpanded(id)
-                  setFocusLead(`lead-${id}`)
-                }
-              }}
-            />
-
-            <CollapsibleSection title="Add a prospective student" accent="border-hgl-blue">
-              <NewLeadForm onCreated={refresh} />
+            {/* PL-182: ONE add form (quick add and full add merged) — always
+                visible, only a name required, focused after add so follow-up
+                details go straight onto the new row. */}
+            <CollapsibleSection title="Add a prospective student" subtitle="Mid-call, a name is enough — everything else is optional" accent="border-hgl-blue" defaultOpen>
+              <NewLeadForm
+                onCreated={(id) => {
+                  refresh()
+                  if (id) {
+                    setExpanded(id)
+                    setFocusLead(`lead-${id}`)
+                  }
+                }}
+              />
             </CollapsibleSection>
 
             <CollapsibleSection
