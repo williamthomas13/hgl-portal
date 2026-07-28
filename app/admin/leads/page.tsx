@@ -5,6 +5,7 @@ import { useDeepLinkFocus } from '../ui'
 import { supabase } from '../../utils/supabase'
 import { CollapsibleSection } from '../ui'
 import { ConfirmAction } from '../tutoring/confirm'
+import { LEAD_STATUS_LABELS } from '../../utils/lead-assign-copy'
 
 // Lead pipeline (Phase 7e, docs/PHASE7_SPEC.md §11) — replaces the Ops
 // Director's "pending students" spreadsheet. Reads run in the browser under
@@ -69,17 +70,8 @@ const STATUS_ORDER = [
 ] as const
 
 // Plain English, never raw enum values (house rule).
-const STATUS_LABELS: Record<string, string> = {
-  new: 'New',
-  contacted: 'Contacted',
-  intake_sent: 'Intake form sent',
-  intake_complete: 'Intake complete',
-  consult_scheduled: 'Consult scheduled',
-  consult_done: 'Consult done',
-  proposal_sent: 'Proposal sent',
-  scheduled: 'Started',
-  lost: 'Closed — not now',
-}
+// PL-174: one label map, shared with the assignment email's composer.
+const STATUS_LABELS = LEAD_STATUS_LABELS
 
 const SOURCE_LABELS: Record<string, string> = {
   website: 'Website',
@@ -457,6 +449,8 @@ function LeadDetail({
 }) {
   const [status, setStatus] = useState(lead.status)
   const [assignedTo, setAssignedTo] = useState(lead.assigned_to ?? '')
+  // PL-174: the field collapses to a small affordance; empty is normal.
+  const [assignOpen, setAssignOpen] = useState(false)
   const [notes, setNotes] = useState(lead.notes ?? '')
   const [offerId, setOfferId] = useState(lead.offer_id ?? '')
   const [consultAt, setConsultAt] = useState(() => {
@@ -491,7 +485,7 @@ function LeadDetail({
           {lead.lost_reason ? ` — ${lead.lost_reason}` : ''}
         </p>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
           <select className={`${inputCls} bg-white`} value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -499,10 +493,6 @@ function LeadDetail({
               <option key={s} value={s}>{STATUS_LABELS[s]}</option>
             ))}
           </select>
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Assigned to (staff email)</label>
-          <input className={inputCls} value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} />
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Offer</label>
@@ -515,6 +505,51 @@ function LeadDetail({
             ))}
           </select>
         </div>
+      </div>
+      {/* PL-174: assignment is optional and quiet — empty is the normal
+          state; assigning someone ELSE emails them the lead's key facts. */}
+      <div className="text-xs text-gray-500">
+        {assignOpen ? (
+          <span className="inline-flex items-center gap-2 flex-wrap">
+            <input
+              className="border border-gray-300 rounded p-1 text-xs w-64"
+              placeholder="staff email"
+              value={assignedTo}
+              onChange={(e) => setAssignedTo(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={busy}
+              className="text-hgl-blue font-semibold underline"
+              onClick={() => {
+                setAssignOpen(false)
+                run(
+                  { action: 'update', id: lead.id, assigned_to: assignedTo.trim() },
+                  assignedTo.trim() ? `Assigned to ${assignedTo.trim()} — they get one email with the lead.` : 'Unassigned.'
+                )
+              }}
+            >
+              save
+            </button>
+            <button type="button" className="underline" onClick={() => setAssignOpen(false)}>
+              cancel
+            </button>
+            <span className="text-gray-400">
+              Assigning someone else emails them the lead — assigning yourself stays silent.
+            </span>
+          </span>
+        ) : lead.assigned_to ? (
+          <span>
+            Assigned to <span className="font-semibold text-gray-600">{lead.assigned_to}</span>{' '}
+            <button type="button" className="underline text-hgl-blue" onClick={() => setAssignOpen(true)}>
+              change
+            </button>
+          </span>
+        ) : (
+          <button type="button" className="underline text-gray-400" onClick={() => setAssignOpen(true)}>
+            assign…
+          </button>
+        )}
       </div>
       <div>
         <label className="block text-xs font-semibold text-gray-600 mb-1">Notes</label>
@@ -535,7 +570,9 @@ function LeadDetail({
                 action: 'update',
                 id: lead.id,
                 status,
-                assigned_to: assignedTo,
+                // PL-174: assignment has its own affordance + save — the main
+                // Save never touches it (a typed-then-cancelled email must
+                // not assign on an unrelated save).
                 notes,
                 offer_id: offerId || null,
                 ...(reason ? { lost_reason_kind: reason.kind, lost_reason: reason.text } : {}),

@@ -23,6 +23,9 @@ export type FamilyCommsItem = {
   state: 'upcoming' | 'held' | 'sent' | 'delivered' | 'opened' | 'bounced' | 'cancelled' | 'failed'
   origin: 'automatic' | 'by hand' | 'test'
   when: string | null // ISO
+  /** PL-164: the Communications tab's template/status filters compose with
+   *  the family view through this. */
+  templateKey: string
 }
 
 function stateFor(r: any): FamilyCommsItem['state'] {
@@ -119,6 +122,7 @@ export async function GET(req: Request) {
     .map((r) => ({
       id: r.id,
       label: templateLabel(r.template_key),
+      templateKey: r.template_key,
       subject: r.subject_rendered ?? null,
       recipient: r.recipient_email,
       recipientRole: r.recipient_role ?? '—',

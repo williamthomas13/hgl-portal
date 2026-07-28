@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { templateLabel } from '../../utils/comms'
+import { FamilyCommsList, type FamilyCommsItem } from '../family-comms'
 
 // Feature A3 — communications dashboard (docs/COMMS_ATTENDANCE_PARENT_SPEC.md).
 // Upcoming = scheduled/held rows (materialized by the sweep's projector);
@@ -108,6 +109,67 @@ export default function CommunicationsDashboard() {
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
   const [enrollmentFilter, setEnrollmentFilter] = useState('')
+
+  // PL-164: family filter — the sent view can show a family's tutoring/
+  // class sends through the PL-83 machinery (one implementation, two
+  // surfaces, so they can't drift).
+  const [familyFilter, setFamilyFilter] = useState('')
+  const [familyOptions, setFamilyOptions] = useState<{ id: string; label: string }[]>([])
+  const [familyItems, setFamilyItems] = useState<FamilyCommsItem[] | null>(null)
+  const [familyLoading, setFamilyLoading] = useState(false)
+  useEffect(() => {
+    supabase
+      .from('families')
+      .select('id, parent_first_name, parent_last_name, parent_email')
+      .order('parent_first_name')
+      .then(({ data }) => {
+        setFamilyOptions(
+          (data ?? []).map((f) => ({
+            id: f.id,
+            label:
+              `${f.parent_first_name ?? ''} ${f.parent_last_name ?? ''}`.trim() || f.parent_email,
+          }))
+        )
+      })
+  }, [])
+  useEffect(() => {
+    if (!familyFilter) {
+      setFamilyItems(null)
+      return
+    }
+    let stale = false
+    setFamilyLoading(true)
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/admin/family-comms?familyId=${familyFilter}`)
+        const json = await res.json().catch(() => ({}))
+        if (!stale) setFamilyItems(res.ok ? json.items : [])
+      } catch {
+        if (!stale) setFamilyItems([])
+      }
+      if (!stale) setFamilyLoading(false)
+    })()
+    return () => {
+      stale = true
+    }
+  }, [familyFilter])
+  // The tab's template/status filters compose with the family view.
+  const STATE_FOR_STATUS: Record<string, FamilyCommsItem['state'][]> = {
+    scheduled: ['upcoming'],
+    held: ['held'],
+    sending: ['sent'],
+    sent: ['sent'],
+    delivered: ['delivered', 'opened'],
+    bounced: ['bounced'],
+    complained: ['bounced'],
+    cancelled: ['cancelled'],
+    failed: ['failed'],
+  }
+  const familyFiltered = (familyItems ?? []).filter((it) => {
+    if (templateFilter && it.templateKey !== templateFilter) return false
+    if (statusFilter && !(STATE_FOR_STATUS[statusFilter] ?? []).includes(it.state)) return false
+    return true
+  })
 
   // Modals
   const [preview, setPreview] = useState<{ subject: string; html: string; note?: string } | null>(null)
@@ -304,6 +366,20 @@ export default function CommunicationsDashboard() {
           </select>
           {tab === 'history' && (
             <>
+              {/* PL-164: family filter — switches the table to the PL-83
+                  family timeline rows (openable renders + origin badges). */}
+              <select
+                value={familyFilter}
+                onChange={(e) => setFamilyFilter(e.target.value)}
+                className="border rounded p-1.5 max-w-56"
+              >
+                <option value="">all families</option>
+                {familyOptions.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -354,7 +430,31 @@ export default function CommunicationsDashboard() {
           )}
         </div>
 
-        {/* Table */}
+        {/* PL-164: with a family picked, the history view IS the family
+            timeline — identical rows to the family record, filters apply. */}
+        {tab === 'history' && familyFilter ? (
+          <div className="space-y-2">
+            <div className="p-3 rounded bg-blue-50 border border-blue-200 text-sm text-hgl-slate flex items-center justify-between">
+              <span>
+                Every email for{' '}
+                <strong>{familyOptions.find((f) => f.id === familyFilter)?.label ?? 'this family'}</strong>{' '}
+                — sent and upcoming, exactly as on their family record.
+              </span>
+              <button onClick={() => setFamilyFilter('')} className="underline text-hgl-blue">
+                clear
+              </button>
+            </div>
+            {familyLoading ? (
+              <p className="p-6 text-gray-500 animate-pulse">Loading…</p>
+            ) : familyFiltered.length === 0 ? (
+              <p className="p-6 text-sm text-gray-500 italic bg-white border border-gray-200 rounded-lg">
+                No emails for this family match the filters.
+              </p>
+            ) : (
+              <FamilyCommsList items={familyFiltered} />
+            )}
+          </div>
+        ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
           {loading ? (
             <p className="p-6 text-gray-500 animate-pulse">Loading…</p>
@@ -494,6 +594,7 @@ export default function CommunicationsDashboard() {
             </table>
           )}
         </div>
+        )}
         <p className="text-xs text-gray-400">
           Times shown in each class&apos;s school timezone. Open tracking is approximate — absence of an
           open never proves non-delivery; &ldquo;delivered&rdquo; is the strong claim.

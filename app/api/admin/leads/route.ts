@@ -7,7 +7,8 @@ import { t7IntakeRequestEmail } from '../../../utils/intake-emails'
 import { renderRegistered } from '../../../utils/comms-registered'
 import { contactBlockHtml } from '../../../utils/tutoring-emails'
 import { loadContactInfo } from '../../../utils/tutoring-emails'
-import { sendOnce } from '../../../utils/email'
+import { sendAdminAlert, sendOnce } from '../../../utils/email'
+import { LEAD_STATUS_LABELS, leadAssignedDetails, leadAssignedSubject } from '../../../utils/lead-assign-copy'
 import { escapeLike } from '../../../utils/like-escape'
 import {
   loadGcalConnection,
@@ -115,11 +116,62 @@ export async function POST(req: Request) {
       if (Object.keys(patch).length === 0) {
         return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
       }
+      // PL-174: assignment now DOES something — read the pre-update state so
+      // a real handoff (new assignee, not yourself) can be noticed below.
+      const { data: beforeLead } =
+        'assigned_to' in patch
+          ? await supabase
+              .from('leads')
+              .select('assigned_to, student_name, contact_name, contact_email, interest, subjects, status, created_at')
+              .eq('id', body.id)
+              .maybeSingle()
+          : { data: null }
       const { error } = await supabase
         .from('leads')
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', body.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      // PL-174 guards: unassign sends nothing · self-assign stays silent
+      // (the one-person pipeline) · reassignment notifies the NEW assignee
+      // only · the dedupe key (lead+assignee) means re-toggling can't spam.
+      const newAssignee = String(patch.assigned_to ?? '')
+        .trim()
+        .toLowerCase()
+      const oldAssignee = String(beforeLead?.assigned_to ?? '')
+        .trim()
+        .toLowerCase()
+      if (beforeLead && newAssignee && newAssignee !== oldAssignee && newAssignee !== caller.email.toLowerCase()) {
+        try {
+          const leadName =
+            (beforeLead.student_name ?? '').trim() || (beforeLead.contact_name ?? '').trim() || 'a lead'
+          const status = (patch.status as string) ?? beforeLead.status ?? 'new'
+          const interest = [beforeLead.interest, ...((beforeLead.subjects as string[] | null) ?? [])]
+            .filter((v) => v && v !== 'unsure')
+            .join(', ')
+          const facts = {
+            actorName: caller.email,
+            leadName,
+            contactName: beforeLead.contact_name,
+            contactEmail: beforeLead.contact_email,
+            interest: interest || null,
+            statusLabel: LEAD_STATUS_LABELS[status] ?? status,
+            ageDays: Math.floor((Date.now() - new Date(beforeLead.created_at).getTime()) / 86400000),
+            leadUrl: `${emailBaseUrl()}/admin/leads?lead=${body.id}`,
+          }
+          await sendAdminAlert({
+            dedupeKey: `al_lead_assigned:${body.id}:${newAssignee}`,
+            adminEmail: newAssignee,
+            templateKey: 'AL_LEAD_ASSIGNED',
+            subject: leadAssignedSubject(facts),
+            body: leadAssignedDetails(facts),
+            vars: { alertStudentName: leadName },
+          })
+        } catch (e) {
+          // The save already happened — a notify hiccup must not undo it.
+          console.error('lead-assignment notify failed:', e)
+        }
+      }
       return NextResponse.json({ ok: true })
     }
 

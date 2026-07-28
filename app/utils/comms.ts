@@ -209,6 +209,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   AL_UNAGREED: 'AL — Billed without signed agreement',
   AL_AVAILABILITY_SHARED: 'AL — Family shared availability',
   AL_INTAKE_COMPLETE: 'AL — Intake complete',
+  AL_LEAD_ASSIGNED: 'AL — Pipeline lead assigned to you',
   AL_DUNNING_EXHAUSTED: 'AL — Autopay retries exhausted',
   AL_OVERDUE_10: 'AL — Invoice 10+ days past due',
   AL_OVERDUE_30: 'AL — Invoice 30+ days past due (late-fee decision)',

@@ -8,6 +8,7 @@ import {
   coverageSessionLines,
   type CoverageEvent,
 } from './coverage-copy'
+import { leadAssignedDetails } from './lead-assign-copy'
 import { formatDateFull , zonedDeadline } from './dates'
 import type { ResolvedVars } from './comms-md'
 
@@ -1208,6 +1209,22 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
   },
+  // PL-174: leads route assignment notify — COMPUTED from the real composer
+  // (lead-assign-copy.ts), per the PL-137 rule.
+  AL_LEAD_ASSIGNED: {
+    alertStudentName: 'Ana García',
+    alertDetailsBlock: leadAssignedDetails({
+      actorName: 'scarlett@highergroundlearning.com',
+      leadName: 'Ana García',
+      contactName: 'Alex García',
+      contactEmail: 'sample-parent@example.com',
+      interest: 'test prep, SAT',
+      statusLabel: 'Contacted',
+      ageDays: 3,
+      leadUrl: 'https://hgl-portal.vercel.app/test-link',
+    }),
+  },
+
   // intake route (PL-97 shape): lead record deep-link + schedule-now button.
   AL_INTAKE_COMPLETE: {
     alertDetailsBlock:

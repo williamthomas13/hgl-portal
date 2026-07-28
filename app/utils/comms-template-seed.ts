@@ -1549,6 +1549,22 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     body_markdown: `{alertDetailsBlock}`,
   },
   {
+    // PL-174: assignment notification — sent to the assignee (not the admin
+    // inbox) when someone assigns them a pipeline lead. Guards live in the
+    // leads route: self-assign silent, unassign silent, dedupe per
+    // lead+assignee.
+    template_key: 'AL_LEAD_ASSIGNED',
+    display_name: 'AL — Pipeline lead assigned to you',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'A pipeline lead was assigned to you: {alertStudentName}',
+    preheader: 'Key facts and the link to the lead.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
     template_key: 'AL_DUNNING_EXHAUSTED',
     display_name: 'AL — Autopay retries exhausted',
     sequence_number: 'AL',

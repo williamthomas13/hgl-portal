@@ -96,6 +96,8 @@ The Students section already computes "15.0 of 15h used — 0.0h left · time to
 
 ## PL-164 (small) · Family tutoring emails: viewable + filterable in the Communications tab
 
+**✅ SHIPPED (Jul 27).** The PL-83 row list (state + origin badges, openable render) was EXTRACTED into a shared `FamilyCommsList` component — the family-record timeline and the Communications tab now render the identical implementation, so they can't drift. The History tab grew a family filter; picking a family swaps the table for that family's full timeline (banner + clear), and the tab's template/status filters compose with it (statuses map onto the timeline's states — delivered covers opened, etc.). The family-comms API items now carry `templateKey` to make that composition possible. Verified live: Roman's family shows 21 rows including the T7/T8/T_SCHEDULE sends with origin badges; an AL-template filter narrows to zero for that family (correct); renders open inline.
+
 The PL-83 family-scoped comms timeline lives on the family/student record. The Communications tab — where Scarlett actually reviews what went out — can't show or filter these sends.
 
 - **Surface tutoring/family sends in the Communications tab's sent view** with a family filter (and the existing type/status filters composing with it).
@@ -198,6 +200,8 @@ The card counts `status = 'confirmed'` only — which is precise and correctly l
 **Verify:** proposed > 0 renders the subline alongside any confirmed value · proposed = 0 renders no subline · counts match a direct DB query for the same window.
 
 ## PL-174 (small) · Pipeline "Assigned to" becomes optional and quiet — but assignment now DOES something
+
+**✅ SHIPPED (Jul 27).** The prominent grid field is gone; assignment is now a small "assign…" affordance on the lead detail (empty = normal state), with its own save so the main Save can never assign a typed-then-abandoned email. Assignment sends ONE email to the assignee via `sendAdminAlert` with new registered template `AL_LEAD_ASSIGNED` (seeded as a DRAFT for your review — code twin sends until you flip it): "{actor} assigned you a pipeline lead: {name}", body from the new leaf composer `lead-assign-copy.ts` with stage (plain-English labels now shared between the pipeline page and the email — one map, can't drift), contact, interest, age, and the deep link to the lead. Guards verified E2E on a QA lead: assign→unassign→reassign→self-assign produced EXACTLY ONE email_sends row (dedupe per lead+assignee), self-assign and unassign silent. Sample pin computed from the composer per the PL-137 rule (`regress:alert-pins` now covers 18 templates). Badge/column untouched; no assignee filter added, per the doc.
 
 Fact check first (source-verified): assignment currently does nothing but display — `assigned_to` is stored and rendered as a name badge on the lead row. No notification, no task, no filtering. Today one person works the pipeline, so the field is ceremony — but a field that implies workflow should have at least a minimal mechanism behind it (Scarlett, Jul 27).
 
