@@ -824,6 +824,9 @@ export default function EngagementWizard({
   async function submit(confirmOverdraw = false) {
     setSaving(true)
     setMessage('')
+    // PL-197: the overdraw warning is handled AFTER the finally so the busy
+    // flag stays a pure try/finally (the PL-151 rule the gate audits).
+    let overdrawPrompt: Record<string, unknown> | null = null
     try {
     const res = await fetch('/api/admin/tutoring/engagement', {
       method: 'POST',
@@ -848,20 +851,8 @@ export default function EngagementWizard({
     if (json.needsOverdrawConfirm) {
       // PL-197 Case B: the schedule draws past the package — the moment of
       // the human conversation. Never blocked, never silent.
-      setSaving(false)
-      if (
-        window.confirm(
-          `This schedule goes ${json.overBy}h past ${json.studentFirst}'s ${json.packageHours}h package ` +
-            `(${json.remaining}h left on it). The extra hours will bill at $${json.rate}/hr on the monthly ` +
-            `invoice — confirm with the family before scheduling them.\n\nSchedule anyway?`
-        )
-      ) {
-        return submit(true)
-      }
-      setMessage('Nothing scheduled — adjust the slots or talk to the family first.')
-      return
-    }
-    if (!res.ok) {
+      overdrawPrompt = json
+    } else if (!res.ok) {
       setMessage('Error: ' + (json.error ?? `the server returned ${res.status}`))
     } else {
       setMessage(
@@ -887,6 +878,18 @@ export default function EngagementWizard({
       setMessage("Error: couldn't reach the server — nothing was saved. Your entries are still here; try again.")
     } finally {
       setSaving(false)
+    }
+    if (overdrawPrompt) {
+      if (
+        window.confirm(
+          `This schedule goes ${overdrawPrompt.overBy}h past ${overdrawPrompt.studentFirst}'s ${overdrawPrompt.packageHours}h package ` +
+            `(${overdrawPrompt.remaining}h left on it). The extra hours will bill at $${overdrawPrompt.rate}/hr on the monthly ` +
+            `invoice — confirm with the family before scheduling them.\n\nSchedule anyway?`
+        )
+      ) {
+        return submit(true)
+      }
+      setMessage('Nothing scheduled — adjust the slots or talk to the family first.')
     }
   }
 
