@@ -271,9 +271,10 @@ export async function generationDueFor(
 export async function generateMonthlyCycle(
   now: Date = new Date(),
   monthOverride?: string, // 'YYYY-MM' — staff QA / catch-up runs
-  // PL-144 regression harness ONLY: restrict the run to these family ids so
-  // the E2E can exercise generation against the shared DB without touching
-  // real engagements. Production paths never pass this.
+  // Restrict the run to these family ids. Two callers: the PL-144
+  // regression harness, and PL-195's "Retry now for this family" (the
+  // family-card action on a generation failure). A scoped run never stamps
+  // the month's completion marker.
   familyScope?: string[]
 ): Promise<GenerateResult> {
   const month = monthOverride ? billingMonth(monthOverride) : nextBillingMonth(now)
@@ -600,6 +601,36 @@ export async function generateMonthlyCycle(
     }
   }
   result.familiesFailed = failedFamilies.size
+
+  // PL-195: a failed generation is a STATE on the family, not just a flash —
+  // one generation_failures row per (family, period) while it's failing.
+  // State-driven both directions: a later successful run (this sweep, or the
+  // family-card Retry now) DELETES the row.
+  try {
+    // A SCOPED retry that ends clean clears its families even when nothing
+    // was left to generate (e.g. the fix was ending the broken engagement).
+    const succeeded = (familyScope ?? [...byFamily.keys()]).filter((id) => !failedFamilies.has(id))
+    if (succeeded.length > 0) {
+      await supabase
+        .from('generation_failures')
+        .delete()
+        .eq('period', month.period)
+        .in('family_id', succeeded)
+    }
+    if (failedFamilies.size > 0) {
+      await supabase.from('generation_failures').upsert(
+        [...failedFamilies.entries()].map(([familyId, f]) => ({
+          family_id: familyId,
+          period: month.period,
+          error: f.errors.join('; ').slice(0, 500),
+          last_attempt_at: new Date().toISOString(),
+        })),
+        { onConflict: 'family_id,period' }
+      )
+    }
+  } catch (e) {
+    console.error('generation-failure state update failed (run stands):', e)
+  }
 
   // PL-144: stamp the completion marker ONLY on a clean, unscoped run — the
   // hourly sweep keeps retrying (idempotently) while any family is failing,

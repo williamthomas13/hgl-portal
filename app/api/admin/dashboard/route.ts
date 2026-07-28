@@ -501,6 +501,28 @@ export async function GET() {
     }
   }
 
+  // PL-195: families whose generation is FAILING — discovery must not
+  // depend on the alert email. State-driven: the row exists exactly while a
+  // generation_failures record does (cleared by any later successful run).
+  const { data: genFailures } = await supabase
+    .from('generation_failures')
+    .select('family_id, period, error, first_failed_at, families ( parent_first_name, parent_last_name )')
+  for (const g of (genFailures as any[]) ?? []) {
+    const fam = one<any>(g.families)
+    const monthLabel = new Date(String(g.period) + 'T12:00:00Z').toLocaleDateString('en-US', {
+      timeZone: 'UTC',
+      month: 'long',
+    })
+    attention.push({
+      id: `gen-fail-${g.family_id}-${g.period}`,
+      kind: 'Invoice generation FAILING',
+      text: `${fam ? `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim() : 'A family'} — ${monthLabel} invoice couldn't be generated (${String(g.error).slice(0, 120)}). Retrying automatically; the family card has a retry-now.`,
+      href: `/admin/tutoring?family=${g.family_id}`,
+      urgent: true,
+      since: g.first_failed_at,
+    })
+  }
+
   // PL-133: the sticky-note layer — human-pinned, human-cleared, and the ONE
   // exception to the state-driven rule. Tagged in the UI so nobody mistakes
   // a note for a system condition.

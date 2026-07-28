@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from '../../utils/supabase'
 import { formatDateShort } from '../../utils/dates'
 import ScoresEntry from '../../components/ScoresEntry'
 import { ConfirmAction } from './confirm'
@@ -36,6 +37,54 @@ export default function EngagementsPanel({
   const [message, setMessage] = useState('')
   // PL-30: current (active/paused) vs past (ended) schedules.
   const [view, setView] = useState<'current' | 'past'>('current')
+
+  // PL-195: generation failures are a persistent STATE on the family —
+  // rendered as a red marker with the retry attached, cleared the moment a
+  // later run succeeds (the reload after retry re-derives it).
+  type GenFailure = { id: string; family_id: string; period: string; error: string; last_attempt_at: string }
+  const [genFailures, setGenFailures] = useState<Record<string, GenFailure>>({})
+  const [retryResult, setRetryResult] = useState<Record<string, string>>({})
+  const loadFailures = () =>
+    supabase
+      .from('generation_failures')
+      .select('id, family_id, period, error, last_attempt_at')
+      .then(({ data }) => {
+        const map: Record<string, GenFailure> = {}
+        for (const r of (data as GenFailure[]) ?? []) map[r.family_id] = r
+        setGenFailures(map)
+      })
+  useEffect(() => {
+    loadFailures()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagements])
+
+  async function retryGeneration(familyId: string, period: string) {
+    setBusyId(`gen-${familyId}`)
+    setRetryResult((m) => ({ ...m, [familyId]: '' }))
+    try {
+      const res = await fetch('/api/admin/tutoring/cycle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate_family', family_id: familyId, month: period.slice(0, 7) }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (json.ok) {
+        setRetryResult((m) => ({
+          ...m,
+          [familyId]: `Fixed — ${json.sessionsCreated ?? 0} session${json.sessionsCreated === 1 ? '' : 's'} created, ${json.invoicesProposed ?? 0} invoice${json.invoicesProposed === 1 ? '' : 's'} proposed. The warning clears itself.`,
+        }))
+      } else {
+        setRetryResult((m) => ({
+          ...m,
+          [familyId]: `Still failing — ${json.error ?? `the server returned ${res.status}`}`,
+        }))
+      }
+      await loadFailures()
+    } catch {
+      setRetryResult((m) => ({ ...m, [familyId]: "Couldn't reach the server — try again." }))
+    }
+    setBusyId('')
+  }
 
   const currentRows = engagements.filter((e) => e.status !== 'ended')
   const pastRows = engagements.filter((e) => e.status === 'ended')
@@ -148,6 +197,40 @@ export default function EngagementsPanel({
               {group.rows[0]?.students?.families?.parent_email}
             </span>
           </div>
+          {/* PL-195: the persistent generation-failure marker + the retry.
+              Red per the hours-exhausted styling; plain English; clears
+              itself the moment any later run succeeds. */}
+          {famId !== 'unknown' && genFailures[famId] && (
+            <div className="mb-2 p-2 rounded bg-red-50 border border-red-200 text-sm">
+              <p className="text-red-700 font-semibold">
+                {new Date(genFailures[famId].period + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long' })}{' '}
+                invoice couldn&apos;t be generated — {genFailures[famId].error}
+              </p>
+              <p className="text-xs text-red-600 mt-0.5">
+                They didn&apos;t get their automatic invoice. Retrying automatically on the hourly
+                sweep; last attempt{' '}
+                {new Date(genFailures[famId].last_attempt_at).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+                .{' '}
+                <button
+                  disabled={busyId === `gen-${famId}`}
+                  onClick={() => retryGeneration(famId, genFailures[famId].period)}
+                  className="text-hgl-blue underline font-semibold disabled:opacity-50"
+                >
+                  {busyId === `gen-${famId}` ? 'retrying…' : 'Retry now for this family'}
+                </button>
+              </p>
+              {retryResult[famId] && (
+                <p className={`text-xs mt-1 font-semibold ${retryResult[famId].startsWith('Fixed') ? 'text-green-700' : 'text-red-700'}`}>
+                  {retryResult[famId]}
+                </p>
+              )}
+            </div>
+          )}
           {/* PL-84: what the family was promised at cancellation — the
               authoritative hours record, no rate lookups. */}
           {(conversions?.[famId] ?? []).map((cv, i) => (
