@@ -304,6 +304,10 @@ export default async function TutorView({
   })
   const contact = await loadContactInfo()
   const managerLine = `Prefer a hand? Your manager can help find a suitable replacement — write to ${contact.email}${contact.phone ? ` or call ${contact.phone}` : ''}.`
+  // PL-209: name the Ops Director in the header copy. contact_name is the
+  // role record (PL-123); the office-fallback string isn't a person, so it
+  // keeps the old "the office" phrasing rather than splitting into "the".
+  const opsFirstName = /^the /i.test(contact.name) ? 'the office' : contact.name.split(' ')[0]
 
   return (
     <div className="space-y-6">
@@ -311,7 +315,7 @@ export default async function TutorView({
         <h2 className="text-lg font-bold text-hgl-slate mb-1">Upcoming sessions</h2>
         <p className="text-xs text-gray-400 mb-4">
           Times in {tz}. These also live on your Google Calendar — reschedules and cancellations go
-          through the office, and both places update automatically.
+          through {opsFirstName}, and your portal and Google Calendar both update automatically.
         </p>
         {/* PL-53d: the class instructor's handoff, shown once per student
             ahead of the first session — the 1-on-1 starts where class ended. */}
