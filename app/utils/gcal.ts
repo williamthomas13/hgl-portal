@@ -208,6 +208,9 @@ export type GcalEventInput = {
   endsAt: string
   timezone: string
   attendees: string[] // empty = no invites
+  /** PL-159: true = a visibly tentative HOLD event; patching with false
+   *  flips the SAME event back to confirmed (id stays stable). */
+  tentative?: boolean
 }
 
 function eventBody(input: GcalEventInput) {
@@ -218,6 +221,8 @@ function eventBody(input: GcalEventInput) {
     start: { dateTime: input.startsAt, timeZone: input.timezone },
     end: { dateTime: input.endsAt, timeZone: input.timezone },
     attendees: input.attendees.length ? input.attendees.map((email) => ({ email })) : undefined,
+    // PL-159: always explicit so a hold→confirmed patch flips it back.
+    status: input.tentative ? 'tentative' : 'confirmed',
   }
 }
 

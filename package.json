@@ -17,7 +17,8 @@
     "regress:mutation-buttons": "node scripts/regress-mutation-buttons.mjs",
     "regress:alert-pins": "node scripts/regress-alert-pins.mjs",
     "regress:coverage-note": "node scripts/regress-coverage-note.mjs",
-    "regress:counselor-roster": "node scripts/regress-counselor-roster.mjs"
+    "regress:counselor-roster": "node scripts/regress-counselor-roster.mjs",
+    "regress:proposal-holds": "node scripts/regress-proposal-holds.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

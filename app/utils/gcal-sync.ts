@@ -20,7 +20,14 @@ import { ADMIN_EMAIL } from './lifecycle'
 //
 // The worker is STATE-DRIVEN: a queue row just means "make Google match this
 // session". What that means is derived from the session row at run time:
-//   proposed                → nothing (events exist only once confirmed)
+//   proposed                → PL-159: a visibly tentative "HOLD:" event on
+//                             the tutor's calendar (mirrors Kelsie's manual
+//                             practice). On confirm the SAME event patches
+//                             into a normal confirmed one — id stays stable,
+//                             no delete/recreate. An ignored new-schedule
+//                             proposal releases its hold after
+//                             HOLD_LIFETIME_DAYS (the event is removed; the
+//                             proposal itself stays confirmable).
 //   confirmed / completed   → create the event, or patch it into shape
 //   forfeited / no_show     → keep the event, title prefixed "XCL- " (the
 //                             Ops Director's long-standing calendar convention — the
@@ -32,6 +39,26 @@ import { ADMIN_EMAIL } from './lifecycle'
 // edits collapse into a single push of the final state.
 
 const MAX_ATTEMPTS = 5
+
+/** PL-159: how long an UNANSWERED new-schedule proposal keeps its calendar
+ *  hold. Past this, the hold releases (the nudge machinery alerted a human
+ *  at +5d; +10d of silence should not reserve a tutor's Tuesday forever).
+ *  Confirming later still works — the events recreate as confirmed. */
+export const HOLD_LIFETIME_DAYS = 10
+
+/** PL-159: does this proposed session still hold its slot? Monthly-cycle
+ *  proposals (active engagement) always hold — they auto-confirm within
+ *  days; a new-schedule proposal holds while the confirmation request is
+ *  fresh. */
+export function holdActive(
+  engagementStatus: string,
+  approvalRequestedAt: string | null,
+  now: Date = new Date()
+): boolean {
+  if (engagementStatus !== 'pending_parent_confirmation') return engagementStatus === 'active'
+  if (!approvalRequestedAt) return true // not yet asked — the hold stands
+  return now.getTime() - new Date(approvalRequestedAt).getTime() < HOLD_LIFETIME_DAYS * 86_400_000
+}
 
 type QueueRow = {
   id: string
@@ -55,6 +82,9 @@ type SessionDetail = {
   parentEmail: string | null
   inviteAttendees: boolean
   subjectName: string
+  /** PL-159: whether a proposed session's slot-hold is still live. */
+  engagementStatus: string
+  approvalRequestedAt: string | null
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -69,7 +99,7 @@ async function loadSessionDetail(sessionId: string): Promise<SessionDetail | nul
     .select(
       `
       id, status, starts_at, ends_at, gcal_event_id, rescheduled_to_id, reschedule_notice,
-      tutoring_engagements ( location, subjects ( name ) ),
+      tutoring_engagements ( location, status, approval_requested_at, subjects ( name ) ),
       students ( first_name, student_email, families ( parent_email, gcal_invite_attendees ) ),
       instructors ( email, google_calendar_id, timezone, name, default_location )
     `
@@ -103,16 +133,21 @@ async function loadSessionDetail(sessionId: string): Promise<SessionDetail | nul
     parentEmail: family?.parent_email ?? null,
     inviteAttendees: family?.gcal_invite_attendees ?? true,
     subjectName: one<any>(engagement.subjects)?.name ?? 'Tutoring',
+    engagementStatus: engagement.status ?? 'active',
+    approvalRequestedAt: engagement.approval_requested_at ?? null,
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function eventInput(d: SessionDetail, xcl: boolean): GcalEventInput {
+function eventInput(d: SessionDetail, xcl: boolean, hold = false): GcalEventInput {
   const base = emailBaseUrl()
   return {
     tutorEmail: d.tutor.email,
     calendarId: d.tutor.google_calendar_id,
-    summary: `${xcl ? 'XCL- ' : ''}Tutoring: ${d.studentFirst} — ${d.subjectName}`,
+    // PL-159: HOLD events keep Kelsie's manual convention — visibly
+    // tentative, "HOLD:" prefixed. tentative also rides the event status.
+    tentative: hold,
+    summary: `${hold ? 'HOLD: ' : ''}${xcl ? 'XCL- ' : ''}Tutoring: ${d.studentFirst} — ${d.subjectName}`,
     description:
       `Scheduled in the HGL Portal — reschedule/cancel there, not here.\n` +
       `${base}/admin/tutoring?session=${d.id}`,
@@ -146,7 +181,28 @@ type SyncOutcome = { eventId: string | null; note: string }
 
 async function syncSession(d: SessionDetail, key: ServiceAccountKey): Promise<SyncOutcome> {
   if (d.status === 'proposed') {
-    return { eventId: d.gcal_event_id, note: 'proposed — no event until confirmed' }
+    // PL-159: proposed sessions HOLD their slot with a tentative event —
+    // unless the hold has expired (ignored new-schedule proposal), in which
+    // case any existing hold event is released.
+    if (!holdActive(d.engagementStatus, d.approvalRequestedAt)) {
+      if (d.gcal_event_id) {
+        await deleteGcalEvent(key, d.tutor.email, d.tutor.google_calendar_id, d.gcal_event_id)
+        return { eventId: null, note: 'hold expired — event released' }
+      }
+      return { eventId: null, note: 'hold expired — nothing to release' }
+    }
+    const input = eventInput(d, false, true)
+    if (d.gcal_event_id) {
+      try {
+        await patchGcalEvent(key, d.gcal_event_id, input)
+        return { eventId: d.gcal_event_id, note: 'hold patched' }
+      } catch (e) {
+        if (!(e instanceof GcalApiError && (e.status === 404 || e.status === 410))) throw e
+        // Hand-deleted in Google: recreate — the portal is the source of truth.
+      }
+    }
+    const id = await createGcalEvent(key, input)
+    return { eventId: id, note: d.gcal_event_id ? 'hold recreated (event was gone)' : 'hold created' }
   }
 
   if (d.status === 'confirmed' || d.status === 'completed') {
@@ -256,13 +312,13 @@ export async function processGcalQueue(): Promise<GcalQueueResult> {
           continue
         }
         const outcome = await syncSession(detail, conn.key)
-        // Keep the session's event pointer in step with what Google now holds.
-        if (outcome.eventId !== detail.gcal_event_id || detail.status !== 'proposed') {
-          await supabase
-            .from('tutoring_sessions')
-            .update({ gcal_event_id: outcome.eventId, gcal_synced_at: new Date().toISOString() })
-            .eq('id', detail.id)
-        }
+        // Keep the session's event pointer in step with what Google now
+        // holds (PL-159: proposed sessions carry hold events, so they stamp
+        // their pointer like everything else).
+        await supabase
+          .from('tutoring_sessions')
+          .update({ gcal_event_id: outcome.eventId, gcal_synced_at: new Date().toISOString() })
+          .eq('id', detail.id)
         await supabase
           .from('gcal_sync_log')
           .update({

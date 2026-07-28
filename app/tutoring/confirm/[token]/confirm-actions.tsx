@@ -7,7 +7,7 @@ import { useState } from 'react'
 export default function ConfirmActions({ token, studentFirst }: { token: string; studentFirst: string }) {
   const [view, setView] = useState<'idle' | 'declining'>('idle')
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<'approved' | 'declined' | null>(null)
+  const [done, setDone] = useState<'approved' | 'declined' | 'slot_taken' | null>(null)
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -25,6 +25,11 @@ export default function ConfirmActions({ token, studentFirst }: { token: string;
         setError(json.error ?? 'Something went wrong — please try again.')
         return
       }
+      // PL-159: the slot went to another family between proposal and click.
+      if (json.conflict) {
+        setDone('slot_taken')
+        return
+      }
       setDone(action === 'approve' ? 'approved' : 'declined')
     } catch {
       setError('Something went wrong — please try again, or just reply to our email.')
@@ -38,6 +43,16 @@ export default function ConfirmActions({ token, studentFirst }: { token: string;
       <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
         <strong>Locked in — thank you!</strong> A welcome email with calendar links and the PDF
         schedule is on its way, and every session is in your parent portal.
+      </div>
+    )
+  }
+  if (done === 'slot_taken') {
+    return (
+      <div className="p-4 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+        <strong>That time was just taken.</strong> Another family confirmed an overlapping time a
+        moment before you — nothing is locked in for {studentFirst} yet, and nothing is your
+        fault. We&apos;ve been notified and will send you fresh times to pick from shortly; if
+        you&apos;d like to talk it through sooner, just reply to our email or give us a call.
       </div>
     )
   }

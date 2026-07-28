@@ -129,8 +129,11 @@ async function materializeSessions(
     .insert(rows)
     .select('id')
   if (error) throw new Error(`session generation failed: ${error.message}`)
-  if (!held) {
-    for (const s of inserted ?? []) await enqueueGcalSync(s.id, 'engagement schedule')
+  // PL-159: proposed sessions now ALSO push — as tentative "HOLD:" events
+  // (the state-driven worker derives hold vs confirmed from the session).
+  // Kelsie's manual hold-event practice is retired.
+  for (const s of inserted ?? []) {
+    await enqueueGcalSync(s.id, held ? 'proposed schedule — calendar hold' : 'engagement schedule')
   }
   return { created: inserted?.length ?? 0 }
 }

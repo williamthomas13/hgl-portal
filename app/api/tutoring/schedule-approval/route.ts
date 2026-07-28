@@ -26,6 +26,9 @@ export async function POST(req: Request) {
 
   if (body.action === 'approve') {
     const result = await activatePendingEngagement(engagementId, 'parent')
+    // PL-159 first-accept-wins: a competing accept got the slot first — a
+    // distinct, friendly state (never a bare error).
+    if (result.conflict) return NextResponse.json({ ok: false, conflict: true })
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
     after(() => processGcalQueue())
     return NextResponse.json({ ok: true, already: result.already ?? false })

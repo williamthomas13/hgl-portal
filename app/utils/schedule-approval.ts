@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert, wrap, footerT } from './email'
 import { ADMIN_EMAIL } from './lifecycle'
-import { enqueueGcalSync } from './gcal-sync'
+import { HOLD_LIFETIME_DAYS, enqueueGcalSync } from './gcal-sync'
 import { tutoringIcsToken } from './tutoring-billing'
 import { contactBlockHtml, contactFrom, loadContactInfo, type ContactInfo } from './tutoring-emails'
 import { renderRegistered } from './comms-registered'
@@ -344,14 +344,22 @@ export async function sendScheduleSetEmail(
 /** Approve (parent click or Ops override): pending → active, sessions
  *  proposed → confirmed and queued for the tutor's calendar, welcome sent
  *  once. Idempotent — a second click just reports ok. Caller drains the gcal
- *  queue (after() in routes). */
+ *  queue (after() in routes).
+ *
+ *  PL-159 first-accept-wins: two overlapping proposals can both be
+ *  outstanding; acceptance re-checks conflicts ATOMICALLY (the optimistic-
+ *  claim shape) — claim the engagement, flip the sessions, then look for
+ *  overlap with OTHER already-confirmed sessions of the same tutor. On
+ *  overlap everything rolls back and the caller renders a friendly
+ *  "that time was just taken" state — never an error, never a silent
+ *  double-booking. */
 export async function activatePendingEngagement(
   engagementId: string,
   how: 'parent' | 'override'
-): Promise<{ ok: boolean; already?: boolean; error?: string }> {
+): Promise<{ ok: boolean; already?: boolean; conflict?: boolean; error?: string }> {
   const { data: eng } = await supabase
     .from('tutoring_engagements')
-    .select('id, status')
+    .select('id, status, tutor_id')
     .eq('id', engagementId)
     .maybeSingle()
   if (!eng) return { ok: false, error: 'Unknown schedule.' }
@@ -372,15 +380,60 @@ export async function activatePendingEngagement(
     .eq('status', 'pending_parent_confirmation')
   if (updateError) return { ok: false, error: updateError.message }
 
-  // Confirm + queue the held sessions (they were created 'proposed', never
-  // pushed — PL-40 pushes go to the tutor's calendar only).
+  // Confirm + queue the held sessions (they were created 'proposed', pushed
+  // as tentative HOLD events — PL-159; confirming patches the SAME events
+  // into confirmed ones).
   const { data: sessions } = await supabase
     .from('tutoring_sessions')
     .update({ status: 'confirmed', updated_at: new Date().toISOString() })
     .eq('engagement_id', engagementId)
     .eq('status', 'proposed')
-    .select('id')
-  for (const s of sessions ?? []) await enqueueGcalSync(s.id, `schedule approved (${how})`)
+    .select('id, starts_at, ends_at')
+
+  // PL-159: the atomic re-check — now that OUR sessions are visible as
+  // confirmed, any overlap with someone else's confirmed sessions means a
+  // competing accept got there first (or a schedule landed meanwhile).
+  const mine = sessions ?? []
+  const future = mine.filter((s) => new Date(s.ends_at).getTime() > Date.now())
+  if (future.length > 0 && how === 'parent') {
+    const minStart = future.reduce((m, s) => (s.starts_at < m ? s.starts_at : m), future[0].starts_at)
+    const maxEnd = future.reduce((m, s) => (s.ends_at > m ? s.ends_at : m), future[0].ends_at)
+    const { data: others } = await supabase
+      .from('tutoring_sessions')
+      .select('id, starts_at, ends_at')
+      .eq('tutor_id', eng.tutor_id)
+      .eq('status', 'confirmed')
+      .not('id', 'in', `(${mine.map((s) => s.id).join(',')})`)
+      .lt('starts_at', maxEnd)
+      .gt('ends_at', minStart)
+    const clash = (others ?? []).some((o) =>
+      future.some((s) => s.starts_at < o.ends_at && s.ends_at > o.starts_at)
+    )
+    if (clash) {
+      // Roll the claim back — sessions to proposed, engagement to pending.
+      await supabase
+        .from('tutoring_sessions')
+        .update({ status: 'proposed', updated_at: new Date().toISOString() })
+        .in('id', mine.map((s) => s.id))
+      await supabase
+        .from('tutoring_engagements')
+        .update({ status: 'pending_parent_confirmation', parent_approved_at: null, updated_at: new Date().toISOString() })
+        .eq('id', engagementId)
+        .eq('status', 'active')
+      await sendAdminAlert({
+        dedupeKey: `schedule_accept_conflict:${engagementId}`,
+        adminEmail: ADMIN_EMAIL,
+        subject: 'A family tried to confirm a schedule whose slot was just taken',
+        body: `<p>The family clicked confirm, but the tutor's slot now overlaps an
+          already-confirmed session — most likely another family accepted an overlapping
+          proposal first. The family saw a friendly "that time was just taken" page.</p>
+          <p>Propose new times from
+          <a href="${appUrl()}/admin/tutoring?schedule=${engagementId}" style="color:#00AEEE">the tutoring page</a>.</p>`,
+      }).catch((err) => console.error('accept-conflict alert failed:', err))
+      return { ok: false, conflict: true }
+    }
+  }
+  for (const s of mine) await enqueueGcalSync(s.id, `schedule approved (${how})`)
 
   await sendScheduleSetEmail(engagementId).catch((e) =>
     console.error('T_SCHEDULE_SET failed (activation stands):', e)
@@ -421,6 +474,20 @@ export async function runScheduleApprovalNudges(): Promise<{ nudged: number; ale
   for (const eng of pending ?? []) {
     const ageDays = (Date.now() - new Date(eng.approval_requested_at as string).getTime()) / 86_400_000
     const count = eng.approval_nudge_count ?? 0
+    // PL-159: an ignored proposal releases its calendar holds after the hold
+    // lifetime — enqueue the sessions still pointing at an event; the
+    // state-driven worker sees the stale pending engagement and deletes
+    // them. The proposal itself stays confirmable (events would recreate as
+    // confirmed on approval).
+    if (ageDays >= HOLD_LIFETIME_DAYS) {
+      const { data: held } = await supabase
+        .from('tutoring_sessions')
+        .select('id')
+        .eq('engagement_id', eng.id)
+        .eq('status', 'proposed')
+        .not('gcal_event_id', 'is', null)
+      for (const s of held ?? []) await enqueueGcalSync(s.id, 'proposal hold expired — release')
+    }
     const due = (count === 0 && ageDays >= 2) || (count === 1 && ageDays >= 5)
     if (!due) continue
     const sent = await sendScheduleApprovalEmail(eng.id, 'nudge')
