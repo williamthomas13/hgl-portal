@@ -16,6 +16,7 @@ import ContactSettingsPanel from './contact-settings-panel'
 import DashboardPanel from './dashboard-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
+import ClassScoresGrid from '../components/ClassScoresGrid'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h, useDeepLinkFocus } from './ui'
 import { FamilyCommsRow } from './family-comms'
@@ -1329,6 +1330,20 @@ export default function AdminDashboard() {
 
           {/* PL-37: milestone score entry alongside attendance. */}
           <ScoresEntry
+            classId={c.id}
+            defaultExam={c.class_type.includes('ACT') ? 'ACT' : 'SAT'}
+            students={(c.enrollments ?? [])
+              .filter((en) => en.students?.id)
+              .map((en) => ({
+                id: en.students!.id,
+                name: `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim() || '—',
+              }))
+              .sort((a, b) => a.name.localeCompare(b.name))}
+          />
+          {/* PL-181: the group read — both diagnostics side by side, column
+              entry in one sitting. Same store; a score entered anywhere
+              shows everywhere instantly. */}
+          <ClassScoresGrid
             classId={c.id}
             defaultExam={c.class_type.includes('ACT') ? 'ACT' : 'SAT'}
             students={(c.enrollments ?? [])

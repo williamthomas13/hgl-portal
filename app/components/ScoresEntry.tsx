@@ -26,6 +26,8 @@ type ScoreRow = {
   section_scores: Record<string, number> | null
   total: number | null
   taken_at: string | null
+  class_id: string | null
+  classes?: { class_type: string | null } | { class_type: string | null }[] | null
 }
 
 export const EXAM_SECTIONS: Record<string, string[]> = {
@@ -95,15 +97,18 @@ export default function ScoresEntry({
 
   const load = useCallback(async () => {
     if (students.length === 0) return
-    let q = supabase
+    // PL-181: scores FOLLOW THE STUDENT — the history list shows every score
+    // the student has, whichever surface recorded it (a class diagnostic
+    // shows on the tutoring page and vice versa). Entry stays scoped to THIS
+    // surface: new rows are stamped with this classId, and slot-replacement
+    // only considers rows recorded here.
+    const { data } = await supabase
       .from('student_scores')
-      .select('id, student_id, test_label, section_scores, total, taken_at')
+      .select('id, student_id, test_label, section_scores, total, taken_at, class_id, classes ( class_type )')
       .in('student_id', students.map((s) => s.id))
       .order('taken_at', { ascending: true })
-    q = classId === null ? q.is('class_id', null) : q.eq('class_id', classId)
-    const { data } = await q
-    setRows((data as ScoreRow[]) ?? [])
-  }, [students, classId])
+    setRows((data as unknown as ScoreRow[]) ?? [])
+  }, [students])
 
   useEffect(() => {
     load()
@@ -135,10 +140,12 @@ export default function ScoresEntry({
     setBusy(true)
     setMessage('')
     const label = labelFor(milestone, exam, practiceNumber)
-    // The two diagnostic slots stay SINGLE: re-entering one replaces it.
+    // The two diagnostic slots stay SINGLE *per context*: re-entering one
+    // recorded on THIS surface replaces it; a diagnostic from another context
+    // (a different class, or 1-on-1) is its own record and stays untouched.
     const existing =
       milestone === 'First diagnostic' || milestone === 'Second diagnostic'
-        ? rows.find((r) => r.student_id === studentId && r.test_label === label)
+        ? rows.find((r) => r.student_id === studentId && r.test_label === label && inScope(r))
         : undefined
     if (existing && !confirm(`${label} already exists for this student — replace it?`)) {
       setBusy(false)
@@ -184,6 +191,14 @@ export default function ScoresEntry({
 
   const nameOf = (id: string) => students.find((s) => s.id === id)?.name ?? '—'
   const isDiagnostic = (label: string) => /^(First|Second) diagnostic$/i.test(label)
+  // PL-181: which rows were recorded on THIS surface (editable here) vs.
+  // elsewhere (shown so the score follows the student, edited at its source).
+  const inScope = (r: ScoreRow) => (classId === null ? r.class_id == null : r.class_id === classId)
+  const contextLabel = (r: ScoreRow) => {
+    if (r.class_id == null) return '1-on-1'
+    const cls = Array.isArray(r.classes) ? r.classes[0] : r.classes
+    return cls?.class_type ? `${cls.class_type} class` : 'another class'
+  }
 
   return (
     <div className="mt-3 border border-gray-200 rounded-lg p-3 text-sm">
@@ -212,9 +227,21 @@ export default function ScoresEntry({
                     ))}
                   {r.total != null && <span className="font-semibold">total {r.total}</span>}
                   {r.taken_at && <span className="text-gray-400">{formatDateShort(r.taken_at)}</span>}
-                  <button onClick={() => remove(r.id)} className="ml-auto text-red-600 underline">
-                    remove
-                  </button>
+                  {!inScope(r) && (
+                    <span
+                      className="text-gray-400 italic"
+                      title="Recorded on another surface — it follows the student everywhere; edit it where it was entered"
+                    >
+                      from {contextLabel(r)}
+                    </span>
+                  )}
+                  {inScope(r) ? (
+                    <button onClick={() => remove(r.id)} className="ml-auto text-red-600 underline">
+                      remove
+                    </button>
+                  ) : (
+                    <span className="ml-auto" />
+                  )}
                 </li>
               ))}
             </ul>

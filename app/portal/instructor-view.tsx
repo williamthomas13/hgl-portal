@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
+import ClassScoresGrid from '../components/ClassScoresGrid'
 import HandoffNotes from '../components/HandoffNotes'
 import { supabaseAdmin } from '../utils/supabase-admin'
 import MessageClass from './message-class'
@@ -346,6 +347,17 @@ export default async function InstructorView({
 
             {/* PL-37: milestone score entry where attendance is taken. */}
             <ScoresEntry
+              classId={c.id}
+              defaultExam={String(c.class_type ?? '').includes('ACT') ? 'ACT' : 'SAT'}
+              students={active
+                .map((e: any) => one<any>(e.students))
+                .filter(Boolean)
+                .map((st: any) => ({ id: st.id, name: `${st.first_name} ${st.last_name}` }))
+                .sort((a: any, b: any) => a.name.localeCompare(b.name))}
+            />
+            {/* PL-181: the instructor's group read — the two diagnostics side
+                by side (the "is this group moving" glance), column entry. */}
+            <ClassScoresGrid
               classId={c.id}
               defaultExam={String(c.class_type ?? '').includes('ACT') ? 'ACT' : 'SAT'}
               students={active
