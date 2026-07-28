@@ -1,8 +1,8 @@
-# Portal fixes — batch 22 (🚧 OPEN — accumulating, do not start yet)
+# Portal fixes — batch 22 (✅ READY — handed to Code July 28; 13 items, PL-207…219)
 
-Opened July 29, empty. Scarlett will say when it's ready to pull; if extended after you've pulled it, wait for an explicit re-read ask.
+Closed and handed off July 28 (13 items). If this doc is extended after you've pulled it, wait for an explicit re-read ask. Suggested order in the handoff prompt: quick copy tier (209 · 210 · 215 · 216) → 217 → 212 → 211 → 213 → 208 → 214 (copy appendix at bottom is final — use verbatim) → 207 → 218 → 219 (v1 → v1.5; v2 is roadmap, do not build without a pull).
 
-Next PL after this batch: **PL-216**.
+Next PL after this batch: **PL-220**.
 
 **Decisions noted Jul 28:** campaigns work (PL-201 copy/rollout) is PUNTED for now — no campaign sends; campaign identity should use existing aliases hello@ or testprep@ (both exist) rather than creating offers@ (tell Code before campaigns resume).
 
@@ -84,6 +84,53 @@ Audience test applies throughout; samples through the real composer; CS is trans
 ## PL-215 — Unsubscribe page: missing space after the email address (reported Jul 28)
 
 The campaigns unsubscribe page (PL-201) renders "billy@highergroundlearning.comwill stop receiving offers..." — bold email address runs straight into "will". Add the space (and check the confirmation state + one-click POST result page for the same join).
+
+## PL-216 — Two copy nits from the PL-200 sentinel run (reported Jul 28)
+
+1. **Degenerate T1 period label:** when the mid-month remainder is a single day, T1's subject/label reads "QA's tutoring schedule for July 31–31". Collapse start==end ranges to just "July 31" (and generally "July 29–31" style stays for real ranges).
+2. **Plural bug in the billed-without-agreement admin alert:** AL subject reads "[HGL Admin] 1 tutoring families billed without a signed agreement" — singular/plural the count ("1 tutoring family" / "2 tutoring families"). Sweep sibling alerts for the same countable-noun pattern.
+
+## PL-217 — Phone-width + a11y pass findings (Jul 28 pass; all minor, parent surfaces held up well)
+
+Checked at 390px: parent portal (sessions list wraps cleanly, request-a-change reachable), registration form (fields + paired name columns fit; Add-another-student and payment CTA full-width), tutor view (rows wrap, Join drops to its own line with a fine tap target), admin dashboard (cards stack correctly). Findings:
+
+1. **Low-contrast muted text sweep (a11y, parent-facing):** the small gray annotations ("Higher Ground Learning" location strings, "times shown in..." notes, timestamp captions) render in ~gray-400 at 12px — roughly 2.5:1 on white, below WCAG AA (4.5:1 for small text). Bump the muted-text tone one step darker (gray-500/600) everywhere it carries information a parent needs.
+2. **Admin topline nav overflows at narrow widths with no affordance** — at 390px the tab row cuts off ("Cla...") with no wrap, hamburger, or scroll hint. Admin is a desktop tool so low priority, but Kelsie will open it on a phone eventually: allow horizontal scroll with a visible fade/hint, or wrap.
+3. Not-a-bug note: ISD registration page says "(times shown in Mexico City time)" — that's the QA school record's timezone, not a display bug. Real ISD gets a real timezone at import.
+
+## PL-218 — Tutor hours breakdown report (replaces the hand-built Google Calendar spreadsheet) (reported Jul 28)
+
+Scarlett built this by hand from Google Calendar (per-tutor tabs; rows = work category; columns = month; totals/averages; in-person vs online split; price/revenue). The portal already captures every input — automate it as an admin report (alongside the PL-204 term report):
+
+- **Shape:** pick a tutor (or all) + a date range → matrix of hours by **work category × month**. Categories from existing data, not a new taxonomy: 1-on-1 by `subjects.category` + subject (ACT/SAT, subject tutoring, GRE/GMAT...), class/workshop sessions as their own rows (the PL-103 timecard work-type split), consults from the leads pipeline (30-min consult entries). Row totals, monthly totals, per-row average hours/month.
+- **In-person vs online split** row (from session/engagement location), with % of total — matches the spreadsheet's Tutoring In-person/Online block.
+- **Revenue column** per category reads the SAME paid columns the QBO sync reads (PL-204 principle — can't structurally disagree). List price column from `subjects.hourly_rate` / package pricing where it applies.
+- **NO wages column** — pay rates and dollar amounts live in QBO (standing rule; portal is hours-only for pay). The spreadsheet's Wages/Difference math stays a QBO-side join; the report's CSV export should make that join easy (stable category keys, hours totals).
+- **CSV export** of the matrix so the bookkeeper/owners can do wage math in their own tools.
+- Admin-only (manager sees hours but this report carries revenue — follow the PL-204 amendment: aggregate revenue admin-only; if that makes it awkward, split an hours-only manager variant).
+- Honest-data note: report starts at portal history — pre-portal months render as empty, not zero-filled fake data. Label the range accordingly.
+
+## PL-219 — Class performance report in the portal (replaces the hand-built "Digital SAT Course Report" sheet) (reported Jul 28; platform capability — v1 + roadmap)
+
+Scarlett hand-builds a per-class report (score data, performance graphs, survey results, cover sheet). Nearly all inputs already live in the portal (student_scores w/ sections, attendance_records, enrollments, instructors). Build it as a generated, role-scoped report — never stale, no Sheets archaeology. Charts follow the portal design system (the sheet's colors/formatting are explicitly what she wants to leave behind).
+
+**v1 — per-class report, computed from live data:**
+- Score block: per-student initial vs final diagnostic by section, points gained, superscore, attendance %; class averages row. (Blank where a student skipped a test — honest data, no zero-fill.)
+- Graphs: initial vs final/superscore composite · class average section scores (initial/final) · average increase bucketed by initial score · attendance average. Dataviz per design system, readable in print.
+- **Role scoping:** counselor sees their school's classes (extends the live counselor view — same RLS); instructor sees their own classes; admin/manager see all. Per-student names visible to all three (they already see rosters/scores today) — but see the shareable variant below.
+- **Shareable/prospect variants (admin-generated, two flavors):** PDF one-pager riding the Phase 4.5 collateral machinery — (a) **anonymized**: averages, gains, distributions, testimonial-ready survey stats, no student names — for prospecting; (b) **named**: same layout with real per-student rows, for schools that prefer to see it that way (existing counselor relationship — they already see this data in the portal). Admin picks the flavor at generation; the named one is clearly labeled not-for-marketing.
+
+**v1.5 — structured post-class survey (the missing input):**
+- Today satisfaction/recommend/instructor-rating/most-useful come from a Google Form the instructor is supposed to share in class — and often doesn't. Portal survey with TWO delivery channels off one survey, and NO login for either (never the magic-link/OTP dance for a survey):
+  - **Context never asked:** the token carries class → school, instructor, class type, SAT/ACT branch. The Google Form's school/instructor/which-class questions and section-branching are deleted, not ported.
+  - **In-class:** instructor's class view carries a class-level tokenized link + QR (availability-page trick, signed, no auth). **In-class responses are always anonymous — no name picking** (a roster picker invites wrong-name pranks and leaks classmate names; decided Jul 28). Named feedback happens only via the per-student email link, which can't be faked. **QR access must be effortless in the moment:** a prominent "Show survey QR" button on the instructor's class view (surfaces automatically on/near the final session date), opening a full-screen QR + short-link display made for projecting; same button visible to admin/manager on the class.
+  - **Email:** automated after the final session regardless of the instructor, per-student pre-bound link (the ONLY named channel), one reminder to non-responders (reminder copy: "already did this in class? ignore us" — anonymous in-class responses can't be matched, accepted tradeoff).
+  - **Anonymity is honest:** in-class is anonymous structurally; on the email link a "submit anonymously" checkbox discards the student link at submission — only a responded-bit survives (for reminder suppression). Admin genuinely cannot see who.
+  - Responses land on the class, feed the report's survey block. Keep #7's Google-review ask separate (public review ≠ private feedback).
+
+**v2 — aggregate + comparison (admin/manager; comparisons ADMIN-ONLY):**
+- Aggregate across classes: avg gain by class type/school/term, attendance vs gain, survey trends — "what's working," with filters composing like PL-204. Survey data gets the SAME scoping as scores: satisfaction aggregates by instructor across classes, by school across a season, by class type.
+- **Instructor comparison admin-only** (avg score gains, satisfaction ratings, attendance side by side — one comparison surface for both scores and survey results) — it's a personnel surface; never visible to instructors or counselors.
 
 *(Still on the radar from prior sessions: the Students-header mixed-units count ("3 students" vs "Current (4)") · duplicate identical weekly slots accepted without warning · anything from the batch-21 verification pass.)*
 
