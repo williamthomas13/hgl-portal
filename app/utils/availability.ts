@@ -98,6 +98,61 @@ function spreadScore(weekdays: number[]): number {
   return min
 }
 
+/** Shared PL-147/PL-169 core: is [startsAt, endsAt) inside any of the
+ *  family's stated windows, judged on the FAMILY's wall clock? */
+function familyWindowChecker(availability: AvailabilityRange[], familyTimezone: string) {
+  const byWeekday = new Map<number, AvailabilityRange[]>()
+  for (const r of availability) byWeekday.set(r.weekday, [...(byWeekday.get(r.weekday) ?? []), r])
+  return (startsAt: Date, endsAt: Date): boolean => {
+    const wc = wallClockIn(familyTimezone, startsAt)
+    const endWc = wallClockIn(familyTimezone, endsAt)
+    // A session that crosses midnight on the family's clock can't sit inside
+    // a single weekday range.
+    if (endWc.weekday !== wc.weekday && endWc.hhmm !== '00:00') return false
+    const endHHMM = endWc.hhmm === '00:00' ? '24:00' : endWc.hhmm
+    return (byWeekday.get(wc.weekday) ?? []).some(
+      (r) => r.start_time <= wc.hhmm && endHHMM <= r.end_time
+    )
+  }
+}
+
+/**
+ * PL-169: does a weekly slot (tutor wall clock) leave the family's saved
+ * availability at any point across the horizon? Occurrence-level and judged
+ * on the STUDENT's clock (the PL-118/147 discipline) — an off-by-timezone
+ * comparison would flag correct slots and teach everyone to ignore the
+ * warning. Empty availability returns false: unknown is never "unavailable".
+ */
+export function slotOutsideAvailability(opts: {
+  slot: RecurrenceSlot
+  availability: AvailabilityRange[]
+  familyTimezone: string
+  tutorTimezone: string
+  fromIso: string // YYYY-MM-DD
+  toIso: string // YYYY-MM-DD (inclusive)
+}): boolean {
+  if (opts.availability.length === 0) return false
+  const inside = familyWindowChecker(opts.availability, opts.familyTimezone)
+  const occurrences = generateOccurrences([opts.slot], opts.fromIso, opts.toIso, opts.tutorTimezone)
+  if (occurrences.length === 0) return false
+  return occurrences.some((occ) => !inside(occ.startsAt, occ.endsAt))
+}
+
+/** PL-169: "they said: Mon 4:00–6:00 PM · Wed after 4 PM"-style quote of the
+ *  saved availability, so the mismatch is checkable at a glance. */
+export function availabilitySummary(availability: AvailabilityRange[]): string {
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const fmt = (hhmm: string) => {
+    const [h, m] = hhmm.split(':').map(Number)
+    const hr = h % 12 === 0 ? 12 : h % 12
+    return `${hr}${m ? ':' + String(m).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`
+  }
+  return [...availability]
+    .sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time))
+    .map((r) => `${DAYS[r.weekday - 1]} ${fmt(r.start_time)}–${fmt(r.end_time)}`)
+    .join(' · ')
+}
+
 /**
  * Rank weekly slot combinations for the wizard. Candidates start on tutor
  * wall-clock half-hour boundaries inside the student's availability (and the
@@ -178,17 +233,7 @@ export function suggestWeeklySlots(opts: {
   // international families). A slot fixed to the tutor's wall clock drifts
   // an hour on the family's, which is how a 4pm session becomes a 3pm
   // session the family never agreed to.
-  const insideFamilyWindow = (startsAt: Date, endsAt: Date): boolean => {
-    const wc = wallClockIn(familyTimezone, startsAt)
-    const endWc = wallClockIn(familyTimezone, endsAt)
-    // A session that crosses midnight on the family's clock can't sit inside
-    // a single weekday range.
-    if (endWc.weekday !== wc.weekday && endWc.hhmm !== '00:00') return false
-    const endHHMM = endWc.hhmm === '00:00' ? '24:00' : endWc.hhmm
-    return (byWeekday.get(wc.weekday) ?? []).some(
-      (r) => r.start_time <= wc.hhmm && endHHMM <= r.end_time
-    )
-  }
+  const insideFamilyWindow = familyWindowChecker(availability, familyTimezone)
 
   // 2. Score each candidate across the whole horizon.
   const scored = [...candidates.values()].map((slot) => {

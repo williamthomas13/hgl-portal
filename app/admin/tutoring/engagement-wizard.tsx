@@ -1,11 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { DateHint, SearchCombobox, TimeSelect } from '../ui'
 import AvailabilityGrid from '../../components/AvailabilityGrid'
 import { generateOccurrences, horizonEndIso, addDaysIso } from '../../utils/tutoring'
-import { suggestWeeklySlots, type AvailabilityRange } from '../../utils/availability'
+import {
+  availabilitySummary,
+  slotOutsideAvailability,
+  suggestWeeklySlots,
+  type AvailabilityRange,
+} from '../../utils/availability'
 import {
   WEEKDAYS,
   familyLabel,
@@ -104,8 +109,73 @@ export default function EngagementWizard({
   const [sessionsPerWeek, setSessionsPerWeek] = useState(1)
   const [durationMinutes, setDurationMinutes] = useState(60)
 
+  // PL-171: the in-progress form persists per admin (localStorage) so a
+  // phone call and a navigation away don't cost the half-built schedule.
+  // Interruptions are normal ops, not an edge case.
+  type WizardDraft = {
+    savedAt: string
+    studentId: string
+    subjectId: string
+    tutorId: string
+    rate: string
+    funding: 'monthly_billed' | 'package'
+    addonId: string
+    slots: RecurrenceSlotUI[]
+    location: string
+    locationMode: 'online' | 'in_person'
+    startDate: string
+    notes: string
+    sessionsPerWeek: number
+    durationMinutes: number
+    requireApproval: boolean
+  }
+  const DRAFT_KEY = 'hgl-schedule-wizard-draft'
+  const [draftOffer, setDraftOffer] = useState<WizardDraft | null>(null)
+  // One-shot restore values, consumed by the derived-state effects so a
+  // resumed draft's rate/location/payment aren't clobbered by their own
+  // recompute-on-change logic.
+  const restoreRef = useRef<Partial<WizardDraft> | null>(null)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw) as WizardDraft
+      if (d && (d.studentId || d.subjectId || (d.slots?.length ?? 0) > 0 || d.notes)) setDraftOffer(d)
+      else localStorage.removeItem(DRAFT_KEY)
+    } catch {
+      /* a corrupt draft is not worth an error */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const subject = subjects.find((s) => s.id === subjectId) ?? null
   const tutor = tutors.find((t) => t.id === tutorId) ?? null
+
+  function resumeDraft() {
+    const d = draftOffer
+    if (!d) return
+    restoreRef.current = { rate: d.rate, funding: d.funding, addonId: d.addonId, location: d.location }
+    setStudentId(d.studentId)
+    setSubjectId(d.subjectId)
+    setTutorId(d.tutorId)
+    setSlots(d.slots ?? [])
+    setLocationMode(d.locationMode ?? 'online')
+    setStartDate(d.startDate ?? '')
+    setNotes(d.notes ?? '')
+    setSessionsPerWeek(d.sessionsPerWeek ?? 1)
+    setDurationMinutes(d.durationMinutes ?? 60)
+    setRequireApproval(d.requireApproval ?? true)
+    setDraftOffer(null)
+  }
+
+  function discardDraft() {
+    try {
+      localStorage.removeItem(DRAFT_KEY)
+    } catch {
+      /* ignore */
+    }
+    setDraftOffer(null)
+  }
 
   // PL-76: surface a cancellation credit while proposing the first month —
   // the family's cancelled-class payment rides their Stripe balance and
@@ -252,6 +322,12 @@ export default function EngagementWizard({
 
   // Subject default rate.
   useEffect(() => {
+    // PL-171: a resumed draft's (possibly overridden) rate wins once.
+    if (restoreRef.current && 'rate' in restoreRef.current) {
+      setRate(restoreRef.current.rate ?? '')
+      delete restoreRef.current.rate
+      return
+    }
     if (subject) setRate(String(subject.hourly_rate))
   }, [subject])
 
@@ -260,9 +336,69 @@ export default function EngagementWizard({
   // in the field below (same pattern as the rate override).
   const [locationMode, setLocationMode] = useState<'online' | 'in_person'>('online')
   useEffect(() => {
+    // PL-171: a resumed draft's location wins once over the mode default.
+    if (restoreRef.current && 'location' in restoreRef.current) {
+      setLocation(restoreRef.current.location ?? '')
+      delete restoreRef.current.location
+      return
+    }
     if (locationMode === 'in_person') setLocation('Higher Ground Learning')
     else setLocation(tutor?.default_location ?? '')
   }, [tutor, locationMode])
+
+  // PL-171: debounced autosave — anything meaningful persists; a cleared
+  // form clears the draft. Paused while a resume offer is on screen so the
+  // empty form doesn't overwrite the very draft being offered.
+  useEffect(() => {
+    if (draftOffer) return
+    const t = setTimeout(() => {
+      const meaningful = studentId || subjectId || slots.length > 0 || notes.trim()
+      try {
+        if (meaningful) {
+          const draft: WizardDraft = {
+            savedAt: new Date().toISOString(),
+            studentId,
+            subjectId,
+            tutorId,
+            rate,
+            funding,
+            addonId,
+            slots,
+            location,
+            locationMode,
+            startDate,
+            notes,
+            sessionsPerWeek,
+            durationMinutes,
+            requireApproval,
+          }
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+        } else {
+          localStorage.removeItem(DRAFT_KEY)
+        }
+      } catch {
+        /* storage full/blocked — autosave is best-effort */
+      }
+    }, 600)
+    return () => clearTimeout(t)
+  }, [
+    draftOffer,
+    studentId,
+    subjectId,
+    tutorId,
+    rate,
+    funding,
+    addonId,
+    slots,
+    location,
+    locationMode,
+    startDate,
+    notes,
+    sessionsPerWeek,
+    durationMinutes,
+    requireApproval,
+  ])
+
 
   // PL-170: package options for the picked student's FAMILY (a sibling's
   // unused package is still the family's prepaid money), with hours remaining
@@ -344,6 +480,27 @@ export default function EngagementWizard({
       // "Sitting unused" = hours on packages no live schedule is consuming.
       const usable = options.filter((o) => o.remaining > 0 && !o.attachedTo)
       setFamilyUnusedHours(usable.reduce((sum, o) => sum + o.remaining, 0))
+      // PL-171: a resumed draft's payment choice wins once — but only while
+      // still valid for this student (the addon must exist and be usable);
+      // anything invalidated falls through to the PL-170 defaults, which the
+      // payment section shows rather than silently keeping stale state.
+      const restore = restoreRef.current
+      if (restore && ('funding' in restore || 'addonId' in restore)) {
+        const wantFunding = restore.funding
+        const wantAddon = restore.addonId
+        delete restore.funding
+        delete restore.addonId
+        if (wantFunding === 'monthly_billed') {
+          setFunding('monthly_billed')
+          return
+        }
+        if (wantFunding === 'package' && wantAddon && usable.some((o) => o.id === wantAddon)) {
+          setFunding('package')
+          setAddonId(wantAddon)
+          return
+        }
+        // fall through: the drafted package no longer fits this student.
+      }
       if (usable.length > 0) {
         setFunding('package')
         if (usable.length === 1) setAddonId(usable[0].id)
@@ -553,6 +710,36 @@ export default function EngagementWizard({
     setSlots((s) => s.map((slot, j) => (j === i ? { ...slot, ...patch } : slot)))
   }
 
+  // PL-169: a slot outside the family's saved availability gets flagged —
+  // inline on the row and again at submit. Warn, never block (things change,
+  // phone agreements happen), but never silent either: silence defeats the
+  // point of collecting availability. Compared occurrence-by-occurrence on
+  // the STUDENT's clock (PL-118/147 discipline). No availability on file →
+  // no flags (unknown is not "unavailable").
+  const outsideSlots = useMemo(() => {
+    if (!tutor || availability.length === 0) return new Set<number>()
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tutor.timezone })
+    const from = startDate && startDate > today ? startDate : today
+    const to = horizonEndIso(tutor.timezone)
+    const out = new Set<number>()
+    slots.forEach((slot, i) => {
+      if (
+        slotOutsideAvailability({
+          slot,
+          availability,
+          familyTimezone: availabilityTz,
+          tutorTimezone: tutor.timezone,
+          fromIso: from,
+          toIso: to,
+        })
+      ) {
+        out.add(i)
+      }
+    })
+    return out
+  }, [tutor, availability, availabilityTz, slots, startDate])
+  const availabilityQuote = useMemo(() => availabilitySummary(availability), [availability])
+
   // PL-153a: two weekly slots that overlap on the same weekday produce a
   // double-booked tutor AND a double-billed family — every generated
   // occurrence bills twice for one hour of teaching. The wizard names the
@@ -622,6 +809,12 @@ export default function EngagementWizard({
       setTutorId('')
       setSlots([])
       setNotes('')
+      // PL-171: a created schedule is a finished draft.
+      try {
+        localStorage.removeItem(DRAFT_KEY)
+      } catch {
+        /* ignore */
+      }
       onCreated()
     }
     } catch {
@@ -649,6 +842,35 @@ export default function EngagementWizard({
 
   return (
     <div className="space-y-5 text-sm">
+      {/* PL-171: resume offer — a half-built schedule survives phone calls
+          and navigation; resuming is one click, discarding explicit. */}
+      {draftOffer && (
+        <div className="p-3 rounded bg-blue-50 border border-blue-200 flex flex-wrap items-center gap-3">
+          <span className="text-hgl-slate">
+            You have an unfinished schedule from{' '}
+            <strong>
+              {new Date(draftOffer.savedAt).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </strong>
+            {(() => {
+              const s = students.find((x) => x.id === draftOffer.studentId)
+              return s ? ` (${s.first_name} ${s.last_name})` : ''
+            })()}
+            . Resume it?
+          </span>
+          <button onClick={resumeDraft} className="bg-hgl-slate text-white text-xs font-bold py-1.5 px-3 rounded hover:opacity-90">
+            Resume draft
+          </button>
+          <button onClick={discardDraft} className="text-xs text-gray-500 underline">
+            Discard
+          </button>
+        </div>
+      )}
+
       {/* 1. Student — typeahead (PL-21: a plain dropdown won't scale) */}
       <div>
         <label className="block text-xs text-gray-600 font-semibold mb-1">1 · Student</label>
@@ -942,29 +1164,37 @@ export default function EngagementWizard({
         )}
 
         {slots.map((slot, i) => (
-          <div key={i} className="flex items-center gap-2 mb-2">
-            <select
-              value={slot.weekday}
-              onChange={(e) => setSlot(i, { weekday: Number(e.target.value) })}
-              className="border border-gray-300 rounded p-1 bg-white"
-            >
-              {WEEKDAYS.map((d, j) => (
-                <option key={d} value={j + 1}>{d}</option>
-              ))}
-            </select>
-            <TimeSelect value={slot.start_time} onChange={(v) => setSlot(i, { start_time: v || '16:00' })} />
-            <select
-              value={slot.duration_minutes}
-              onChange={(e) => setSlot(i, { duration_minutes: Number(e.target.value) })}
-              className="border border-gray-300 rounded p-1 bg-white"
-            >
-              {[30, 45, 60, 90, 120, 150, 180].map((m) => (
-                <option key={m} value={m}>{m} min</option>
-              ))}
-            </select>
-            <button onClick={() => setSlots((s) => s.filter((_, j) => j !== i))} className="text-red-600 text-xs underline">
-              remove
-            </button>
+          <div key={i} className="mb-2">
+            <div className="flex items-center gap-2">
+              <select
+                value={slot.weekday}
+                onChange={(e) => setSlot(i, { weekday: Number(e.target.value) })}
+                className="border border-gray-300 rounded p-1 bg-white"
+              >
+                {WEEKDAYS.map((d, j) => (
+                  <option key={d} value={j + 1}>{d}</option>
+                ))}
+              </select>
+              <TimeSelect value={slot.start_time} onChange={(v) => setSlot(i, { start_time: v || '16:00' })} />
+              <select
+                value={slot.duration_minutes}
+                onChange={(e) => setSlot(i, { duration_minutes: Number(e.target.value) })}
+                className="border border-gray-300 rounded p-1 bg-white"
+              >
+                {[30, 45, 60, 90, 120, 150, 180].map((m) => (
+                  <option key={m} value={m}>{m} min</option>
+                ))}
+              </select>
+              <button onClick={() => setSlots((s) => s.filter((_, j) => j !== i))} className="text-red-600 text-xs underline">
+                remove
+              </button>
+            </div>
+            {/* PL-169: the inline flag quotes what the family actually said. */}
+            {outsideSlots.has(i) && (
+              <p className="text-xs text-amber-800 mt-0.5">
+                ⚠ Outside the family&apos;s saved availability (they said: {availabilityQuote})
+              </p>
+            )}
           </div>
         ))}
         <button onClick={addSlot} className="text-hgl-blue text-xs underline">
@@ -1169,6 +1399,28 @@ export default function EngagementWizard({
           {slots.length} weekly slot{slots.length === 1 ? '' : 's'}
           {' — '}that&apos;s fine if intentional.
         </p>
+      )}
+
+      {/* PL-169: submit-time summary of the flagged slots — availability may
+          be stale; proceeding is a human call, but never an accident. */}
+      {outsideSlots.size > 0 && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded p-2">
+          <span className="font-semibold">
+            {outsideSlots.size === 1 ? 'One weekly slot sits' : `${outsideSlots.size} weekly slots sit`}{' '}
+            outside the family&apos;s saved availability
+          </span>{' '}
+          (they said: {availabilityQuote}):
+          <ul className="mt-1 ml-4 list-disc">
+            {[...outsideSlots].map((i) => (
+              <li key={i}>
+                {WEEKDAYS[slots[i].weekday - 1]} {fmtHHMM(slots[i].start_time)} ·{' '}
+                {slots[i].duration_minutes} min
+              </li>
+            ))}
+          </ul>
+          You can still create the schedule — availability goes stale and phone agreements happen —
+          just make sure it&apos;s on purpose.
+        </div>
       )}
 
       <button
