@@ -1197,11 +1197,12 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       '<p>After 5 attempts, the Sales Receipt for Stripe payment <code>pi_3SampleQboFail01</code> (enrollment <code>00000000-0000-4000-8000-000000000000</code>) could not be created in QuickBooks.</p><p>Last error: <code>Business Validation Error: Duplicate Document Number Error : You must specify a different number.</code></p><p>The books are missing this transaction until it\'s fixed and retried.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?qbo=00000000-0000-4000-8000-000000000004" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fix &amp; retry this sync</a></p><p><a href="https://dashboard.stripe.com/test/payments/pi_3SampleQboFail01" style="color:#00AEEE">The Stripe payment</a> · <a href="https://hgl-portal.vercel.app/admin/communications?enrollment=00000000-0000-4000-8000-000000000000" style="color:#00AEEE">the enrollment record</a></p>',
   },
-  // tutoring-billing cycle: {alertCounts} is a PLAIN NUMBER in this subject —
-  // the shared class-counts ticker read "3 enrolled / 8 min / 15 cap tutoring
-  // families billed…", which is the exact bug PL-82 exists to kill.
+  // tutoring-billing cycle: {alertCounts} is the WHOLE noun phrase here
+  // ("2 tutoring families") — PL-216 moved the noun into the variable so the
+  // subject's plural always matches the count ("1 tutoring family"). The
+  // shared class-counts ticker must never leak in (the PL-82 bug).
   AL_UNAGREED: {
-    alertCounts: '2',
+    alertCounts: '2 tutoring families',
     alertDetailsBlock:
       '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Alex García</a> (sample-parent@example.com)</li><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Jordan Lee</a> (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">the agreements panel</a> — each name above lands on that family\'s row.</p>',
   },

@@ -44,9 +44,13 @@ Portal discovery today is only deep-links inside task emails (#0 "View your regi
 
 Current subtext: "These also live on your Google Calendar — reschedules and cancellations go through the office, and both places update automatically." Change "the office" to the Ops Director's actual name pulled from settings (currently Kelsie) — not hard-coded — and "both places" to "your portal and Google Calendar." E.g.: "...reschedules and cancellations go through {opsDirectorFirstName}, and your portal and Google Calendar both update automatically." File: `app/portal/tutor-view.tsx`.
 
+**✅ SHIPPED (Jul 28).** The header now reads "…reschedules and cancellations go through {first name}, and your portal and Google Calendar both update automatically." The name is the first word of `contact_name` from app_settings (the PL-123 role record the contact-settings panel edits — same source every email's contact block uses), so changing the Ops Director in Settings changes this line too. If `contact_name` is unset, the copy falls back to "the office" rather than splitting the office-fallback string into a fake first name.
+
 ## PL-210 — Join buttons only live near session time (reported Jul 28)
 
 Every session with a meeting-URL location currently shows an enabled Join button, even a week out — noise, and invites mis-clicks. Make Join active only within ~30 minutes of the session on either side (30 min before start through 30 min after end, or after start +30 — Code's call, say which). Outside the window, either hide the button or show a muted/disabled state so the tutor still knows it's an online session (muted state preferred — the online/in-person distinction is information). File: `app/portal/upcoming-sessions.tsx` (client component — window check can be client-side; no security concern, the URL is already the tutor's).
+
+**✅ SHIPPED (Jul 28).** Window chosen: **30 minutes before start through 30 minutes after end** (covers a session that runs long without reviving week-old links). Outside the window the button renders muted ("Join · online", gray, with a hover note "The Join link goes live 30 minutes before the session") so the online/in-person distinction stays visible. The check re-evaluates every 60 seconds while the page is open, so a tutor who loaded the portal an hour early sees the button go live on its own — no reload.
 
 ## PL-211 — Warn when an engagement is scheduled with no location anywhere (reported Jul 28)
 
@@ -85,10 +89,14 @@ Audience test applies throughout; samples through the real composer; CS is trans
 
 The campaigns unsubscribe page (PL-201) renders "billy@highergroundlearning.comwill stop receiving offers..." — bold email address runs straight into "will". Add the space (and check the confirmation state + one-click POST result page for the same join).
 
+**✅ SHIPPED (Jul 28).** Both page states fixed with explicit `{' '}` and verified rendering in the browser ("billy@highergroundlearning.com will stop…" / "…com won't receive…"). The one-click POST endpoint returns JSON to the mail client (RFC 8058 — no visible page), so there was nothing to fix there. **Root cause pinned down with a probe page:** this Next version's compiler eats the boundary space after an inline element when the following text chunk continues onto the next source line AND the JSX sits inside a fragment/conditional branch — same-line-only chunks and top-level elements keep their space (this sharpens the batch-16 "JSX eats inline-boundary spaces" lesson). A mechanical sweep then found 24 more at-risk joins (`</strong> text…`-continuing-to-next-line) across parent-facing pages — agreement accepted, intake thanks, autopay on, waitlist decline, reschedule fee note, register waitlist position, and admin panels — all rewritten to the explicit `{' '}` form (byte-identical render where the space already survived, fixes any that were silently joined).
+
 ## PL-216 — Two copy nits from the PL-200 sentinel run (reported Jul 28)
 
 1. **Degenerate T1 period label:** when the mid-month remainder is a single day, T1's subject/label reads "QA's tutoring schedule for July 31–31". Collapse start==end ranges to just "July 31" (and generally "July 29–31" style stays for real ranges).
 2. **Plural bug in the billed-without-agreement admin alert:** AL subject reads "[HGL Admin] 1 tutoring families billed without a signed agreement" — singular/plural the count ("1 tutoring family" / "2 tutoring families"). Sweep sibling alerts for the same countable-noun pattern.
+
+**✅ SHIPPED (Jul 28).** (1) A one-day mid-month remainder now labels "July 31", real ranges keep "July 29–31" (fix in the generation label builder, so subject, body, and {tutoringMonthLabel} all agree). (2) The plural came from the registry template — the code twin already pluralized, but live AL_UNAGREED's subject hard-coded "tutoring families" around a bare number. Fixed structurally: the noun phrase moved INTO the variable ({alertCounts} = "1 tutoring family" / "2 tutoring families") so subject and count can never disagree — **AL_UNAGREED v2 published (live, `scripts/seed-pl216-al-unagreed.mjs`)**, caller + per-template sample updated. Sweep: every other count-bearing alert subject uses phrase variables ({digestCountsSummary}, {scheduleChangeCountPhrase}, ticker-style {alertCounts}) or already pluralizes; one more real case found and fixed — the generation-failure alert could read "0 of 1 families completed" (now "family").
 
 ## PL-217 — Phone-width + a11y pass findings (Jul 28 pass; all minor, parent surfaces held up well)
 

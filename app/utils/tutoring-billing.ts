@@ -600,7 +600,12 @@ export async function generateMonthlyCycle(
         )
       )
       if (Number.isFinite(firstDayNum) && firstDayNum > 1) {
-        monthLabel = `${month.label.split(' ')[0]} ${firstDayNum}–${Number(month.lastDay.slice(8, 10))}`
+        // PL-216: a one-day remainder reads "July 31", never "July 31–31".
+        const lastDayNum = Number(month.lastDay.slice(8, 10))
+        monthLabel =
+          firstDayNum === lastDayNum
+            ? `${month.label.split(' ')[0]} ${firstDayNum}`
+            : `${month.label.split(' ')[0]} ${firstDayNum}–${lastDayNum}`
       }
     }
 
@@ -717,7 +722,7 @@ export async function generateMonthlyCycle(
       // persists into tomorrow alerts again.
       dedupeKey: `tutoring_gen_failures:${month.period}:${dayStamp}`,
       adminEmail: ADMIN_EMAIL,
-      subject: `Monthly tutoring generation: ${result.families} of ${total} families completed — ${failedFamilies.size} failed`,
+      subject: `Monthly tutoring generation: ${result.families} of ${total} famil${total === 1 ? 'y' : 'ies'} completed — ${failedFamilies.size} failed`,
       body: `<p>The ${month.label} billing cycle generated ${result.families} of ${total} families.
         These families failed and will be retried automatically on the next hourly sweep
         (nobody else was affected — each family generates independently):</p>
@@ -734,7 +739,12 @@ export async function generateMonthlyCycle(
       dedupeKey: `unagreed_families:${month.period}`,
       adminEmail: ADMIN_EMAIL,
       templateKey: 'AL_UNAGREED',
-      vars: { alertCounts: String(unagreedFamilies.length) },
+      // PL-216: the variable carries the WHOLE noun phrase ("1 tutoring
+      // family" / "2 tutoring families") so the template subject can't
+      // mismatch the count's plural.
+      vars: {
+        alertCounts: `${unagreedFamilies.length} tutoring famil${unagreedFamilies.length === 1 ? 'y' : 'ies'}`,
+      },
       subject: `${unagreedFamilies.length} tutoring famil${unagreedFamilies.length === 1 ? 'y' : 'ies'} billed without a signed policy agreement`,
       body: `<p>The ${month.label} cycle just proposed invoices for families with no accepted
         scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p>

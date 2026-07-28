@@ -1519,7 +1519,7 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     audience: 'parent',
     from_identity: 'info',
     category: 'transactional',
-    subject: '{alertCounts} tutoring families billed without a signed policy agreement',
+    subject: '{alertCounts} billed without a signed policy agreement',
     preheader: 'Invoicing proceeded — chase these.',
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,
