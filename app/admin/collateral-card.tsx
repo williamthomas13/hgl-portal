@@ -152,7 +152,7 @@ export default function CollateralCard({
       {/* PL-15: the urgency date on the printed pieces is deliberately the
           EARLY commit-by date, not when registration actually closes. */}
       <p className="text-xs text-gray-500 mb-3">
-        The flyer prints the <strong>enrollment deadline</strong> (your commit-by date, set on the
+        The flyer prints the <strong>enrollment deadline</strong>{' '}(your commit-by date, set on the
         class), not the registration close date — registration can stay open later.
       </p>
 
@@ -298,7 +298,7 @@ export default function CollateralCard({
       </div>
 
       <p className="text-xs text-gray-500 mt-2">
-        The discount itself is a <strong>Stripe promotion code</strong> — create the matching code
+        The discount itself is a <strong>Stripe promotion code</strong>{' '}— create the matching code
         in the Stripe dashboard (checkout accepts codes automatically). These fields only put the
         offer on the flyer &amp; letter; all three must be set for it to appear.
         {promoPartial && (

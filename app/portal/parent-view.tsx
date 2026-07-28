@@ -227,7 +227,7 @@ export default async function ParentView({
                 </p>
                 <p className="text-sm opacity-90 mt-1">
                   {clsSchool?.name ?? ''} — first up: the diagnostic test, due{' '}
-                  <strong>{formatDate(diagnosticDue.toISOString().slice(0, 10))}</strong> (the day
+                  <strong>{formatDate(diagnosticDue.toISOString().slice(0, 10))}</strong>{' '}(the day
                   before class).
                 </p>
               </>

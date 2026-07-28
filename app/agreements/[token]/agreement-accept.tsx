@@ -46,7 +46,7 @@ export default function AgreementAccept({
   if (done) {
     return (
       <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-        <strong>Accepted — thank you!</strong> We&apos;ve recorded your acceptance and keep a copy
+        <strong>Accepted — thank you!</strong>{' '}We&apos;ve recorded your acceptance and keep a copy
         of the exact text; you can request it any time.
       </div>
     )

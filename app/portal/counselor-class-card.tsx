@@ -108,7 +108,7 @@ base: string
             )}
           </div>
           <p className="text-xs text-gray-600 leading-relaxed">
-            <strong>How to share these materials:</strong> The flyer works well on bulletin
+            <strong>How to share these materials:</strong>{' '}The flyer works well on bulletin
             boards, hallway screens, and in student newsletters (use the JPG for screens and
             digital, the PDF for printing). The letter is written for parents — forward it in
             your parent communications or print it for distribution. Both always reflect the

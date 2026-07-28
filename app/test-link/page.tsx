@@ -7,7 +7,7 @@ import { PublicNoticeCard } from '../components/PublicNotice'
 export default function TestLinkPage() {
   return (
     <PublicNoticeCard title="This was a sample link">
-      You clicked a link in a <strong>test email</strong> — in a real send, this button links the
+      You clicked a link in a <strong>test email</strong>{' '}— in a real send, this button links the
       family to their own page (their registration, schedule, invoice, and so on). Nothing has
       happened, and there&apos;s nothing to do here. If you got this from a real email and expected
       it to work, just reply to that email and a real human will sort it out.

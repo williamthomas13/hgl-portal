@@ -179,7 +179,7 @@ export default function InvoicesPanel() {
       {/* PL-162: lead with trust — the automation is the workflow; the
           off-cycle controls live in a collapsed disclosure at the bottom. */}
       <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-3">
-        <span className="font-semibold text-gray-600">Billing runs itself:</span> proposals
+        <span className="font-semibold text-gray-600">Billing runs itself:</span>{' '}proposals
         generate on the {generateDayLabel(generateDay)} of each month, and nudges, auto-confirm,
         and collections run every morning. You only need the controls at the bottom of this panel
         to avoid waiting for tomorrow&apos;s run.

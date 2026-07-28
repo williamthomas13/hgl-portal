@@ -250,7 +250,7 @@ function IntlCalendarSection() {
         light green online · red cancelled — cancelled recolors, never deletes). The cutover is
         THREE separate acts: <strong>1)</strong> save the calendar id (changes nothing),{' '}
         <strong>2)</strong> run &ldquo;adopt hand-made events&rdquo; once and check its report,{' '}
-        <strong>3)</strong> press Enable — only then do the daily sweep and sync-now write to the
+        <strong>3)</strong>{' '}press Enable — only then do the daily sweep and sync-now write to the
         calendar. Hand edits are reported by the drift audit, never overwritten.
       </p>
       <div className="flex flex-wrap items-center gap-2">

@@ -55,7 +55,7 @@ export default async function AutopayPage({
           <h1 className="text-2xl font-bold text-hgl-slate mb-4">Tutoring autopay</h1>
           {justFinished || active ? (
             <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-              <strong>Autopay is on.</strong> Each month, once you&apos;ve confirmed the schedule
+              <strong>Autopay is on.</strong>{' '}Each month, once you&apos;ve confirmed the schedule
               (or it auto-confirms), the invoice charges your saved payment method automatically and
               you get a receipt by email. To change or remove the saved method, just get in touch.
             </div>
@@ -68,7 +68,7 @@ export default async function AutopayPage({
               <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1 mb-5">
                 <li>
                   You&apos;ll still get the schedule to review each month — <strong>nothing is
-                  charged before the month is confirmed</strong> (by you, or automatically after the
+                  charged before the month is confirmed</strong>{' '}(by you, or automatically after the
                   review window).
                 </li>
                 <li>The charge equals the invoice total, and you get a receipt every time.</li>

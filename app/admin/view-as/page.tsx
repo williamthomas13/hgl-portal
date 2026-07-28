@@ -222,7 +222,7 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
                 rule refuses the write regardless of the screen).
               </p>
               <p className="text-gray-500">
-                On pay: the portal stores pay-type <strong>titles</strong> and <strong>hours</strong> only
+                On pay: the portal stores pay-type <strong>titles</strong>{' '}and <strong>hours</strong>{' '}only
                 — no rates, no dollar amounts, for anyone. What a manager sees on a timecard is
                 exactly what you see below. Family <em>billing</em>{' '}amounts stay visible to
                 managers by design (that&apos;s invoicing, not payroll).

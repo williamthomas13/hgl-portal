@@ -282,7 +282,7 @@ function VersionsPanel({
       ) : (
         <div className="space-y-3 border border-gray-200 rounded-lg p-4 bg-gray-50">
           <p className="text-sm text-gray-600">
-            Publishing creates <strong>v{(templates[0]?.version ?? 0) + 1}</strong> and makes it the
+            Publishing creates <strong>v{(templates[0]?.version ?? 0) + 1}</strong>{' '}and makes it the
             version new acceptances pin to. Existing acceptances stay valid records of the text
             their version contained — use the &quot;Send updated policy&quot; buttons above to ask
             families to re-accept.

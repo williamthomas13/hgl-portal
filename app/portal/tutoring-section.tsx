@@ -405,7 +405,7 @@ export default async function TutoringSection({ email }: { email: string }) {
           <p className="text-xs text-gray-500 mt-2">
             {family.autopay && family.stripe_payment_method_id ? (
               <>
-                Autopay is <strong className="text-green-700">on</strong> — confirmed months charge your
+                Autopay is <strong className="text-green-700">on</strong>{' '}— confirmed months charge your
                 saved payment method automatically.{' '}
                 <a href={`/tutoring/autopay/${autopayToken(family.id)}`} className="text-hgl-blue underline">
                   Manage

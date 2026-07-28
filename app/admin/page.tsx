@@ -1563,7 +1563,7 @@ export default function AdminDashboard() {
             <>
               {wizardPrefill && (
                 <p className="mb-4 text-sm bg-blue-50 text-hgl-slate border border-blue-200 rounded p-3">
-                  Pre-filled from <strong>{wizardSourceLabel}</strong> — everything below is
+                  Pre-filled from <strong>{wizardSourceLabel}</strong>{' '}— everything below is
                   editable, and the source class is unaffected.{' '}
                   <button onClick={resetWizardToBlank} className="underline text-hgl-blue">
                     Start blank instead

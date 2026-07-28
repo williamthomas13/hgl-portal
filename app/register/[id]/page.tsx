@@ -450,7 +450,7 @@ export default function RegistrationPage() {
         <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
           <h1 className="text-2xl font-bold text-hgl-slate mb-4">You&apos;re on the waitlist</h1>
           <p className="text-gray-700">
-            You&apos;re <strong>#{waitlistPosition}</strong> in line for {classLabel}.
+            You&apos;re <strong>#{waitlistPosition}</strong>{' '}in line for {classLabel}.
             We&apos;ve emailed you a
             confirmation. If a spot opens, you&apos;ll get a payment link with 48 hours to claim it.
           </p>

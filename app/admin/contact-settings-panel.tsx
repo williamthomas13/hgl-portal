@@ -139,7 +139,7 @@ export default function ContactSettingsPanel() {
           <h3 className="text-sm font-bold text-hgl-slate mb-1">Sending identities</h3>
           <p className="text-xs text-gray-500 mb-3">
             Every address the system sends email as. Editing one switches the From line of all its
-            future sends immediately. What does <span className="font-semibold">not</span> change:
+            future sends immediately. What does <span className="font-semibold">not</span>{' '}change:
             an address on a brand-new domain can&apos;t send until that domain is verified in
             Resend, and replies keep going wherever the address&apos;s inbox actually lives.
           </p>

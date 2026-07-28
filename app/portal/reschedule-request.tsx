@@ -205,7 +205,7 @@ export default function RescheduleRequest({
       {late ? (
         <span className="block text-amber-800">
           This session is less than 24 hours away, so per our scheduling policy a change carries a{' '}
-          <strong>$40/hour reschedule fee</strong> (the tutor is already booked for the slot). Send
+          <strong>$40/hour reschedule fee</strong>{' '}(the tutor is already booked for the slot). Send
           the request anyway and we&apos;ll sort out the details — emergencies are always our call to
           make together, so don&apos;t hesitate to get in touch.
         </span>

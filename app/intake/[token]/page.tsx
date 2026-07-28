@@ -68,7 +68,7 @@ export default async function IntakePage({ params }: { params: Promise<{ token: 
           </h1>
           {alreadyDone ? (
             <div className="mt-4 p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-              <strong>We already have your answers — thank you!</strong> Nothing more to do
+              <strong>We already have your answers — thank you!</strong>{' '}Nothing more to do
               here. If something has changed, email {contact.email}{' or call '} {contact.phone}{' and '}
               we&apos;ll update it for you.
             </div>

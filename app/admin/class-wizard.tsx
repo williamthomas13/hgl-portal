@@ -690,7 +690,7 @@ export default function ClassWizard({
             )}
             {school && (
               <p className="text-xs text-gray-500 mt-1">
-                Timezone: <span className="font-semibold">{school.timezone}</span> (from the
+                Timezone: <span className="font-semibold">{school.timezone}</span>{' '}(from the
                 school record — class times are school-local)
               </p>
             )}
@@ -993,7 +993,7 @@ export default function ClassWizard({
         <div>
           {school && (
             <p className="text-xs text-gray-500 mb-3">
-              All times in <span className="font-semibold">{school.timezone}</span> (from the
+              All times in <span className="font-semibold">{school.timezone}</span>{' '}(from the
               school record, read-only)
             </p>
           )}

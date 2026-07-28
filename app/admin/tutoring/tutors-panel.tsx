@@ -237,7 +237,7 @@ function TutorEditor({
             Subjects{' '}
             <span className="font-normal text-gray-400">
               — click to cycle: <span className="font-semibold text-hgl-slate">ready</span> →{' '}
-              <span className="font-semibold text-amber-700">with prep, confirm first</span> → off.
+              <span className="font-semibold text-amber-700">with prep, confirm first</span>{' '}→ off.
               Ready subjects auto-match in the wizard; with-prep ones never do.
             </span>
           </label>

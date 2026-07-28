@@ -66,7 +66,7 @@ export default async function ConfirmSchedulePage({
   const body =
     result === 'slot_taken' && !alreadyActive ? (
       <div className="p-4 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm">
-        <strong>That time was just taken.</strong> Another family confirmed an overlapping time a
+        <strong>That time was just taken.</strong>{' '}Another family confirmed an overlapping time a
         moment before you — nothing is locked in for {e.studentFirst} yet, and nothing is your
         fault. We&apos;ve been notified and will send you fresh times to pick from shortly; if
         you&apos;d like to talk it through sooner, just reply to our email or give us a call.

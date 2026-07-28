@@ -42,7 +42,7 @@ export default function DeclineConfirm({
   if (state === 'done') {
     return (
       <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-        <strong>Done — the spot is released.</strong> The next family in line is being offered it
+        <strong>Done — the spot is released.</strong>{' '}The next family in line is being offered it
         right now. You&apos;re still on our list for the next {classLabel} course. Thanks for
         letting us know!
       </div>

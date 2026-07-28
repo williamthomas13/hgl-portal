@@ -41,7 +41,8 @@ export default async function UnsubscribePage({
           <>
             <h1 className="text-xl font-bold text-hgl-slate mb-2">You&apos;re unsubscribed</h1>
             <p className="text-sm text-gray-600">
-              <strong>{email}</strong> won&apos;t receive offers or announcements from us anymore.
+              {/* PL-215: {' '} — the compiler eats a bare inline-boundary space (batch-16 lesson). */}
+              <strong>{email}</strong>{' '}won&apos;t receive offers or announcements from us anymore.
               Emails about your own schedule, invoices, and receipts still arrive — those aren&apos;t
               marketing.
             </p>
@@ -50,7 +51,7 @@ export default async function UnsubscribePage({
           <>
             <h1 className="text-xl font-bold text-hgl-slate mb-2">Unsubscribe from offers?</h1>
             <p className="text-sm text-gray-600 mb-4">
-              <strong>{email}</strong> will stop receiving offers and announcements. Emails about
+              <strong>{email}</strong>{' '}will stop receiving offers and announcements. Emails about
               your own schedule, invoices, and receipts aren&apos;t affected.
             </p>
             <form action={unsubscribe}>

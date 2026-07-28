@@ -42,7 +42,7 @@ export default function RequestForm({
   if (done) {
     return (
       <p className="text-sm bg-green-50 text-green-800 rounded p-3">
-        Perfect — <strong>{answer}</strong> is now on the class calendar and in every reminder
+        Perfect — <strong>{answer}</strong>{' '}is now on the class calendar and in every reminder
         email. Thanks for the ten seconds!
       </p>
     )
