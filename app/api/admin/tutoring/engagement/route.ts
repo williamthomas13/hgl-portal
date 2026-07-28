@@ -44,6 +44,8 @@ type CreateBody = {
   require_approval?: boolean
   /** PL-197: the caller saw the overdraw warning and chose to proceed. */
   confirm_overdraw?: boolean
+  /** PL-211: the caller saw the no-location warning and chose to proceed. */
+  confirm_no_location?: boolean
 }
 
 type UpdateBody = {
@@ -62,6 +64,8 @@ type UpdateBody = {
   regenerate?: boolean
   /** PL-197: the caller saw the overdraw warning and chose to proceed. */
   confirm_overdraw?: boolean
+  /** PL-211: the caller saw the no-location warning and chose to proceed. */
+  confirm_no_location?: boolean
 }
 
 type Body =
@@ -347,6 +351,24 @@ export async function POST(req: Request) {
           }
         }
       }
+      // PL-211: no engagement location AND no tutor default means the tutor
+      // and family will never see where/how to meet — on any surface (rows,
+      // ICS, PDF schedules). Never blocked (a genuine TBD is legitimate),
+      // but the admin must walk past it deliberately, and the dashboard
+      // carries a Needs Attention row until a location lands somewhere.
+      if (body.confirm_no_location !== true && !(body.location ?? '').trim()) {
+        const { data: tut } = await supabase
+          .from('instructors')
+          .select('name, default_meeting_link')
+          .eq('id', tutor_id)
+          .maybeSingle()
+        if (!tut?.default_meeting_link?.trim()) {
+          return NextResponse.json(
+            { needsLocationConfirm: true, tutorName: tut?.name ?? 'the tutor' },
+            { status: 409 }
+          )
+        }
+      }
       // PL-41: default ON — the parent confirms before anything locks in.
       // OFF is Kelsie's explicit override (schedule already agreed by phone).
       const requireApproval = body.require_approval !== false
@@ -543,6 +565,34 @@ export async function POST(req: Request) {
               { status: 409 }
             )
           }
+        }
+      }
+
+      // PL-211: an edit that leaves the location empty gets the same
+      // deliberate walk-past as create (only when the edit touches location —
+      // the dashboard row owns the standing "still missing" state).
+      if (
+        body.location !== undefined &&
+        !(body.location ?? '').trim() &&
+        body.confirm_no_location !== true
+      ) {
+        const { data: cur } = await supabase
+          .from('tutoring_engagements')
+          .select('tutor_id')
+          .eq('id', body.id)
+          .maybeSingle()
+        const { data: tut } = cur
+          ? await supabase
+              .from('instructors')
+              .select('name, default_meeting_link')
+              .eq('id', cur.tutor_id)
+              .maybeSingle()
+          : { data: null }
+        if (!tut?.default_meeting_link?.trim()) {
+          return NextResponse.json(
+            { needsLocationConfirm: true, tutorName: tut?.name ?? 'the tutor' },
+            { status: 409 }
+          )
         }
       }
 

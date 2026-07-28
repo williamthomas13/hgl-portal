@@ -148,6 +148,21 @@ export default function EngagementsPanel({
       setMessage('Nothing changed — adjust the schedule or talk to the family first.')
       return
     }
+    // PL-211: an edit that clears the location gets the same walk-past.
+    if (json.needsLocationConfirm) {
+      setBusyId('')
+      if (
+        window.confirm(
+          `No location set — this schedule has no location and ${json.tutorName} has no default meeting ` +
+            `link, so the tutor and family won't see where or how to meet. It will sit in Needs Attention ` +
+            `until one is set.\n\nSave anyway?`
+        )
+      ) {
+        return update(id, { ...body, confirm_no_location: true }, done)
+      }
+      setMessage('Nothing changed — add a location, or set a default meeting link on the tutor.')
+      return
+    }
     setMessage(res.ok ? (typeof done === 'function' ? done(json) : done) : 'Error: ' + json.error)
     setBusyId('')
     if (res.ok) onChange()

@@ -518,6 +518,41 @@ export async function GET() {
     }
   }
 
+  // PL-211: a live schedule with no location ANYWHERE — engagement location
+  // empty and the tutor has no default meeting link — means every surface
+  // (tutor rows, ICS, PDF schedule) is silent about where to meet.
+  // State-driven: setting the engagement location, giving the tutor a
+  // default, or ending/pausing the schedule clears the row on its own.
+  try {
+    const { data: locEngs } = await supabase
+      .from('tutoring_engagements')
+      .select(
+        `id, location, created_at, status,
+         students ( first_name, last_name, family_id ),
+         instructors ( name, default_meeting_link ),
+         subjects ( name )`
+      )
+      .in('status', ['active', 'pending_parent_confirmation'])
+    for (const e of (locEngs as any[]) ?? []) {
+      if ((e.location ?? '').trim()) continue
+      const tut = one<any>(e.instructors)
+      if ((tut?.default_meeting_link ?? '').trim()) continue
+      const stu = one<any>(e.students)
+      if (!stu) continue
+      attention.push({
+        id: `no-location-${e.id}`,
+        kind: 'No session location set',
+        text: `${stu.first_name} ${stu.last_name}'s ${one<any>(e.subjects)?.name ?? 'tutoring'} schedule has no location and ${
+          tut?.name ?? 'the tutor'
+        } has no default meeting link — the tutor and family can't see where or how to meet.`,
+        href: `/admin/tutoring?family=${stu.family_id}`,
+        since: e.created_at,
+      })
+    }
+  } catch (e) {
+    console.error('no-location attention rows failed (dashboard stands):', e)
+  }
+
   // PL-202: a KNOWN family called and got nobody — exactly what the
   // dashboard exists to surface. State-driven: clears on a later outbound
   // call to the family or a manual dismiss.

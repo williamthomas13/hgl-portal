@@ -821,12 +821,14 @@ export default function EngagementWizard({
   // PL-151: try/finally around the busy flag — a failed request used to
   // leave the Create button stuck mid-save with every field still filled in,
   // so the only way out was a reload (which lost the whole wizard state).
-  async function submit(confirmOverdraw = false) {
+  async function submit(confirmOverdraw = false, confirmNoLocation = false) {
     setSaving(true)
     setMessage('')
     // PL-197: the overdraw warning is handled AFTER the finally so the busy
     // flag stays a pure try/finally (the PL-151 rule the gate audits).
     let overdrawPrompt: Record<string, unknown> | null = null
+    // PL-211: same shape for the no-location acknowledgment.
+    let locationPrompt: Record<string, unknown> | null = null
     try {
     const res = await fetch('/api/admin/tutoring/engagement', {
       method: 'POST',
@@ -845,6 +847,7 @@ export default function EngagementWizard({
         notes: notes.trim() || null,
         require_approval: requireApproval,
         confirm_overdraw: confirmOverdraw || undefined,
+        confirm_no_location: confirmNoLocation || undefined,
       }),
     })
     const json = await res.json().catch(() => ({}))
@@ -852,6 +855,9 @@ export default function EngagementWizard({
       // PL-197 Case B: the schedule draws past the package — the moment of
       // the human conversation. Never blocked, never silent.
       overdrawPrompt = json
+    } else if (json.needsLocationConfirm) {
+      // PL-211: nothing anywhere says where the sessions happen.
+      locationPrompt = json
     } else if (!res.ok) {
       setMessage('Error: ' + (json.error ?? `the server returned ${res.status}`))
     } else {
@@ -887,9 +893,22 @@ export default function EngagementWizard({
             `invoice — confirm with the family before scheduling them.\n\nSchedule anyway?`
         )
       ) {
-        return submit(true)
+        return submit(true, confirmNoLocation)
       }
       setMessage('Nothing scheduled — adjust the slots or talk to the family first.')
+    }
+    if (locationPrompt) {
+      if (
+        window.confirm(
+          `No location set — this schedule has no location and ${locationPrompt.tutorName} has no default ` +
+            `meeting link, so the tutor and family won't see where or how to meet (not in the portal, ` +
+            `the calendar, or the printable schedule). It will sit in Needs Attention until one is set.\n\n` +
+            `Schedule anyway?`
+        )
+      ) {
+        return submit(confirmOverdraw, true)
+      }
+      setMessage('Nothing scheduled — add a location, or set a default meeting link on the tutor.')
     }
   }
 
