@@ -439,20 +439,68 @@ export async function generateMonthlyCycle(
       const engSessions = bucket.sessions
         .filter((s) => s.engagement.id === eng.id)
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-      if (engSessions.length === 0) continue
+      // PL-197: no early skip on an empty period — a package engagement with
+      // slipped overflow must still get its carry even when its own sessions
+      // have wound down (the family's invoice exists via its other sessions).
 
       // Package draw-down (§6.1): sessions consume the prepaid balance
-      // chronologically; only the overflow is billed.
-      let remaining = Infinity
+      // chronologically; only the overflow is billed. PL-197: the drawdown is
+      // recomputed over the ENGAGEMENT'S WHOLE HISTORY, not just this period —
+      // and overflow that slipped past earlier cycles (sessions added after a
+      // month's invoice was already confirmed/paid — Roman's 9h) is CARRIED
+      // onto this invoice like a late fee, deduped by the session's own line.
+      const coveredIds = new Set<string>()
       if (eng.funding === 'package' && eng.addon_id) {
         const { data: addon } = await supabase
           .from('enrollment_addons')
           .select('hours')
           .eq('id', eng.addon_id)
           .maybeSingle()
+        let running = Number(addon?.hours ?? 0)
+        const { data: allConsuming } = await supabase
+          .from('tutoring_sessions')
+          .select('id, starts_at, duration_minutes, status, reschedule_notice')
+          .eq('engagement_id', eng.id)
+          .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
+          .order('starts_at')
+        const consuming = ((allConsuming as any[]) ?? []).filter(
+          (s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late'
+        )
         const tz = eng.tutor?.timezone ?? ORG_TZ
         const { fromIso } = engagementPeriodBounds(month, tz)
-        remaining = Math.max(0, Number(addon?.hours ?? 0) - (await packageHoursUsedBefore(eng.id, fromIso)))
+        for (const s of consuming) {
+          const h = s.duration_minutes / 60
+          if (running >= h) {
+            running -= h
+            coveredIds.add(s.id)
+            continue
+          }
+          running = 0
+          // Overflow BEFORE this period with no line anywhere = it slipped a
+          // cycle (its month's invoice had already left draft/proposed when
+          // the session appeared). Bill it now, once. Tombstones never get a
+          // session line (their cost is the late fee).
+          if (s.starts_at >= fromIso || s.status === 'rescheduled') continue
+          const { data: hasLine } = await supabase
+            .from('tutoring_invoice_lines')
+            .select('id')
+            .eq('session_id', s.id)
+            .eq('kind', 'session')
+            .limit(1)
+          if (hasLine?.length) continue
+          const h2 = s.duration_minutes / 60
+          lines.push({
+            invoice_id: invoice.id,
+            session_id: s.id,
+            description: `${eng.student!.first_name} — ${eng.subject!.name} with ${eng.tutor?.name ?? 'tutor'}, ${new Date(
+              s.starts_at
+            ).toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' })} (past the prepaid package)`,
+            qty_hours: h2,
+            rate: eng.hourly_rate,
+            amount: Number((h2 * eng.hourly_rate).toFixed(2)),
+            kind: 'session',
+          })
+        }
       }
 
       for (const s of engSessions) {
@@ -462,12 +510,10 @@ export async function generateMonthlyCycle(
           month: 'short',
           day: 'numeric',
         })
-        if (eng.funding === 'package' && remaining >= hours) {
-          remaining -= hours
+        if (eng.funding === 'package' && coveredIds.has(s.id)) {
           packageCoveredHours += hours
           continue // covered by the prepaid balance — no line
         }
-        remaining = eng.funding === 'package' ? 0 : remaining
         lines.push({
           invoice_id: invoice.id,
           session_id: s.id,

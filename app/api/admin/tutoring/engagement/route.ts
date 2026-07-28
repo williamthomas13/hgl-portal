@@ -42,6 +42,8 @@ type CreateBody = {
   /** PL-41: send the parent the schedule to confirm (wizard toggle, default
    *  ON). false = Kelsie's override — set up active immediately. */
   require_approval?: boolean
+  /** PL-197: the caller saw the overdraw warning and chose to proceed. */
+  confirm_overdraw?: boolean
 }
 
 type UpdateBody = {
@@ -58,6 +60,8 @@ type UpdateBody = {
   /** Re-materialize future unbilled sessions from the (possibly changed)
    *  recurrence. Sessions already on an invoice are never touched. */
   regenerate?: boolean
+  /** PL-197: the caller saw the overdraw warning and chose to proceed. */
+  confirm_overdraw?: boolean
 }
 
 type Body =
@@ -65,6 +69,74 @@ type Body =
   | UpdateBody
   | { action: 'activate_now'; id: string } // PL-41 override: skip/settle the approval
   | { action: 'resend_approval'; id: string }
+  | { action: 'acknowledge_overdraw'; id: string } // PL-197: conversation had; hours billing knowingly
+
+/**
+ * PL-197 Case B: the hours a planned schedule would draw PAST the package's
+ * remaining balance. The flag fires BEFORE the schedule goes through — never
+ * blocked, never silent: the caller returns needsOverdrawConfirm and the UI
+ * requires walking past a plain warning (the PL-194 pattern). What makes an
+ * overdraw "intentional" (Case A, bills automatically) is precisely that
+ * someone walked past this knowingly.
+ */
+async function overdrawCheck(opts: {
+  addonId: string
+  recurrence: RecurrenceSlot[]
+  tutorId: string
+  startDate: string | null
+  /** update+regenerate: this engagement's future unbilled sessions are about
+   *  to be cleared and rebuilt — don't double-count them as existing draw. */
+  excludeFutureOfEngagement?: string
+}): Promise<{ overBy: number; packageHours: number; remaining: number } | null> {
+  const { data: addon } = await supabase
+    .from('enrollment_addons')
+    .select('hours')
+    .eq('id', opts.addonId)
+    .maybeSingle()
+  const packageHours = Number(addon?.hours ?? 0)
+  if (!(packageHours > 0)) return null
+
+  const { data: engs } = await supabase
+    .from('tutoring_engagements')
+    .select('id')
+    .eq('addon_id', opts.addonId)
+  const engIds = (engs ?? []).map((e) => e.id)
+  let used = 0
+  if (engIds.length > 0) {
+    const { data: consuming } = await supabase
+      .from('tutoring_sessions')
+      .select('engagement_id, duration_minutes, status, reschedule_notice, starts_at, invoice_id')
+      .in('engagement_id', engIds)
+      .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
+    const nowIso = new Date().toISOString()
+    used = ((consuming as { engagement_id: string; duration_minutes: number; status: string; reschedule_notice: string | null; starts_at: string; invoice_id: string | null }[]) ?? [])
+      .filter((s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late')
+      .filter(
+        (s) =>
+          !(
+            opts.excludeFutureOfEngagement &&
+            s.engagement_id === opts.excludeFutureOfEngagement &&
+            s.starts_at > nowIso &&
+            s.invoice_id === null &&
+            (s.status === 'proposed' || s.status === 'confirmed')
+          )
+      )
+      .reduce((sum, s) => sum + s.duration_minutes / 60, 0)
+  }
+
+  const tz = await tutorTimezone(opts.tutorId)
+  const todayTz = new Date().toLocaleDateString('en-CA', { timeZone: tz })
+  const from = opts.startDate && opts.startDate > todayTz ? opts.startDate : todayTz
+  const planned = generateOccurrences(opts.recurrence, from, horizonEndIso(tz), tz)
+    .filter((o) => o.startsAt.getTime() > Date.now())
+    .reduce((sum, o) => sum + (o.endsAt.getTime() - o.startsAt.getTime()) / 3600_000, 0)
+
+  const remaining = Math.max(0, packageHours - used)
+  const overBy = planned - remaining
+  return overBy > 0.05
+    ? { overBy: Number(overBy.toFixed(1)), packageHours, remaining: Number(remaining.toFixed(1)) }
+    : null
+}
 
 async function tutorTimezone(tutorId: string): Promise<string> {
   const { data } = await supabase
@@ -251,6 +323,29 @@ export async function POST(req: Request) {
             { status: 400 }
           )
         }
+        // PL-197 Case B: flag a schedule that draws past the package BEFORE
+        // it goes through — proceeding requires the explicit re-submit.
+        if (body.confirm_overdraw !== true) {
+          const over = await overdrawCheck({
+            addonId: body.addon_id,
+            recurrence,
+            tutorId: tutor_id,
+            startDate: body.start_date ?? null,
+          })
+          if (over) {
+            const { data: stuName } = await supabase
+              .from('students').select('first_name').eq('id', student_id).maybeSingle()
+            return NextResponse.json(
+              {
+                needsOverdrawConfirm: true,
+                ...over,
+                rate: hourly_rate,
+                studentFirst: stuName?.first_name ?? 'the student',
+              },
+              { status: 409 }
+            )
+          }
+        }
       }
       // PL-41: default ON — the parent confirms before anything locks in.
       // OFF is Kelsie's explicit override (schedule already agreed by phone).
@@ -343,6 +438,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, already: result.already ?? false })
     }
 
+    if (body.action === 'acknowledge_overdraw') {
+      if (!body.id) return NextResponse.json({ error: 'Missing engagement id.' }, { status: 400 })
+      // Acknowledge AT the current overage: the dashboard row clears, and
+      // returns on its own if the overage later grows past this point.
+      const { data: eng } = await supabase
+        .from('tutoring_engagements')
+        .select('id, addon_id, enrollment_addons ( hours )')
+        .eq('id', body.id)
+        .maybeSingle()
+      if (!eng) return NextResponse.json({ error: 'Unknown engagement.' }, { status: 400 })
+      const { data: consuming } = await supabase
+        .from('tutoring_sessions')
+        .select('duration_minutes, status, reschedule_notice')
+        .eq('engagement_id', body.id)
+        .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
+      const used = (consuming ?? [])
+        .filter((s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late')
+        .reduce((sum, s) => sum + s.duration_minutes / 60, 0)
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const addon: any = Array.isArray(eng.enrollment_addons) ? eng.enrollment_addons[0] : eng.enrollment_addons
+      const over = Math.max(0, used - Number(addon?.hours ?? 0))
+      await supabase
+        .from('tutoring_engagements')
+        .update({ overdraw_ack_hours: over, updated_at: new Date().toISOString() })
+        .eq('id', body.id)
+      return NextResponse.json({ ok: true, acknowledgedAt: Number(over.toFixed(1)) })
+    }
+
     if (body.action === 'resend_approval') {
       if (!body.id) return NextResponse.json({ error: 'Missing engagement id.' }, { status: 400 })
       // Re-stamp the ask so the nudge clock restarts from the re-send.
@@ -388,6 +511,41 @@ export async function POST(req: Request) {
           )
         }
       }
+      // PL-197 Case B: a regenerate that would draw past the package flags
+      // BEFORE anything changes — same walk-past rule as create.
+      if (body.regenerate && body.confirm_overdraw !== true) {
+        const { data: current } = await supabase
+          .from('tutoring_engagements')
+          .select('funding, addon_id, recurrence, tutor_id, start_date, status, student_id')
+          .eq('id', body.id)
+          .maybeSingle()
+        const funding = body.funding ?? current?.funding
+        const addonId = body.addon_id !== undefined ? body.addon_id : current?.addon_id
+        const nextStatus = body.status ?? current?.status
+        if (current && funding === 'package' && addonId && nextStatus === 'active') {
+          const over = await overdrawCheck({
+            addonId,
+            recurrence: (body.recurrence ?? current.recurrence ?? []) as RecurrenceSlot[],
+            tutorId: current.tutor_id,
+            startDate: current.start_date,
+            excludeFutureOfEngagement: body.id,
+          })
+          if (over) {
+            const { data: stuName } = await supabase
+              .from('students').select('first_name').eq('id', current.student_id).maybeSingle()
+            return NextResponse.json(
+              {
+                needsOverdrawConfirm: true,
+                ...over,
+                rate: body.hourly_rate ?? undefined,
+                studentFirst: stuName?.first_name ?? 'the student',
+              },
+              { status: 409 }
+            )
+          }
+        }
+      }
+
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       for (const k of ['hourly_rate', 'funding', 'addon_id', 'recurrence', 'location', 'notes', 'status', 'end_date'] as const) {
         if (body[k] !== undefined) patch[k] = body[k]

@@ -66,6 +66,7 @@ export type Engagement = {
   hourly_rate: number
   funding: 'monthly_billed' | 'package'
   addon_id: string | null
+  overdraw_ack_hours: number | null
   recurrence: RecurrenceSlotUI[]
   location: string | null
   status: 'pending_parent_confirmation' | 'active' | 'paused' | 'ended'

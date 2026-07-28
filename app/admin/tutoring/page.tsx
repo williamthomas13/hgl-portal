@@ -75,7 +75,7 @@ export default function TutoringAdmin() {
       supabase
         .from('tutoring_engagements')
         .select(
-          `id, student_id, tutor_id, subject_id, hourly_rate, funding, addon_id, recurrence,
+          `id, student_id, tutor_id, subject_id, hourly_rate, funding, addon_id, overdraw_ack_hours, recurrence,
            location, status, start_date, end_date, notes,
            students ( id, first_name, last_name, families ( id, parent_first_name, parent_last_name, parent_email ) ),
            subjects ( name, category ),

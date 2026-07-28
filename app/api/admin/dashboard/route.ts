@@ -434,7 +434,7 @@ export async function GET() {
   const { data: pkgEngs } = await supabase
     .from('tutoring_engagements')
     .select(
-      `id, addon_id, status, student_id,
+      `id, addon_id, status, student_id, hourly_rate, overdraw_ack_hours,
        students ( first_name, last_name, family_id ),
        enrollment_addons ( id, hours )`
     )
@@ -490,6 +490,23 @@ export async function GET() {
           addonRemaining(a.id, Number(a.hours)) > 1
       )
       if (renewed) continue
+      const usedRaw = usedByAddon.get(addon.id) ?? 0
+      // PL-197: past the crossing this is a DIFFERENT conversation — "it's
+      // happening", not "talk soon" — so the overdraw row REPLACES the
+      // PL-163 warning (never both). Clears on new package (renewed, above),
+      // engagement end (active filter), or acknowledgment at this overage.
+      const over = Math.max(0, usedRaw - Number(addon.hours))
+      if (over > 0.05) {
+        if (Number(e.overdraw_ack_hours ?? 0) >= over - 0.05) continue
+        attention.push({
+          id: `pkg-overdrawn-${addon.id}`,
+          kind: 'Hours past the package',
+          text: `${stu.first_name} ${stu.last_name} is ${over.toFixed(1)}h past their ${addon.hours}h package — extra hours are billing at $${e.hourly_rate}/hr.`,
+          href: `/admin/tutoring?family=${stu.family_id}`,
+          since: lastSpendByAddon.get(addon.id),
+        })
+        continue
+      }
       const used = Number(addon.hours) - remaining
       attention.push({
         id: `pkg-exhausted-${addon.id}`,

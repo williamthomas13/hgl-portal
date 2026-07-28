@@ -132,6 +132,22 @@ export default function EngagementsPanel({
       body: JSON.stringify({ action: 'update', id, ...body }),
     })
     const json = await res.json().catch(() => ({}))
+    // PL-197 Case B: a regenerate that would draw past the package asks
+    // first (never blocked, never silent) — proceeding re-sends confirmed.
+    if (json.needsOverdrawConfirm) {
+      setBusyId('')
+      if (
+        window.confirm(
+          `This schedule goes ${json.overBy}h past ${json.studentFirst}'s ${json.packageHours}h package ` +
+            `(${json.remaining}h left on it). The extra hours will bill at the engagement rate on the ` +
+            `monthly invoice — confirm with the family before scheduling them.\n\nRegenerate anyway?`
+        )
+      ) {
+        return update(id, { ...body, confirm_overdraw: true }, done)
+      }
+      setMessage('Nothing changed — adjust the schedule or talk to the family first.')
+      return
+    }
     setMessage(res.ok ? (typeof done === 'function' ? done(json) : done) : 'Error: ' + json.error)
     setBusyId('')
     if (res.ok) onChange()
@@ -252,6 +268,9 @@ export default function EngagementsPanel({
               const purchased = e.addon_id ? addonHours[e.addon_id] : undefined
               const used = packageHoursUsed[e.id] ?? 0
               const remaining = purchased !== undefined ? Math.max(0, purchased - used) : undefined
+              // PL-197: NEVER capped — an overdrawn package must read "over",
+              // not "full", at exactly the moment it matters most.
+              const overBy = purchased !== undefined ? Math.max(0, used - purchased) : 0
               const lowRunway =
                 e.funding === 'package' &&
                 remaining !== undefined &&
@@ -284,11 +303,40 @@ export default function EngagementsPanel({
                   >
                     {e.funding === 'package' ? 'package' : 'monthly'}
                   </span>
-                  {remaining !== undefined && (
+                  {remaining !== undefined && overBy <= 0 && (
                     /* PL-31: read as "used so far", not "fires at hour one" */
                     <span className={`text-xs font-semibold ${lowRunway ? 'text-red-600' : 'text-gray-600'}`}>
-                      {(purchased! - remaining).toFixed(1)} of {purchased}h used — {remaining.toFixed(1)}h left
+                      {used.toFixed(1)} of {purchased}h used — {remaining.toFixed(1)}h left
                       {lowRunway && ' · time to talk about next steps'}
+                    </span>
+                  )}
+                  {overBy > 0 && (
+                    /* PL-197: the honest read + one-click acknowledge. */
+                    <span className="text-xs font-semibold text-red-600">
+                      {used.toFixed(1)} of {purchased}h used — {overBy.toFixed(1)}h over · extra hours bill at ${e.hourly_rate}/hr
+                      {Number(e.overdraw_ack_hours ?? 0) >= overBy - 0.05 ? (
+                        <span className="text-gray-500 font-normal"> · acknowledged</span>
+                      ) : (
+                        <button
+                          className="ml-1.5 underline text-hgl-blue font-semibold"
+                          disabled={busyId === e.id}
+                          title="The family conversation happened — the extra hours are intentional and billing. Clears the dashboard row; it returns if the overage grows."
+                          onClick={async () => {
+                            setBusyId(e.id)
+                            const res = await fetch('/api/admin/tutoring/engagement', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ action: 'acknowledge_overdraw', id: e.id }),
+                            })
+                            const json = await res.json().catch(() => ({}))
+                            setMessage(res.ok ? `Overage acknowledged at ${json.acknowledgedAt}h over — it bills automatically; the dashboard row is cleared.` : 'Error: ' + (json.error ?? 'failed'))
+                            setBusyId('')
+                            if (res.ok) onChange()
+                          }}
+                        >
+                          acknowledge
+                        </button>
+                      )}
                     </span>
                   )}
                   {next ? (

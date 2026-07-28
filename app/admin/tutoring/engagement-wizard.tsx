@@ -821,7 +821,7 @@ export default function EngagementWizard({
   // PL-151: try/finally around the busy flag — a failed request used to
   // leave the Create button stuck mid-save with every field still filled in,
   // so the only way out was a reload (which lost the whole wizard state).
-  async function submit() {
+  async function submit(confirmOverdraw = false) {
     setSaving(true)
     setMessage('')
     try {
@@ -841,9 +841,26 @@ export default function EngagementWizard({
         start_date: startDate || null,
         notes: notes.trim() || null,
         require_approval: requireApproval,
+        confirm_overdraw: confirmOverdraw || undefined,
       }),
     })
     const json = await res.json().catch(() => ({}))
+    if (json.needsOverdrawConfirm) {
+      // PL-197 Case B: the schedule draws past the package — the moment of
+      // the human conversation. Never blocked, never silent.
+      setSaving(false)
+      if (
+        window.confirm(
+          `This schedule goes ${json.overBy}h past ${json.studentFirst}'s ${json.packageHours}h package ` +
+            `(${json.remaining}h left on it). The extra hours will bill at $${json.rate}/hr on the monthly ` +
+            `invoice — confirm with the family before scheduling them.\n\nSchedule anyway?`
+        )
+      ) {
+        return submit(true)
+      }
+      setMessage('Nothing scheduled — adjust the slots or talk to the family first.')
+      return
+    }
     if (!res.ok) {
       setMessage('Error: ' + (json.error ?? `the server returned ${res.status}`))
     } else {
@@ -1473,7 +1490,7 @@ export default function EngagementWizard({
       )}
 
       <button
-        onClick={submit}
+        onClick={() => submit()}
         disabled={!ready || saving}
         className="bg-hgl-slate text-white py-2 px-6 rounded hover:opacity-90 disabled:opacity-50"
       >

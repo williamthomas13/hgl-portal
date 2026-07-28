@@ -91,7 +91,7 @@ export default function StudentProfilePage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('tutoring_sessions')
-        .select('id, starts_at, duration_minutes, status, engagement_id')
+        .select('id, starts_at, duration_minutes, status, engagement_id, reschedule_notice')
         .eq('student_id', studentId)
         .order('starts_at', { ascending: false })
         .limit(400),
@@ -100,7 +100,7 @@ export default function StudentProfilePage() {
         .select(
           `id, payment_status, enrolled_at, amount_paid, class_cancelled, cancellation_outcome,
            classes ( id, class_type, start_date, end_date, schools ( nickname, name ) ),
-           enrollment_addons ( hours, price_paid, source, purchased_at )`
+           enrollment_addons ( id, hours, price_paid, source, purchased_at )`
         )
         .eq('student_id', studentId)
         .order('enrolled_at', { ascending: false }),
@@ -188,6 +188,15 @@ export default function StudentProfilePage() {
   const { student: st, family: fam } = p
   const fullName = `${st.first_name} ${st.last_name}`.trim()
   const upcoming = p.sessions.filter((s) => s.status === 'confirmed' && new Date(s.starts_at) > new Date())
+  // PL-197: package drawdown, NEVER capped — same consuming rule as billing.
+  const usedOnAddon = (addonId: string) => {
+    const engIds = new Set(p.engagements.filter((e) => e.addon_id === addonId).map((e) => e.id))
+    return p.sessions
+      .filter((s) => engIds.has(s.engagement_id))
+      .filter((s) => ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'].includes(s.status))
+      .filter((s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late')
+      .reduce((sum, s) => sum + s.duration_minutes / 60, 0)
+  }
   const completedHours = p.sessions
     .filter((s) => s.status === 'completed')
     .reduce((a, s) => a + s.duration_minutes / 60, 0)
@@ -294,13 +303,24 @@ export default function StudentProfilePage() {
                 <p className="text-xs font-semibold text-gray-600 mb-1">Hours packages</p>
                 <ul className="space-y-0.5">
                   {p.enrollments.flatMap((e) =>
-                    ((e.enrollment_addons ?? []) as any[]).map((a, i) => (
-                      <li key={`${e.id}-${i}`} className="text-xs">
-                        {Number(a.hours)}h — {money(a.price_paid)}
-                        {a.source === 'cancellation_conversion' && ' (from a class cancellation)'}
-                        {a.purchased_at && ` · ${formatDateShort(a.purchased_at)}`}
-                      </li>
-                    ))
+                    ((e.enrollment_addons ?? []) as any[]).map((a, i) => {
+                      const used = a.id ? usedOnAddon(a.id) : 0
+                      const over = Math.max(0, used - Number(a.hours))
+                      return (
+                        <li key={`${e.id}-${i}`} className="text-xs">
+                          {Number(a.hours)}h — {money(a.price_paid)}
+                          {a.source === 'cancellation_conversion' && ' (from a class cancellation)'}
+                          {a.purchased_at && ` · ${formatDateShort(a.purchased_at)}`}
+                          {used > 0 && over <= 0 && (
+                            <span className="text-gray-500"> · {used.toFixed(1)} of {Number(a.hours)}h used</span>
+                          )}
+                          {over > 0 && (
+                            /* PL-197: reads "over", never "full". */
+                            <span className="text-red-600 font-semibold"> · {used.toFixed(1)} of {Number(a.hours)}h used — {over.toFixed(1)}h over</span>
+                          )}
+                        </li>
+                      )
+                    })
                   )}
                 </ul>
               </div>
