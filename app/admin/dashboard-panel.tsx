@@ -386,7 +386,12 @@ export default function DashboardPanel() {
         {health ? (
           <ul className="space-y-2 text-sm">
             <li className="flex items-baseline justify-between gap-3">
-              <span className="text-gray-600">Emails sent today</span>
+              <span className="text-gray-600">
+                Emails sent today
+                {(health.sends as any).campaignToday > 0 && (
+                  <span className="text-gray-400"> ({(health.sends as any).campaignToday} campaign)</span>
+                )}
+              </span>
               <span
                 className={`font-bold ${
                   health.sends.state === 'full'

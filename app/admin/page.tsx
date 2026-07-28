@@ -242,6 +242,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'instructors', label: 'Instructors' },
       { id: 'contacts', label: 'School contacts' },
       { id: 'communications', label: 'Communications', href: '/admin/communications' },
+      // PL-201: offers live beside the comms machinery they ride on.
+      { id: 'campaigns', label: 'Campaigns', href: '/admin/campaigns' },
       { id: 'agreements', label: 'Agreements', href: '/admin/agreements' },
     ],
   },

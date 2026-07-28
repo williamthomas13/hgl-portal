@@ -1,4 +1,5 @@
 import { emailBaseUrl } from '../../../utils/base-url'
+import { resumePausedCampaigns } from '../../../utils/campaign-send'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
@@ -1785,6 +1786,15 @@ export async function GET(req: Request) {
   const tc = await sweepTimecards()
   if (tc.created > 0) counters.timecards_created = tc.created
   if (tc.t5Sent > 0) counters.timecards_t5_sent = tc.t5Sent
+
+  // PL-201: campaigns the daily cap paused resume when quota allows —
+  // transactional keeps its reserve; the engine re-pauses if still tight.
+  try {
+    const resumed = await resumePausedCampaigns()
+    if (resumed > 0) counters.campaigns_resumed = resumed
+  } catch (e) {
+    console.error('campaign resume sweep failed:', e)
+  }
 
   // PL-111: session-note reminders — end-of-day list per tutor (only when
   // something is missing) plus one nudge 3 days later. The timecard approval

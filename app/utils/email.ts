@@ -17,6 +17,13 @@ import { formatDateFull } from './dates'
 
 export const FROM = process.env.EMAIL_FROM ?? 'Higher Ground Learning <onboarding@resend.dev>'
 
+// PL-201: marketing NEVER shares a from-identity with transactional — a
+// campaign's sender reputation must not be able to touch invoices and
+// schedule notices. Overridable via the email_from_marketing settings row
+// (PL-177 pattern); the default keeps the separation even unconfigured.
+export const MARKETING_FROM =
+  process.env.EMAIL_FROM_MARKETING ?? 'Higher Ground Learning <offers@highergroundlearning.com>'
+
 // Personal sender for #1, #7, #8, #9 (and the combined welcome, which
 // carries #1). Deck: "William Thomas <billy@highergroundlearning.com>".
 export const PERSONAL_FROM =
@@ -27,18 +34,19 @@ export const PERSONAL_FROM =
 // Resolution happens at SEND time in sendOnce: a caller passing the info or
 // personal constant (or nothing) gets the current setting; an explicit
 // custom From (e.g. the tutoring contact's) passes through untouched.
-let fromOverrideCache: { at: number; info: string | null; personal: string | null } | null = null
+let fromOverrideCache: { at: number; info: string | null; personal: string | null; marketing: string | null } | null = null
 async function fromOverrides() {
   if (fromOverrideCache && Date.now() - fromOverrideCache.at < 60_000) return fromOverrideCache
   const { data } = await supabase
     .from('app_settings')
     .select('key, value')
-    .in('key', ['email_from_info', 'email_from_personal'])
+    .in('key', ['email_from_info', 'email_from_personal', 'email_from_marketing'])
   const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]))
   fromOverrideCache = {
     at: Date.now(),
     info: map.email_from_info ?? null,
     personal: map.email_from_personal ?? null,
+    marketing: map.email_from_marketing ?? null,
   }
   return fromOverrideCache
 }
@@ -47,6 +55,7 @@ export async function resolveFromIdentity(from: string | undefined): Promise<str
   const o = await fromOverrides()
   if (!from || from === FROM) return o.info ?? FROM
   if (from === PERSONAL_FROM) return o.personal ?? PERSONAL_FROM
+  if (from === MARKETING_FROM) return o.marketing ?? MARKETING_FROM
   return from
 }
 /** Test hook: drop the 60s cache so a just-saved setting takes effect now. */
@@ -1742,7 +1751,24 @@ export async function sendOnce(opts: {
   isTest?: boolean
   /** A4: which email_template_versions row rendered this body. */
   bodySnapshotId?: string
+  /** PL-201: marketing-category send — suppression-gated (unsubscribes are
+   *  honored HERE, at the choke point, never at call sites), sent from the
+   *  marketing identity, with one-click unsubscribe headers. Transactional
+   *  sends never set this and are never suppressed. */
+  marketing?: boolean
 }): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
+  // PL-201: the suppression gate runs before ANYTHING else — a suppressed
+  // address must not even claim a dedupe row.
+  if (opts.marketing) {
+    const { data: sup } = await supabase
+      .from('marketing_suppressions')
+      .select('email')
+      .in('email', opts.to.map((t) => t.toLowerCase()))
+    if ((sup ?? []).length > 0) {
+      console.warn(`marketing send suppressed (unsubscribed): ${opts.dedupeKey}`)
+      return 'suppressed'
+    }
+  }
   if (!process.env.RESEND_API_KEY) {
     console.warn(`RESEND_API_KEY not set — skipping email ${opts.dedupeKey}`)
     return 'failed'
@@ -1907,14 +1933,26 @@ export async function sendOnce(opts: {
   }
 
   const resend = new Resend(process.env.RESEND_API_KEY)
+  // PL-201: marketing rides its own identity (never info@/billy@) and
+  // carries RFC 8058 one-click unsubscribe headers for the first recipient.
+  let marketingHeaders: Record<string, string> | undefined
+  if (opts.marketing) {
+    const { unsubscribeToken } = await import('./campaigns')
+    const unsubUrl = `${emailBaseUrl()}/api/unsubscribe?token=${unsubscribeToken(opts.to[0])}`
+    marketingHeaders = {
+      'List-Unsubscribe': `<${unsubUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    }
+  }
   const { data: sendData, error: sendError } = await resend.emails.send({
     // PL-177: identity constants resolve through the settings override.
-    from: await resolveFromIdentity(opts.from),
+    from: await resolveFromIdentity(opts.marketing ? MARKETING_FROM : opts.from),
     to: opts.to,
     cc: opts.cc,
     replyTo: opts.replyTo,
     subject: opts.subject,
     html: opts.html,
+    headers: marketingHeaders,
   })
 
   if (sendError) {

@@ -74,7 +74,9 @@ export function renderVersion(
   const vars = resolveVariables(ctx, audience, extra)
   const bodyHtml = renderMarkdownBody(version.body_markdown, vars)
   const footer =
-    meta.category === 'relationship'
+    // PL-201: marketing previews/test-sends show the address+unsubscribe
+    // footer real campaign sends carry.
+    meta.category === 'relationship' || meta.category === 'marketing'
       ? footerR(ctx.unsubscribeUrl, version.footer_note ?? undefined)
       : footerT(version.footer_note ?? undefined)
   return {

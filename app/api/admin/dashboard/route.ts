@@ -57,7 +57,7 @@ export type ActivityRow = {
  * external email happened to arrive. Read-only, no graphs, no history.
  */
 export type SystemHealth = {
-  sends: { today: number; cap: number; state: 'ok' | 'warn' | 'full' }
+  sends: { today: number; campaignToday: number; cap: number; state: 'ok' | 'warn' | 'full' }
   qbo: { pending: number; failed: number }
   sweep: { lastFinishedAt: string | null; stale: boolean; hanging: boolean }
 }
@@ -599,13 +599,21 @@ export async function GET() {
   const dayStartDenver = new Date(
     new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }) + 'T00:00:00-06:00'
   ).toISOString()
-  const [{ data: capRow }, { count: sendsToday }, { count: qboPendingCount }, { count: qboFailedCount }, { data: sweepRows }] =
+  const [{ data: capRow }, { count: sendsToday }, { count: campaignToday }, { count: qboPendingCount }, { count: qboFailedCount }, { data: sweepRows }] =
     await Promise.all([
       supabase.from('app_settings').select('value').eq('key', 'resend_daily_cap').maybeSingle(),
       // Real sends AND test sends both consume the plan's quota.
       supabase
         .from('email_sends')
         .select('id', { count: 'exact', head: true })
+        .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+        .gte('sent_at', dayStartDenver),
+      // PL-201: campaign volume shown distinctly on the health card
+      // (campaign sends are the dedupe keys the engine mints).
+      supabase
+        .from('email_sends')
+        .select('id', { count: 'exact', head: true })
+        .like('dedupe_key', 'campaign:%')
         .in('status', ['sent', 'delivered', 'bounced', 'complained'])
         .gte('sent_at', dayStartDenver),
       supabase.from('qbo_sync_log').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -623,6 +631,7 @@ export async function GET() {
   const health: SystemHealth = {
     sends: {
       today: used,
+      campaignToday: campaignToday ?? 0,
       cap,
       state: used >= cap ? 'full' : used >= cap * 0.8 ? 'warn' : 'ok',
     },

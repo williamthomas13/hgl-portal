@@ -32,7 +32,7 @@ function tabForUrl(pathname: string, search: string): ToplineTab {
   // PL-198: View-as files under Settings.
   if (pathname.startsWith('/admin/view-as')) return 'settings'
   // Filed under Contacts in Scarlett's IA (Jul 28).
-  if (pathname.startsWith('/admin/communications') || pathname.startsWith('/admin/agreements')) return 'contacts'
+  if (pathname.startsWith('/admin/communications') || pathname.startsWith('/admin/agreements') || pathname.startsWith('/admin/campaigns')) return 'contacts'
   const q = new URLSearchParams(search)
   const tab = q.get('tab')
   if (tab === 'classes' || tab === 'contacts' || tab === 'settings') return tab

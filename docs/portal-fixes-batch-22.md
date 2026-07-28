@@ -38,4 +38,12 @@ Portal discovery today is only deep-links inside task emails (#0 "View your regi
 - A one-line portal pointer in the standing footer of transactional templates (transactional-safe: informational, not marketing).
 - Parent-voiced, no shorthand.
 
+## PL-209 — Tutor upcoming-sessions header copy: name the Ops Director, name the places (reported Jul 28)
+
+Current subtext: "These also live on your Google Calendar — reschedules and cancellations go through the office, and both places update automatically." Change "the office" to the Ops Director's actual name pulled from settings (currently Kelsie) — not hard-coded — and "both places" to "your portal and Google Calendar." E.g.: "...reschedules and cancellations go through {opsDirectorFirstName}, and your portal and Google Calendar both update automatically." File: `app/portal/tutor-view.tsx`.
+
+## PL-210 — Join buttons only live near session time (reported Jul 28)
+
+Every session with a meeting-URL location currently shows an enabled Join button, even a week out — noise, and invites mis-clicks. Make Join active only within ~30 minutes of the session on either side (30 min before start through 30 min after end, or after start +30 — Code's call, say which). Outside the window, either hide the button or show a muted/disabled state so the tutor still knows it's an online session (muted state preferred — the online/in-person distinction is information). File: `app/portal/upcoming-sessions.tsx` (client component — window check can be client-side; no security concern, the URL is already the tutor's).
+
 *(Still on the radar from prior sessions: the Students-header mixed-units count ("3 students" vs "Current (4)") · duplicate identical weekly slots accepted without warning · anything from the batch-21 verification pass.)*
