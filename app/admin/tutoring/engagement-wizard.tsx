@@ -238,7 +238,8 @@ export default function EngagementWizard({
     return 0
   }
   const rankedTutors = useMemo(() => {
-    const active = tutors.filter((t) => t.tutoring_active)
+    // PL-176: made-inactive instructors leave every new-scheduling picker.
+    const active = tutors.filter((t) => t.tutoring_active && t.active !== false)
     const continuity = (t: Tutor) => Number(classInstructorIds.has(t.id))
     if (!subject) return [...active].sort((a, b) => continuity(b) - continuity(a))
     // PL-53d: same-tier continuity floats up — "taught their class" beats a
@@ -836,13 +837,13 @@ export default function EngagementWizard({
         {/* PL-53d: continuity hint — a hint, never a rule */}
         {subject &&
           [...classInstructorIds].some((id) => {
-            const t = tutors.find((x) => x.id === id && x.tutoring_active)
+            const t = tutors.find((x) => x.id === id && x.tutoring_active && x.active !== false)
             return t && (t.subjects.includes(subject.name) || t.subjects_with_prep.includes(subject.name))
           }) && (
             <p className="text-xs text-hgl-slate mt-1 bg-blue-50 border border-blue-200 rounded p-2">
               <span className="font-semibold">Continuity:</span>{' '}
               {[...classInstructorIds]
-                .map((id) => tutors.find((x) => x.id === id && x.tutoring_active))
+                .map((id) => tutors.find((x) => x.id === id && x.tutoring_active && x.active !== false))
                 .filter((x): x is Tutor => !!x)
                 .map((x) => x.name ?? x.email)
                 .join(', ')}{' '}

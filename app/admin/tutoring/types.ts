@@ -21,6 +21,9 @@ export type Tutor = {
   email: string
   name: string | null
   tutoring_active: boolean
+  /** PL-176: false = made inactive on the Instructors page — excluded from
+   *  all new scheduling pickers regardless of tutoring_active. */
+  active: boolean
   /** Ready subjects — auto-matchable (PL-35a §1a). */
   subjects: string[]
   /** Capable but confirm-with-the-tutor-first; never auto-suggested. Disjoint

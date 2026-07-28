@@ -22,6 +22,38 @@ export const FROM = process.env.EMAIL_FROM ?? 'Higher Ground Learning <onboardin
 export const PERSONAL_FROM =
   process.env.EMAIL_FROM_PERSONAL ?? 'William Thomas <billy@highergroundlearning.com>'
 
+// PL-177: the two from-identities are SETTINGS with the env values as
+// fallbacks — changing one someday is a Contact Settings edit, not a deploy.
+// Resolution happens at SEND time in sendOnce: a caller passing the info or
+// personal constant (or nothing) gets the current setting; an explicit
+// custom From (e.g. the tutoring contact's) passes through untouched.
+let fromOverrideCache: { at: number; info: string | null; personal: string | null } | null = null
+async function fromOverrides() {
+  if (fromOverrideCache && Date.now() - fromOverrideCache.at < 60_000) return fromOverrideCache
+  const { data } = await supabase
+    .from('app_settings')
+    .select('key, value')
+    .in('key', ['email_from_info', 'email_from_personal'])
+  const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]))
+  fromOverrideCache = {
+    at: Date.now(),
+    info: map.email_from_info ?? null,
+    personal: map.email_from_personal ?? null,
+  }
+  return fromOverrideCache
+}
+/** Exported for the contact-settings surface + its verification. */
+export async function resolveFromIdentity(from: string | undefined): Promise<string> {
+  const o = await fromOverrides()
+  if (!from || from === FROM) return o.info ?? FROM
+  if (from === PERSONAL_FROM) return o.personal ?? PERSONAL_FROM
+  return from
+}
+/** Test hook: drop the 60s cache so a just-saved setting takes effect now. */
+export function clearFromIdentityCache() {
+  fromOverrideCache = null
+}
+
 const FAQ_LINKS = `<a href="https://highergroundlearning.com/faqs#general">General</a> · <a href="https://highergroundlearning.com/faqs#diagnostic-tests">Diagnostic tests</a> · <a href="https://highergroundlearning.com/faqs#attendance">Attendance</a> · <a href="https://highergroundlearning.com/faqs#1on1">1-on-1 tutoring</a>`
 
 const COMPASS_URL = 'http://hgl.co/college-prep-compass'
@@ -1876,7 +1908,8 @@ export async function sendOnce(opts: {
 
   const resend = new Resend(process.env.RESEND_API_KEY)
   const { data: sendData, error: sendError } = await resend.emails.send({
-    from: opts.from ?? FROM,
+    // PL-177: identity constants resolve through the settings override.
+    from: await resolveFromIdentity(opts.from),
     to: opts.to,
     cc: opts.cc,
     replyTo: opts.replyTo,

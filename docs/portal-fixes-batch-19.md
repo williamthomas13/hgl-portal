@@ -224,6 +224,8 @@ They're the same people: "tutors" in 1-on-1 land, "instructors" in class land. T
 
 ## PL-176 (small) · "Remove" → "Make inactive", with Active/Inactive tabs
 
+**✅ SHIPPED (Jul 27).** "Remove" hard-DELETED the instructor row — worse than the label implied. New `instructors.active` column (migration `20260818000001`, applied); "Make inactive" hides them from every new-scheduling picker (class wizard instructor dropdown — where an already-assigned inactive instructor stays selectable so an existing class doesn't silently lose them; tutoring wizard ranked list; the continuity hints) with history fully intact and reversible. Going inactive runs the existing comms-off cascade first (sends stop, upcoming calendar events removed) and the confirm copy says so; reactivation restores picker presence and states that comms stay OFF until turned on deliberately. Active/Inactive tabs added (active default). The PL-161 suggester will read the same flag when it lands. Verified live round-trip on a QA instructor: inactive → gone from Active tab, listed under Inactive with "Make active" → reactivated back into the Active tab. No instructor-deletion path labeled "Remove" remains (the "Remove" buttons elsewhere on /admin are the class wizard's draft-session rows — a different, legitimately deletable thing).
+
 "Remove" reads as delete — scary and wrong for people who may return (and whose history must survive regardless).
 
 - **Rename the action "Make inactive."** Semantics: hidden from active pickers/rosters, history intact, reversible.
@@ -233,6 +235,8 @@ They're the same people: "tutors" in 1-on-1 land, "instructors" in class land. T
 **Verify:** make-inactive hides from pickers, keeps history · inactive tab lists them with reactivate · reactivation restores picker presence · no deletion path remains labeled "Remove."
 
 ## PL-177 (small) · Contact Settings covers the other from-identities (info@ and billy@)
+
+**✅ SHIPPED (Jul 27).** The registry has exactly two from-identities (`info` | `billy`) and both now live on the Contact Settings card as a "Sending identities" section: each shows its address (editable, admin-only like the rest of the card), a plain-English where-used line ("info@ — parent-facing class and billing emails, counselor updates, tutor coverage emails, and the internal [HGL Admin] alerts" / "billy@ — the personal-voice sends: thank-you, review requests, post-class offers, upsell, cancellations"), a "deploy default" tag until an override is saved, and the does-NOT-change caveat inline (a brand-new domain must be verified in Resend first; replies go wherever the inbox lives). Mechanically the identities became settings: `email_from_info` / `email_from_personal` in app_settings with the env values as fallbacks, resolved AT SEND TIME inside `sendOnce` — so every send site that passes the info/billy constants (or nothing) picks up an edit immediately, while explicit custom Froms (the tutoring contact's) pass through untouched. Verified by compile-and-call round-trip (7 checks): no-override → env values; overrides → both identities switch, custom From untouched; cleanup restores fallbacks. The tutoring point-of-contact identity was already editable on this card (PL-50) — that's the third and final sender.
 
 Contact Settings currently explains/edits a subset of the sending identities. Extend it to the rest so a future change never requires code:
 

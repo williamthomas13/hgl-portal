@@ -14,6 +14,8 @@ export type Instructor = {
   name: string | null
   default_meeting_link: string | null
   comms_enabled: boolean
+  /** PL-176: false = hidden from active pickers/rosters; history intact. */
+  active: boolean
 }
 
 export default function InstructorsPanel({
@@ -25,6 +27,11 @@ export default function InstructorsPanel({
 }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  // PL-176: Active / Inactive tabs (active default).
+  const [view, setView] = useState<'active' | 'inactive'>('active')
+  const activeRows = instructors.filter((i) => i.active)
+  const inactiveRows = instructors.filter((i) => !i.active)
+  const visible = view === 'active' ? activeRows : inactiveRows
 
   async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -84,11 +91,47 @@ export default function InstructorsPanel({
     onChange()
   }
 
-  async function handleRemove(i: Instructor) {
-    if (!confirm(`Remove instructor ${i.name ?? i.email}?\n\nExisting classes keep their own locations; only the stored default link goes away.`)) return
-    const { error } = await supabase.from('instructors').delete().eq('id', i.id)
-    if (error) alert('Error removing instructor: ' + error.message)
+  // PL-176: "Remove" read as delete — scary and wrong for people who may
+  // return. Inactive = hidden from new scheduling pickers, history (classes,
+  // sessions, timecards) untouched, reversible.
+  async function handleMakeInactive(i: Instructor) {
+    const commsNote = i.comms_enabled
+      ? ' Their class emails + calendar sync turn OFF as part of this.'
+      : ''
+    if (
+      !confirm(
+        `Make ${i.name ?? i.email} inactive?\n\nThey disappear from new scheduling pickers; every existing class, session, and timecard stays exactly as it is.${commsNote} You can make them active again any time from the Inactive tab.`
+      )
+    )
+      return
+    // Going inactive turns comms off through the existing cascade (welcome/
+    // digest sends stop, upcoming session events removed).
+    if (i.comms_enabled) {
+      const res = await fetch('/api/admin/instructor-comms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructorId: i.id, enabled: false }),
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        alert(json.error ?? 'Could not turn their comms off — nothing changed.')
+        return
+      }
+    }
+    const { error } = await supabase.from('instructors').update({ active: false }).eq('id', i.id)
+    if (error) alert('Error: ' + error.message)
     else onChange()
+  }
+
+  async function handleMakeActive(i: Instructor) {
+    const { error } = await supabase.from('instructors').update({ active: true }).eq('id', i.id)
+    if (error) alert('Error: ' + error.message)
+    else {
+      setMessage(
+        `${i.name ?? i.email} is active again — they appear in scheduling pickers. Class emails + calendar stay OFF until you turn them on.`
+      )
+      onChange()
+    }
   }
 
   return (
@@ -99,7 +142,22 @@ export default function InstructorsPanel({
         rosters.
       </p>
 
-      {instructors.length > 0 && (
+      {/* PL-176: Active / Inactive tabs */}
+      <div className="flex rounded-md overflow-hidden border border-gray-300 w-fit mb-4 text-xs font-semibold">
+        {(['active', 'inactive'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`px-3 py-1.5 ${view === v ? 'bg-hgl-slate text-white' : 'bg-white text-gray-600'}`}
+          >
+            {v === 'active' ? `Active (${activeRows.length})` : `Inactive (${inactiveRows.length})`}
+          </button>
+        ))}
+      </div>
+      {view === 'inactive' && visible.length === 0 && (
+        <p className="text-sm text-gray-500 italic mb-4">Nobody is inactive.</p>
+      )}
+      {visible.length > 0 && (
         <table className="min-w-full divide-y divide-gray-200 mb-6">
           <thead className="bg-gray-100">
             <tr>
@@ -111,7 +169,7 @@ export default function InstructorsPanel({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {instructors.map((i) => (
+            {visible.map((i) => (
               <tr key={i.id} className="hover:bg-gray-50 transition text-sm">
                 <td className="px-4 py-2 font-semibold text-hgl-slate">{i.name ?? '—'}</td>
                 <td className="px-4 py-2 text-hgl-blue">{i.email}</td>
@@ -138,9 +196,19 @@ export default function InstructorsPanel({
                   </button>
                 </td>
                 <td className="px-4 py-2 text-right">
-                  <button onClick={() => handleRemove(i)} className="text-red-600 text-xs hover:underline">
-                    Remove
-                  </button>
+                  {i.active ? (
+                    <button
+                      onClick={() => handleMakeInactive(i)}
+                      className="text-gray-600 text-xs hover:underline"
+                      title="Hidden from new scheduling pickers; history intact; reversible"
+                    >
+                      Make inactive
+                    </button>
+                  ) : (
+                    <button onClick={() => handleMakeActive(i)} className="text-green-700 text-xs font-semibold hover:underline">
+                      Make active
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

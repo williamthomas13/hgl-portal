@@ -373,7 +373,7 @@ export default function AdminDashboard() {
   const fetchInstructors = useCallback(async () => {
     const { data } = await supabase
       .from('instructors')
-      .select('id, email, name, default_meeting_link, comms_enabled')
+      .select('id, email, name, default_meeting_link, comms_enabled, active')
       .order('email')
     if (data) setInstructors(data as Instructor[])
   }, [])

@@ -796,11 +796,17 @@ export default function ClassWizard({
               className={selectCls}
             >
               <option value="">Not yet assigned</option>
-              {instructors.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name ? `${i.name} (${i.email})` : i.email}
-                </option>
-              ))}
+              {/* PL-176: inactive instructors never appear in new-scheduling
+                  pickers — the already-assigned one stays selectable so an
+                  existing class doesn't silently lose its instructor. */}
+              {instructors
+                .filter((i) => i.active || i.id === instructorId)
+                .map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name ? `${i.name} (${i.email})` : i.email}
+                    {!i.active ? ' — inactive' : ''}
+                  </option>
+                ))}
               <option value="__new">➕ Add a new instructor…</option>
             </select>
             {addingInstructor && (
