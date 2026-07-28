@@ -277,57 +277,46 @@ export async function POST(req: Request) {
       }
       const { created } = await materializeSessions(engagement, requireApproval)
 
-      // PL-10: a schedule actually existing is what "won" means — move any
-      // open pipeline row for this student to Started (PL-109 label). Trigger is
-      // schedule creation, never mere family/student record creation.
+      // PL-10 → PL-188: the pipeline stage tracks the ACTUAL state — a
+      // proposal awaiting the family reads "proposal sent"; Started happens
+      // on confirmation (activatePendingEngagement advances it), never on
+      // mere creation. The already-agreed path (send-to-confirm OFF) starts
+      // immediately, as before.
       const { error: leadAdvanceError } = await supabase
         .from('leads')
-        .update({ status: 'scheduled', updated_at: new Date().toISOString() })
+        .update({
+          status: requireApproval ? 'proposal_sent' : 'scheduled',
+          updated_at: new Date().toISOString(),
+        })
         .eq('student_id', student_id)
         .not('status', 'in', '("scheduled","lost")')
       if (leadAdvanceError) {
         console.error('PL-10 lead auto-advance failed (schedule stands):', leadAdvanceError.message)
       }
 
-      // Phase 7e §11: the family's FIRST engagement triggers the welcome/
-      // handoff email (tutor contact, first-month schedule, agreements +
-      // autopay links). Siblings/repeat engagements don't re-send.
-      const { data: studentRow } = await supabase
-        .from('students')
-        .select('family_id')
-        .eq('id', student_id)
-        .maybeSingle()
-      let isFirstEngagement = false
-      if (studentRow?.family_id) {
-        const { data: familyStudents } = await supabase
-          .from('students')
-          .select('id')
-          .eq('family_id', studentRow.family_id)
-        const ids = (familyStudents ?? []).map((s) => s.id)
-        const { count } = await supabase
-          .from('tutoring_engagements')
-          .select('id', { count: 'exact', head: true })
-          .in('student_id', ids.length ? ids : [student_id])
-          .neq('id', engagement.id)
-        isFirstEngagement = (count ?? 0) === 0
-      }
-
       const engagementId = engagement.id
+      // PL-185: a family never holds a welcome for a schedule they're still
+      // being asked to approve. ON → ONLY the confirm request now; the T8
+      // welcome + §4c all-set send at the confirm transition
+      // (activatePendingEngagement). OFF (already agreed by phone) → the
+      // welcome and all-set go out right away — that's the meaning of off —
+      // and no confirm email exists at all. sendWelcomeHandoff itself
+      // enforces one-welcome-per-family, so sibling/repeat engagements and
+      // both paths can call it safely.
       after(() =>
         Promise.allSettled([
           processGcalQueue(),
-          ...(isFirstEngagement
-            ? [sendWelcomeHandoff(engagementId).catch((e) => console.error('T8 welcome handoff failed:', e))]
-            : []),
-          // PL-41: ON → ask the parent to confirm; OFF → the §4c all-set
-          // email fires right away (PL-40's one warm email either way).
           requireApproval
             ? sendScheduleApprovalEmail(engagementId, 'initial').catch((e) =>
                 console.error('schedule approval email failed:', e)
               )
-            : sendScheduleSetEmail(engagementId).catch((e) =>
-                console.error('T_SCHEDULE_SET failed:', e)
-              ),
+            : sendWelcomeHandoff(engagementId)
+                .catch((e) => console.error('T8 welcome handoff failed:', e))
+                .then(() =>
+                  sendScheduleSetEmail(engagementId).catch((e) =>
+                    console.error('T_SCHEDULE_SET failed:', e)
+                  )
+                ),
         ])
       )
       return NextResponse.json({

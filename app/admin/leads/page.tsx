@@ -364,7 +364,21 @@ function NextStepButton({ lead, onChange }: { lead: Lead; onChange: () => void }
       </button>
     )
   }
-  if (['intake_complete', 'consult_done', 'proposal_sent'].includes(lead.status)) {
+  // PL-188: once the proposal is out, the row says so — the blue Schedule
+  // button persisting past proposing was the "stale action" finding.
+  if (lead.status === 'proposal_sent') {
+    return (
+      <a
+        href={lead.student_id ? `/admin/tutoring?schedule=${lead.student_id}` : '#'}
+        onClick={stop}
+        className="text-xs text-amber-700 font-semibold underline"
+        title="Waiting on the family to confirm — Started happens on confirmation"
+      >
+        proposal sent — waiting on the family
+      </a>
+    )
+  }
+  if (['intake_complete', 'consult_done'].includes(lead.status)) {
     // Scheduling IS the next step — the wizard preload deep-link (PL-92
     // pattern applied inside the app). Without a student record yet, the
     // detail's "Create family + student" is the gateway.
@@ -584,7 +598,14 @@ function LeadDetail({
         >
           Save
         </button>
-        {lead.contact_email ? (
+        {lead.intake ? (
+          // PL-188: intake is COMPLETE — offering a re-send next to the
+          // visible answers implied the state was unknown. The answers
+          // render just below.
+          <span className="text-xs text-green-700 font-semibold">
+            ✓ Intake complete — answers below
+          </span>
+        ) : lead.contact_email ? (
           <ConfirmAction
             label={lead.intake_token_sent_at ? 'Re-send intake form' : 'Send intake form'}
             message={`Email the intake form link to ${lead.contact_email}?`}
@@ -617,10 +638,21 @@ function LeadDetail({
         )}
       </div>
 
-      {/* Consult scheduling light (spec §11): datetime + owner → GCal push */}
-      <div className="bg-gray-50 border border-gray-200 rounded p-3">
+      {/* Consult scheduling light (spec §11): datetime + owner → GCal push.
+          PL-188: past the proposal, consultation is a step backward — greyed
+          with a plain reason, not hidden, so the sequence stays legible. */}
+      <div
+        className={`bg-gray-50 border border-gray-200 rounded p-3 ${
+          ['proposal_sent', 'scheduled'].includes(lead.status) ? 'opacity-50 pointer-events-none' : ''
+        }`}
+      >
         <p className="text-xs font-semibold text-gray-600 mb-2">
           Consultation
+          {['proposal_sent', 'scheduled'].includes(lead.status) && (
+            <span className="ml-2 font-normal text-amber-700">
+              proposal already sent — the consultation moment has passed
+            </span>
+          )}
           {lead.consult_at && (
             <span className="ml-2 font-normal text-gray-500">
               currently {fmtWhen(lead.consult_at)} with {lead.consult_owner_email ?? '—'}
@@ -826,6 +858,21 @@ export default function LeadsAdmin() {
     load()
   }, [load, refreshSignal])
   const refresh = () => setRefreshSignal((n) => n + 1)
+
+  // PL-188: scheduling usually happens on the TUTORING page while this tab
+  // sits open — coming back must show the advanced stage without manual
+  // refreshes ("needed several refreshes to drop off the pipeline").
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') load()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [load])
 
   // PL-97: the intake-complete alert deep-links ?lead={id} — expand and
   // highlight the exact lead record on arrival (PL-99 semantics: the focus

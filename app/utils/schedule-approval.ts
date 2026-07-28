@@ -435,9 +435,31 @@ export async function activatePendingEngagement(
   }
   for (const s of mine) await enqueueGcalSync(s.id, `schedule approved (${how})`)
 
+  // PL-185: the welcome waits for THIS transition — confirmation is what
+  // makes the schedule real. sendWelcomeHandoff enforces one-per-family
+  // internally; T_SCHEDULE_SET dedupes per engagement. Order: the warm
+  // handoff first, then the all-set schedule email.
+  const { sendWelcomeHandoff } = await import('./intake-emails')
+  await sendWelcomeHandoff(engagementId).catch((e) =>
+    console.error('T8 welcome failed (activation stands):', e)
+  )
   await sendScheduleSetEmail(engagementId).catch((e) =>
     console.error('T_SCHEDULE_SET failed (activation stands):', e)
   )
+  // PL-188: Started means CONFIRMED — advance the pipeline row here, not at
+  // proposal time.
+  const { data: engStudent } = await supabase
+    .from('tutoring_engagements')
+    .select('student_id')
+    .eq('id', engagementId)
+    .maybeSingle()
+  if (engStudent?.student_id) {
+    await supabase
+      .from('leads')
+      .update({ status: 'scheduled', updated_at: new Date().toISOString() })
+      .eq('student_id', engStudent.student_id)
+      .not('status', 'in', '("scheduled","lost")')
+  }
   return { ok: true }
 }
 

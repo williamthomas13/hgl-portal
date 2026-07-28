@@ -2,35 +2,42 @@
 
 import { useState } from 'react'
 
-// PL-41 client actions: one-tap confirm, or "different times" with a note.
+// PL-41 client actions — PL-186: the APPROVE press is a native <form>
+// submitting a server action, so it works from first paint (before
+// hydration, or with JS off entirely); the outcome renders server-side via
+// the redirect. Decline keeps the client flow — it needs a typed note, so
+// hydration has long finished by the time anyone presses it.
 
-export default function ConfirmActions({ token, studentFirst }: { token: string; studentFirst: string }) {
+export default function ConfirmActions({
+  token,
+  studentFirst,
+  approveAction,
+}: {
+  token: string
+  studentFirst: string
+  approveAction: (formData: FormData) => Promise<void>
+}) {
   const [view, setView] = useState<'idle' | 'declining'>('idle')
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<'approved' | 'declined' | 'slot_taken' | null>(null)
+  const [done, setDone] = useState<'declined' | null>(null)
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  async function call(action: 'approve' | 'decline') {
+  async function decline() {
     setBusy(true)
     setError(null)
     try {
       const res = await fetch('/api/tutoring/schedule-approval', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, action, note: note.trim() || undefined }),
+        body: JSON.stringify({ token, action: 'decline', note: note.trim() || undefined }),
       })
-      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
         setError(json.error ?? 'Something went wrong — please try again.')
         return
       }
-      // PL-159: the slot went to another family between proposal and click.
-      if (json.conflict) {
-        setDone('slot_taken')
-        return
-      }
-      setDone(action === 'approve' ? 'approved' : 'declined')
+      setDone('declined')
     } catch {
       setError('Something went wrong — please try again, or just reply to our email.')
     } finally {
@@ -38,24 +45,6 @@ export default function ConfirmActions({ token, studentFirst }: { token: string;
     }
   }
 
-  if (done === 'approved') {
-    return (
-      <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-        <strong>Locked in — thank you!</strong> A welcome email with calendar links and the PDF
-        schedule is on its way, and every session is in your parent portal.
-      </div>
-    )
-  }
-  if (done === 'slot_taken') {
-    return (
-      <div className="p-4 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm">
-        <strong>That time was just taken.</strong> Another family confirmed an overlapping time a
-        moment before you — nothing is locked in for {studentFirst} yet, and nothing is your
-        fault. We&apos;ve been notified and will send you fresh times to pick from shortly; if
-        you&apos;d like to talk it through sooner, just reply to our email or give us a call.
-      </div>
-    )
-  }
   if (done === 'declined') {
     return (
       <div className="p-4 rounded bg-blue-50 border border-blue-200 text-hgl-slate text-sm">
@@ -69,13 +58,15 @@ export default function ConfirmActions({ token, studentFirst }: { token: string;
     <div className="space-y-4">
       {view !== 'declining' ? (
         <>
-          <button
-            onClick={() => call('approve')}
-            disabled={busy}
-            className="w-full bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
-          >
-            {busy ? 'Confirming…' : 'Confirm this schedule'}
-          </button>
+          <form action={approveAction}>
+            <input type="hidden" name="token" value={token} />
+            <button
+              type="submit"
+              className="w-full bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
+            >
+              Confirm this schedule
+            </button>
+          </form>
           <button
             onClick={() => setView('declining')}
             className="w-full text-sm text-hgl-blue underline"
@@ -97,7 +88,7 @@ export default function ConfirmActions({ token, studentFirst }: { token: string;
           />
           <div className="flex gap-2">
             <button
-              onClick={() => call('decline')}
+              onClick={decline}
               disabled={busy}
               className="bg-hgl-slate text-white font-bold py-2 px-4 rounded-md hover:opacity-90 disabled:opacity-50"
             >

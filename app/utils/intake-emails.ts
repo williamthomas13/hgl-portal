@@ -136,6 +136,20 @@ export async function sendWelcomeHandoff(
   const subjectName = one<any>(eng.subjects)?.name ?? 'tutoring'
   if (!student || !family?.parent_email || !tutor) return 'skipped'
 
+  // PL-185: ONE welcome per FAMILY, owned here so every caller (create on
+  // the already-agreed path, the confirm transition, staff override) can
+  // invoke it safely — sibling and repeat engagements skip. The per-
+  // engagement sendOnce dedupe below still guards double-submits.
+  const { data: prior } = await supabase
+    .from('email_sends')
+    .select('id')
+    .eq('template_key', 'T8_WELCOME_HANDOFF')
+    .eq('recipient_email', family.parent_email)
+    .eq('is_test', false)
+    .in('status', ['scheduled', 'sending', 'sent', 'delivered'])
+    .limit(1)
+  if (prior?.length) return 'duplicate'
+
   // First-month schedule summary: the engagement's upcoming sessions.
   const { data: sessions } = await supabase
     .from('tutoring_sessions')

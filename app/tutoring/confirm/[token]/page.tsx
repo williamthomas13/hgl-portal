@@ -1,8 +1,12 @@
+import { after } from 'next/server'
+import { redirect } from 'next/navigation'
 import {
+  activatePendingEngagement,
   loadApprovalEngagement,
   scheduleSummaryText,
   verifyScheduleApproveToken,
 } from '../../../utils/schedule-approval'
+import { processGcalQueue } from '../../../utils/gcal-sync'
 import { loadContactInfo } from '../../../utils/tutoring-emails'
 import { PublicNoticeCard } from '../../../components/PublicNotice'
 import ConfirmActions from './confirm-actions'
@@ -10,15 +14,37 @@ import ConfirmActions from './confirm-actions'
 // PL-41: the signed-link target of T_SCHEDULE_CONFIRM — one tap to lock in
 // the proposed schedule, or a note asking for different times. No login; the
 // token is the authentication (house pattern).
+//
+// PL-186: the confirm press is a NATIVE FORM posting to a server action —
+// families click the moment the email lands, often before the page's
+// JavaScript has hydrated, and a client onClick is silently dead in that
+// window ("pressed it and nothing happened"). A native submit works from the
+// first paint, JS or no JS; the outcome comes back server-rendered via the
+// redirect. Every outcome renders a plain-English state — never a dead click.
 
 export const dynamic = 'force-dynamic'
 
+async function approveAction(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const engagementId = verifyScheduleApproveToken(token)
+  if (!engagementId) redirect(`/tutoring/confirm/${encodeURIComponent(token)}?result=invalid`)
+  const result = await activatePendingEngagement(engagementId as string, 'parent')
+  after(() => processGcalQueue())
+  const outcome = result.conflict ? 'slot_taken' : result.ok ? 'approved' : 'stale'
+  redirect(`/tutoring/confirm/${encodeURIComponent(token)}?result=${outcome}`)
+}
+
 export default async function ConfirmSchedulePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { token } = await params
+  const sp = await searchParams
+  const result = Array.isArray(sp.result) ? sp.result[0] : sp.result
   const engagementId = verifyScheduleApproveToken(token)
   const contact = await loadContactInfo()
 
@@ -36,6 +62,34 @@ export default async function ConfirmSchedulePage({
   const alreadyActive = e.status === 'active'
   const summary = scheduleSummaryText(e)
 
+  // PL-186/159: server-rendered outcomes — every path says something plain.
+  const body =
+    result === 'slot_taken' && !alreadyActive ? (
+      <div className="p-4 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+        <strong>That time was just taken.</strong> Another family confirmed an overlapping time a
+        moment before you — nothing is locked in for {e.studentFirst} yet, and nothing is your
+        fault. We&apos;ve been notified and will send you fresh times to pick from shortly; if
+        you&apos;d like to talk it through sooner, just reply to our email or give us a call.
+      </div>
+    ) : alreadyActive ? (
+      <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
+        <strong>
+          {result === 'approved'
+            ? 'Locked in — thank you!'
+            : "This schedule is confirmed — you're all set."}
+        </strong>{' '}
+        A welcome email with calendar links and the PDF schedule is on its way (or already in your
+        inbox), and every session is in your parent portal.
+      </div>
+    ) : e.status !== 'pending_parent_confirmation' ? (
+      <div className="p-4 rounded bg-gray-50 border border-gray-200 text-gray-700 text-sm">
+        This schedule isn&apos;t awaiting confirmation anymore — if anything looks off, just reach
+        out and we&apos;ll straighten it out.
+      </div>
+    ) : (
+      <ConfirmActions token={token} studentFirst={e.studentFirst} approveAction={approveAction} />
+    )
+
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-xl mx-auto space-y-6">
@@ -49,19 +103,7 @@ export default async function ConfirmSchedulePage({
           <div className="border border-gray-200 bg-gray-50 rounded-lg p-4 text-hgl-slate font-semibold mb-6">
             {summary}
           </div>
-          {alreadyActive ? (
-            <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-              <strong>This schedule is confirmed — you&apos;re all set.</strong> The details and
-              calendar links are in your welcome email, and everything is in your parent portal.
-            </div>
-          ) : e.status !== 'pending_parent_confirmation' ? (
-            <div className="p-4 rounded bg-gray-50 border border-gray-200 text-gray-700 text-sm">
-              This schedule isn&apos;t awaiting confirmation anymore — if anything looks off,
-              just reach out and we&apos;ll straighten it out.
-            </div>
-          ) : (
-            <ConfirmActions token={token} studentFirst={e.studentFirst} />
-          )}
+          {body}
         </div>
         <div className="bg-white rounded-lg shadow-sm p-5 text-sm text-gray-600">
           Questions, or want different times? Email{' '}
