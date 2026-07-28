@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 // PL-132: the tutor's upcoming list, with the three things Scarlett asked
 // for after using it on a phone:
@@ -35,6 +35,11 @@ type NoteRow = { startsAt: string | null; note: string; nextTime: string | null 
 
 const MEETING_URL = /^https?:\/\/\S+$/i
 
+// PL-210: Join is live from 30 minutes before the start through 30 minutes
+// after the end. Outside that window the button goes muted (not hidden — the
+// online/in-person distinction is information the tutor should still see).
+const JOIN_WINDOW_MS = 30 * 60 * 1000
+
 function fmt(iso: string, opts: Intl.DateTimeFormatOptions, tz: string) {
   return new Date(iso).toLocaleString('en-US', { timeZone: tz, ...opts })
 }
@@ -42,6 +47,13 @@ function fmt(iso: string, opts: Intl.DateTimeFormatOptions, tz: string) {
 export default function UpcomingSessions({ rows, timezone }: { rows: UpcomingRow[]; timezone: string }) {
   const [openStudent, setOpenStudent] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, NoteRow[] | 'loading' | 'error'>>({})
+  // PL-210: re-check the join window each minute so the button goes live
+  // while the page sits open — no reload needed right before a session.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(t)
+  }, [])
 
   async function toggleNotes(studentId: string) {
     if (openStudent === studentId) {
@@ -111,14 +123,24 @@ export default function UpcomingSessions({ rows, timezone }: { rows: UpcomingRow
                 {s.subject ? ` · ${s.subject}` : ''}
               </span>
               {isMeetingUrl ? (
-                <a
-                  href={s.location!.trim()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-bold bg-hgl-blue text-white rounded px-2.5 py-1 hover:bg-hgl-blue-hover"
-                >
-                  Join
-                </a>
+                now >= new Date(s.startsAt).getTime() - JOIN_WINDOW_MS &&
+                now <= new Date(s.endsAt).getTime() + JOIN_WINDOW_MS ? (
+                  <a
+                    href={s.location!.trim()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-bold bg-hgl-blue text-white rounded px-2.5 py-1 hover:bg-hgl-blue-hover"
+                  >
+                    Join
+                  </a>
+                ) : (
+                  <span
+                    className="text-xs font-bold bg-gray-100 text-gray-400 rounded px-2.5 py-1 cursor-default"
+                    title="The Join link goes live 30 minutes before the session"
+                  >
+                    Join · online
+                  </span>
+                )
               ) : (
                 s.location && <span className="text-gray-400 text-xs truncate max-w-56">{s.location}</span>
               )}
