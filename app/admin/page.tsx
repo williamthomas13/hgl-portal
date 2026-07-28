@@ -1353,6 +1353,13 @@ export default function AdminDashboard() {
               Tutoring
             </a>
             <a
+              href="/admin/calendar"
+              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
+              title="PL-160: everything at once — 1-on-1, classes, and proposed holds, week or month"
+            >
+              Calendar
+            </a>
+            <a
               href="/admin/leads"
               className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
             >
