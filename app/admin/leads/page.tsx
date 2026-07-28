@@ -166,7 +166,58 @@ async function post(body: Record<string, unknown>): Promise<{ ok: boolean; error
 // is the NORMAL case here, not an error state — no required-field noise.
 // ---------------------------------------------------------------------------
 
-function NewLeadForm({ onCreated }: { onCreated: (id: string) => void }) {
+// ---------------------------------------------------------------------------
+// PL-194: duplicate radar for the add form. Scarlett added the same test
+// student three times (once with a typo, once identical) because nothing
+// suggested existing records while typing. Matches run against BOTH pipeline
+// leads and real student records — a lead duplicating an enrolled student is
+// the same disease — with typo tolerance, and an exact-name save requires
+// walking past a plain warning (two different Ana Garcías stay creatable).
+// ---------------------------------------------------------------------------
+
+/** Small edit-distance for typo matching ("Jaon" still finds "Jason"). */
+function editDistance(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 2) return 99
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)])
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      )
+  return dp[a.length][b.length]
+}
+
+const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+
+/** Does the typed name look like this existing name? Substring both ways,
+ *  or within 2 edits once at least 4 characters are down. */
+function nameLooksLike(typed: string, existing: string | null | undefined): boolean {
+  if (!existing) return false
+  const t = norm(typed)
+  const e = norm(existing)
+  if (t.length < 3) return false
+  if (e.includes(t) || t.includes(e)) return true
+  return t.length >= 4 && editDistance(t, e) <= 2
+}
+
+type DupMatch = {
+  kind: 'lead' | 'student'
+  id: string
+  name: string
+  context: string
+  exact: boolean
+}
+
+function NewLeadForm({
+  onCreated,
+  onOpenExisting,
+}: {
+  onCreated: (id: string) => void
+  onOpenExisting: (leadId: string) => void
+}) {
   const blank = {
     source: 'call',
     contact_name: '',
@@ -187,14 +238,105 @@ function NewLeadForm({ onCreated }: { onCreated: (id: string) => void }) {
   // or an email. Same rule the server enforces.
   const identified = !!(f.contact_name.trim() || f.contact_email.trim() || f.student_name.trim())
 
+  // PL-194: the duplicate radar. One light fetch of names when typing starts;
+  // matching (with typo tolerance) runs locally as you type.
+  const [pool, setPool] = useState<{ leads: any[]; students: any[] } | null>(null)
+  const [matches, setMatches] = useState<DupMatch[]>([])
+  useEffect(() => {
+    const typedStudent = f.student_name.trim()
+    const typedContact = f.contact_name.trim()
+    if (typedStudent.length < 3 && typedContact.length < 3) {
+      setMatches([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      let p = pool
+      if (!p) {
+        const [leadsRes, studentsRes] = await Promise.all([
+          supabase
+            .from('leads')
+            .select('id, student_name, contact_name, contact_email, status, student_school'),
+          supabase
+            .from('students')
+            .select('id, first_name, last_name, school, grade_level, families ( parent_first_name, parent_last_name )'),
+        ])
+        p = { leads: (leadsRes.data as any[]) ?? [], students: (studentsRes.data as any[]) ?? [] }
+        if (cancelled) return
+        setPool(p)
+      }
+      const out: DupMatch[] = []
+      for (const l of p.leads) {
+        const byStudent = typedStudent.length >= 3 && nameLooksLike(typedStudent, l.student_name)
+        const byContact = typedContact.length >= 3 && nameLooksLike(typedContact, l.contact_name)
+        if (byStudent || byContact) {
+          out.push({
+            kind: 'lead',
+            id: l.id,
+            name: l.student_name || l.contact_name || l.contact_email || 'Unnamed',
+            context: [
+              l.student_name && l.contact_name ? `parent ${l.contact_name}` : null,
+              l.student_school,
+              `already in the pipeline — ${LEAD_STATUS_LABELS[l.status] ?? l.status}`,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            exact:
+              (!!l.student_name && norm(l.student_name) === norm(typedStudent)) ||
+              (!!l.contact_name && !!typedContact && norm(l.contact_name) === norm(typedContact)),
+          })
+        }
+      }
+      for (const s of p.students) {
+        const full = `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim()
+        if (typedStudent.length >= 3 && nameLooksLike(typedStudent, full)) {
+          const fam = Array.isArray(s.families) ? s.families[0] : s.families
+          out.push({
+            kind: 'student',
+            id: s.id,
+            name: full,
+            context: [
+              fam ? `parent ${`${fam.parent_first_name ?? ''} ${fam.parent_last_name ?? ''}`.trim()}` : null,
+              s.school,
+              s.grade_level ? `Grade ${s.grade_level}` : null,
+              'already a student here',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            exact: norm(full) === norm(typedStudent),
+          })
+        }
+      }
+      if (!cancelled) setMatches(out.slice(0, 6))
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.student_name, f.contact_name])
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    // PL-194: an EXACT name match never saves silently — creating anyway is
+    // legitimate (two different Ana Garcías) but must be deliberate.
+    const exact = matches.filter((m) => m.exact)
+    if (exact.length > 0) {
+      const lines = exact.map((m) => `• ${m.name} — ${m.context}`).join('\n')
+      if (
+        !window.confirm(
+          `This exact name already exists:\n\n${lines}\n\nAdd a NEW record with the same name anyway? (Fine if they're genuinely different people.)`
+        )
+      )
+        return
+    }
     setSaving(true)
     setError(null)
     const res = await post({ action: 'create', ...f })
     setSaving(false)
     if (!res.ok) return setError(res.error ?? 'Failed.')
     setF(blank)
+    setMatches([])
+    setPool(null) // the new record must itself be suggestable right away
     onCreated((res as { id?: string }).id ?? '')
   }
 
@@ -220,6 +362,38 @@ function NewLeadForm({ onCreated }: { onCreated: (id: string) => void }) {
           <input className={inputCls} value={f.student_name} onChange={(e) => set('student_name')(e.target.value)} />
         </div>
       </div>
+      {/* PL-194: the duplicate radar — matching leads AND students surface
+          while typing, with enough context to recognize them. Selecting one
+          opens the existing record instead of creating. */}
+      {matches.length > 0 && (
+        <div className="border border-amber-300 bg-amber-50 rounded-md p-3 text-sm">
+          <p className="text-xs font-bold text-amber-900 mb-1.5">
+            Might already be here — open theirs instead of adding twice:
+          </p>
+          <ul className="space-y-1">
+            {matches.map((m) => (
+              <li key={`${m.kind}-${m.id}`} className="text-xs text-amber-900">
+                {m.kind === 'student' ? (
+                  <a href={`/admin/students/${m.id}`} className="font-semibold underline text-hgl-blue">
+                    {m.name}
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onOpenExisting(m.id)}
+                    className="font-semibold underline text-hgl-blue"
+                  >
+                    {m.name}
+                  </button>
+                )}{' '}
+                — {m.context}
+                {m.exact && <span className="ml-1 font-bold">(exact name)</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Everything below is optional — the intake sheet fills whatever's
           missing, so blank fields here are normal, not a problem. */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -933,6 +1107,13 @@ export default function LeadsAdmin() {
                     setExpanded(id)
                     setFocusLead(`lead-${id}`)
                   }
+                }}
+                onOpenExisting={(id) => {
+                  // PL-194: selecting a suggestion opens the existing lead —
+                  // including one already started/closed, so show those rows.
+                  setShowClosed(true)
+                  setExpanded(id)
+                  setFocusLead(`lead-${id}`)
                 }}
               />
             </CollapsibleSection>
