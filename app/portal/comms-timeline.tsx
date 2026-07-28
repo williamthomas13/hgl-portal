@@ -70,7 +70,7 @@ export default function CommsTimeline({ items }: { items: TimelineItem[] }) {
               {item.state}
             </span>
             <span className="font-medium text-gray-800">{item.label}</span>
-            <span className="text-gray-400 text-xs">
+            <span className="text-gray-500 text-xs">
               {item.when}
               {item.recipients > 1 ? ` · ${item.recipients} families` : ''}
             </span>

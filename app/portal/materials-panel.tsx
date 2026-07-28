@@ -110,7 +110,7 @@ export function ShareMaterialsPanel({ students }: { students: { id: string; name
                       <span className="font-semibold">{m.title}</span>
                     )}
                     {m.note && <span className="text-gray-500">— {m.note}</span>}
-                    <span className="text-gray-400">{fmtDay(m.created_at)}</span>
+                    <span className="text-gray-500">{fmtDay(m.created_at)}</span>
                     <button onClick={() => remove(m.id)} className="text-red-600 underline ml-auto">
                       remove
                     </button>
@@ -157,7 +157,7 @@ export function ShareMaterialsPanel({ students }: { students: { id: string; name
                 {busy ? 'Sharing…' : 'Share'}
               </button>
             </div>
-            <p className="text-[11px] text-gray-400">PDFs, Word docs, images, .txt — up to 10MB. Bigger? Share a link.</p>
+            <p className="text-[11px] text-gray-500">PDFs, Word docs, images, .txt — up to 10MB. Bigger? Share a link.</p>
             {message && (
               <p className={`text-xs ${message.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{message}</p>
             )}
@@ -210,7 +210,7 @@ export function FamilyMaterialsSection({ studentNames }: { studentNames: Record<
                     <span className="font-semibold">{m.title}</span>
                   )}
                   {m.note && <span className="text-gray-600"> — {m.note}</span>}
-                  <span className="text-xs text-gray-400 ml-2">{fmtDay(m.created_at)}</span>
+                  <span className="text-xs text-gray-500 ml-2">{fmtDay(m.created_at)}</span>
                 </li>
               ))}
             </ul>

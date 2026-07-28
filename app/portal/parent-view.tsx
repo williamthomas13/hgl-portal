@@ -421,7 +421,7 @@ export default async function ParentView({
                               ${Number(e.amount_paid).toLocaleString()}
                               {e.paid_at ? ` · ${formatDateShort(e.paid_at.slice(0, 10))}` : ''}
                               {e.stripe_payment_intent_id ? (
-                                <span className="text-gray-400"> · ref {e.stripe_payment_intent_id}</span>
+                                <span className="text-gray-500"> · ref {e.stripe_payment_intent_id}</span>
                               ) : null}
                               {addons.map((a: { name: string; pricePaid: number }, i: number) => (
                                 <div key={i} className="text-gray-600">
@@ -452,7 +452,7 @@ export default async function ParentView({
                         if (summary.pastSessions === 0) return null
                         if (summary.recordedSessions === 0)
                           return (
-                            <p className="mt-3 text-sm text-gray-400 italic">
+                            <p className="mt-3 text-sm text-gray-500 italic">
                               Attendance will appear here after the first session.
                             </p>
                           )

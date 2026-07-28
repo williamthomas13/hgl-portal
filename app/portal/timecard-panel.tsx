@@ -108,7 +108,7 @@ export default function TimecardPanel({
   return (
     <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-6">
       <h2 className="text-lg font-bold text-hgl-slate mb-1">Timecards</h2>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-gray-500 mb-4">
         Built from the schedule automatically — review the period, fix any exception, confirm.
         Hours only; pay runs through payroll as usual (1st–15th pays the 20th, 16th–end pays the 5th).
       </p>
@@ -141,7 +141,7 @@ export default function TimecardPanel({
                   <span>{fmt(s.starts_at, { hour: 'numeric', minute: '2-digit' })}</span>
                   <span className="text-gray-600">{s.studentName} · {s.subjectName}</span>
                   <span className="text-gray-500 text-xs">{(s.duration_minutes / 60).toFixed(2)} h</span>
-                  <span className="text-xs text-gray-400">{STATUS_LABELS[s.status] ?? s.status}</span>
+                  <span className="text-xs text-gray-500">{STATUS_LABELS[s.status] ?? s.status}</span>
                   {/* PL-103: the paper timecard's hour columns — attribute the
                       session's hours to a work type while the card is open. */}
                   {actionable.status === 'open' ? (
@@ -162,7 +162,7 @@ export default function TimecardPanel({
                       ))}
                     </select>
                   ) : (
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400 border border-gray-200 rounded px-1">
+                    <span className="text-[10px] uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-1">
                       {s.work_type ?? DEFAULT_TUTORING_WORK_TYPE}
                     </span>
                   )}
@@ -217,7 +217,7 @@ export default function TimecardPanel({
                     </span>
                   )}
                 </div>
-                {s.cancel_note && <p className="text-xs text-gray-400 mt-0.5">note: {s.cancel_note}</p>}
+                {s.cancel_note && <p className="text-xs text-gray-500 mt-0.5">note: {s.cancel_note}</p>}
               </li>
             ))}
             {/* PL-103: group-class sessions taught — from the class schedule,
@@ -240,8 +240,8 @@ export default function TimecardPanel({
                     <span className="text-gray-500 text-xs">
                       {hours > 0 ? `${hours.toFixed(2)} h` : 'missing times — 0 h, tell the office'}
                     </span>
-                    <span className="text-xs text-gray-400">Class session taught</span>
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400 border border-gray-200 rounded px-1">
+                    <span className="text-xs text-gray-500">Class session taught</span>
+                    <span className="text-[10px] uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-1">
                       {CLASS_WORK_TYPE}
                     </span>
                   </div>
@@ -301,7 +301,7 @@ export default function TimecardPanel({
       {timecards.filter((t) => t.id !== actionableId).length > 0 && (
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
+            <tr className="text-left text-xs text-gray-500 uppercase tracking-wide">
               <th className="py-1 pr-4">Period</th>
               <th className="py-1 pr-4">Hours</th>
               <th className="py-1">Status</th>

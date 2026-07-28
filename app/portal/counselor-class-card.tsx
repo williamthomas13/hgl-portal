@@ -63,7 +63,7 @@ base: string
         </div>
         <div className="text-right">
           <div className="text-lg font-bold text-hgl-slate">
-            {c.paid} <span className="text-gray-400 font-normal">/ {c.capacity} paid</span>
+            {c.paid} <span className="text-gray-500 font-normal">/ {c.capacity} paid</span>
           </div>
           {c.waitlist > 0 && (
             <div className="text-xs text-purple-700 font-semibold">

@@ -204,7 +204,7 @@ export default function AttendancePanel({
     <div className="mt-3" ref={panelRef}>
       <h4 className="text-sm font-semibold text-hgl-slate mb-1">Attendance</h4>
       {adminReadOnly && (
-        <p className="text-xs text-gray-400 mb-2">
+        <p className="text-xs text-gray-500 mb-2">
           Instructors take attendance from their portal — this view updates on its own. Use the
           override only to correct a record.
         </p>
@@ -255,7 +255,7 @@ export default function AttendancePanel({
 
                 {isOpen && (
                   <div className="p-3 space-y-3">
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-500">
                       Everyone starts Present. Late / Left early are for 10+ minutes only — under
                       that, they're simply Present.
                     </p>
@@ -364,7 +364,7 @@ export default function AttendancePanel({
                             <span
                               className={
                                 !r
-                                  ? 'text-gray-400 italic'
+                                  ? 'text-gray-500 italic'
                                   : label === 'Absent'
                                     ? 'text-red-600 font-semibold'
                                     : label === 'Present'
@@ -374,7 +374,7 @@ export default function AttendancePanel({
                             >
                               {label}
                             </span>
-                            {r?.note ? <span className="text-gray-400"> · {r.note}</span> : null}
+                            {r?.note ? <span className="text-gray-500"> · {r.note}</span> : null}
                           </li>
                         )
                       })}
@@ -405,7 +405,7 @@ export default function AttendancePanel({
                           <span className={label === 'Absent' ? 'text-red-600 font-semibold' : label === 'Present' ? 'text-green-700' : 'text-amber-700'}>
                             {label}
                           </span>
-                          {r.note ? <span className="text-gray-400"> · {r.note}</span> : null}
+                          {r.note ? <span className="text-gray-500"> · {r.note}</span> : null}
                         </li>
                       )
                     })}

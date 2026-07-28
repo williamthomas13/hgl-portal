@@ -195,7 +195,7 @@ export default async function InstructorView({
                       Cancelled
                     </span>
                   ) : (
-                    isPast && <span className="text-gray-400 text-sm font-normal"> · past</span>
+                    isPast && <span className="text-gray-500 text-sm font-normal"> · past</span>
                   )}
                 </h3>
                 <p className="text-sm text-gray-600">
@@ -214,7 +214,7 @@ export default async function InstructorView({
                     <span className="text-amber-700">not set</span>
                   )}
                   {!c.default_location && location ? (
-                    <span className="text-gray-400"> (your default link)</span>
+                    <span className="text-gray-500"> (your default link)</span>
                   ) : null}
                 </p>
                 {synap && (
@@ -227,7 +227,7 @@ export default async function InstructorView({
                 {/* PL-77/PL-73: the live count in the house format */}
                 <div className="text-lg font-bold text-hgl-slate">
                   {paidCount} enrolled{' '}
-                  <span className="text-gray-400 font-normal">
+                  <span className="text-gray-500 font-normal">
                     / {minEnrollment} min / {c.capacity} cap
                   </span>
                 </div>

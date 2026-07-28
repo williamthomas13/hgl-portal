@@ -137,7 +137,7 @@ export default function CoveragePanel({
           </span>
         )}
       </h2>
-      <p className="text-xs text-gray-400 mb-4">{managerLine}</p>
+      <p className="text-xs text-gray-500 mb-4">{managerLine}</p>
       {message && <p className="text-sm mb-3">{message}</p>}
 
       {offersForMe.length > 0 && (
@@ -197,7 +197,7 @@ export default function CoveragePanel({
                   <ul className="space-y-0.5 mt-0.5">
                     {h.notes.map((n, j) => (
                       <li key={j} className="text-gray-700">
-                        <span className="text-gray-400">{n.when}:</span> {n.note}
+                        <span className="text-gray-500">{n.when}:</span> {n.note}
                         {n.next_time && <span className="text-gray-500"> · Next time: {n.next_time}</span>}
                       </li>
                     ))}

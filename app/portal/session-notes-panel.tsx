@@ -87,7 +87,7 @@ export default function SessionNotesPanel({
           </span>
         )}
       </h2>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-gray-500 mb-4">
         A line or two per session — what you worked on, and anything to pick up next time.
         Families read these on their family portal, so keep them parent-friendly. Your timecard
         can&apos;t be approved while notes are missing.
@@ -116,7 +116,7 @@ export default function SessionNotesPanel({
             {openId !== s.id && s.note && (
               <p className="text-xs text-gray-600 mt-0.5">
                 {s.note}
-                {s.next_time && <span className="text-gray-400"> · Next time: {s.next_time}</span>}
+                {s.next_time && <span className="text-gray-500"> · Next time: {s.next_time}</span>}
               </p>
             )}
             {openId === s.id && (

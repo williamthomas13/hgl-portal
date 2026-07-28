@@ -187,7 +187,7 @@ export default async function TutoringSection({ email }: { email: string }) {
   return (
     <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-6 mt-8">
       <h2 className="text-lg font-bold text-hgl-slate mb-1">1-on-1 tutoring</h2>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-gray-500 mb-4">
         Times shown in {tz.split('/').pop()?.replace('_', ' ')}.
       </p>
 
@@ -233,7 +233,7 @@ export default async function TutoringSection({ email }: { email: string }) {
                 </div>
               )}
               {(e.location ?? tutor?.default_meeting_link) && (
-                <div className="text-xs text-gray-400 mt-1 truncate">
+                <div className="text-xs text-gray-500 mt-1 truncate">
                   {e.location ?? tutor?.default_meeting_link}
                 </div>
               )}
@@ -282,7 +282,7 @@ export default async function TutoringSection({ email }: { email: string }) {
                     : ''}
                 </span>
                 {(one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_meeting_link) && (
-                  <span className="text-gray-400 text-xs truncate max-w-56">
+                  <span className="text-gray-500 text-xs truncate max-w-56">
                     {one<any>(s.tutoring_engagements)?.location ?? one<any>(s.instructors)?.default_meeting_link}
                   </span>
                 )}
@@ -312,12 +312,12 @@ export default async function TutoringSection({ email }: { email: string }) {
               {monthInvoice ? (
                 <>
                   {' '}· month total <strong>${Number(monthInvoice.total).toFixed(2)}</strong>{' '}
-                  <span className="text-gray-400">
+                  <span className="text-gray-500">
                     ({(INVOICE_STATUS_COPY[monthInvoice.status]?.label ?? monthInvoice.status).toLowerCase()})
                   </span>
                 </>
               ) : (
-                <span className="text-gray-400"> · invoice not prepared yet</span>
+                <span className="text-gray-500"> · invoice not prepared yet</span>
               )}
             </p>
             {[...packageInfo.entries()].map(([engId, pkg]) => {
@@ -357,7 +357,7 @@ export default async function TutoringSection({ email }: { email: string }) {
                 </div>
                 <p className="text-gray-700 text-xs mt-0.5">
                   {n.note}
-                  {n.nextTime && <span className="text-gray-400"> · Next time: {n.nextTime}</span>}
+                  {n.nextTime && <span className="text-gray-500"> · Next time: {n.nextTime}</span>}
                 </p>
               </li>
             ))}

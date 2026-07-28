@@ -220,7 +220,7 @@ export default function ProposalActions({
                           and we&apos;ll make it happen.
                         </p>
                       )}
-                      <button onClick={() => { setMoving(null); setSlots(null) }} className="text-xs text-gray-400 underline">
+                      <button onClick={() => { setMoving(null); setSlots(null) }} className="text-xs text-gray-500 underline">
                         keep this time
                       </button>
                     </div>
@@ -235,7 +235,7 @@ export default function ProposalActions({
                       >
                         Yes, remove it
                       </button>
-                      <button onClick={() => setDropping(null)} className="text-gray-400 underline">
+                      <button onClick={() => setDropping(null)} className="text-gray-500 underline">
                         keep it
                       </button>
                     </div>
@@ -273,7 +273,7 @@ export default function ProposalActions({
             <button onClick={() => setMode('changes')} className="text-sm text-hgl-blue underline">
               Something bigger? Tell us in words
             </button>
-            <button onClick={() => setMode('buttons')} className="text-sm text-gray-400 underline">
+            <button onClick={() => setMode('buttons')} className="text-sm text-gray-500 underline">
               back
             </button>
           </div>

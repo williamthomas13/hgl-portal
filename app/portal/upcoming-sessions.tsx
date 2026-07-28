@@ -142,7 +142,7 @@ export default function UpcomingSessions({ rows, timezone }: { rows: UpcomingRow
                   </span>
                 )
               ) : (
-                s.location && <span className="text-gray-400 text-xs truncate max-w-56">{s.location}</span>
+                s.location && <span className="text-gray-500 text-xs truncate max-w-56">{s.location}</span>
               )}
             </div>
 
@@ -191,7 +191,7 @@ export default function UpcomingSessions({ rows, timezone }: { rows: UpcomingRow
                   <ul className="space-y-1">
                     {history.map((n, i) => (
                       <li key={i} className="text-gray-700">
-                        <span className="text-gray-400">
+                        <span className="text-gray-500">
                           {n.startsAt
                             ? fmt(n.startsAt, { month: 'short', day: 'numeric' }, timezone)
                             : '—'}

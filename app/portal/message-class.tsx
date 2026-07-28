@@ -123,7 +123,7 @@ export default function MessageClass({
                 <span className="capitalize">{aud === 'both' ? 'Students + parents' : aud}</span>
               </label>
             ))}
-            <span className="text-xs text-gray-400">({count} recipients)</span>
+            <span className="text-xs text-gray-500">({count} recipients)</span>
           </div>
           <input
             type="text"

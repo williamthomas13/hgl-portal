@@ -122,7 +122,7 @@ export default async function ProposalPage({
                   <div className="font-semibold text-hgl-slate">{r.day}</div>
                   <div className="text-sm text-gray-600">
                     {r.time} · {r.student} — {r.subject} with {r.tutor}
-                    {r.location && <span className="text-gray-400"> · {r.location}</span>}
+                    {r.location && <span className="text-gray-500"> · {r.location}</span>}
                   </div>
                 </li>
               ))}
@@ -143,7 +143,7 @@ export default async function ProposalPage({
                 <span>Month total</span>
                 <span>${Number(invoice.total).toFixed(2)}</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-gray-500 mt-1">
                 Billed once you confirm; due by the end of this month. Once the month is confirmed
                 and paid, changes become reschedules (free with 24+ hours&apos; notice).
               </p>

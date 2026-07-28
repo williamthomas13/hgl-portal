@@ -546,7 +546,7 @@ export default function RegistrationPage() {
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
-                    Student Email <span className="text-gray-400">(for class reminders & Synap access)</span>
+                    Student Email <span className="text-gray-500">(for class reminders & Synap access)</span>
                   </label>
                   <input type="email" name={`studentEmail_${i}`} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
@@ -555,7 +555,7 @@ export default function RegistrationPage() {
                       the neutral wording in emails. */}
                   <label className="block text-sm text-gray-600">
                     {(studentFirstTyped[i] ?? '').trim() ? `${(studentFirstTyped[i] ?? '').trim()}'s pronouns` : "Student's pronouns"}{' '}
-                    <span className="text-gray-400">(optional)</span>
+                    <span className="text-gray-500">(optional)</span>
                   </label>
                   <select
                     name={`pronouns_${i}`}
@@ -573,25 +573,25 @@ export default function RegistrationPage() {
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
-                    Graduating Year <span className="text-gray-400">(optional)</span>
+                    Graduating Year <span className="text-gray-500">(optional)</span>
                   </label>
                   <input type="text" name={`graduatingYear_${i}`} placeholder="e.g. 2027" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
-                    Testing accommodations <span className="text-gray-400">(optional)</span>
+                    Testing accommodations <span className="text-gray-500">(optional)</span>
                   </label>
                   <input type="text" name={`accommodations_${i}`} placeholder="e.g. extended time" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
-                    Previous test scores <span className="text-gray-400">(optional)</span>
+                    Previous test scores <span className="text-gray-500">(optional)</span>
                   </label>
                   <input type="text" name={`previousScores_${i}`} placeholder="e.g. PSAT 1150" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
-                    Anything else we should know? <span className="text-gray-400">(optional)</span>
+                    Anything else we should know? <span className="text-gray-500">(optional)</span>
                   </label>
                   <textarea name={`notes_${i}`} rows={2} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>

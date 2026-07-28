@@ -313,7 +313,7 @@ export default async function TutorView({
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-6">
         <h2 className="text-lg font-bold text-hgl-slate mb-1">Upcoming sessions</h2>
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-gray-500 mb-4">
           Times in {tz}. These also live on your Google Calendar — reschedules and cancellations go
           through {opsFirstName}, and your portal and Google Calendar both update automatically.
         </p>

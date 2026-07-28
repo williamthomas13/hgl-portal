@@ -86,7 +86,7 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-xl font-bold text-hgl-slate">Higher Ground Learning</h1>
-            <p className="text-xs text-gray-400">{email}</p>
+            <p className="text-xs text-gray-500">{email}</p>
           </div>
           <div className="flex items-center gap-3">
             {views.length > 1 && (
