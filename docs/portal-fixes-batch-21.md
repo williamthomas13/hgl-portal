@@ -25,11 +25,15 @@ Surfaced by the PL-130 follow-up: Roman's French engagement has **24h drawn agai
 
 ## PL-198 (small) · Nav filing: Calendar goes topline, View-as under Settings
 
+**✅ SHIPPED (Jul 29).** Calendar is the fourth topline tab (Dashboard · Prospective Students · Tutoring · **Calendar** · Classes · Contacts · Settings) on every admin page; View-as moved off the bar into the Settings sub-nav ("View as… ↗"). Both URLs unchanged (`/admin/calendar` highlights Calendar; `/admin/view-as` highlights Settings). **No crowding at 13":** screenshot taken at 1280×800 — seven tabs use barely two-thirds of the bar; sent alongside the ship summary. Easy to revert if it doesn't feel right in use.
+
 Scarlett's call (Jul 29, provisional — she'll confirm it feels right in use): **Calendar becomes a seventh topline tab** (it's a daily-driver surface, not a filed page — especially once Kelsie lives in it), and **View-as files under Settings**. Keep both reachable at their current URLs (deep-link rule). If seven topline tabs crowd the bar at laptop widths, flag it with a screenshot rather than silently demoting anything.
 
 **Verify:** Calendar tab on every admin page · View-as under Settings · old URLs land · no crowding at 13" width (screenshot in the ship note).
 
 ## PL-199 (tiny) · Student profile renders pronouns raw: "(he_him)"
+
+**✅ SHIPPED (Jul 29).** New leaf `pronounsDisplayLabel()` (app/utils/pronoun-label.ts — the display sibling of the PL-69/80 pn()/studentPronounSet email machinery): she_her → "(she/her)" etc.; `name_only` and unset render NOTHING ("rather not say" must never become a badge). Header verified live: "Roman Desmond (he/him)". The raw-enum sweep of the rest of the page found the engagement status enum rendered raw in two places (Money + Schedule sections — `pending_parent_confirmation` would have shipped verbatim) — now plain English ("awaiting family confirmation"); consult modes, funding, invoice states were already worded.
 
 `/admin/students/{id}` line 202 renders `({st.pronouns})` — the stored enum — so the header reads "Roman Desmond(he_him)": underscore instead of slash, no space before the paren. Everywhere else pronouns go through the PL-69/80 display machinery. Route the profile through the same helper ("(he/him)", proper spacing; `name_only` and unset render nothing). Check the profile page for any OTHER raw-enum renders while in there (statuses, modes) — the plain-English rule applies to this page like every other.
 
@@ -98,6 +102,8 @@ Scarlett's ask (Jul 29): calls should sync with the customer's other portal data
 
 ## PL-203 (small) · Family-facing resources: files, practice work, and "before next session"
 
+**✅ SHIPPED (Jul 29).** New `student_materials` table + PRIVATE `student-materials` storage bucket (migration `20260819000002`, applied) with RLS mirroring session_notes: staff all, tutors read students they actually teach (tutoring sessions OR class rosters), parents read ONLY their own students. All writes + downloads go through `/api/portal/materials` — session-checked, service-role, files served exclusively via 1-hour signed URLs. Tutor/instructor side: a "Share materials" panel (portal, both the tutor view and the instructor roster view) — pick a student, attach a file (PDF/Word/image/.txt ≤10MB, plain refusals verified: ".exe files aren't accepted…", oversize says the size and suggests a link) or paste a link, optional note; sharer (or staff) can remove. Family side: "Materials from {tutor first name}", newest first, renders only when something exists. Verified live end-to-end: staff share (link + file) → family portal shows both with the note; signed URL downloads (200); **isolation proven with simulated parent JWTs** (Roman's parent sees 2, another family sees 0); QA fixtures deleted after. **The MAY email line was deliberately skipped:** no family-facing next-session email exists today (T3 is change-triggered, not a reminder), and bolting "new material in your portal" onto an unrelated send seemed wrong — the state-driven line should ride the first real next-session email if one ever lands. Veto welcome.
+
 From the TutorBird scan (Jul 29, Scarlett approved): tutors have session notes and handoffs internally, but a family has no place to SEE shared materials — practice packets, homework, "do this before Thursday." Lightweight v1:
 
 - **Tutors/instructors attach files or links + an optional note** to a student from their portal view (per-student, not per-session, to keep it simple — the session association can come later if wanted).
@@ -108,6 +114,8 @@ From the TutorBird scan (Jul 29, Scarlett approved): tutors have session notes a
 **Verify:** tutor uploads → family portal shows it, other families don't · role-gating proven · email line appears only when new material exists · reasonable file-type/size limits with plain refusals.
 
 ## PL-204 (small) · Revenue & enrollment report: "how's this term going" without opening QuickBooks
+
+**✅ SHIPPED (Jul 29, against the amended spec).** `/admin/report` (linked from the dashboard: "Term report — enrollment & revenue →"), fed by `/api/admin/report` over new leaf `term-report.ts`. Every dollar computes from the SAME paid columns QBO sync reads: class component = `class_price_paid ?? classes.price` (the PL-142 snapshot rule), packages = `enrollment_addons.price_paid`, tutoring = paid `tutoring_invoices.total` — nothing duplicated, nothing re-entered. Tables: classes (enrolled vs capacity vs minimum, under-minimum amber, class deep-links) with composable school × month × class-type filters and filtered totals; tutoring by month (+ active engagement count); packages by month (sold / hours / used-up). **The role split is structural:** `stripRevenue()` REMOVES every dollar field from the manager payload server-side — and the new gate `regress:report` (9 checks) **deep-scans the manager payload for dollar-shaped keys** (zero found) on top of hand-computed fixture math (2 paid enrollments at 450+500 → exactly 950; the refunded one excluded; the $300 QA invoice and $400/5h package land in their unique far-future month). Managers keep every per-family money surface they already had. Counselor/tutor/parent → 403. Admin view verified live (revenue column + all-time totals render).
 
 From the Arlo scan (Jul 29, Scarlett approved). QBO stays the accounting truth; this is the operational glance the portal can already answer from its own data:
 
@@ -122,11 +130,15 @@ From the Arlo scan (Jul 29, Scarlett approved). QBO stays the accounting truth; 
 
 ## PL-205 (tiny) · Dashboard layout: Upcoming classes + This week's tutoring above the fold
 
+**✅ SHIPPED (Jul 29).** The dashboard is now two true columns: left = Needs attention → Upcoming classes + This week's tutoring (side by side) → the PL-204 report link; right = System health → Recent activity. Verified at 1280×800 (13"): all five cards fully visible, zero scrolling — the screenshot in the ship summary shows the whole story on one screen (with the PL-197 overdraw row and PL-163 warning coexisting in it, incidentally). Phone width stacks attention → coming-up → health → activity (single column, the natural reading order).
+
 Scarlett's screenshot (Jul 29): the left column holds only the Needs-attention card, leaving a long empty gap, while Upcoming classes and This week's tutoring render at the very bottom of the page — invisible without scrolling. Move them up into the left column, under Needs attention, so the dashboard's whole story fits one screen: attention → health → activity → what's coming. Keep the responsive stacking sane on phone width (the pre-push phone pass will check it).
 
 **Verify:** at 13" laptop height, all five cards visible without scrolling · phone width stacks in a sensible order · no card overlap at intermediate widths.
 
 ## PL-206 (tiny) · T3 family notice: drop "The tutor's calendar is already updated."
+
+**✅ SHIPPED (Jul 29).** Deleted from the code twin (tutoring-emails.ts) and the seed source (comms-template-seed.ts), and — per the twin-drift rule — published **T3_SCHEDULE_CHANGE v2** (active): byte-identical to v1 except that one sentence; the closing line is now just "If this doesn't look right, just say so and we'll fix it." Version note says why and credits your Jul 29 review, so if you'd already started an editor edit, v2 is the same change — nothing to redo. Grep confirms no other family-facing template or composer mentions the tutor's calendar (remaining hits are code comments and the tutor-side machinery).
 
 Scarlett reviewed a real T3 send (Jul 29) and asked who the email is for — the parent — which makes the line wrong for its audience. It's written from the ops seat (in the PL-180 adopt path it's literally the operational fact), but a parent doesn't know tutors have synced calendars, and in the adopt case the line quietly narrates internal process (tutor moved it, we ratified it). Everything the parent needs is already in the email: what moved, to when, and "if this doesn't look right, just say so."
 

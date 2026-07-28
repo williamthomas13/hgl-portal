@@ -3,6 +3,7 @@ import SessionCalendar, { type CalendarSession } from '../components/SessionCale
 import { supabaseAdmin } from '../utils/supabase-admin'
 import { resumePaymentUrlFor } from '../utils/lifecycle'
 import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreRow } from './shared'
+import { FamilyMaterialsSection } from './materials-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
 import TutoringSection from './tutoring-section'
@@ -280,6 +281,13 @@ export default async function ParentView({
   return (
     <div className="space-y-6">
       {callouts}
+      {/* PL-203: materials tutors shared — renders only when something was
+          shared; RLS + the API keep it to THIS family's students. */}
+      <FamilyMaterialsSection
+        studentNames={Object.fromEntries(
+          (studentList as any[]).map((st: any) => [st.id, `${st.first_name}`])
+        )}
+      />
       {studentList.map((st) => {
         const school = one<any>(st.schools)
         const scores: ScoreRow[] = st.student_scores ?? []

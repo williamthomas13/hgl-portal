@@ -251,6 +251,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'qbo', label: 'QuickBooks' },
       { id: 'gcal', label: 'Google Calendar' },
       { id: 'settings', label: 'Contact settings' },
+      // PL-198: View-as files here (Scarlett's Jul 29 filing).
+      { id: 'view-as', label: 'View as…', href: '/admin/view-as' },
     ],
   },
 }

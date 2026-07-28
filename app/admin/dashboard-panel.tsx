@@ -206,8 +206,13 @@ export default function DashboardPanel() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start" ref={panelRef}>
+      {/* PL-205: the left column tells the whole story on one screen —
+          attention first, then what's coming (Upcoming classes + This week's
+          tutoring moved up from the page bottom, where they were invisible
+          without scrolling). */}
+      <div className="space-y-6">
       {/* Needs Attention — the star */}
-      <div className="bg-white rounded-lg shadow-md border-t-4 border-amber-500 p-5 lg:row-span-2">
+      <div className="bg-white rounded-lg shadow-md border-t-4 border-amber-500 p-5">
         <h2 className="text-lg font-bold text-hgl-slate mb-1">
           Needs attention
           {attention !== null && attention.length > 0 && (
@@ -324,6 +329,52 @@ export default function DashboardPanel() {
         </div>
       </div>
 
+      {/* Restrained extras — PL-205: above the fold, under attention. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-5">
+          <h2 className="text-sm font-bold text-hgl-slate mb-2">Upcoming classes</h2>
+          {upcoming.length === 0 ? (
+            <p className="text-xs text-gray-500 italic">No classes starting soon.</p>
+          ) : (
+            <ul className="text-xs space-y-1.5">
+              {upcoming.map((c) => (
+                <li key={c.id}>
+                  <a href={c.href} className="text-gray-700 hover:text-hgl-blue">
+                    <span className="font-semibold text-hgl-slate">{c.label}</span> · starts {c.startDate} ·{' '}
+                    {c.paid} paid{c.min != null ? ` / min ${c.min}` : ''}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="bg-white rounded-lg shadow-md border-t-4 border-purple-400 p-5">
+          <h2 className="text-sm font-bold text-hgl-slate mb-2">This week&apos;s tutoring</h2>
+          <p className="text-3xl font-bold text-hgl-slate">{weekSessions}</p>
+          <p className="text-xs text-gray-400">confirmed 1-on-1 sessions in the next 7 days</p>
+          {/* PL-173: the same window's proposed count always rides along —
+              a technically-right "0 confirmed" told half the state. +0 would
+              be noise, so zero renders nothing. */}
+          {weekProposed > 0 && (
+            <p className="text-xs font-semibold text-amber-700">
+              +{weekProposed} proposed, awaiting family confirmation
+            </p>
+          )}
+          <a href="/admin/tutoring" className="text-xs text-hgl-blue underline">
+            open the tutoring page →
+          </a>
+        </div>
+      </div>
+        {/* PL-204: the term glance, one click away. */}
+        <p className="text-xs">
+          <a href="/admin/report" className="text-hgl-blue underline">
+            Term report — enrollment &amp; revenue →
+          </a>
+        </p>
+      </div>
+
+      {/* Right column: health + activity. */}
+      <div className="space-y-6">
       {/* PL-136: system health — three live numbers, shipped BEFORE launch.
           The July 23 quota exhaustion is why: sends failed silently until an
           external email happened to arrive. */}
@@ -477,41 +528,6 @@ export default function DashboardPanel() {
         )}
       </div>
 
-      {/* Restrained extras */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-5">
-          <h2 className="text-sm font-bold text-hgl-slate mb-2">Upcoming classes</h2>
-          {upcoming.length === 0 ? (
-            <p className="text-xs text-gray-500 italic">No classes starting soon.</p>
-          ) : (
-            <ul className="text-xs space-y-1.5">
-              {upcoming.map((c) => (
-                <li key={c.id}>
-                  <a href={c.href} className="text-gray-700 hover:text-hgl-blue">
-                    <span className="font-semibold text-hgl-slate">{c.label}</span> · starts {c.startDate} ·{' '}
-                    {c.paid} paid{c.min != null ? ` / min ${c.min}` : ''}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="bg-white rounded-lg shadow-md border-t-4 border-purple-400 p-5">
-          <h2 className="text-sm font-bold text-hgl-slate mb-2">This week&apos;s tutoring</h2>
-          <p className="text-3xl font-bold text-hgl-slate">{weekSessions}</p>
-          <p className="text-xs text-gray-400">confirmed 1-on-1 sessions in the next 7 days</p>
-          {/* PL-173: the same window's proposed count always rides along —
-              a technically-right "0 confirmed" told half the state. +0 would
-              be noise, so zero renders nothing. */}
-          {weekProposed > 0 && (
-            <p className="text-xs font-semibold text-amber-700">
-              +{weekProposed} proposed, awaiting family confirmation
-            </p>
-          )}
-          <a href="/admin/tutoring" className="text-xs text-hgl-blue underline">
-            open the tutoring page →
-          </a>
-        </div>
       </div>
     </div>
   )

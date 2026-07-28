@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
+import { ShareMaterialsPanel } from './materials-panel'
 import ClassScoresGrid from '../components/ClassScoresGrid'
 import HandoffNotes from '../components/HandoffNotes'
 import { supabaseAdmin } from '../utils/supabase-admin'
@@ -143,6 +144,19 @@ export default async function InstructorView({
 
   return (
     <div className="space-y-6">
+      {/* PL-203: share materials with the families on my rosters. */}
+      <ShareMaterialsPanel
+        students={[
+          ...new Map(
+            (classes as any[])
+              .flatMap((c) => (c.enrollments ?? []) as any[])
+              .filter((e: any) => e.payment_status !== 'Expired' && e.payment_status !== 'Refunded')
+              .map((e: any) => one<any>(e.students))
+              .filter(Boolean)
+              .map((st: any) => [st.id, { id: st.id, name: `${st.first_name} ${st.last_name}` }])
+          ).values(),
+        ] as { id: string; name: string }[]}
+      />
       {(classes as any[]).map((c) => {
         const school = one<any>(c.schools)
         const label = `${school?.nickname ?? 'HGL'} ${c.class_type}`

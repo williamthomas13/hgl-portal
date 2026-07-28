@@ -7,6 +7,7 @@ import { CollapsibleSection } from '../../ui'
 import { FamilyCommsTimeline } from '../../family-comms'
 import ScoresEntry from '../../../components/ScoresEntry'
 import { formatDateShort } from '../../../utils/dates'
+import { pronounsDisplayLabel } from '../../../utils/pronoun-label'
 
 // PL-193: the student profile — everything we know about one student, one
 // organized place, every section reading from its EXISTING store (this page
@@ -22,6 +23,15 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 
 const money = (n: number | string | null | undefined) =>
   n == null ? '—' : `$${Number(n).toFixed(2).replace(/\.00$/, '')}`
+
+// PL-199: no raw enums on this page — plain English like everywhere else.
+const ENGAGEMENT_STATUS_LABELS: Record<string, string> = {
+  pending_parent_confirmation: 'awaiting family confirmation',
+  active: 'active',
+  paused: 'paused',
+  ended: 'ended',
+}
+const engStatus = (s: string) => ENGAGEMENT_STATUS_LABELS[s] ?? s
 
 const fmtWhen = (iso: string) =>
   new Date(iso).toLocaleString('en-US', {
@@ -208,7 +218,11 @@ export default function StudentProfilePage() {
           <div>
             <h1 className="text-2xl font-bold text-hgl-slate">
               {fullName}
-              {st.pronouns && <span className="text-base font-normal text-gray-500 ml-2">({st.pronouns})</span>}
+              {/* PL-199: display form, never the stored enum; name_only and
+                  unset render nothing. */}
+              {pronounsDisplayLabel(st.pronouns) && (
+                <span className="text-base font-normal text-gray-500 ml-2">({pronounsDisplayLabel(st.pronouns)})</span>
+              )}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               {[st.grade_level && `Grade ${st.grade_level}`, st.graduating_year && `class of ${st.graduating_year}`, st.school]
@@ -292,7 +306,7 @@ export default function StudentProfilePage() {
                       {' · '}
                       {e.funding === 'package' ? 'billed against an hours package' : 'monthly invoice'}
                       {' · '}
-                      {e.status}
+                      {engStatus(e.status)}
                     </li>
                   ))}
                 </ul>
@@ -410,7 +424,7 @@ export default function StudentProfilePage() {
                 <ul className="space-y-0.5">
                   {p.engagements.map((e) => (
                     <li key={e.id} className="text-xs">
-                      {e.subjects?.name ?? 'Tutoring'} with {e.instructors?.name ?? '—'} — {e.status}
+                      {e.subjects?.name ?? 'Tutoring'} with {e.instructors?.name ?? '—'} — {engStatus(e.status)}
                       {e.start_date && ` · since ${formatDateShort(e.start_date)}`}
                       {' · '}
                       <a href={`/admin/tutoring?family=${fam?.id ?? ''}`} className="text-hgl-blue underline">

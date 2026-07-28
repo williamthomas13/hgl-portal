@@ -233,8 +233,7 @@ export function t3ScheduleChangeEmail(opts: {
      <ul style="margin:0;padding-left:20px;color:#334155">
        ${opts.changeLines.map((l) => `<li style="margin:2px 0">${l}</li>`).join('')}
      </ul>
-     <p style="color:#64748b;font-size:13px;margin-top:16px">The tutor's calendar is already updated.
-     If this doesn't look right, just say so and we'll fix it.</p>
+     <p style="color:#64748b;font-size:13px;margin-top:16px">If this doesn't look right, just say so and we'll fix it.</p>
      ${contactBlockHtml(opts.contact)}`,
     { preheader: `Change to ${opts.studentFirst}'s tutoring`, footer: footerT() }
   )

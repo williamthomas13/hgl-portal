@@ -742,7 +742,7 @@ Here's what changed for {studentFirstName}:
 
 {changeListBlock}
 
-The tutor's calendar is already updated. If this doesn't look right, just say so and we'll fix it.
+If this doesn't look right, just say so and we'll fix it.
 
 {contactBlock}`,
   },

@@ -10,10 +10,13 @@ import { usePathname } from 'next/navigation'
 // alert URL) are untouched — they keep landing exactly where they always did,
 // and the bar just highlights the right tab when they do.
 
+// PL-198 (Scarlett, Jul 29, provisional): Calendar is a daily-driver surface,
+// not a filed page — seventh topline tab. View-as filed under Settings.
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', href: '/admin' },
   { id: 'leads', label: 'Prospective Students', href: '/admin/leads' },
   { id: 'tutoring', label: 'Tutoring', href: '/admin/tutoring' },
+  { id: 'calendar', label: 'Calendar', href: '/admin/calendar' },
   { id: 'classes', label: 'Classes', href: '/admin?tab=classes' },
   { id: 'contacts', label: 'Contacts', href: '/admin?tab=contacts' },
   { id: 'settings', label: 'Settings', href: '/admin?tab=settings' },
@@ -25,6 +28,9 @@ export type ToplineTab = (typeof TABS)[number]['id']
 function tabForUrl(pathname: string, search: string): ToplineTab {
   if (pathname.startsWith('/admin/leads')) return 'leads'
   if (pathname.startsWith('/admin/tutoring')) return 'tutoring'
+  if (pathname.startsWith('/admin/calendar')) return 'calendar'
+  // PL-198: View-as files under Settings.
+  if (pathname.startsWith('/admin/view-as')) return 'settings'
   // Filed under Contacts in Scarlett's IA (Jul 28).
   if (pathname.startsWith('/admin/communications') || pathname.startsWith('/admin/agreements')) return 'contacts'
   const q = new URLSearchParams(search)
@@ -74,22 +80,6 @@ export default function AdminTopline() {
             {t.label}
           </a>
         ))}
-        <span className="flex-1" />
-        {/* Utility views that live outside the six files. */}
-        <a
-          href="/admin/calendar"
-          className="text-xs font-semibold text-white/70 hover:text-white px-2 py-2.5 whitespace-nowrap"
-          title="Everything at once — 1-on-1, classes, and proposed holds, week or month"
-        >
-          Calendar
-        </a>
-        <a
-          href="/admin/view-as"
-          className="text-xs font-semibold text-white/70 hover:text-white px-2 py-2.5 whitespace-nowrap"
-          title="See the portal exactly as a parent, tutor, school contact, or manager sees it"
-        >
-          View as…
-        </a>
       </nav>
     </div>
   )

@@ -8,6 +8,7 @@ import { one } from './shared'
 import { zonedToUtc } from '../utils/tutoring'
 import { workTypeOptions } from '../utils/work-types'
 import SessionNotesPanel, { type NoteSession } from './session-notes-panel'
+import { ShareMaterialsPanel } from './materials-panel'
 import UpcomingSessions, { type UpcomingRow } from './upcoming-sessions'
 import CoveragePanel, {
   type CoverageRow,
@@ -348,6 +349,18 @@ export default async function TutorView({
       />
 
       <SessionNotesPanel sessions={noteSessions} timezone={tz} />
+
+      {/* PL-203: share materials with the families of students I tutor. */}
+      <ShareMaterialsPanel
+        students={(() => {
+          const seen = new Map<string, string>()
+          for (const s of (upcoming ?? []) as any[]) {
+            const st = Array.isArray(s.students) ? s.students[0] : s.students
+            if (st?.id && !seen.has(st.id)) seen.set(st.id, `${st.first_name} ${st.last_name}`)
+          }
+          return [...seen.entries()].map(([id, name]) => ({ id, name }))
+        })()}
+      />
 
       <TimecardPanel
         timecards={(timecards ?? []) as TimecardData[]}
