@@ -151,6 +151,55 @@ export default function EngagementWizard({
   const subject = subjects.find((s) => s.id === subjectId) ?? null
   const tutor = tutors.find((t) => t.id === tutorId) ?? null
 
+  // PL-184: the "Schedule {student} now" deep link arrives knowing the
+  // student — the SUBJECT prefills to the closest match from what the portal
+  // already knows: a prior engagement's subject, then the intake sheet's
+  // stated subjects, then the class they came from. Editable — a prefill is
+  // a default, not a decision (picking something else stays one click).
+  useEffect(() => {
+    if (!seenPreload || studentId !== seenPreload || subjectId) return
+    let stale = false
+    ;(async () => {
+      const { data: eng } = await supabase
+        .from('tutoring_engagements')
+        .select('subject_id')
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (eng?.[0]?.subject_id) {
+        if (!stale) setSubjectId(eng[0].subject_id)
+        return
+      }
+      const byText = (text: string) =>
+        subjects.find((s) => s.active && text && text.toLowerCase().includes(s.name.toLowerCase())) ?? null
+      const { data: leadRows } = await supabase
+        .from('leads')
+        .select('subjects, interest')
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      let match = byText(leadRows?.[0]?.subjects ?? '')
+      if (!match) {
+        const { data: enr } = await supabase
+          .from('enrollments')
+          .select('classes ( class_type )')
+          .eq('student_id', studentId)
+          .order('enrolled_at', { ascending: false })
+          .limit(3)
+        for (const e of (enr as any[]) ?? []) {
+          const cls = Array.isArray(e.classes) ? e.classes[0] : e.classes
+          match = byText(cls?.class_type ?? '')
+          if (match) break
+        }
+      }
+      if (match && !stale) setSubjectId(match.id)
+    })()
+    return () => {
+      stale = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seenPreload, studentId, subjectId, subjects])
+
   function resumeDraft() {
     const d = draftOffer
     if (!d) return

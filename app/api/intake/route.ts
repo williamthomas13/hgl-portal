@@ -97,6 +97,15 @@ export async function POST(req: Request) {
     availabilityTimezone,
   }
 
+  // PL-183: you can't promise to contact someone you have no number for —
+  // the same rule the form enforces live, re-enforced here at submit.
+  if (submission.absentContactWho === 'student' && !submission.studentPhone?.trim()) {
+    return NextResponse.json(
+      { error: "You chose contact-the-student if they haven't arrived, so we need the student's phone number — add it in section 1, or pick contact-the-parent instead." },
+      { status: 400 }
+    )
+  }
+
   const result = await applyIntakeSubmission(leadId, submission)
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
 

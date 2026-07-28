@@ -138,44 +138,72 @@ export function anchorZoneNote(tutorTz: string, familyTz: string, at: Date = new
   return `These times are anchored to ${anchorLabel}, so your local time may shift by an hour when daylight saving changes on one side and not the other. We'll always show the current time in your calendar invite.`
 }
 
-/** "Mondays at 4:00 PM and Thursdays at 5:00 PM, starting July 21 — one hour
- *  each" — recurrence is the tutor's wall clock; the summary renders in the
- *  FAMILY's timezone (spec: all times in the family's timezone). */
+/** Oxford-comma list join: "A", "A and B", "A, B, and C". */
+function oxfordJoin(items: string[]): string {
+  if (items.length <= 1) return items.join('')
+  if (items.length === 2) return items.join(' and ')
+  return `${items.slice(0, -1).join(', ')}, and ${items.at(-1)}`
+}
+
+/** "4:00 PM" + "5:30 PM" → "4:00 – 5:30 PM" (shared meridiem stated once);
+ *  "11:30 AM" + "1:00 PM" keeps both. */
+function timeRange(start: string, end: string): string {
+  const [, sTime, sMer] = start.match(/^(.+) (AM|PM)$/) ?? [null, start, '']
+  const [, , eMer] = end.match(/^(.+) (AM|PM)$/) ?? [null, end, '']
+  return sMer && sMer === eMer ? `${sTime} – ${end}` : `${start} – ${end}`
+}
+
+/** PL-187: "Wednesdays, Fridays, and Saturdays from 4:00 – 5:30 PM, starting
+ *  July 24" — days sharing the same time AND duration batch into one clause
+ *  with the range (the end time carries the duration — no "90 minutes
+ *  each"); mixed schedules get one clause per group. Identical duplicate
+ *  slots read ONCE (the sentence must not stutter even when the data does).
+ *  Recurrence is the tutor's wall clock; the summary renders in the FAMILY's
+ *  timezone (PL-118). One composer — every surface that writes a schedule
+ *  (confirm page, T_SCHEDULE_CONFIRM/SET emails) phrases through here. */
 export function scheduleSummaryText(e: ApprovalEngagement): string {
   if (e.recurrence.length === 0) return 'sessions scheduled one at a time (no fixed weekly slot yet)'
   const today = new Date().toLocaleDateString('en-CA', { timeZone: e.tutorTz })
   const from = e.start_date && e.start_date > today ? e.start_date : today
-  const parts = e.recurrence.map((slot) => {
+  const fmt = (x: Date) =>
+    x.toLocaleTimeString('en-US', { timeZone: e.familyTz, hour: 'numeric', minute: '2-digit' })
+  type Part = { dayIdx: number; start: string; end: string }
+  const parts: Part[] = []
+  const seen = new Set<string>()
+  for (const slot of e.recurrence) {
     // Anchor on the next occurrence to convert tutor wall clock → family tz.
     const d = new Date(from + 'T12:00:00Z')
     const anchorDow = d.getUTCDay() === 0 ? 7 : d.getUTCDay()
     const daysAhead = (slot.weekday - anchorDow + 7) % 7
     const dateIso = new Date(d.getTime() + daysAhead * 86_400_000).toISOString().slice(0, 10)
     const starts = zonedToUtc(dateIso, slot.start_time, e.tutorTz)
+    const ends = new Date(starts.getTime() + slot.duration_minutes * 60_000)
     const famDay = starts.toLocaleDateString('en-US', { timeZone: e.familyTz, weekday: 'long' })
-    const famTime = starts.toLocaleTimeString('en-US', { timeZone: e.familyTz, hour: 'numeric', minute: '2-digit' })
     const dayIdx = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].indexOf(famDay)
-    return { text: `${DAY_PLURAL[dayIdx] ?? famDay + 's'} at ${famTime}`, minutes: slot.duration_minutes }
-  })
+    const part = { dayIdx, start: fmt(starts), end: fmt(ends) }
+    const key = `${part.dayIdx}|${part.start}|${part.end}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    parts.push(part)
+  }
+  parts.sort((a, b) => a.dayIdx - b.dayIdx)
+  // Batch days sharing the same time range.
+  const groups = new Map<string, { days: number[]; start: string; end: string }>()
+  for (const p of parts) {
+    const gk = `${p.start}|${p.end}`
+    const g = groups.get(gk) ?? { days: [], start: p.start, end: p.end }
+    g.days.push(p.dayIdx)
+    groups.set(gk, g)
+  }
+  const clauses = [...groups.values()].map(
+    (g) => `${oxfordJoin(g.days.map((d) => DAY_PLURAL[d] ?? 'that day'))} from ${timeRange(g.start, g.end)}`
+  )
   const startLabel = new Date(from + 'T12:00:00Z').toLocaleDateString('en-US', {
     timeZone: 'UTC',
     month: 'long',
     day: 'numeric',
   })
-  const minutes = [...new Set(parts.map((p) => p.minutes))]
-  const lengthLabel =
-    minutes.length === 1
-      ? minutes[0] === 60
-        ? 'one hour each'
-        : minutes[0] % 60 === 0
-          ? `${minutes[0] / 60} hours each`
-          : `${minutes[0]} minutes each`
-      : null
-  return (
-    parts.map((p) => p.text).join(' and ') +
-    `, starting ${startLabel}` +
-    (lengthLabel ? ` — ${lengthLabel}` : '')
-  )
+  return `${clauses.join(' and ')}, starting ${startLabel}`
 }
 
 // ---------------------------------------------------------------------------

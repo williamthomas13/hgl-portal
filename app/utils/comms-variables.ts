@@ -968,7 +968,8 @@ export const SAMPLE_EXTRA: ExtraVars = {
   tutorFirstName: 'Billy',
   tutoringSubject: 'SAT',
   tutoringMonthLabel: 'September 2026',
-  scheduleSummary: 'Mondays at 4:00 PM, starting September 7 — one hour each week',
+  // PL-187: the batched-range shape the composer now produces.
+  scheduleSummary: 'Mondays from 4:00 – 5:00 PM, starting September 7',
   scheduleZoneNote:
     '<p style="color:#506171;font-size:14px">These times are anchored to Mountain Daylight Time, so your local time may shift by an hour when daylight saving changes on one side and not the other. We&rsquo;ll always show the current time in your calendar invite.</p>',
   scheduleBlock:

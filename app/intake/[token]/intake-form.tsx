@@ -106,12 +106,22 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
 
   const set = (k: keyof typeof f) => (v: string) => setF((prev) => ({ ...prev, [k]: v }))
 
+  // PL-183: choosing contact-the-student makes the student's phone REQUIRED
+  // — you can't promise to contact someone you have no number for.
+  const studentPhoneRequired = f.absentContactWho === 'student'
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     const badRange = availability.some((r) => r.end_time <= r.start_time)
     if (badRange) {
       setError('One of the availability times ends before it starts — fix or remove that row and resend.')
+      return
+    }
+    if (studentPhoneRequired && !f.studentPhone.trim()) {
+      setError(
+        "You chose contact-the-student if they haven't arrived, so we need the student's phone number — it's in section 1, or pick contact-the-parent instead."
+      )
       return
     }
     setSaving(true)
@@ -135,11 +145,33 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
     }
   }
 
+  // PL-183: submission LANDS somewhere — confirmation plus what happens
+  // next in plain language, never a form that ends in doubt.
   if (done) {
     return (
-      <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-        <strong>All set — thank you!</strong> We have everything we need. We&apos;ll be in touch
-        shortly with next steps; nothing more to do on your end.
+      <div className="space-y-4">
+        <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800">
+          <p className="text-lg font-bold">All set — your answers went through. Thank you!</p>
+        </div>
+        <div className="p-4 rounded bg-gray-50 border border-gray-200 text-sm text-gray-700 space-y-2">
+          <p className="font-semibold text-hgl-slate">What happens next:</p>
+          <ul className="list-disc ml-5 space-y-1">
+            <li>
+              Our team reviews your answers — usually within <strong>one business day</strong>.
+            </li>
+            <li>
+              You&apos;ll get an email from us with proposed session times built around the
+              availability you just shared. Nothing is booked until you confirm it.
+            </li>
+            <li>
+              If anything needs clarifying first, we&apos;ll reach out the way you asked us to.
+            </li>
+          </ul>
+          <p className="text-gray-500">
+            Nothing more to do on your end — and if something changes in the meantime, just reply
+            to any of our emails.
+          </p>
+        </div>
       </div>
     )
   }
@@ -154,8 +186,19 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
         <Field label="Last name" required>
           <input className={inputCls} required value={f.studentLast} onChange={(e) => set('studentLast')(e.target.value)} />
         </Field>
-        <Field label="Student phone">
-          <input className={inputCls} type="tel" value={f.studentPhone} onChange={(e) => set('studentPhone')(e.target.value)} />
+        <Field label="Student phone" required={studentPhoneRequired}>
+          <input
+            className={inputCls}
+            type="tel"
+            required={studentPhoneRequired}
+            value={f.studentPhone}
+            onChange={(e) => set('studentPhone')(e.target.value)}
+          />
+          {studentPhoneRequired && !f.studentPhone.trim() && (
+            <p className="text-xs text-amber-700 mt-1">
+              You chose contact-the-student below, so we need their number.
+            </p>
+          )}
         </Field>
         <Field label="Student email">
           <input className={inputCls} type="email" value={f.studentEmail} onChange={(e) => set('studentEmail')(e.target.value)} />
@@ -227,6 +270,12 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
             <option value="student">The student</option>
             <option value="parent">The parent</option>
           </select>
+          {/* PL-183: the consequence, right where the choice is made. */}
+          {studentPhoneRequired && (
+            <p className="text-xs text-amber-700 mt-1">
+              We&apos;ll need the student&apos;s phone number (section 1) for this.
+            </p>
+          )}
         </Field>
         <Field label="…by">
           <select className={`${inputCls} bg-white`} value={f.absentContactHow} onChange={(e) => set('absentContactHow')(e.target.value)}>
