@@ -33,6 +33,8 @@ export async function POST(req: Request) {
   if (body.action === 'configure') {
     const calendarId = (body.calendarId ?? '').trim()
     if (!calendarId) return NextResponse.json({ error: 'Pass the shared calendar id.' }, { status: 400 })
+    // Jul-28 lesson: configuring NEVER activates — the id enables the
+    // read-only steps (adopt, audit); writing waits for the explicit enable.
     const rows = [
       { key: 'intl_classes_calendar_id', value: calendarId, updated_at: new Date().toISOString() },
       ...(body.owner?.trim()
@@ -44,7 +46,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true })
   }
 
+  if (body.action === 'enable' || body.action === 'disable') {
+    const config = await intlCalendarConfig()
+    if (!config) return NextResponse.json({ error: 'Configure the calendar id first.' }, { status: 400 })
+    const { error } = await supabase.from('app_settings').upsert([
+      {
+        key: 'intl_classes_sync_enabled',
+        value: body.action === 'enable' ? 'true' : 'false',
+        updated_at: new Date().toISOString(),
+      },
+    ])
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, enabled: body.action === 'enable' })
+  }
+
   if (body.action === 'sync') {
+    const config = await intlCalendarConfig()
+    if (!config?.enabled) {
+      return NextResponse.json(
+        { error: 'Sync is not enabled — configuring the id does not activate anything. Adopt hand-made events first, then press Enable.' },
+        { status: 400 }
+      )
+    }
     return NextResponse.json({ ok: true, result: await syncInternationalCalendar(body.classId) })
   }
   if (body.action === 'reconcile') {

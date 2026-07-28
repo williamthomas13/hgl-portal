@@ -36,16 +36,24 @@ import { zonedToUtc } from './tutoring'
 const one = <T,>(v: T | T[] | null | undefined): T | null =>
   v == null ? null : Array.isArray(v) ? ((v[0] as T) ?? null) : v
 
-export async function intlCalendarConfig(): Promise<{ calendarId: string; owner: string } | null> {
+export async function intlCalendarConfig(): Promise<{
+  calendarId: string
+  owner: string
+  /** Jul-28 lesson: CONFIGURATION MUST NOT EQUAL ACTIVATION. The id being
+   *  set lets the read-only steps run (adopt, audit); nothing WRITES to the
+   *  subscribed calendar until this explicit switch is on. */
+  enabled: boolean
+} | null> {
   const { data } = await supabase
     .from('app_settings')
     .select('key, value')
-    .in('key', ['intl_classes_calendar_id', 'intl_classes_calendar_owner'])
+    .in('key', ['intl_classes_calendar_id', 'intl_classes_calendar_owner', 'intl_classes_sync_enabled'])
   const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]))
   if (!map.intl_classes_calendar_id) return null
   return {
     calendarId: map.intl_classes_calendar_id,
     owner: map.intl_classes_calendar_owner ?? 'billy@highergroundlearning.com',
+    enabled: map.intl_classes_sync_enabled === 'true',
   }
 }
 
@@ -164,7 +172,9 @@ export type IntlSyncResult = {
 export async function syncInternationalCalendar(classId?: string): Promise<IntlSyncResult> {
   const result: IntlSyncResult = { configured: false, created: 0, patched: 0, unchanged: 0, errors: [] }
   const config = await intlCalendarConfig()
-  if (!config) return result
+  // The sync WRITES to the subscribed calendar — configured is not enough,
+  // the explicit enable switch gates it (adopt first, enable second).
+  if (!config?.enabled) return result
   const conn = await loadGcalConnection()
   if (!conn?.key || conn.status !== 'connected') {
     result.errors.push('Google connection unavailable')

@@ -149,8 +149,17 @@ export async function POST(req: Request) {
           const interest = [beforeLead.interest, ...((beforeLead.subjects as string[] | null) ?? [])]
             .filter((v) => v && v !== 'unsure')
             .join(', ')
+          // PL-196: the actor is a PERSON, not an address — resolve the
+          // acting admin's display name (instructor record first, since the
+          // staff are instructors), fall back to the email only when no
+          // name exists anywhere.
+          const { data: actorRow } = await supabase
+            .from('instructors')
+            .select('name')
+            .eq('email', caller.email.toLowerCase())
+            .maybeSingle()
           const facts = {
-            actorName: caller.email,
+            actorName: actorRow?.name?.trim() || caller.email,
             leadName,
             contactName: beforeLead.contact_name,
             contactEmail: beforeLead.contact_email,

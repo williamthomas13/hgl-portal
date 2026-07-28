@@ -1210,11 +1210,12 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
       '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
   },
   // PL-174: leads route assignment notify — COMPUTED from the real composer
-  // (lead-assign-copy.ts), per the PL-137 rule.
+  // (lead-assign-copy.ts), per the PL-137 rule. PL-196: the actor samples as
+  // a NAME — the route resolves the display name, so the preview must too.
   AL_LEAD_ASSIGNED: {
     alertStudentName: 'Ana García',
     alertDetailsBlock: leadAssignedDetails({
-      actorName: 'scarlett@highergroundlearning.com',
+      actorName: 'Scarlett Thomas',
       leadName: 'Ana García',
       contactName: 'Alex García',
       contactEmail: 'sample-parent@example.com',

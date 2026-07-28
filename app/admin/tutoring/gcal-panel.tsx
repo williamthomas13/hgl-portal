@@ -203,6 +203,8 @@ export default function GcalPanel() {
 function IntlCalendarSection() {
   const [calendarId, setCalendarId] = useState('')
   const [configured, setConfigured] = useState(false)
+  // Jul-28 lesson: configuration must not equal activation.
+  const [enabled, setEnabled] = useState(false)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const [report, setReport] = useState<{ summary: string | null; start: string | null }[] | null>(null)
@@ -214,6 +216,7 @@ function IntlCalendarSection() {
         if (json?.config) {
           setCalendarId(json.config.calendarId)
           setConfigured(true)
+          setEnabled(Boolean(json.config.enabled))
         }
       })
       .catch(() => {})
@@ -244,9 +247,11 @@ function IntlCalendarSection() {
       <p className="text-xs text-gray-500 mb-2">
         The portal writes to the SAME shared calendar everyone already subscribes to — class spans
         and session blocks, in the established colors (yellow proposed · dark green in-person ·
-        light green online · red cancelled — cancelled recolors, never deletes). Configure the
-        calendar id, run &ldquo;adopt hand-made events&rdquo; ONCE, and the daily sweep keeps it in
-        step. Hand edits are reported by the drift audit, never overwritten.
+        light green online · red cancelled — cancelled recolors, never deletes). The cutover is
+        THREE separate acts: <strong>1)</strong> save the calendar id (changes nothing),{' '}
+        <strong>2)</strong> run &ldquo;adopt hand-made events&rdquo; once and check its report,{' '}
+        <strong>3)</strong> press Enable — only then do the daily sweep and sync-now write to the
+        calendar. Hand edits are reported by the drift audit, never overwritten.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -258,7 +263,7 @@ function IntlCalendarSection() {
         />
         <button
           disabled={busy || !calendarId.trim()}
-          onClick={() => act({ action: 'configure', calendarId: calendarId.trim() }, () => 'Saved — the daily sweep now manages this calendar.')}
+          onClick={() => act({ action: 'configure', calendarId: calendarId.trim() }, () => 'Saved. Nothing is writing yet — adopt hand-made events, then press Enable when ready.')}
           className="text-xs font-semibold bg-hgl-slate text-white rounded px-3 py-1.5 disabled:opacity-50"
         >
           Save
@@ -278,7 +283,8 @@ function IntlCalendarSection() {
               adopt hand-made events
             </button>
             <button
-              disabled={busy}
+              disabled={busy || !enabled}
+              title={enabled ? undefined : 'Enable the sync first — configuring the id does not activate anything'}
               onClick={() =>
                 act({ action: 'sync' }, (j: any) =>
                   `Synced — ${j.result?.created ?? 0} created, ${j.result?.patched ?? 0} updated, ${j.result?.unchanged ?? 0} already right${j.result?.errors?.length ? `, ${j.result.errors.length} error(s)` : ''}.`
@@ -287,6 +293,21 @@ function IntlCalendarSection() {
               className="text-xs font-semibold text-hgl-blue underline disabled:opacity-50"
             >
               sync now
+            </button>
+            <button
+              disabled={busy}
+              onClick={() =>
+                act({ action: enabled ? 'disable' : 'enable' }, (j: any) => {
+                  setEnabled(Boolean((j as any).enabled))
+                  return (j as any).enabled
+                    ? 'Sync ENABLED — the daily sweep and sync-now will now write to the subscribed calendar.'
+                    : 'Sync disabled — nothing writes to the calendar until re-enabled.'
+                })
+              }
+              className={`text-xs font-bold px-2 py-1 rounded ${enabled ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+              title="The explicit activation switch — separate from configuring the id on purpose"
+            >
+              {enabled ? 'sync: ON' : 'sync: OFF — enable'}
             </button>
             <button
               disabled={busy}

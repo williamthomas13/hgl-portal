@@ -1,4 +1,4 @@
-# Portal fixes — batch 20 (COMPLETE — 17 items, PL-178…194 — awaiting hand-off; Code is on batch 19)
+# Portal fixes — batch 20 (19 items, PL-178…196 — state-machine tier shipped; PL-195 + PL-196 ADDED Jul 28 after your pull — this line is the re-read flag)
 
 Opened July 27 from Scarlett's email + UI review; completed July 28 with the navigation/IA restructure and the student profile page. **Do not start until Scarlett hands it off** (batch 19 first). If this doc changes after you've pulled it, wait for an explicit re-read ask.
 
@@ -196,3 +196,24 @@ Because nothing suggested existing students while typing, Scarlett added the sam
 - Match against BOTH pipeline leads and enrolled/active students — the duplicate Scarlett created existed in the pipeline itself, but a lead duplicating an enrolled student is the same disease.
 
 **Verify:** typing an existing name surfaces the suggestion with context · selecting opens the record · exact-name save warns and requires explicit proceed · typo'd near-match still suggests · distinct same-name students remain creatable.
+
+## PL-195 · A failed generation is a STATE on the family, not just a flash — with the retry attached
+
+Added Jul 28 after the PL-144 seeded-alert click test. The deep link works — Scarlett landed on the tutoring page with the failed family's card ringed blue — but the ring fades, and then nothing on the page says what happened or what to do. Scarlett: "They didn't get their automatic invoice, right? The momentary highlight is nice to draw my attention but it needs a more permanent warning with an action attached." She's right, and this is the state-driven-attention rule applied to generation failures.
+
+- **Persistent failure marker on the family's card/row** while the target month's generation has failed for them and not yet succeeded: plain-English line ("July invoice couldn't be generated — {error text}. Retrying automatically; last attempt {time}."), red per the existing hours-exhausted styling. **State-driven both directions:** appears from the failure record, clears itself the moment a later run (automatic or manual) succeeds — never an email artifact.
+- **Action attached: "Retry now for this family"** — runs generation for just that family (the PL-144 per-family machinery already supports restriction), inline result per the PL-165 always-respond rule: what got created, or the same error text back if it failed again (which usually names the broken record — surface it, don't make her hunt).
+- **Needs-attention row on the dashboard** for any family in this state, deep-linking the family — so discovery doesn't depend on the email at all.
+- The seeded QA failure currently in prod is the natural fixture; purge sweeps it.
+
+**Verify:** seeded failure → marker renders with error text + retry action · retry-now on a fixed family generates and CLEARS the marker (and the dashboard row) without refresh weirdness · retry on a still-broken family re-renders the error inline · automatic sweep success also clears it · no marker anywhere once generation succeeds.
+
+## PL-196 (tiny) · AL_LEAD_ASSIGNED says who by NAME, not email address
+
+**✅ SHIPPED (Jul 28).** The leads route resolves the acting admin's display name from their instructor record (the staff are instructors), falling back to the email only when no name exists; the PL-82 sample pin now shows "Scarlett Thomas" so the preview reads truthfully. Verified E2E on dev: the assignment send's subject reads "[HGL Admin] Billy Thomas assigned you a pipeline lead: …" with no address in sight. Ready for your flip of the last draft.
+
+**Also shipped alongside (Jul 28, your item 2): the International Classes sync got an explicit ENABLE switch — configuration no longer equals activation.** The cutover is now three separate acts, and the GCal panel says so: (1) save the calendar id — changes nothing; (2) "adopt hand-made events" — runs while sync is OFF, which is the intended order; (3) press Enable — only then do sync-now and the daily sweep write to the subscribed calendar. Sync-now refuses with a plain explanation while disabled, and there's a visible sync ON/OFF state. Adopt re-runnability confirmed: new permanent gate `regress:intl-calendar` (12 checks) proves a re-run adopts only still-unmatched events (already-adopted ids are skipped), keeps reporting the unmatched, deletes nothing — so after the real class import, running adopt again will match the 13 real classes exactly as designed. The prod settings remain CLEARED; re-arming is the cutover step, on your signal.
+
+First real send observed (Jul 28): "[HGL Admin] billy@highergroundlearning.com assigned you a pipeline lead: QA-PL174 Student." The actor should be a person, not an address — "Billy Thomas assigned you a pipeline lead: …" — in the subject and anywhere `{actor}` renders in the body. Resolve the acting admin's display name (instructors/contacts record, or the admin user's profile name) and fall back to the email only when no name exists. Update the template's PL-82 sample to show a name so the preview reads truthfully.
+
+**Verify:** send shows "Billy Thomas assigned…" · no-name fallback still renders the address · sample matches.
