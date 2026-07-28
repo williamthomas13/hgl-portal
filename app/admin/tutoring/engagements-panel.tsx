@@ -69,7 +69,13 @@ export default function EngagementsPanel({
     byFamily.get(key)!.rows.push(e)
   }
 
-  async function update(id: string, body: Record<string, unknown>, done: string) {
+  async function update(
+    id: string,
+    body: Record<string, unknown>,
+    // PL-165: a done message can be computed from the response, so the
+    // banner reports what actually changed instead of what was attempted.
+    done: string | ((json: Record<string, unknown>) => string)
+  ) {
     setBusyId(id)
     const res = await fetch('/api/admin/tutoring/engagement', {
       method: 'POST',
@@ -77,9 +83,23 @@ export default function EngagementsPanel({
       body: JSON.stringify({ action: 'update', id, ...body }),
     })
     const json = await res.json().catch(() => ({}))
-    setMessage(res.ok ? done : 'Error: ' + json.error)
+    setMessage(res.ok ? (typeof done === 'function' ? done(json) : done) : 'Error: ' + json.error)
     setBusyId('')
     if (res.ok) onChange()
+  }
+
+  /** PL-165: the regenerate answer — every press produces a visible result. */
+  function regenerateMessage(json: Record<string, unknown>): string {
+    const r = json.regenerate as { added: number; dropped: number; unchanged: number } | null
+    if (!r) return 'Future sessions regenerated from the weekly schedule.'
+    if (r.added === 0 && r.dropped === 0) {
+      return `Nothing needed regenerating — all ${r.unchanged} upcoming session${
+        r.unchanged === 1 ? '' : 's'
+      } already match the weekly schedule. No emails were sent.`
+    }
+    return `Regenerated: ${r.added} session${r.added === 1 ? '' : 's'} added, ${r.dropped} removed, ${
+      r.unchanged
+    } unchanged. Sessions already on an invoice were not touched, and no emails were sent.`
   }
 
   /** PL-41 non-update actions (activate_now / resend_approval). */
@@ -209,14 +229,18 @@ export default function EngagementsPanel({
                   <span className="ml-auto flex gap-2 text-xs items-center">
                     {e.status === 'active' && (
                       <>
-                        <button
+                        {/* PL-165: the confirm body states the scope — a
+                            tooltip alone left "does it resend everything?"
+                            unanswered. */}
+                        <ConfirmAction
+                          label="regenerate"
                           disabled={busyId === e.id}
-                          onClick={() => update(e.id, { regenerate: true }, 'Future sessions regenerated from the weekly schedule.')}
                           className="text-hgl-blue underline"
-                          title="Re-materialize future unbilled sessions from the weekly slots (use after editing the schedule)"
-                        >
-                          regenerate
-                        </button>
+                          confirmClassName="text-hgl-blue font-semibold underline"
+                          message="Rebuilds this schedule's upcoming, not-yet-billed sessions from the weekly slots (use after editing the schedule). Sessions already on an invoice are kept as they are, confirmed or paid invoices are never touched, and no emails are sent or resent."
+                          confirmLabel="Yes, regenerate"
+                          onConfirm={() => update(e.id, { regenerate: true }, regenerateMessage)}
+                        />
                         <ConfirmAction
                           label="pause"
                           message="Pause? Future unbilled sessions are removed (and taken off the Google calendar)."

@@ -425,6 +425,82 @@ export async function GET() {
     }
   }
 
+  // PL-163: package (nearly) exhausted — the renewal/wind-down conversation
+  // is a real to-do, and it should not depend on someone happening to open
+  // the tutoring page. State-driven: attaching a fresh package (anywhere in
+  // the family) or ending the engagement clears the row on its own.
+  // Threshold ≤1h (Scarlett to confirm) — the conversation is better had
+  // BEFORE the last session.
+  const { data: pkgEngs } = await supabase
+    .from('tutoring_engagements')
+    .select(
+      `id, addon_id, status, student_id,
+       students ( first_name, last_name, family_id ),
+       enrollment_addons ( id, hours )`
+    )
+    .eq('funding', 'package')
+    .not('addon_id', 'is', null)
+  const pkgRows = (pkgEngs as any[]) ?? []
+  if (pkgRows.length > 0) {
+    // Drawdown per addon across EVERY engagement drawing on it — the same
+    // status set as packageHoursUsedBefore, the function that actually bills.
+    const { data: consuming } = await supabase
+      .from('tutoring_sessions')
+      .select('engagement_id, duration_minutes, status, reschedule_notice, starts_at')
+      .in('engagement_id', pkgRows.map((e) => e.id))
+      .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
+    const addonOf = new Map(pkgRows.map((e) => [e.id, e.addon_id]))
+    const usedByAddon = new Map<string, number>()
+    const lastSpendByAddon = new Map<string, string>()
+    for (const s of (consuming as any[]) ?? []) {
+      if (s.status === 'rescheduled' && s.reschedule_notice !== 'late') continue
+      const aid = addonOf.get(s.engagement_id)
+      if (!aid) continue
+      usedByAddon.set(aid, (usedByAddon.get(aid) ?? 0) + s.duration_minutes / 60)
+      if (s.starts_at <= now.toISOString() && s.starts_at > (lastSpendByAddon.get(aid) ?? '')) {
+        lastSpendByAddon.set(aid, s.starts_at)
+      }
+    }
+    // A family's OTHER packages with hours still on them = the renewal
+    // already happened; the row would nag a solved problem.
+    const pkgFamIds = [...new Set(pkgRows.map((e) => one<any>(e.students)?.family_id).filter(Boolean))]
+    const { data: famAddons } = await supabase
+      .from('enrollment_addons')
+      .select('id, hours, enrollments!inner ( students!inner ( family_id ) )')
+      .in('enrollments.students.family_id', pkgFamIds)
+    const addonFamily = new Map(
+      ((famAddons as any[]) ?? []).map((a) => [
+        a.id,
+        one<any>(one<any>(a.enrollments)?.students)?.family_id as string,
+      ])
+    )
+    const addonRemaining = (id: string, hours: number) => Math.max(0, hours - (usedByAddon.get(id) ?? 0))
+    const seenAddons = new Set<string>()
+    for (const e of pkgRows.filter((e) => e.status === 'active')) {
+      const addon = one<any>(e.enrollment_addons)
+      const stu = one<any>(e.students)
+      if (!addon || !stu || seenAddons.has(addon.id)) continue
+      seenAddons.add(addon.id)
+      const remaining = addonRemaining(addon.id, Number(addon.hours))
+      if (remaining > 1) continue
+      const renewed = ((famAddons as any[]) ?? []).some(
+        (a) =>
+          a.id !== addon.id &&
+          addonFamily.get(a.id) === stu.family_id &&
+          addonRemaining(a.id, Number(a.hours)) > 1
+      )
+      if (renewed) continue
+      const used = Number(addon.hours) - remaining
+      attention.push({
+        id: `pkg-exhausted-${addon.id}`,
+        kind: remaining <= 0 ? 'Package hours used up' : 'Package hours almost used up',
+        text: `${stu.first_name} ${stu.last_name} — ${used.toFixed(1)} of ${addon.hours}h used, ${remaining.toFixed(1)}h left · time to talk about next steps.`,
+        href: `/admin/tutoring?family=${stu.family_id}`,
+        since: lastSpendByAddon.get(addon.id), // when the hours were spent
+      })
+    }
+  }
+
   // PL-133: the sticky-note layer — human-pinned, human-cleared, and the ONE
   // exception to the state-driven rule. Tagged in the UI so nobody mistakes
   // a note for a system condition.
@@ -584,12 +660,21 @@ export async function GET() {
     .eq('status', 'confirmed')
     .gte('starts_at', now.toISOString())
     .lt('starts_at', weekEnd)
+  // PL-173: the same window's PROPOSED count — a card reading "0" while nine
+  // sessions sat one auto-confirm sweep away told half the state (Jul 25).
+  const { count: weekProposed } = await supabase
+    .from('tutoring_sessions')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'proposed')
+    .gte('starts_at', now.toISOString())
+    .lt('starts_at', weekEnd)
 
   return NextResponse.json({
     attention,
     activity: activity.slice(0, 40), // PL-134: grouping collapses these
     upcoming,
     weekSessions: weekSessions ?? 0,
+    weekProposed: weekProposed ?? 0,
     health,
   })
 }

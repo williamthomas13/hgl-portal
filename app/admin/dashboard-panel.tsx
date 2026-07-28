@@ -123,6 +123,7 @@ export default function DashboardPanel() {
   const [activity, setActivity] = useState<ActivityRow[]>([])
   const [upcoming, setUpcoming] = useState<UpcomingClass[]>([])
   const [weekSessions, setWeekSessions] = useState(0)
+  const [weekProposed, setWeekProposed] = useState(0)
   const [error, setError] = useState('')
   const [health, setHealth] = useState<SystemHealth | null>(null)
   // PL-134: client-side only, defaults to All, no persistence needed.
@@ -148,6 +149,7 @@ export default function DashboardPanel() {
       setActivity(json.activity ?? [])
       setUpcoming(json.upcoming ?? [])
       setWeekSessions(json.weekSessions ?? 0)
+      setWeekProposed(json.weekProposed ?? 0)
       setHealth(json.health ?? null)
       setError('')
     } catch {
@@ -498,6 +500,14 @@ export default function DashboardPanel() {
           <h2 className="text-sm font-bold text-hgl-slate mb-2">This week&apos;s tutoring</h2>
           <p className="text-3xl font-bold text-hgl-slate">{weekSessions}</p>
           <p className="text-xs text-gray-400">confirmed 1-on-1 sessions in the next 7 days</p>
+          {/* PL-173: the same window's proposed count always rides along —
+              a technically-right "0 confirmed" told half the state. +0 would
+              be noise, so zero renders nothing. */}
+          {weekProposed > 0 && (
+            <p className="text-xs font-semibold text-amber-700">
+              +{weekProposed} proposed, awaiting family confirmation
+            </p>
+          )}
           <a href="/admin/tutoring" className="text-xs text-hgl-blue underline">
             open the tutoring page →
           </a>

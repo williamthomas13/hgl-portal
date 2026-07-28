@@ -74,6 +74,13 @@ function monthLabel(period: string): string {
   })
 }
 
+/** "20" → "20th" for the PL-162 trust line. */
+function generateDayLabel(day: number): string {
+  const suffix =
+    day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[day % 10] ?? 'th'
+  return `${day}${suffix}`
+}
+
 export default function InvoicesPanel() {
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -81,6 +88,19 @@ export default function InvoicesPanel() {
   const [expanded, setExpanded] = useState('')
   const [lineForm, setLineForm] = useState<{ id: string; kind: 'adjustment' | 'credit'; description: string; amount: string } | null>(null)
   const [genMonth, setGenMonth] = useState('')
+  // PL-162: the trust line quotes the real settings day, not a hardcoded one.
+  const [generateDay, setGenerateDay] = useState(20)
+  const [offCycleOpen, setOffCycleOpen] = useState(false)
+  useEffect(() => {
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'tutoring_generate_day')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) setGenerateDay(Number(data.value))
+      })
+  }, [])
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -156,39 +176,14 @@ export default function InvoicesPanel() {
 
   return (
     <div className="space-y-5 text-sm">
-      <div className="flex flex-wrap items-center gap-2 bg-gray-50 border border-gray-200 rounded p-3">
-        <span className="text-xs font-semibold text-gray-600">Run the monthly cycle now:</span>
-        <input
-          type="month"
-          value={genMonth}
-          onChange={(e) => setGenMonth(e.target.value)}
-          className="border border-gray-300 rounded p-1 text-xs bg-white"
-        />
-        <button
-          disabled={busy}
-          onClick={() =>
-            call(
-              '/api/admin/tutoring/cycle',
-              { action: 'generate', ...(genMonth ? { month: genMonth } : {}) },
-              'Cycle generated — proposals sent where due.'
-            )
-          }
-          className="text-xs font-semibold text-hgl-blue underline disabled:opacity-50"
-        >
-          generate {genMonth || 'next month'}
-        </button>
-        <button
-          disabled={busy}
-          onClick={() => call('/api/admin/tutoring/cycle', { action: 'sweep' }, 'Sweeps run.')}
-          className="text-xs font-semibold text-gray-500 underline disabled:opacity-50"
-        >
-          run sweeps (nudges · auto-confirm · collections)
-        </button>
-        <span className="text-[11px] text-gray-400 w-full">
-          The daily cron does all of this on schedule (generation on the settings day, default the
-          20th) — these buttons are for off-cycle runs.
-        </span>
-      </div>
+      {/* PL-162: lead with trust — the automation is the workflow; the
+          off-cycle controls live in a collapsed disclosure at the bottom. */}
+      <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-3">
+        <span className="font-semibold text-gray-600">Billing runs itself:</span> proposals
+        generate on the {generateDayLabel(generateDay)} of each month, and nudges, auto-confirm,
+        and collections run every morning. You only need the controls at the bottom of this panel
+        to avoid waiting for tomorrow&apos;s run.
+      </p>
 
       {rows.length === 0 && (
         <p className="text-gray-500 italic">
@@ -385,6 +380,60 @@ export default function InvoicesPanel() {
           </div>
         </div>
       ))}
+
+      {/* PL-162: off-cycle controls, demoted to a footnote. Each button says
+          its actual use case — the automation covers everything else. */}
+      <div className="border border-gray-200 rounded p-3">
+        <button
+          type="button"
+          onClick={() => setOffCycleOpen((v) => !v)}
+          className="text-xs font-semibold text-gray-500"
+        >
+          {offCycleOpen ? '▾' : '▸'} Run off-cycle…
+        </button>
+        {offCycleOpen && (
+          <div className="mt-2 space-y-3 text-xs text-gray-600">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="month"
+                value={genMonth}
+                onChange={(e) => setGenMonth(e.target.value)}
+                className="border border-gray-300 rounded p-1 bg-white"
+              />
+              <button
+                disabled={busy}
+                onClick={() =>
+                  call(
+                    '/api/admin/tutoring/cycle',
+                    { action: 'generate', ...(genMonth ? { month: genMonth } : {}) },
+                    'Cycle generated — proposals sent where due.'
+                  )
+                }
+                className="font-semibold text-hgl-blue underline disabled:opacity-50"
+              >
+                generate {genMonth || 'next month'}
+              </button>
+              <span className="text-gray-400 w-full">
+                Use when you added or fixed an engagement after this month&apos;s generation day and
+                want the proposal out today instead of on the next morning run.
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                disabled={busy}
+                onClick={() => call('/api/admin/tutoring/cycle', { action: 'sweep' }, 'Sweeps run.')}
+                className="font-semibold text-gray-600 underline disabled:opacity-50"
+              >
+                run sweeps (nudges · auto-confirm · collections)
+              </button>
+              <span className="text-gray-400 w-full">
+                Use when a family just confirmed or a retry is due and you don&apos;t want to wait
+                for tomorrow morning&apos;s run.
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
 
       {message && (
         <div

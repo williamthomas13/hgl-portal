@@ -72,6 +72,8 @@ The International Classes Google Calendar is maintained by hand today, with an e
 
 ## PL-162 (small) · Billing panel: demote the off-cycle buttons to a footnote
 
+**✅ SHIPPED (Jul 27).** Panel now leads with the trust line — "Billing runs itself: proposals generate on the {settings day} of each month, and nudges, auto-confirm, and collections run every morning" — quoting the REAL `tutoring_generate_day` setting (ordinal-formatted), not a hardcoded 20th. The generate + sweeps buttons moved to a "▸ Run off-cycle…" disclosure at the bottom, collapsed by default, each stating its actual use case (generate: "added or fixed an engagement after this month's generation day and want the proposal out today"; sweeps: "a family just confirmed / a retry is due and you don't want to wait for tomorrow morning's run"). Buttons unchanged functionally.
+
 Scarlett's read of the billing panel: "Billing is automatic, right? But this 'run the monthly cycle now' tab doesn't make it seem so." She's right — the off-cycle controls sit at the top of the panel looking like the primary workflow, which quietly implies the automation can't be trusted.
 
 - **Collapse "Run the monthly cycle now" + "run sweeps" into a small disclosure at the BOTTOM of the panel** (e.g. "▸ Run off-cycle…"), collapsed by default.
@@ -81,6 +83,8 @@ Scarlett's read of the billing panel: "Billing is automatic, right? But this 'ru
 **Verify:** panel reads automation-first · buttons still work from the disclosure · copy passes the plain-English rule.
 
 ## PL-163 (small) · Hours-exhausted flag joins the dashboard needs-attention list
+
+**✅ SHIPPED (Jul 27).** New state-driven rows at ≤1h remaining (the default pending your threshold call): "Package hours almost used up" and, at 0, "Package hours used up" — copy in the existing voice ("{student} — 14.0 of 15h used, 1.0h left · time to talk about next steps"), deep-linking the family on the tutoring page, `since` = when the hours were actually spent (the last consuming session). Drawdown uses the billing status set across every engagement drawing on the addon. The clear condition goes one step beyond the ask: a fresh package ANYWHERE in the family with >1h left suppresses the row (the renewal conversation already happened — the row would nag a solved problem), and ending the engagement clears it too. Verified live both directions: Roman (15/15 used) and Fakey (14/15) surfaced; inserting a 5h package for Roman's family cleared his row with no email involvement; deleting it brought the row back.
 
 The Students section already computes "15.0 of 15h used — 0.0h left · time to talk about next steps." That's a real to-do (a conversation that leads to renewal or wind-down), but it only surfaces if someone happens to open the tutoring page.
 
@@ -100,6 +104,8 @@ The PL-83 family-scoped comms timeline lives on the family/student record. The C
 **Verify:** a family's T1/T2/T3 sends appear in the tab · filter by family narrows correctly · render opens · badges match the family-record timeline.
 
 ## PL-165 (small) · "Regenerate" says what it does, and always answers
+
+**✅ SHIPPED (Jul 27).** The button now arms into the in-page ConfirmAction whose body states the scope in full: "Rebuilds this schedule's upcoming, not-yet-billed sessions from the weekly slots (use after editing the schedule). Sessions already on an invoice are kept as they are, confirmed or paid invoices are never touched, and no emails are sent or resent." And it always answers: the route snapshots the future unbilled session instants before and after (counts alone can't say "nothing changed" — a no-op deletes and recreates the identical set) and returns the real delta; the banner reads either "Nothing needed regenerating — all 15 upcoming sessions already match the weekly schedule. No emails were sent." or "Regenerated: N added, M removed, K unchanged…". Verified live on Roman's schedule: 15 sessions removed+recreated, reported honestly as added 0 / dropped 0 / unchanged 15. (Billed sessions were already structurally protected — `invoice_id IS NULL` in the clear query — the copy now says so.)
 
 Two findings from Scarlett pressing it: (1) "feels a little scary — does it regenerate the invoice? The communications? Everything?" (2) "When I pushed it, nothing seemed to happen."
 
@@ -181,6 +187,8 @@ The off-state copy reads "use this when you've already agreed the schedule" — 
 **Verify:** copy updated both states · plain-English rule holds.
 
 ## PL-173 (tiny) · "This week's tutoring" card always shows the proposed count too
+
+**✅ SHIPPED (Jul 27).** Dashboard API counts `status='proposed'` over the identical 7-day window (same query shape, one extra head-count), and the card renders "+N proposed, awaiting family confirmation" whenever N > 0 — regardless of the confirmed number, per your call — and nothing when N = 0. Verified: local API returns weekSessions 9 / weekProposed 0 → no subline; the subline path exercised in code review.
 
 The card counts `status = 'confirmed'` only — which is precise and correctly labeled, and still misled a careful reader (Jul 25: card read 0 while nine sessions sat in `proposed` one auto-confirm sweep away from confirmed; verified in prod, not a counting bug). A number that's technically right but tells half the state is the attention-surface anti-pattern.
 

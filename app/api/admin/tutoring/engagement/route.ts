@@ -405,14 +405,47 @@ export async function POST(req: Request) {
       let removed = 0
       let created = 0
       const ending = engagement.status === 'ended' || engagement.status === 'paused'
+      // PL-165: a regenerate press must always ANSWER — so snapshot the
+      // future unbilled session instants before and after and report the
+      // real delta (a no-op recreates the identical set; counts alone can't
+      // say "nothing changed").
+      const regenCutoff = new Date().toISOString()
+      const futureStarts = async () => {
+        const { data } = await supabase
+          .from('tutoring_sessions')
+          .select('starts_at')
+          .eq('engagement_id', engagement.id)
+          .in('status', ['proposed', 'confirmed'])
+          .is('invoice_id', null)
+          .gt('starts_at', regenCutoff)
+        return (data ?? []).map((s) => String(s.starts_at))
+      }
+      const before = body.regenerate ? await futureStarts() : null
       if (body.regenerate || ending) {
         ;({ removed } = await clearFutureSessions(engagement.id))
       }
       if (body.regenerate && engagement.status === 'active') {
         ;({ created } = await materializeSessions(engagement))
       }
+      let regenerate: { added: number; dropped: number; unchanged: number } | null = null
+      if (before !== null) {
+        const afterStarts = await futureStarts()
+        const b = new Set(before)
+        const a = new Set(afterStarts)
+        regenerate = {
+          added: afterStarts.filter((x) => !b.has(x)).length,
+          dropped: before.filter((x) => !a.has(x)).length,
+          unchanged: afterStarts.filter((x) => b.has(x)).length,
+        }
+      }
       after(() => processGcalQueue())
-      return NextResponse.json({ ok: true, id: engagement.id, sessionsRemoved: removed, sessionsCreated: created })
+      return NextResponse.json({
+        ok: true,
+        id: engagement.id,
+        sessionsRemoved: removed,
+        sessionsCreated: created,
+        regenerate,
+      })
     }
 
     return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
