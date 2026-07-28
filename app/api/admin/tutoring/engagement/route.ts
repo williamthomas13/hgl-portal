@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
 import { sendWelcomeHandoff } from '../../../../utils/intake-emails'
+import { billMidMonthStart } from '../../../../utils/tutoring-billing'
 import {
   activatePendingEngagement,
   sendScheduleApprovalEmail,
@@ -315,6 +316,13 @@ export async function POST(req: Request) {
                 .then(() =>
                   sendScheduleSetEmail(engagementId).catch((e) =>
                     console.error('T_SCHEDULE_SET failed:', e)
+                  )
+                )
+                // PL-200: the already-agreed path is live immediately, so the
+                // mid-month remainder bills right behind the welcome/all-set.
+                .then(() =>
+                  billMidMonthStart(engagementId).catch((e) =>
+                    console.error('PL-200 mid-month remainder billing failed:', e)
                   )
                 ),
         ])

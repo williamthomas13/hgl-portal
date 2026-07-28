@@ -159,6 +159,7 @@ type EngagementFull = {
   addon_id: string | null
   recurrence: RecurrenceSlot[]
   status: string
+  start_date: string | null
   student: { id: string; first_name: string; last_name: string } | null
   family: {
     id: string
@@ -178,7 +179,7 @@ async function loadActiveEngagements(): Promise<EngagementFull[]> {
   const { data, error } = await supabase
     .from('tutoring_engagements')
     .select(
-      `id, student_id, tutor_id, hourly_rate, funding, addon_id, recurrence, status,
+      `id, student_id, tutor_id, hourly_rate, funding, addon_id, recurrence, status, start_date,
        students ( id, first_name, last_name,
          families ( id, parent_first_name, parent_last_name, parent_email,
                     billing_email, billing_cc_emails, autopay, timezone ) ),
@@ -337,7 +338,12 @@ export async function generateMonthlyCycle(
         // re-materialized by a cycle re-run.
         .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled'])
       const taken = new Set((existing ?? []).map((s) => new Date(s.starts_at).getTime()))
-      const rows = generateOccurrences(eng.recurrence, month.firstDay, month.lastDay, tz)
+      // PL-200: never materialize before the engagement's start date — a
+      // mid-month (or mid-NEXT-month) start must not grow occurrences in the
+      // gap between generation day and the agreed first session.
+      const occFrom =
+        eng.start_date && eng.start_date > month.firstDay ? eng.start_date : month.firstDay
+      const rows = generateOccurrences(eng.recurrence, occFrom, month.lastDay, tz)
         .filter((o) => !taken.has(o.startsAt.getTime()) && o.startsAt.getTime() > now.getTime())
         .map((o) => ({
           engagement_id: eng.id,
@@ -536,13 +542,29 @@ export async function generateMonthlyCycle(
       })
       .filter((b): b is StudentScheduleBlock => b !== null)
 
+    // PL-200: a current-month (mid-month remainder) run labels the T1 with
+    // the partial period actually billed — "August 12–31", never a bare
+    // "August" that implies a full month.
+    const nowYm = now.toLocaleDateString('en-CA', { timeZone: ORG_TZ }).slice(0, 7)
+    let monthLabel = month.label
+    if (month.period.slice(0, 7) === nowYm && bucket.sessions.length > 0) {
+      const firstDayNum = Math.min(
+        ...bucket.sessions.map((s) =>
+          Number(new Date(s.starts_at).toLocaleDateString('en-CA', { timeZone: famTz }).slice(8, 10))
+        )
+      )
+      if (Number.isFinite(firstDayNum) && firstDayNum > 1) {
+        monthLabel = `${month.label.split(' ')[0]} ${firstDayNum}–${Number(month.lastDay.slice(8, 10))}`
+      }
+    }
+
     const { data: fresh } = await supabase
       .from('tutoring_invoices')
       .select('total, status, proposal_sent_at')
       .eq('id', invoice.id)
       .single()
     const t1Opts = {
-      monthLabel: month.label,
+      monthLabel,
       blocks,
       totalDue: Number(fresh?.total ?? 0),
       packageNote:
@@ -558,7 +580,7 @@ export async function generateMonthlyCycle(
       'T1_MONTHLY_PROPOSAL',
       { parentFirstName: family.parent_first_name ?? 'there', parentEmail: family.parent_email },
       {
-        tutoringMonthLabel: month.label,
+        tutoringMonthLabel: monthLabel,
         studentNames: [...new Set(blocks.map((b) => b.studentFirst))].join(' & '),
         scheduleBlock: scheduleHtml(blocks),
         monthTotalLine:
@@ -677,6 +699,46 @@ export async function generateMonthlyCycle(
     }).catch((e) => console.error('unagreed-families alert failed:', e))
   }
   return result
+}
+
+/**
+ * PL-200: a monthly-billed engagement that starts mid-month must bill its
+ * current-month remainder IMMEDIATELY — the cycle only ever targets the next
+ * month, so without this the start-through-month-end sessions are scheduled,
+ * confirmed, welcomed… and never billed. Runs the scoped, idempotent
+ * generation for the current month (no-op when nothing in the month is
+ * billable; paid/confirmed invoices untouched; never stamps the completion
+ * marker). Post-20th, ALSO folds the family into the already-generated next
+ * month — the sweep believes that month is complete and would never come
+ * back for them. Callers sequence this AFTER the welcome/all-set sends so
+ * the remainder T1 never races them into the inbox.
+ */
+export async function billMidMonthStart(engagementId: string): Promise<void> {
+  const now = new Date()
+  const { data: eng } = await supabase
+    .from('tutoring_engagements')
+    .select('id, funding, status, students ( family_id )')
+    .eq('id', engagementId)
+    .maybeSingle()
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const familyId = (one<any>(eng?.students) as any)?.family_id as string | undefined
+  if (!eng || !familyId) return
+  if (eng.funding === 'package') return // drawdown needs no invoice — unchanged
+
+  const todayDenver = now.toLocaleDateString('en-CA', { timeZone: ORG_TZ })
+  await generateMonthlyCycle(now, todayDenver.slice(0, 7), [familyId])
+
+  const next = nextBillingMonth(now)
+  const { data: marker } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', GENERATED_MARKER_KEY)
+    .maybeSingle()
+  const settings = await loadCycleSettings()
+  const denverDay = Number(todayDenver.slice(8, 10))
+  if (marker?.value === next.period || denverDay >= settings.generateDay) {
+    await generateMonthlyCycle(now, next.period.slice(0, 7), [familyId])
+  }
 }
 
 export async function recomputeInvoiceTotals(invoiceId: string): Promise<number> {

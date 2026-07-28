@@ -1,0 +1,134 @@
+# Portal fixes — batch 21 (READY FOR CODE — handed off July 29; 10 items, PL-197…206 — PL-204 amended + PL-206 added after hand-off: re-read both)
+
+Opened and completed July 29: the overdraw design, mid-month remainder billing, two new platform capabilities (Campaigns, Calls — each with a v2/v3 roadmap inline; roadmap docs also live in the project), the competitive-scan additions (PL-203/204), and two small fixes. If this doc is extended after you've pulled it, wait for an explicit re-read ask. Suggested order: **PL-200 first** (quiet revenue loss, and Aug is a real month), then 197 (same money family), then the small tier (198/199/203/204/205), then 201 → 202 (Campaigns before Calls — 202's v3 feeds 201's segments, and Quo signup is 'down the road a ways' per Scarlett, so build the receiver against test deliveries).
+
+Next PL after this batch: **PL-207**.
+
+**Standing rules:** plain-English statuses · no internal shorthand · every alert deep-links its record · samples from composers · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
+
+## PL-197 · Package overdraw: honest display, a flag at the crossing, and automatic billing for the intentional case
+
+Surfaced by the PL-130 follow-up: Roman's French engagement has **24h drawn against a 15h package**, displayed capped as "15.0 of 15h used" (used = purchased − remaining, remaining clamped at 0). The clamp means an overdrawn package can NEVER display as overdrawn — it reads "full" at exactly the moment it most needs to read "over." Scarlett's design (Jul 29) distinguishes the two ways overdraw happens, and they get different treatment:
+
+**Case A — the family asked for it.** Someone with a 15h pack purposely requests 24h. That's fine and good business: **the 9 extra hours bill automatically, like every other bill** — they flow into the monthly cycle at the engagement's hourly rate as ordinary billable hours the moment the package is exhausted. No special invoice, no manual step; the existing generation machinery just keeps billing where the package stops covering.
+
+**Case B — we scheduled past it without asking.** Kelsie fills out a month without noticing the package ends mid-way (done-without-thinking to complete the month). The family wanted and paid for 15. **This must be flagged BEFORE the schedule goes through:** at scheduling/generation time, any action that would draw past the package's remaining hours gets a plain warning — "This schedule goes {X}h past {student}'s {N}h package. The extra hours will bill at ${rate}/hr on the monthly invoice — confirm with the family before scheduling them." Proceeding requires walking past it deliberately (the PL-194 exact-match pattern: never blocked, never silent). The flag is the moment of the human conversation; what makes Case A "intentional" is precisely that someone walked past this flag knowingly.
+
+- **Display honesty everywhere hours render:** "24.0 of 15h used — **9.0h over**" (red), never capped. Panel, student profile (PL-193), dashboard.
+- **Dashboard needs-attention row at the crossing:** a package that has gone past 0 gets a state-driven row ("{student} is 9.0h past their package — extra hours are billing at ${rate}/hr") that clears when a new package is attached, the engagement ends, or the overage is acknowledged. Complements PL-163's ≤1h early warning — 163 is "talk soon," this is "it's happening."
+- **Billing check:** verify what generation currently DOES with post-package sessions — if they bill at the engagement rate already, Case A needs only the display + flag work; if they silently don't bill (the 9h revenue-loss case), that's the most urgent fix in the item. State which reality was found in the ship note.
+- **Roman's 24/15 QA row is the natural fixture.**
+
+**Verify:** display shows over, not capped, on all three surfaces · scheduling past remaining hours triggers the warning and requires explicit proceed · warned-and-proceeded hours appear on the next monthly invoice at the engagement rate · dashboard row appears at crossing and clears on new package/end/acknowledge · PL-163 and this row don't double-fire confusingly.
+
+## PL-198 (small) · Nav filing: Calendar goes topline, View-as under Settings
+
+Scarlett's call (Jul 29, provisional — she'll confirm it feels right in use): **Calendar becomes a seventh topline tab** (it's a daily-driver surface, not a filed page — especially once Kelsie lives in it), and **View-as files under Settings**. Keep both reachable at their current URLs (deep-link rule). If seven topline tabs crowd the bar at laptop widths, flag it with a screenshot rather than silently demoting anything.
+
+**Verify:** Calendar tab on every admin page · View-as under Settings · old URLs land · no crowding at 13" width (screenshot in the ship note).
+
+## PL-199 (tiny) · Student profile renders pronouns raw: "(he_him)"
+
+`/admin/students/{id}` line 202 renders `({st.pronouns})` — the stored enum — so the header reads "Roman Desmond(he_him)": underscore instead of slash, no space before the paren. Everywhere else pronouns go through the PL-69/80 display machinery. Route the profile through the same helper ("(he/him)", proper spacing; `name_only` and unset render nothing). Check the profile page for any OTHER raw-enum renders while in there (statuses, modes) — the plain-English rule applies to this page like every other.
+
+**Verify:** header reads "Roman Desmond (he/him)" · name_only/unset show no parenthetical · no other raw enums on the page.
+
+## PL-200 · Mid-month starts bill the current-month remainder immediately
+
+**✅ SHIPPED (Jul 29).** New `billMidMonthStart(engagementId)` in tutoring-billing.ts, called from BOTH activation paths — `activatePendingEngagement` (parent confirm AND Kelsie's activate-now override) and the already-agreed create path — in strict sequence AFTER the welcome + all-set sends, so the remainder T1 can never race them into the inbox. It runs the PL-144/195 scoped generation for the CURRENT month (idempotent; no-op when nothing's billable; paid/confirmed untouched; never stamps the completion marker), and handles the post-20th edge: when next month's marker is stamped (or the generate day has passed), the family also folds into next month's cycle right then — the sweep believes that month is complete and would never come back for them. Package engagements return before anything happens (drawdown unchanged). **Two generation fixes rode along:** (1) the T1's month label reads the actual partial period — "July 29–31", never a bare "July" — in the code twin AND the registry variable ({tutoringMonthLabel}); next-month labels stay plain. (2) Generation now clamps occurrence materialization to the engagement's `start_date` (it previously ignored start_date entirely, so a scoped current-month run — or the regular cycle for an engagement starting mid-NEXT-month — would have materialized sessions in the gap before the agreed first session). New gate `regress:mid-month-start` (10 checks: remainder invoice proposed · nothing before start date · start→month-end only · partial label · post-20th fold-in · plain next-month label · idempotent re-run · paid untouched · package no-op · marker never stamped); `regress:monthly-generation` and `regress:tutoring-charge` still green. Known edge, accepted per the doc: a second mid-month engagement added AFTER the family's remainder invoice is already paid won't re-open it (paid is never touched) — that remainder needs the manual off-cycle run.
+
+Scarlett asked (Jul 29) whether a new student set up late in the month who starts ASAP gets invoiced immediately for the sessions through month-end before regular monthly billing takes over. **Source-verified answer: no.** The cycle only ever targets the NEXT month (`generateMonthlyCycle` → `nextBillingMonth`; cron generates on the 20th for the month ahead). A monthly-billed engagement created mid-month gets its current-month sessions scheduled, proposed, confirmed, welcomed — and never billed. The only path today is the manual off-cycle run with the current month selected, which nobody would know to do. Package students are unaffected (drawdown needs no invoice); this is strictly monthly-billed mid-month starts.
+
+- **On creating (or confirming, per the send-to-confirm setting) a monthly-billed engagement whose first sessions land before the next cycle month:** immediately run generation scoped to that family for the CURRENT month — the machinery exists (`generateMonthlyCycle(now, monthOverride, [familyId])`, built for PL-144/195; idempotent, paid-untouched, scoped runs don't stamp the completion marker). The remainder invoice carries only the sessions from start date through month-end.
+- **The family experience mirrors the normal cycle:** T1 proposal / confirm / invoice flow for the remainder invoice, same as any month — with the T1's month label reading naturally for a partial month ("August 12–31" not "August"). Check the composer handles a partial-period label.
+- **Ordering with PL-185's machinery:** the welcome and the remainder invoice should not race each other into the inbox — sequence them (welcome, then T1; or per whatever order reads best — Scarlett may have a preference at review).
+- **Then the regular cycle takes over:** the 20th's run proposes next month as usual; the unique (family, period) constraint plus dedupe means no double-billing is possible even if timing overlaps.
+- **Edge:** a mid-month start created AFTER the 20th (next month already generated) needs both — the remainder invoice now AND their sessions folded into the already-generated next month (regeneration of a draft/proposed invoice already rebuilds session lines — verify it picks up the new engagement).
+
+**Verify:** monthly-billed engagement created mid-month → remainder invoice proposed immediately, sessions from start through month-end only, T1 label reads the partial period · package engagement → no invoice (unchanged) · post-20th creation → remainder invoice + next-month invoice both correct, no overlap · paid/confirmed invoices untouched by the scoped run · no welcome/T1 race.
+
+## PL-201 · Campaigns v1: smart offers from portal data (the MailerLite replacement begins)
+
+Scarlett's founding pain (Jul 29, MailerLite era): "I would want to send out an offer but then I had to look up in various places who was a current student, who did a class, who already bought a package, what rate they were paying — and then try to create a group in MailerLite that met all the requirements. It was almost always too hard to do." The portal HAS all of that data. Campaigns v1 makes an offer send a query plus a compose, not an afternoon of cross-referencing. Resend paid tier (50k/mo) leaves ample headroom over transactional volume.
+
+**v1 scope — deliberately minimal, shippable:**
+
+1. **Segment builder** on data the portal already holds, composable with AND: enrollment history (took a class / which class type / which school), current-student status, package status (has active hours / exhausted / never bought), rate paid, waitlist/interest-list membership, tutoring vs class-only. Plain-English chips, not a query language — "Took SAT Prep · No active package" reads like Kelsie thinks.
+2. **Recipient preview before anything sends:** the resolved list — names, emails, and WHY each matched (which criteria) — reviewable and individually excludable. Nobody sends to a list they haven't seen. Count shown against the Resend quota.
+3. **Compose in the existing template editor** (same markdown, variables, versioning Scarlett already knows), as a new `marketing` category. Test-send to billy@ before any real send.
+4. **Unsubscribe + suppression, structural:** every marketing send carries one-click unsubscribe (List-Unsubscribe header + visible footer link, tokenized page, no login). Unsubscribes land in a suppression list that gates ONLY `marketing`-category sends — transactional (invoices, schedules, receipts) is never suppressed. The gate lives inside the send function (the PL-185 pattern: invariants at the choke point, not at call sites). CAN-SPAM/CASL basics: physical address in footer (already standard), honest subject, prompt honor of opt-outs.
+5. **Deliverability separation:** marketing sends from a distinct from-identity (e.g. offers@ — a PL-177 settings row), never info@/billy@, so campaign reputation can't touch operational deliverability.
+6. **Quota guardrails:** campaign sends batch through the existing quota-aware send path; the PL-136 health card shows campaign volume distinctly; a campaign that would cross the daily cap pauses and resumes rather than starving transactional sends (transactional always wins).
+7. **Send log:** every campaign recorded — segment definition, final recipient list, template version, per-recipient send status — on the existing email_sends machinery so the comms surfaces show it.
+
+**Explicitly deferred to the roadmap (below): scheduling, drips, A/B, analytics, public signup forms.** Build v1 so these bolt on rather than require rework — the segment definition should be storable/reusable (that's the v2 seam).
+
+**Verify:** segment resolves correctly against seeded fixtures (each chip alone + composed) · preview shows why-matched and honors exclusions · unsubscribe link works from a real inbox, suppresses future marketing sends, does NOT suppress a transactional send to the same family · from-identity is the marketing one · quota pause/resume proven with a capped fixture · send log complete.
+
+### Campaigns roadmap (v2/v3 — NOT this item; for planning only)
+
+- **v2 — reuse + timing:** saved/named segments (live membership — a family entering the segment later is visible at next use) · scheduled sends · basic per-campaign results from data we already have or get free from Resend (delivered/bounced/unsubscribed; opens only if tracking is enabled deliberately — decide privacy stance first) · resend-to-non-openers as a manual action.
+- **v3 — sequences + capture:** multi-step drips with exit conditions (family books → drop out of the nurture sequence — the portal knows, which is the advantage no external tool has) · public capture forms feeding the pipeline (PL-182's form machinery, public-facing) · A/B subject testing · per-segment campaign history ("this family last heard from us…" on the family timeline, which PL-83 machinery already half-provides.
+- **Sunset criterion:** MailerLite cancels when v2 ships and one real campaign has run end-to-end through the portal.
+
+## PL-202 · Phone calls land in the portal: Quo webhook integration (calls v1)
+
+Scarlett's ask (Jul 29): calls should sync with the customer's other portal data, and unknown callers should become prospective students in the pipeline. Provider: **Quo (formerly OpenPhone)** — replacing Dialpad (too expensive/bloated; Quo is $15–23/user/mo). Scarlett verified the API docs and the webhook surface is confirmed rich (changelog, May 2026 beta): `call.completed` (status + duration), `call.missed`, `call.answered`, `call.forwarded`, `call.voicemail.completed`, `call.recording.completed`, `call.transcript.completed`, `call.summary.completed`, `message.received`/`delivered`, `contact.updated/deleted`. Standard-Webhooks signing (Svix-compatible), test deliveries, delivery history, manual retries. Contacts API supports `externalId` + `source`.
+
+**v1 scope:**
+
+1. **Webhook receiver** (`/api/webhooks/quo`): verify the Standard-Webhooks signature (whsec_ secret in env, fail closed per the standing secrets rule), pin the payload version at subscription creation, handle `call.completed` + `call.missed` + `call.voicemail.completed` first.
+2. **Match the caller** against parent + student phone numbers (E164-normalized both sides — the portal's stored numbers need normalization checked). Matched → **call entry on the family timeline** (PL-83 machinery): direction, duration, missed/answered, when; voicemail link when present. The family record becomes the call history Scarlett couldn't get out of Dialpad.
+3. **Unknown caller → pipeline lead**, automatically: a prospective-student row via the PL-182 machinery with the phone number filled, source "phone call", flagged for triage ("Unknown caller Tue 2:14 PM — 6 min call. Who was this?"). Kelsie's phone-consult flow (PL-189) is one click away. Dedupe: repeat calls from the same unknown number fold into the one lead, not one lead per call.
+4. **Missed-call visibility:** a missed call from a KNOWN family shows on the needs-attention list (state-driven; clears on any outbound contact or manual dismiss) — a family who called and got nobody is exactly the thing the dashboard exists to surface.
+5. **Contact sync OUT (the externalId trick):** portal pushes family contacts to Quo with `externalId` = family id and `source` = portal, so Kelsie's caller ID shows "Willie Tomás (HGL)" and future webhook payloads carry the match for free. One-way portal→Quo in v1 (the portal stays the system of record; `contact.updated` webhooks ignored for now).
+6. **Provider-agnostic seam:** the receiver normalizes Quo's payload into an internal call-event shape before anything touches it — if Quo ever disappoints, only the adapter changes.
+
+**Setup (Scarlett/Kelsie, documented in the panel):** Quo account + number port from Dialpad · API key + webhook subscription (the panel shows the endpoint URL + verifies deliveries with the test-delivery endpoint) · configuration ≠ activation: an explicit enable switch, per the intl-calendar lesson.
+
+**Verify:** signed test delivery accepted, bad signature rejected · known-number call → timeline entry with duration/direction · missed known call → needs-attention row, clears on dismiss/outbound · unknown call → one lead with number + source, repeat calls fold in · contact push shows externalId in Quo · number formats: E164, dashed, parenthesized all match.
+
+### Calls roadmap (v2/v3 — NOT this item)
+
+- **v2 — content + texting:** voicemail audio + `call.transcript.completed` transcripts on the timeline entry · `call.summary.completed` AI summaries as the entry's one-line preview · SMS logging (`message.received`/`delivered`) onto the same timeline — texts and calls one thread per family · click-to-call/text from the family record and pipeline rows (Quo deep links) · **SMS session reminders** (the TutorBird feature worth stealing — parents read texts; sends via Quo's message API, riding the existing reminder machinery with an SMS leg + per-family opt-in).
+- **v3 — calls meet the machinery:** phone-consult auto-record (a call with a pipeline lead ≥ N minutes prompts "log as consultation?" — PL-189 machinery) · call outcomes feeding campaign segments (PL-201: "called but never enrolled") · after-hours missed-call auto-text ("got your message — we'll call back tomorrow") · two-way contact sync if a real need appears.
+- **Dialpad sunset criterion:** number ported + one week of calls flowing through v1 with no missed webhooks (delivery-history check).
+
+## PL-203 (small) · Family-facing resources: files, practice work, and "before next session"
+
+From the TutorBird scan (Jul 29, Scarlett approved): tutors have session notes and handoffs internally, but a family has no place to SEE shared materials — practice packets, homework, "do this before Thursday." Lightweight v1:
+
+- **Tutors/instructors attach files or links + an optional note** to a student from their portal view (per-student, not per-session, to keep it simple — the session association can come later if wanted).
+- **The family portal shows them** in a "Materials from {tutor first name}" section: newest first, plain list, download/open. No submission/upload from the family side in v1 (that's TutorBird's homework-collection feature — defer until a tutor actually asks for it).
+- Storage via Supabase storage with the same role-gating discipline as everything else; family sees only their own student's materials.
+- The T3/next-session emails MAY reference "new material in your portal" when something was added since the last send — state-driven line, only when true.
+
+**Verify:** tutor uploads → family portal shows it, other families don't · role-gating proven · email line appears only when new material exists · reasonable file-type/size limits with plain refusals.
+
+## PL-204 (small) · Revenue & enrollment report: "how's this term going" without opening QuickBooks
+
+From the Arlo scan (Jul 29, Scarlett approved). QBO stays the accounting truth; this is the operational glance the portal can already answer from its own data:
+
+- **Role split (Scarlett, Jul 29): AGGREGATE revenue is ADMIN-ONLY; managers see the enrollment view.** The principle, stated precisely so it doesn't over-apply: **per-family money stays manager-visible** — Kelsie works invoices and student files when there's an issue, so family billing on profiles, invoice rows, and the billing panel are UNCHANGED for managers. What's admin-only is the "overall health of the business" picture: totals, revenue by school/month/class, package-sales aggregates. Operational money = manager's job; business-health money = admin's. Two views of one page: the enrollment view (counts, capacity, minimums, engagements, packages sold/exhausted — admin + manager) and the revenue view (all dollar figures — admin only). Per the standing role-gating rule, the manager's API response NEVER CARRIES revenue fields — absent from the payload, not hidden in the UI.
+- **The report:** enrollments and revenue by class, by school, by month — paid class revenue (price-paid snapshots, PL-142), tutoring invoice revenue (paid invoices), package sales. Filters compose (school × month × class type).
+- **Counts alongside dollars:** enrollments per class vs capacity vs minimum, active tutoring engagements, packages sold/exhausted.
+- Plain tables with totals — no charts required for v1 (a chart can come later if Scarlett wants one).
+- **Numbers must reconcile:** the report reads the same paid columns QBO sync reads, so portal-report vs QBO can't structurally disagree (external money numbers never duplicated — computed from the same source).
+- Read-only; deep-links rows to their class/family pages per the standing rule.
+
+**Verify:** totals match hand-computed fixtures · filters compose correctly · a refunded enrollment is excluded per existing refund rules · deep links land · admin sees both views · **manager sees enrollment only AND the manager payload contains no dollar fields (asserted in the gate, not just the render)** · counselor/tutor roles see nothing.
+
+## PL-205 (tiny) · Dashboard layout: Upcoming classes + This week's tutoring above the fold
+
+Scarlett's screenshot (Jul 29): the left column holds only the Needs-attention card, leaving a long empty gap, while Upcoming classes and This week's tutoring render at the very bottom of the page — invisible without scrolling. Move them up into the left column, under Needs attention, so the dashboard's whole story fits one screen: attention → health → activity → what's coming. Keep the responsive stacking sane on phone width (the pre-push phone pass will check it).
+
+**Verify:** at 13" laptop height, all five cards visible without scrolling · phone width stacks in a sensible order · no card overlap at intermediate widths.
+
+## PL-206 (tiny) · T3 family notice: drop "The tutor's calendar is already updated."
+
+Scarlett reviewed a real T3 send (Jul 29) and asked who the email is for — the parent — which makes the line wrong for its audience. It's written from the ops seat (in the PL-180 adopt path it's literally the operational fact), but a parent doesn't know tutors have synced calendars, and in the adopt case the line quietly narrates internal process (tutor moved it, we ratified it). Everything the parent needs is already in the email: what moved, to when, and "if this doesn't look right, just say so."
+
+- **Delete the line from the code twin** (`tutoring-emails.ts` ~236) **and the seed source** (`comms-template-seed.ts` ~745). Scarlett may edit the live T3 template herself in the editor — coordinate so the template's new version and the code twin agree (the standing twin-drift rule).
+- Nothing replaces it — the email is complete without it.
+
+**Verify:** T3 renders without the line from both the registry path and the code fallback · seed matches · no other family-facing template mentions the tutor's calendar (grep).

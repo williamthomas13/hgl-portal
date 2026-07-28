@@ -474,6 +474,13 @@ export async function activatePendingEngagement(
   await sendScheduleSetEmail(engagementId).catch((e) =>
     console.error('T_SCHEDULE_SET failed (activation stands):', e)
   )
+  // PL-200: a mid-month start bills its current-month remainder now (and,
+  // post-20th, folds into the already-generated next month). Sequenced after
+  // the welcome/all-set so the remainder T1 never races them into the inbox.
+  const { billMidMonthStart } = await import('./tutoring-billing')
+  await billMidMonthStart(engagementId).catch((e) =>
+    console.error('PL-200 mid-month remainder billing failed (activation stands):', e)
+  )
   // PL-188: Started means CONFIRMED — advance the pipeline row here, not at
   // proposal time.
   const { data: engStudent } = await supabase
