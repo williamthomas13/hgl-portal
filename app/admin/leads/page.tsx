@@ -1013,6 +1013,17 @@ export default function LeadsAdmin() {
                                   {LOST_REASONS[lead.lost_reason_kind] ?? lead.lost_reason_kind}
                                 </span>
                               )}
+                              {/* PL-193: once records exist, the student's
+                                  profile is one click from the pipeline. */}
+                              {lead.student_id && (
+                                <a
+                                  href={`/admin/students/${lead.student_id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-xs text-hgl-blue underline"
+                                >
+                                  student profile
+                                </a>
+                              )}
                               {/* PL-109: every status surfaces its next step
                                   as an action, right on the row. */}
                               <NextStepButton lead={lead} onChange={refresh} />

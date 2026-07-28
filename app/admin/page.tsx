@@ -17,6 +17,7 @@ import DashboardPanel from './dashboard-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
 import ClassScoresGrid from '../components/ClassScoresGrid'
+import ContactsDirectory from './contacts-directory'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h, useDeepLinkFocus } from './ui'
 import { FamilyCommsRow } from './family-comms'
@@ -233,9 +234,11 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
     ],
   },
   contacts: {
-    // PL-192/193 add Students and Parents here (and take over the default).
-    default: 'instructors',
+    // PL-192: Students is the tab's landing view (QBO habit — student-first).
+    default: 'students',
     entries: [
+      { id: 'students', label: 'Students' },
+      { id: 'parents', label: 'Parents' },
       { id: 'instructors', label: 'Instructors' },
       { id: 'contacts', label: 'School contacts' },
       { id: 'communications', label: 'Communications', href: '/admin/communications' },
@@ -1127,7 +1130,14 @@ export default function AdminDashboard() {
                   <Fragment key={en.id}>
                   <tr id={`enrollment-${en.id}`} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {en.students?.first_name} {en.students?.last_name}
+                      {/* PL-193: the click lands on the student profile. */}
+                      {en.students?.id ? (
+                        <a href={`/admin/students/${en.students.id}`} className="hover:underline text-hgl-slate" title="Open the student profile">
+                          {en.students.first_name} {en.students.last_name}
+                        </a>
+                      ) : (
+                        <>{en.students?.first_name} {en.students?.last_name}</>
+                      )}
                       {en.students?.id && (
                         <select
                           value={en.students.pronouns ?? ''}
@@ -1652,6 +1662,14 @@ export default function AdminDashboard() {
           <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
         </CollapsibleSection>
 
+        </div>
+
+        {/* PL-192: the two-way Contacts directory — two indexes, one truth. */}
+        <div className={activeSection === 'students' ? '' : 'hidden'}>
+          <ContactsDirectory mode="students" />
+        </div>
+        <div className={activeSection === 'parents' ? '' : 'hidden'}>
+          <ContactsDirectory mode="parents" />
         </div>
 
         {/* Out-of-flow branding edits — setup happens in the new-school wizard branch. */}

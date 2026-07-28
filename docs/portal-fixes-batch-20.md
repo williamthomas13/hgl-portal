@@ -190,6 +190,8 @@ The dashboard's Recent Activity chips are All / Availability / Payments / Prospe
 
 ## PL-192 · Contacts is a two-way directory: Students ↔ Parents
 
+**✅ SHIPPED (Jul 28).** New `ContactsDirectory` (app/admin/contacts-directory.tsx) mounted twice under the Contacts tab — **Students** (now the tab's landing view, per Kelsie's QBO student-first habit) and **Parents**. Both are literally the same component over the same query (students + families join): two indexes into one truth, never two lists. Search is token-based over student AND parent/guardian names+emails in BOTH views — partial words in any order ("rom desm" finds Roman Desmond; a parent's first name surfaces their students from the Students view), debounced as-you-type; the no-query default shows the 30 most recently added and says so. A student entry shows their parents (guardian 2 included) AND siblings (each a profile link); a parent entry groups by family and lists connected students. Clicking any student opens the PL-193 profile. Verified live in both directions against the QA family with eight near-identical names — the display matched the records exactly.
+
 Kelsie's referential habit comes from QBO, where Students are the main contacts with parents attached — so student-first search must work. But parent-first must too (a parent calls; you know the parent's name).
 
 - **Contacts → Students:** search by student name → student entry shows their parents AND siblings (other students sharing the family).
@@ -199,6 +201,8 @@ Kelsie's referential habit comes from QBO, where Students are the main contacts 
 **Verify:** student search surfaces parents + siblings · parent search surfaces students · both reach the same records (edit via one path, visible via the other) · search handles partial/typo'd names reasonably.
 
 ## PL-193 · The student profile page: everything we know, one organized place
+
+**✅ SHIPPED (Jul 28).** New route `/admin/students/{id}` (admin layout → staff-gated; reads under the same staff RLS as the rest of /admin — aggregates, never widens). Every section reads its EXISTING store: **People** (family parents + guardian 2 with contact info, siblings as profile links) · **Contact information** (student email/phone/school/grade, learning notes) · **Money** (engagement rates + funding per student, hours packages incl. cancellation conversions, class payments, and the last 12 family invoices explicitly labeled "whole family, not just {first}", each deep-linking `/admin/tutoring?invoice=`) · **Agreements** (family acceptances with template title/version, signer, timestamp) · **Schedule** (consultations from the lead record — PL-189 phone consults say "happened by phone" — with a pipeline deep-link; 1-on-1 engagements with next-session line and upcoming/completed-hours header; classes with the PL-181 diagnostics INLINE on each class entry) · **Test scores** (ScoresEntry classId=null: full cross-context history + entry, PL-181's store) · **Communications** (the PL-83/164 FamilyCommsTimeline, family-scoped). Entry points wired: Contacts directory clicks (PL-192), pipeline rows show a "student profile" link once `lead.student_id` exists, and roster student names are now profile links. Verified live on a tutoring+class student: rates/packages/sessions/scores/comms (43 items) all matched their source surfaces. No migrations, no new stores.
 
 Clicking a student — from Contacts, the pipeline, a roster, anywhere — opens a profile page with all we know, organized:
 
