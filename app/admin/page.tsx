@@ -211,18 +211,46 @@ function AddSessionForm({
   )
 }
 
-// PL-101: the sidebar's tab list — ids match the visibility wrappers below.
-const NAV_SECTIONS = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'add-class', label: 'Add a new class' },
-  { id: 'rosters', label: 'Live class rosters' },
-  { id: 'contacts', label: 'School contacts' },
-  { id: 'instructors', label: 'Instructors' },
-  { id: 'branding', label: 'Branding & collateral' },
-  { id: 'qbo', label: 'QuickBooks' },
-  { id: 'gcal', label: 'Google Calendar' },
-  { id: 'settings', label: 'Contact settings' },
-] as const
+// PL-190: the old flat sidebar (PL-101) refiled under Scarlett's topline
+// tabs (Jul 28 IA). Section ids are unchanged — they match the visibility
+// wrappers below, so every pre-restructure deep link keeps landing where it
+// always did. School contacts deliberately has TWO homes (Classes and
+// Contacts). Communications and Agreements are their own pages, filed under
+// Contacts as links.
+type NavEntry = { id: string; label: string; href?: string }
+const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
+  dashboard: {
+    default: 'dashboard',
+    entries: [{ id: 'dashboard', label: 'Dashboard' }],
+  },
+  classes: {
+    default: 'rosters',
+    entries: [
+      { id: 'rosters', label: 'Live class rosters' },
+      { id: 'add-class', label: 'Add a new class' },
+      { id: 'contacts', label: 'School contacts' },
+      { id: 'branding', label: 'Branding & collateral' },
+    ],
+  },
+  contacts: {
+    // PL-192/193 add Students and Parents here (and take over the default).
+    default: 'instructors',
+    entries: [
+      { id: 'instructors', label: 'Instructors' },
+      { id: 'contacts', label: 'School contacts' },
+      { id: 'communications', label: 'Communications', href: '/admin/communications' },
+      { id: 'agreements', label: 'Agreements', href: '/admin/agreements' },
+    ],
+  },
+  settings: {
+    default: 'qbo',
+    entries: [
+      { id: 'qbo', label: 'QuickBooks' },
+      { id: 'gcal', label: 'Google Calendar' },
+      { id: 'settings', label: 'Contact settings' },
+    ],
+  },
+}
 
 export default function AdminDashboard() {
   const [schools, setSchools] = useState<SchoolBranding[]>([])
@@ -243,11 +271,21 @@ export default function AdminDashboard() {
   // them always MOUNTED (hidden, not unmounted) so deep-link focus polling
   // and data loads behave exactly as before (the PL-99 late-mount lesson).
   const [activeSection, setActiveSection] = useState<string>('dashboard')
+  // PL-190: which topline tab's sub-nav is showing. Changes only via the
+  // topline (a real navigation with ?tab=) or a deep-link param.
+  const [activeGroup, setActiveGroup] = useState<string>('dashboard')
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
+    // PL-190: topline tabs land on the group's most useful default.
+    const tab = q.get('tab')
+    if (tab && NAV_GROUPS[tab]) {
+      setActiveGroup(tab)
+      setActiveSection(NAV_GROUPS[tab].default)
+    }
     const classId = q.get('class')
     if (classId) {
       setActiveTab(classId)
+      setActiveGroup('classes')
       setActiveSection('rosters')
     }
     const qboRow = q.get('qbo')
@@ -259,12 +297,16 @@ export default function AdminDashboard() {
     const enrollmentRow = q.get('enrollment')
     if (enrollmentRow) {
       setDeepFocus(`enrollment-${enrollmentRow}`)
+      setActiveGroup('classes')
       setActiveSection('rosters')
     }
   }, [])
   // Signals that used to just expand a section now also select its tab.
   useEffect(() => {
-    if (qboOpenSignal > 0) setActiveSection('qbo')
+    if (qboOpenSignal > 0) {
+      setActiveGroup('settings')
+      setActiveSection('qbo')
+    }
   }, [qboOpenSignal])
   useDeepLinkFocus(deepFocus)
   // Phase 5 copy-a-previous-class: 'blank' renders an empty wizard; 'pick'
@@ -1368,39 +1410,6 @@ export default function AdminDashboard() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
           <h1 className="text-2xl font-bold text-hgl-slate">HGL Admin</h1>
-          <div className="flex items-center gap-4">
-            <a
-              href="/admin/tutoring"
-              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
-            >
-              Tutoring
-            </a>
-            <a
-              href="/admin/calendar"
-              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
-              title="PL-160: everything at once — 1-on-1, classes, and proposed holds, week or month"
-            >
-              Calendar
-            </a>
-            <a
-              href="/admin/leads"
-              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
-            >
-              Prospective students
-            </a>
-            <a
-              href="/admin/communications"
-              className="text-sm font-semibold text-hgl-blue underline hover:text-hgl-slate"
-            >
-              Communications
-            </a>
-            <a
-              href="/admin/view-as"
-              className="text-sm font-semibold text-purple-700 underline hover:text-hgl-slate"
-              title="See the portal exactly as a parent, tutor, school contact, or manager sees it"
-            >
-              View as…
-            </a>
           <button
             onClick={async () => {
               await supabase.auth.signOut()
@@ -1410,32 +1419,44 @@ export default function AdminDashboard() {
           >
             Sign out
           </button>
-          </div>
         </div>
 
-        {/* PL-101: browser-tab-style vertical nav — every section visible at
-            once in the sidebar, one click to switch, active highlighted.
-            Panels hide with CSS instead of unmounting so deep links, data
-            loads, and the focus machinery behave exactly as before. */}
+        {/* PL-190 (was PL-101): the sidebar now shows only the ACTIVE topline
+            tab's filed pages — the topline bar (layout) switches groups, this
+            switches within one. Panels still hide with CSS instead of
+            unmounting so deep links, data loads, and the focus machinery
+            behave exactly as before. */}
         <div className="md:flex md:gap-6 md:items-start">
-          <nav
-            aria-label="Admin sections"
-            className="flex md:flex-col gap-1 md:w-52 shrink-0 md:sticky md:top-6 overflow-x-auto pb-2 md:pb-0 mb-4 md:mb-0"
-          >
-            {NAV_SECTIONS.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setActiveSection(s.id)}
-                className={`text-left text-sm rounded-md px-3 py-2 whitespace-nowrap font-semibold transition ${
-                  activeSection === s.id
-                    ? 'bg-hgl-slate text-white'
-                    : 'text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </nav>
+          {(NAV_GROUPS[activeGroup]?.entries.length ?? 0) > 1 && (
+            <nav
+              aria-label="Admin sections"
+              className="flex md:flex-col gap-1 md:w-52 shrink-0 md:sticky md:top-6 overflow-x-auto pb-2 md:pb-0 mb-4 md:mb-0"
+            >
+              {NAV_GROUPS[activeGroup].entries.map((s) =>
+                s.href ? (
+                  <a
+                    key={s.id}
+                    href={s.href}
+                    className="text-left text-sm rounded-md px-3 py-2 whitespace-nowrap font-semibold transition text-gray-600 hover:bg-gray-200"
+                  >
+                    {s.label} ↗
+                  </a>
+                ) : (
+                  <button
+                    key={s.id}
+                    onClick={() => setActiveSection(s.id)}
+                    className={`text-left text-sm rounded-md px-3 py-2 whitespace-nowrap font-semibold transition ${
+                      activeSection === s.id
+                        ? 'bg-hgl-slate text-white'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                )
+              )}
+            </nav>
+          )}
           <div className="flex-1 min-w-0 space-y-6">
 
         <div className={activeSection === 'dashboard' ? '' : 'hidden'}>

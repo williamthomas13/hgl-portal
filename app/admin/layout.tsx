@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '../utils/supabase-server'
+import AdminTopline from './topline'
 
 // Server-side staff gate. The proxy already bounced signed-out visitors to
 // /login; this adds the role check (needs a DB read) so a signed-in
@@ -36,6 +37,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </span>
         </div>
       )}
+      {/* PL-190: the six topline tabs, on every admin page. */}
+      <AdminTopline />
       {children}
     </>
   )
