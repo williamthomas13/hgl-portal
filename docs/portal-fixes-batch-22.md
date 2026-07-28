@@ -67,6 +67,8 @@ Some tutors are salaried (currently Eric) — paid the same regardless of hours 
 
 Note: Billy and Kelsie are salaried but don't tutor, so they never generate timecards — no flag needed for non-tutors.
 
+**✅ SHIPPED (Jul 28).** `instructors.pay_type` ('hourly' default | 'salaried'), migration `20260820000001` applied; **Eric Brown is flagged salaried in prod data**. Editing the flag is admin-only server-side — the PL-104 pay-titles guard trigger now covers both fields — and the tutors-panel editor shows managers a read-only line. Generation/confirm/approve untouched (hours stay real records). Labels: tutors-panel row chip; staff timecard row chip + a "Salaried — hours tracked for records; not paid hourly" line in the payroll-summary detail AND in the copy-for-QBO clipboard text; tutor's own Timecards header says "You're salaried — hours are tracked for records; they aren't paid hourly" (verified rendering via view-as). **Payroll CSV:** new `pay_type` column ("hourly" / "SALARIED — do not pay hourly") and salaried rows sort LAST so a bookkeeper running down the list can't sweep them in by momentum — bookkeeper one-pager should note the new column when it next gets touched.
+
 ## PL-213 — Team access panel + access lifecycle for staff and tutors (reported Jul 28)
 
 Today the manager role is granted by hand-editing `profiles.role` in SQL — no UI. And access lifecycle has a hole: `deriveRoles` grants the instructor role from a bare `instructors` email match with NO `active` filter, so a tutor made inactive (PL-176) or not yet flipped on (`tutoring_active=false` rollout gate) can still log in and see the tutor view. Counselors already do this right (ended affiliation = no role); instructors should match.

@@ -36,7 +36,7 @@ export default async function TutorView({
 }) {
   const { data: instructorRows } = await supabase
     .from('instructors')
-    .select('id, timezone, pay_type_titles')
+    .select('id, timezone, pay_type_titles, pay_type')
     .ilike('email', escapeLike(email))
   const tutor = instructorRows?.[0]
   if (!tutor) {
@@ -373,6 +373,7 @@ export default async function TutorView({
         classSessions={cardClassSessions}
         workTypes={workTypeOptions(tutor.pay_type_titles)}
         timezone={tz}
+        salaried={tutor.pay_type === 'salaried'}
       />
     </div>
   )

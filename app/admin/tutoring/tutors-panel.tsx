@@ -96,7 +96,16 @@ export default function TutorsPanel({
             {shown.map((t) => (
               <tr key={t.id} className="hover:bg-gray-50 transition align-top">
                 <td className="px-3 py-2">
-                  <div className="font-semibold text-hgl-slate">{t.name ?? '—'}</div>
+                  <div className="font-semibold text-hgl-slate">
+                    {t.name ?? '—'}
+                    {/* PL-212: the pay-type flag is visible at a glance, not
+                        buried in the editor. */}
+                    {t.pay_type === 'salaried' && (
+                      <span className="ml-2 text-[10px] font-bold uppercase bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">
+                        Salaried
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-hgl-blue">{t.email}</div>
                   {t.google_calendar_id && (
                     <div className="text-xs text-gray-400">cal: {t.google_calendar_id}</div>
@@ -189,6 +198,8 @@ function TutorEditor({
   const [windows, setWindows] = useState<OfferWindowUI[]>(tutor.offer_windows ?? [])
   const [payTitles, setPayTitles] = useState<string[]>(tutor.pay_type_titles ?? [])
   const [newTitle, setNewTitle] = useState('')
+  // PL-212: hourly vs salaried — admin-only, same boundary as titles.
+  const [payType, setPayType] = useState<'hourly' | 'salaried'>(tutor.pay_type ?? 'hourly')
   const [notes, setNotes] = useState(initialNotes)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -209,9 +220,9 @@ function TutorEditor({
         google_calendar_id: calendarId.trim() || null,
         default_meeting_link: location.trim() || null,
         offer_windows: windows,
-        // Managers must not touch titles (the DB trigger would refuse the
-        // whole update) — only include the field when the caller may edit.
-        ...(canEditTitles ? { pay_type_titles: payTitles } : {}),
+        // Managers must not touch titles or the pay-type flag (the DB trigger
+        // would refuse the whole update) — only include when the caller may edit.
+        ...(canEditTitles ? { pay_type_titles: payTitles, pay_type: payType } : {}),
       })
       .eq('id', tutor.id)
     const { error: e2 } = await supabase
@@ -421,6 +432,37 @@ function TutorEditor({
               <span className="text-xs text-gray-400">— edited by the admin only</span>
             )}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">
+            Pay type — salaried tutors&apos; sessions and timecards are tracked exactly the same,
+            but their timecards are labeled &ldquo;not paid hourly&rdquo; and the payroll export
+            separates them. Salary amounts never enter the portal.
+          </label>
+          {canEditTitles ? (
+            <div className="flex gap-2">
+              {(['hourly', 'salaried'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setPayType(v)}
+                  className={`px-3 py-1.5 rounded border text-xs font-semibold ${
+                    payType === v
+                      ? 'bg-hgl-slate text-white border-hgl-slate'
+                      : 'bg-white text-gray-600 border-gray-300'
+                  }`}
+                >
+                  {v === 'hourly' ? 'Paid hourly' : 'Salaried — hours tracked for records'}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              {payType === 'salaried' ? 'Salaried — hours tracked for records; not paid hourly' : 'Paid hourly'}{' '}
+              <span className="text-gray-400">— changed by the admin only</span>
+            </p>
+          )}
         </div>
 
         <div>

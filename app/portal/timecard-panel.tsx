@@ -69,6 +69,7 @@ export default function TimecardPanel({
   classSessions = [],
   workTypes = [],
   timezone,
+  salaried = false,
 }: {
   timecards: TimecardData[]
   actionableId: string | null
@@ -77,6 +78,8 @@ export default function TimecardPanel({
   /** The tutor's selectable work types: the standard six + own pay-type titles. */
   workTypes?: string[]
   timezone: string
+  /** PL-212: salaried tutors confirm hours for the record, not for pay. */
+  salaried?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -108,10 +111,19 @@ export default function TimecardPanel({
   return (
     <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-6">
       <h2 className="text-lg font-bold text-hgl-slate mb-1">Timecards</h2>
-      <p className="text-xs text-gray-500 mb-4">
-        Built from the schedule automatically — review the period, fix any exception, confirm.
-        Hours only; pay runs through payroll as usual (1st–15th pays the 20th, 16th–end pays the 5th).
-      </p>
+      {salaried ? (
+        <p className="text-xs text-gray-500 mb-4">
+          Built from the schedule automatically — review the period, fix any exception, confirm.{' '}
+          <span className="font-semibold text-purple-700">
+            You&apos;re salaried — hours are tracked for records; they aren&apos;t paid hourly.
+          </span>
+        </p>
+      ) : (
+        <p className="text-xs text-gray-500 mb-4">
+          Built from the schedule automatically — review the period, fix any exception, confirm.
+          Hours only; pay runs through payroll as usual (1st–15th pays the 20th, 16th–end pays the 5th).
+        </p>
+      )}
 
       {timecards.length === 0 && (
         <p className="text-sm text-gray-500 italic">

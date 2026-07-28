@@ -36,6 +36,9 @@ export type Tutor = {
   /** PL-104: the tutor's QBO pay-type TITLES (never amounts — rates live in
    *  QBO Payroll only). Base pay = the 1-on-1/Test Prep default, implicit. */
   pay_type_titles: string[] | null
+  /** PL-212: salaried tutors' hours are tracked identically but not paid
+   *  hourly — timecards carry a label and the payroll CSV separates them. */
+  pay_type: 'hourly' | 'salaried'
 }
 
 export type FamilyRef = {

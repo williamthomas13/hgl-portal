@@ -26,7 +26,7 @@ type Row = {
   tutor_confirmed_at: string | null
   approved_by: string | null
   approved_at: string | null
-  instructors: { name: string | null; email: string } | null
+  instructors: { name: string | null; email: string; pay_type: string | null } | null
 }
 
 const STATUS_STYLES: Record<Row['status'], string> = {
@@ -173,6 +173,10 @@ export default function TimecardsPanel() {
     const name = r.instructors?.name ?? r.instructors?.email ?? ''
     return [
       `${name} — ${r.period_start} → ${r.period_end}`,
+      // PL-212: the note rides the clipboard into QBO, not just the screen.
+      ...(r.instructors?.pay_type === 'salaried'
+        ? ['SALARIED — hours tracked for records; not paid hourly']
+        : []),
       ...summary.map((l) => `${l.workType}: ${l.hours} h`),
       `Total: ${Number(r.total_hours)} h`,
     ].join('\n')
@@ -182,7 +186,7 @@ export default function TimecardsPanel() {
     const { data, error } = await supabase
       .from('timecards')
       .select(
-        'id, tutor_id, period_start, period_end, status, total_hours, tutor_confirmed_at, approved_by, approved_at, instructors ( name, email )'
+        'id, tutor_id, period_start, period_end, status, total_hours, tutor_confirmed_at, approved_by, approved_at, instructors ( name, email, pay_type )'
       )
       .order('period_start', { ascending: false })
       .limit(120)
@@ -221,14 +225,22 @@ export default function TimecardsPanel() {
     load()
   }
 
-  /** CSV per spec §7.3 — tutor, period, total hours — then stamp exported. */
+  /** CSV per spec §7.3 — tutor, period, total hours — then stamp exported.
+   *  PL-212: a pay_type column plus salaried rows sorted LAST, so the
+   *  bookkeeper can't run down the list paying every row as hourly and
+   *  sweep salaried hours in by momentum. */
   function exportPeriod(periodStart: string) {
     const periodRows = rows.filter((r) => r.period_start === periodStart && r.status === 'approved')
     if (periodRows.length === 0) return
+    const salaried = (r: Row) => r.instructors?.pay_type === 'salaried'
+    const ordered = [...periodRows.filter((r) => !salaried(r)), ...periodRows.filter(salaried)]
     const csv = [
-      'tutor,period_start,period_end,total_hours',
-      ...periodRows.map(
-        (r) => `"${(r.instructors?.name ?? r.instructors?.email ?? '').replace(/"/g, '""')}",${r.period_start},${r.period_end},${r.total_hours}`
+      'tutor,period_start,period_end,total_hours,pay_type',
+      ...ordered.map(
+        (r) =>
+          `"${(r.instructors?.name ?? r.instructors?.email ?? '').replace(/"/g, '""')}",${r.period_start},${r.period_end},${r.total_hours},${
+            salaried(r) ? 'SALARIED — do not pay hourly' : 'hourly'
+          }`
       ),
     ].join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
@@ -294,6 +306,16 @@ export default function TimecardsPanel() {
                   <tr>
                     <td className="py-1.5 pr-4 font-semibold text-hgl-slate">
                       {r.instructors?.name ?? r.instructors?.email}
+                      {/* PL-212: visible at the approval decision, not just
+                          in the export. */}
+                      {r.instructors?.pay_type === 'salaried' && (
+                        <span
+                          className="ml-2 text-[10px] font-bold uppercase bg-purple-100 text-purple-700 rounded-full px-2 py-0.5"
+                          title="Salaried — hours tracked for records; not paid hourly"
+                        >
+                          Salaried
+                        </span>
+                      )}
                     </td>
                     <td className="py-1.5 pr-4">{Number(r.total_hours)}</td>
                     <td className="py-1.5 pr-4">
@@ -366,6 +388,11 @@ export default function TimecardsPanel() {
                             <p className="font-semibold text-hgl-slate">
                               Payroll handoff — hours by pay-type title (enter into QBO Payroll; rates live there, not here)
                             </p>
+                            {r.instructors?.pay_type === 'salaried' && (
+                              <p className="font-semibold text-purple-700">
+                                Salaried — hours tracked for records; not paid hourly.
+                              </p>
+                            )}
                             {summary.length === 0 ? (
                               <p className="text-gray-500 italic">No hours on this card.</p>
                             ) : (
