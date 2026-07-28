@@ -50,13 +50,22 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
       .is('ended_at', null)
       .ilike('contacts.email', escapeLike(email))
       .limit(1),
+    // PL-213: both instructor-shaped views require instructors.active —
+    // an inactive instructor's session renders nothing on the next load.
     supabase
       .from('classes')
-      .select('id, instructors!inner(email)')
+      .select('id, instructors!inner(email, active)')
       .ilike('instructors.email', escapeLike(email))
+      .eq('instructors.active', true)
       .limit(1),
     // Phase 7b: tutors are instructors with tutoring switched on.
-    supabase.from('instructors').select('id').ilike('email', escapeLike(email)).eq('tutoring_active', true).limit(1),
+    supabase
+      .from('instructors')
+      .select('id')
+      .ilike('email', escapeLike(email))
+      .eq('tutoring_active', true)
+      .eq('active', true)
+      .limit(1),
     supabase.from('profiles').select('role').eq('id', user.id).single(),
   ])
 

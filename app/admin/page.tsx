@@ -13,6 +13,7 @@ import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-pane
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import GcalPanel from './tutoring/gcal-panel'
 import ContactSettingsPanel from './contact-settings-panel'
+import TeamAccessPanel from './team-access-panel'
 import DashboardPanel from './dashboard-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
@@ -254,6 +255,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'qbo', label: 'QuickBooks' },
       { id: 'gcal', label: 'Google Calendar' },
       { id: 'settings', label: 'Contact settings' },
+      // PL-213: who can open the admin side (admin-only; hidden for managers).
+      { id: 'team', label: 'Team access' },
       // PL-202: the Quo calls integration (setup + enable switch).
       { id: 'calls', label: 'Phone calls' },
       // PL-198: View-as files here (Scarlett's Jul 29 filing).
@@ -1729,6 +1732,11 @@ export default function AdminDashboard() {
         {/* PL-50: renders only for admins (the API 403s managers). */}
         <div className={activeSection === 'settings' ? '' : 'hidden'}>
         <ContactSettingsPanel />
+        </div>
+
+        {/* PL-213: Team access — admin-only (same self-gating pattern). */}
+        <div className={activeSection === 'team' ? '' : 'hidden'}>
+        <TeamAccessPanel />
         </div>
 
           </div>

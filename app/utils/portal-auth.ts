@@ -46,7 +46,16 @@ export async function deriveRoles(emailRaw: string): Promise<PortalRole[]> {
       .is('ended_at', null)
       .ilike('contacts.email', escapeLike(email))
       .limit(1),
-    supabaseAdmin.from('instructors').select('id').ilike('email', escapeLike(email)).limit(1),
+    // PL-213: instructor role requires active — making a tutor inactive
+    // revokes access on the next auth check, exactly like ending a counselor
+    // affiliation. (tutoring_active is the rollout gate for tutoring
+    // SURFACES, not for login — decided Jul 28.)
+    supabaseAdmin
+      .from('instructors')
+      .select('id')
+      .ilike('email', escapeLike(email))
+      .eq('active', true)
+      .limit(1),
     supabaseAdmin.from('profiles').select('role').ilike('email', escapeLike(email)).limit(1),
   ])
 
