@@ -219,14 +219,26 @@ function businessAddress(): string {
   return addressCache.value
 }
 
+// PL-208: the standing portal pointer — nothing used to tell recipients the
+// portal exists outside of task deep-links. Informational, not marketing
+// (transactional-safe), and true for every recipient class: parents,
+// tutors, and school contacts all sign in with just their email.
+function portalPointer(): string {
+  return `<p style="font-size:13px;color:#64748b">Your Higher Ground portal is always at
+    <a href="${emailBaseUrl()}/portal" style="color:#64748b">${emailBaseUrl().replace(/^https?:\/\//, '')}/portal</a>
+    — sign in with just this email address, no password needed.</p>`
+}
+
 export function footerT(customText?: string) {
   return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
+    ${portalPointer()}
     <p style="font-size:13px;color:#64748b">Higher Ground Learning · ${businessAddress()} ·
     highergroundlearning.com · questions? Just reply to this email.</p>`
 }
 
 export function footerR(unsubscribeUrl: string, customText?: string) {
   return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
+    ${portalPointer()}
     <p style="font-size:13px;color:#64748b">Higher Ground Learning · ${businessAddress()} ·
     highergroundlearning.com ·
     <a href="${unsubscribeUrl}" style="color:#64748b">Unsubscribe from non-essential updates</a></p>`
@@ -345,6 +357,11 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       ${detail('Testing accommodations', ctx.accommodations)}
       ${detail('Previous test scores', ctx.previousScores)}
       ${detail('Notes', ctx.notes)}</p>
+      <p><strong>One more thing worth knowing: you have a family portal.</strong> The button below
+      opens it — and it's yours for the whole journey, not just this class. Inside you'll find
+      ${ctx.studentFirstName}'s schedule, your receipts, diagnostic scores once they're in, a
+      calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in
+      never needs a password — just this email address.</p>
       ${button('View your registration', ctx.portalUrl)}
     `,
       {

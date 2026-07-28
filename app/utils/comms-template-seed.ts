@@ -42,6 +42,8 @@ If you have any questions between now and then, you can respond to this email (b
 
 {registrationDetailsBlock}
 
+**One more thing worth knowing: you have a family portal.** The button below opens it — and it's yours for the whole journey, not just this class. Inside you'll find {studentFirstName}'s schedule, your receipts, diagnostic scores once they're in, a calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in never needs a password — just this email address.
+
 [button:View your registration]({portalLink})`,
   },
   {
