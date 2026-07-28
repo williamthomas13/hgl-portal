@@ -1,7 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import SessionCalendar, { type CalendarSession } from '../components/SessionCalendar'
 import { supabaseAdmin } from '../utils/supabase-admin'
-import { resumePaymentUrlFor } from '../utils/lifecycle'
+import {
+  addonPageUrlFor,
+  availabilityUrlFor,
+  loadTutoringPackages,
+  packageSavings,
+  resumePaymentUrlFor,
+} from '../utils/lifecycle'
+import { DISCOUNT_URL } from '../utils/email'
+import TutoringAddonCard, { type TutoringCardState } from './tutoring-addon-card'
 import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreRow } from './shared'
 import { FamilyMaterialsSection } from './materials-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
@@ -49,12 +57,12 @@ export default async function ParentView({
     .from('students')
     .select(
       `
-      id, first_name, last_name, student_email, grade_level, graduating_year, school_id,
+      id, first_name, last_name, student_email, grade_level, graduating_year, school_id, family_id,
       schools ( name, nickname, timezone ),
       student_scores ( id, test_label, section_scores, total, taken_at, class_id ),
       enrollments (
         id, payment_status, enrolled_at, paid_at, amount_paid, stripe_payment_intent_id,
-        enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
+        enrollment_addons ( id, hours, price_paid, tutoring_timing, tutoring_packages ( name ) ),
         attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early ),
         classes (
           id, slug, status, class_type, default_location, delivery_mode,
@@ -87,6 +95,18 @@ export default async function ParentView({
     .in('student_id', (students as any[]).map((s) => s.id))
     .eq('status', 'active')
   const scheduledStudentIds = new Set((activeEngagements ?? []).map((e) => e.student_id))
+
+  // PL-207: the card's remaining inputs — shared-availability presence per
+  // student (service client: availability rows have no parent RLS read) and
+  // the live package pricing both card and emails draw from.
+  const [{ data: availRows }, tutoringPackages] = await Promise.all([
+    supabaseAdmin
+      .from('student_availability')
+      .select('student_id')
+      .in('student_id', (students as any[]).map((s) => s.id)),
+    loadTutoringPackages(),
+  ])
+  const availStudentIds = new Set((availRows ?? []).map((r: any) => r.student_id))
 
   // Duplicate student rows (same kid registered twice before the family-match
   // fix in utils/registration.ts, or seeded test data) render as ONE card
@@ -524,27 +544,77 @@ export default async function ParentView({
               </div>
             )}
 
-            {/* C3 (un-stubbed in Phase 7d): purchased hours with no schedule
-                yet still show here; scheduled tutoring — hours remaining,
-                next session, billing — lives in the family-level
-                TutoringSection below. */}
+            {/* PL-207: the 1-on-1 tutoring card is a state machine over
+                (add-on purchased?) × (class not-started / running / finished)
+                — every state does work instead of the old static line. */}
             {(() => {
-              const totalHours = (st.enrollments ?? [])
+              const todayIso = new Date().toLocaleDateString('en-CA')
+              const paidEnrs = (st.enrollments ?? []).filter(
+                (e: any) =>
+                  ['Paid', 'Completed'].includes(e.payment_status) &&
+                  one<any>(e.classes) &&
+                  one<any>(e.classes).status !== 'cancelled'
+              )
+              const phaseOf = (cls: any): 'prestart' | 'running' | 'finished' => {
+                const dates = (cls.sessions ?? []).map((s: any) => s.session_date).sort()
+                const first = dates[0] ?? cls.start_date
+                const last = dates[dates.length - 1] ?? cls.start_date
+                return todayIso < first ? 'prestart' : todayIso > last ? 'finished' : 'running'
+              }
+              const addons = (st.enrollments ?? [])
                 .filter((e: any) => ['Paid', 'Completed'].includes(e.payment_status))
                 .flatMap((e: any) => e.enrollment_addons ?? [])
-                .reduce((sum: number, a: any) => sum + Number(a.hours), 0)
-              if (totalHours <= 0) return null
+              const totalHours = addons.reduce((sum: number, a: any) => sum + Number(a.hours), 0)
+
+              let cardState: TutoringCardState | null = null
+              if (totalHours > 0) {
+                // A (purchased): work the redemption; pointer once scheduled.
+                cardState = {
+                  kind: 'purchased',
+                  totalHours,
+                  hasSchedule: scheduledStudentIds.has(st.id),
+                  hasAvailability: availStudentIds.has(st.id),
+                  classRunning: paidEnrs.some((e: any) => phaseOf(one<any>(e.classes)) !== 'finished'),
+                  availabilityUrl: `${availabilityUrlFor(st.family_id)}?src=card`,
+                  timing: (addons.find((a: any) => a.tutoring_timing)?.tutoring_timing ?? null) as
+                    | 'immediate'
+                    | 'after_class'
+                    | null,
+                }
+              } else if (paidEnrs.length > 0) {
+                // B/C/D (no add-on): keyed to the most action-relevant class —
+                // one still ahead beats one running beats the latest finished.
+                const pick =
+                  paidEnrs.find((e: any) => phaseOf(one<any>(e.classes)) === 'prestart') ??
+                  paidEnrs.find((e: any) => phaseOf(one<any>(e.classes)) === 'running') ??
+                  paidEnrs[paidEnrs.length - 1]
+                const pickCls = one<any>(pick.classes)
+                const phase = phaseOf(pickCls)
+                if (phase === 'prestart' && tutoringPackages.pre.length > 0) {
+                  const dates = (pickCls.sessions ?? []).map((s: any) => s.session_date).sort()
+                  cardState = {
+                    kind: 'no_addon_prestart',
+                    packages: tutoringPackages.pre.map((p) => ({ hours: p.hours, savings: packageSavings(p) })),
+                    addonUrl: addonPageUrlFor(pick.id),
+                    firstSessionDate: formatDate(dates[0] ?? pickCls.start_date),
+                  }
+                } else if (phase === 'running') {
+                  cardState = {
+                    kind: 'no_addon_insession',
+                    schoolNickname: one<any>(pickCls.schools)?.nickname ?? 'the',
+                    classType: pickCls.class_type,
+                  }
+                } else if (phase === 'finished') {
+                  cardState = {
+                    kind: 'no_addon_finished',
+                    packages: tutoringPackages.post.map((p) => ({ hours: p.hours, savings: packageSavings(p) })),
+                    discountUrl: DISCOUNT_URL,
+                  }
+                }
+              }
+              if (!cardState) return null
               return (
-                <div className="mt-4 border border-gray-200 rounded-lg p-3 text-sm">
-                  <span className="font-semibold text-hgl-slate">1-on-1 tutoring:</span>{' '}
-                  {totalHours} hour{totalHours === 1 ? '' : 's'} purchased
-                  <span className="block text-xs text-gray-500 mt-0.5">
-                    {/* PL-11: don't imply nothing is set up when a schedule exists */}
-                    {scheduledStudentIds.has(st.id)
-                      ? 'See the sessions, hours remaining, and billing in the 1-on-1 tutoring section below.'
-                      : 'Scheduled sessions, hours remaining, and billing appear in the 1-on-1 tutoring section below once your schedule is set up — or get in touch and we’ll set it up together.'}
-                  </span>
-                </div>
+                <TutoringAddonCard studentId={st.id} studentFirst={st.first_name} state={cardState} />
               )
             })()}
 

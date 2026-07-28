@@ -36,6 +36,9 @@ export type AttentionRow = {
   deadline?: string
   /** PL-133: a human-pinned sticky note, not a derived condition. */
   manual?: { by: string; at: string }
+  /** PL-207: one-click "push to my to-dos" — adds a dashboard note with this
+   *  body (the family's wait-until-after-class ask, with its due date). */
+  quickNote?: { label: string; body: string }
 }
 export type ActivityRow = {
   id: string
@@ -392,7 +395,50 @@ export async function GET() {
     const day = String(a.updated_at).slice(0, 10)
     if (!sharedAt.has(a.student_id) || day > sharedAt.get(a.student_id)!) sharedAt.set(a.student_id, day)
   }
-  const availIds = [...sharedAt.keys()]
+  // PL-207: the card's timing choices, plus paid add-on holders — the card
+  // flow must surface here even before any engagement exists.
+  const { data: timingAddonRows } = await supabase
+    .from('enrollment_addons')
+    .select(
+      `tutoring_timing, hours,
+       enrollments!inner ( payment_status, student_id,
+         students!inner ( id, first_name, last_name, family_id ),
+         classes ( sessions ( session_date ) ) )`
+    )
+    .not('tutoring_timing', 'is', null)
+  const timingByStudent = new Map<
+    string,
+    { timing: string; name: string; familyId: string; lastClassDay: string | null }
+  >()
+  for (const a of (timingAddonRows as any[]) ?? []) {
+    const enr = one<any>(a.enrollments)
+    if (!enr || !['Paid', 'Completed'].includes(enr.payment_status)) continue
+    const stu = one<any>(enr.students)
+    if (!stu) continue
+    const dates = ((one<any>(enr.classes)?.sessions ?? []) as any[])
+      .map((s) => s.session_date)
+      .sort()
+    timingByStudent.set(stu.id, {
+      timing: a.tutoring_timing,
+      name: `${stu.first_name} ${stu.last_name}`,
+      familyId: stu.family_id,
+      lastClassDay: dates[dates.length - 1] ?? null,
+    })
+  }
+  // Paid add-on holders (any student with purchased hours) — availability
+  // shared by one of these deserves a row even with no engagement yet.
+  const { data: paidAddonRows } = await supabase
+    .from('enrollment_addons')
+    .select('enrollments!inner ( payment_status, student_id )')
+    .gt('hours', 0)
+  const paidAddonStudents = new Set(
+    ((paidAddonRows as any[]) ?? [])
+      .map((a) => one<any>(a.enrollments))
+      .filter((e) => e && ['Paid', 'Completed'].includes(e.payment_status))
+      .map((e) => e.student_id)
+  )
+
+  const availIds = [...new Set([...sharedAt.keys(), ...timingByStudent.keys()])]
   if (availIds.length) {
     const [{ data: engs }, { data: upcomingSes }, { data: studs }] = await Promise.all([
       supabase.from('tutoring_engagements').select('student_id').in('student_id', availIds).eq('status', 'active'),
@@ -408,14 +454,42 @@ export async function GET() {
     const hasUpcoming = new Set((upcomingSes ?? []).map((s: any) => s.student_id))
     const nameOf = new Map((studs ?? []).map((s: any) => [s.id, `${s.first_name} ${s.last_name}`]))
     for (const id of availIds) {
-      if (!hasEng.has(id) || hasUpcoming.has(id)) continue
+      if (hasUpcoming.has(id)) continue
+      const timing = timingByStudent.get(id)
+      // PL-207: an explicit "wait until the class is done" beats the
+      // 3-business-day promise clock — one row, one meaning, with a
+      // one-click push onto the to-do notes (due = last class day).
+      if (timing?.timing === 'after_class' && !hasEng.has(id)) {
+        attention.push({
+          id: `tutoring-wait-${id}`,
+          kind: 'Wants 1-on-1 after the class',
+          text: `${timing.name}'s family bought 1-on-1 hours and chose to wait until the class is done${
+            timing.lastClassDay ? ` (last class day ${timing.lastClassDay})` : ''
+          }${sharedAt.has(id) ? ' — availability already shared' : ''}.`,
+          href: `/admin/tutoring?family=${timing.familyId}`,
+          quickNote: {
+            label: 'push to my to-dos',
+            body: `Start ${timing.name}'s 1-on-1 tutoring — family asked to wait until the class ends${
+              timing.lastClassDay ? ` (suggested due date: ${timing.lastClassDay})` : ''
+            }. /admin/tutoring?family=${timing.familyId}`,
+          },
+          since: sharedAt.get(id),
+        })
+        continue
+      }
+      // The promise row: an active engagement OR purchased add-on hours make
+      // shared availability actionable (PL-207 widened this beyond
+      // engagements — the card's families were invisible here before).
+      if (!sharedAt.has(id) || !(hasEng.has(id) || paidAddonStudents.has(id))) continue
       const shared = sharedAt.get(id)!
       const proposeBy = addBusinessDays(shared, AVAILABILITY_PROPOSAL_BUSINESS_DAYS)
       const overdue = todayIso > proposeBy
       attention.push({
         id: `avail-${id}`,
         kind: overdue ? 'Availability promise OVERDUE' : 'Availability shared, nothing scheduled',
-        text: `${nameOf.get(id) ?? 'A student'}'s family shared availability ${shared} — the family was told to expect proposed times by ${proposeBy}${overdue ? ', which has passed' : ''}.`,
+        text: `${nameOf.get(id) ?? 'A student'}'s family shared availability ${shared} — the family was told to expect proposed times by ${proposeBy}${overdue ? ', which has passed' : ''}${
+          timing?.timing === 'immediate' ? ' — they chose "start right away" in the portal' : ''
+        }.`,
         href: `/admin/tutoring?schedule=${id}`,
         urgent: overdue,
         // PL-135/127: this row already carries a promised date — the

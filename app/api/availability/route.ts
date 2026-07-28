@@ -73,6 +73,28 @@ export async function POST(req: Request) {
     }
   }
 
+  // PL-207: a submission that came from the portal tutoring card completes
+  // the in-portal kickoff flow — stamp the student's add-ons so the
+  // post-class scheduling emails (E8 + nudge) know they're redundant.
+  if (body.src === 'card' && body.availability.length > 0) {
+    const { data: enrs } = await supabase
+      .from('enrollments')
+      .select('id, enrollment_addons ( id )')
+      .eq('student_id', studentId)
+      .in('payment_status', ['Paid', 'Completed'])
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const addonIds = ((enrs as any[]) ?? []).flatMap((e) =>
+      ((e.enrollment_addons ?? []) as { id: string }[]).map((a) => a.id)
+    )
+    if (addonIds.length > 0) {
+      await supabase
+        .from('enrollment_addons')
+        .update({ portal_kickoff_done_at: new Date().toISOString() })
+        .in('id', addonIds)
+        .is('portal_kickoff_done_at', null)
+    }
+  }
+
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const fam: any = Array.isArray(student.families) ? student.families[0] : student.families
   await sendAdminAlert({

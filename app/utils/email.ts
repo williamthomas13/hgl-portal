@@ -67,7 +67,9 @@ const FAQ_LINKS = `<a href="https://highergroundlearning.com/faqs#general">Gener
 
 const COMPASS_URL = 'http://hgl.co/college-prep-compass'
 const REVIEW_URL = 'https://g.page/highergroundlearning/review?gm'
-const DISCOUNT_URL = 'https://highergroundprep.com/discount'
+// PL-207: exported — the portal's post-class card (state D) must read the
+// SAME destination as the #8 email so they can't disagree.
+export const DISCOUNT_URL = 'https://highergroundprep.com/discount'
 
 export type Audience = 'parent' | 'student'
 

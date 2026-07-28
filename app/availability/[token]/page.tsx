@@ -15,10 +15,16 @@ export const dynamic = 'force-dynamic'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function AvailabilityPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>
+  searchParams: Promise<{ src?: string }>
 }) {
   const { token } = await params
+  // PL-207: src=card marks a submission that came from the portal tutoring
+  // card — completing the in-portal kickoff flow (suppresses the post-class
+  // scheduling emails for the family's add-ons).
+  const { src } = await searchParams
   const familyId = verifyAvailabilityToken(token)
   const contact = await loadContactInfo()
 
@@ -62,7 +68,7 @@ export default async function AvailabilityPage({
               ? 'We already have your availability — thank you! Feel free to adjust it below and re-save; we always use the latest version.'
               : 'Rough is fine — tell us the windows that usually work and we’ll propose exact times. Takes about a minute.'}
           </p>
-          <AvailabilityShareForm token={token} students={initial} />
+          <AvailabilityShareForm token={token} students={initial} src={src === 'card' ? 'card' : undefined} />
         </div>
         <div className="bg-white rounded-lg shadow-sm p-5 text-sm text-gray-600">
           Rather just tell a person? Email{' '}

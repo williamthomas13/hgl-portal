@@ -18,9 +18,12 @@ type StudentInit = {
 export default function AvailabilityShareForm({
   token,
   students,
+  src,
 }: {
   token: string
   students: StudentInit[]
+  /** PL-207: 'card' when opened from the portal tutoring card. */
+  src?: string
 }) {
   const [state, setState] = useState(() =>
     students.map((s) => ({ ...s, timezone: s.timezone ?? '', saving: false, message: '' }))
@@ -45,7 +48,7 @@ export default function AvailabilityShareForm({
       const res = await fetch('/api/availability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, studentId: s.id, availability: s.ranges, timezone: s.timezone }),
+        body: JSON.stringify({ token, studentId: s.id, availability: s.ranges, timezone: s.timezone, src }),
       })
       const json = await res.json().catch(() => ({}))
       patch(s.id, {

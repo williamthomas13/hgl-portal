@@ -449,12 +449,17 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
       if (step.type === 'tutoring_offer' && e.addons.length > 0) {
         const state = await addonSchedulingState(e.id)
         const ctx = emailContext(bundle, e)
-        if (state.hasAvailability && state.hasSchedule) {
+        // PL-53c: already scheduling → nothing to say. PL-207: the family
+        // completed the kickoff flow in the portal card → same silence (the
+        // card already covered availability + timing; ops is already on it).
+        if ((state.hasAvailability && state.hasSchedule) || state.portalFlowDone) {
           await supabase
             .from('email_sends')
             .update({
               status: 'cancelled',
-              cancel_reason: 'family already scheduling their add-on hours (PL-53c suppression)',
+              cancel_reason: state.portalFlowDone
+                ? 'family completed the tutoring kickoff in the portal (PL-207 suppression)'
+                : 'family already scheduling their add-on hours (PL-53c suppression)',
               cancelled_by: 'system',
               updated_at: new Date().toISOString(),
             })
@@ -538,16 +543,26 @@ async function addonSchedulingState(enrollmentId: string): Promise<{
   hoursRemaining: number
   hasAvailability: boolean
   hasSchedule: boolean
+  /** PL-207: the family already completed the kickoff flow in the portal
+   *  card (shared availability from it / chose a start timing) — the
+   *  post-class scheduling emails would only repeat what the card said. */
+  portalFlowDone: boolean
 }> {
   const { data: enr } = await supabase
     .from('enrollments')
-    .select('student_id, enrollment_addons ( id, hours )')
+    .select('student_id, enrollment_addons ( id, hours, portal_kickoff_done_at )')
     .eq('id', enrollmentId)
     .maybeSingle()
-  const addonRows = (enr?.enrollment_addons ?? []) as { id: string; hours: number }[]
+  const addonRows = (enr?.enrollment_addons ?? []) as {
+    id: string
+    hours: number
+    portal_kickoff_done_at: string | null
+  }[]
   const purchased = addonRows.reduce((sum, a) => sum + Number(a.hours), 0)
+  const portalFlowDone = addonRows.some((a) => a.portal_kickoff_done_at != null)
   const studentId = enr?.student_id as string | undefined
-  if (!studentId) return { hoursRemaining: purchased, hasAvailability: false, hasSchedule: false }
+  if (!studentId)
+    return { hoursRemaining: purchased, hasAvailability: false, hasSchedule: false, portalFlowDone }
 
   const [{ count: availabilityCount }, { data: engagements }] = await Promise.all([
     supabase
@@ -576,6 +591,7 @@ async function addonSchedulingState(enrollmentId: string): Promise<{
     hoursRemaining: Math.max(0, Number((purchased - used).toFixed(1))),
     hasAvailability: (availabilityCount ?? 0) > 0,
     hasSchedule,
+    portalFlowDone,
   }
 }
 
@@ -595,7 +611,7 @@ async function sweepAddonSchedulingNudges(c: Counters) {
     const ageDays = (Date.now() - new Date(row.sent_at as string).getTime()) / 86_400_000
     if (ageDays < 7) continue
     const state = await addonSchedulingState(row.enrollment_id as string)
-    if (state.hasAvailability || state.hasSchedule) continue
+    if (state.hasAvailability || state.hasSchedule || state.portalFlowDone) continue
 
     const { data: enrRow } = await supabase
       .from('enrollments')

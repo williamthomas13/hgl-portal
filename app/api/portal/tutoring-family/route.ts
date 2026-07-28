@@ -64,16 +64,61 @@ export async function POST(req: Request) {
   if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
 
   let body: {
-    action?: 'reschedule_request' | 'offer_slots' | 'pick_slot'
+    action?: 'reschedule_request' | 'offer_slots' | 'pick_slot' | 'set_tutoring_timing'
     session_id?: string
     note?: string
     starts_at?: string
+    student_id?: string
+    timing?: string
   }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
   }
+
+  // -------------------------------------------------------------------------
+  // PL-207: the card's timing toggle — "start 1-on-1 right away" vs "wait
+  // until the class is done." Stored on the student's paid add-ons and shown
+  // to the Ops Director, and it completes the portal kickoff flow (the
+  // post-class E8 scheduling emails for this add-on become redundant).
+  // -------------------------------------------------------------------------
+  if (body.action === 'set_tutoring_timing') {
+    const timing = body.timing
+    if (timing !== 'immediate' && timing !== 'after_class') {
+      return NextResponse.json({ error: 'Unknown timing choice.' }, { status: 400 })
+    }
+    const { data: stu } = await supabase
+      .from('students')
+      .select('id, family_id')
+      .eq('id', body.student_id ?? '')
+      .maybeSingle()
+    if (!stu || !caller.familyIds.includes(stu.family_id)) {
+      return NextResponse.json({ error: 'Not your student.' }, { status: 403 })
+    }
+    const { data: enrs } = await supabase
+      .from('enrollments')
+      .select('id, payment_status, enrollment_addons ( id )')
+      .eq('student_id', stu.id)
+      .in('payment_status', ['Paid', 'Completed'])
+    const addonIds = ((enrs as any[]) ?? []).flatMap((e) =>
+      ((e.enrollment_addons ?? []) as { id: string }[]).map((a) => a.id)
+    )
+    if (addonIds.length === 0) {
+      return NextResponse.json({ error: 'No tutoring hours on file for this student.' }, { status: 400 })
+    }
+    const { error } = await supabase
+      .from('enrollment_addons')
+      .update({
+        tutoring_timing: timing,
+        tutoring_timing_set_at: new Date().toISOString(),
+        portal_kickoff_done_at: new Date().toISOString(),
+      })
+      .in('id', addonIds)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   if (!body.session_id || !body.action) {
     return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
   }

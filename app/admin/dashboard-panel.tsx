@@ -21,6 +21,8 @@ type AttentionRow = {
   deadline?: string
   /** PL-133: a human-pinned note rather than a derived condition. */
   manual?: { by: string; at: string }
+  /** PL-207: one-click push onto the pinned notes. */
+  quickNote?: { label: string; body: string }
 }
 type ActivityRow = {
   id: string
@@ -313,6 +315,29 @@ export default function DashboardPanel() {
                         title="Handled — clear without logging a call"
                       >
                         handled
+                      </button>
+                    </div>
+                  ) : r.quickNote ? (
+                    /* PL-207: the wait-until-after-class ask — one click
+                       queues it as a pinned note with its due date. */
+                    <div className="flex items-start gap-2">
+                      <a href={r.href} className="flex-1 block group hover:[&_span]:text-hgl-blue">
+                        {inner}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await fetch('/api/admin/dashboard-notes', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'add', body: r.quickNote!.body }),
+                          })
+                          load()
+                        }}
+                        className="text-[11px] font-semibold text-hgl-blue underline hover:text-hgl-slate shrink-0 mt-0.5"
+                        title="Add this as a pinned note with the suggested due date"
+                      >
+                        {r.quickNote.label}
                       </button>
                     </div>
                   ) : (
