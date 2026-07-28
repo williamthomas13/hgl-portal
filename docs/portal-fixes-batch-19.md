@@ -25,6 +25,8 @@ The template is fine; only the sample is wrong. But this is the **PL-80b** failu
 
 ## PL-158 (tiny) · Counselor roster affiliation lookup should use `.eq()`, not `.ilike()`
 
+**✅ SHIPPED (Jul 27).** Roster page now `.eq()`s the lowercased email (contacts are lowercased at write, so case-insensitivity survives the operator swap). The repo-wide check found the same pattern at ~25 more sites — including the sharpest instance: the PUBLIC intake and registration forms dedupe families with `ilike` on raw form input, where a `%` could match a stranger's family record and attach a new student to it. All externally-supplied-email `ilike`s now run their operand through a new leaf `escapeLike()` (wildcards become literals, case-insensitive matching stays — the ilike sites keep ilike deliberately, since legacy mixed-case rows must keep matching). Verified against the live API before writing the fix: unescaped `a-%@x.com` matched three families, escaped exactly one. Both public write paths already lowercase upstream, so no data migration needed (all stored emails checked: already lowercase). `regress:counselor-roster` grew 12 → 14 (a `%` address matches nothing; a capitalized address still resolves).
+
 `app/class-roster/[id]/page.tsx` scopes the no-login roster page by looking up the counselor's active affiliations with `.ilike('contacts.email', counselorEmail)`. In PostgREST, `ilike` treats `%` and `_` in the operand as wildcards — so an email containing `%` would match a broader set of contacts than the one it names, widening `schoolIds` and, with it, the set of classes the page will render.
 
 **This is not currently exploitable and is not an incident.** The HMAC token binds the class id and the counselor email together, so nobody can mint a valid link carrying a wildcard email they don't control. It's a latent sharp edge, not a live hole — filed as hardening, not as a bug.
@@ -108,11 +110,15 @@ Two findings from Scarlett pressing it: (1) "feels a little scary — does it re
 
 ## PL-166 (tiny) · Scheduling time inputs move in 5-minute increments
 
+**✅ SHIPPED (Jul 27).** The shared `TimeSelect` already stepped by 5; the stragglers were the raw native inputs — consultation date-time (leads page), the comms reschedule picker, tutor offer-windows, session editing in the schedule view, and both availability-grid time fields. All carry `step={300}` now. Step constrains the picker's increments and never touches stored values — an existing 4:03 still renders and can still be typed. Verified in the running app (grid inputs report step 300).
+
 Consultation scheduling steps by 1 minute; so do the other time pickers. Nobody schedules a session at 4:03. **All scheduling time inputs (consultation, weekly slots, session editing) step by 5 minutes.** Existing stored times that aren't on a 5-minute boundary still render correctly — the step constrains new input, it doesn't corrupt old data.
 
 **Verify:** pickers step by 5 · an existing 4:03 session still displays and edits without being silently snapped.
 
 ## PL-167 (small) · New-schedule picker polish trio
+
+**✅ SHIPPED (Jul 27).** New shared `SearchCombobox` in admin/ui: matches render UNDER the input as you type, ↑/↓/Enter/Esc keyboard navigation, current selection shown when idle, "…and N more — keep typing" past 30 matches, "No matches — check the spelling?" when empty. `TimezoneSelect` is now a thin wrapper over it (every existing call site — class wizard, tutors panel, availability grid — picks the new behavior up with no API change), and the wizard's subject picker uses the identical component so both feel the same. Label fix shipped via a `timezoneLabel` prop on the shared AvailabilityGrid: the admin wizard passes "Student's timezone (the times above are in it)" while the public intake form keeps "Your timezone" — there the person typing IS the family, so the original label is correct on that surface. Verified live: typing "chem" surfaces both Chemistry options immediately, "madr" surfaces Europe/Madrid, keyboard select works, label reads Student's.
 
 1. **Timezone search shows its options as you type.** Today it works but doesn't SEEM to — you type, then have to click below to discover whether it matched. Make it a live autocomplete: matching options appear under the input as you type, keyboard-navigable, exactly the pattern users expect.
 2. **Subject picker gets the same treatment.** It's already searchable but looks like a plain dropdown — nothing invites typing. Same live-autocomplete pattern as the timezone picker so both feel identical.
@@ -121,6 +127,8 @@ Consultation scheduling steps by 1 minute; so do the other time pickers. Nobody 
 **Verify:** typing in either picker surfaces matches immediately · keyboard select works · label reads Student's.
 
 ## PL-168 (small) · Weekly Schedule: sessions/week and session length actually do something
+
+**✅ SHIPPED (Jul 27).** Session length already prefilled each new slot's duration (verified, kept); what was missing was the tally and the honesty check. The cadence row now shows a live "{n} of {m} weekly slots added" (green when they agree, amber when not), and a submit-area warning renders on mismatch — "You said 2 sessions/week but added 1 weekly slot — that's fine if intentional" — informing, never blocking (an empty slot list stays exempt: one-off-only schedules are legitimate). Verified live, including the JSX inline-boundary-space gotcha (PL-119 lesson) in the warning copy.
 
 You can select sessions per week and session length, and then… nothing. The slot builder below ignores both and happily lets you contradict them. Either the fields drive the builder or they shouldn't exist.
 
@@ -163,6 +171,8 @@ Pressing "change" on the student's name wiped the whole form. (The button's purp
 **Verify:** change-student keeps slots/subject · payment step recomputes for the new student · navigate away mid-entry → return → resume offer restores state · discard works.
 
 ## PL-172 (tiny) · Send-to-confirm toggle: say what OFF actually means, and fix the typo
+
+**✅ SHIPPED (Jul 27).** Copy now: "**On:** we'll email the family to confirm the times before anything's locked in. **Off:** set it up now — the schedule is locked in immediately and the family receives it as a done deal (use this when you've already agreed to the schedule by phone or email). They won't get an approve/decline step." Typo fixed, OFF owns its consequence. Verified rendered (including the eaten-space fix after the bold labels).
 
 The off-state copy reads "use this when you've already agreed the schedule" — (a) missing "to": **"already agreed to the schedule"**; (b) it doesn't answer the question Scarlett immediately asked: if it's off, when does the parent approve? **Answer: never — that's the point of off.** The copy should own that consequence:
 

@@ -596,6 +596,7 @@ function LeadDetail({
             <label className="block text-xs text-gray-500 mb-1">Date &amp; time</label>
             <input
               type="datetime-local"
+              step={300}
               className={inputCls}
               value={consultAt}
               onChange={(e) => setConsultAt(e.target.value)}

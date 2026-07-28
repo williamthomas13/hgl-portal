@@ -585,6 +585,7 @@ export default function CommunicationsDashboard() {
             </p>
             <input
               type="datetime-local"
+              step={300}
               value={rescheduleValue}
               onChange={(e) => setRescheduleValue(e.target.value)}
               className="border rounded p-2 w-full"

@@ -15,11 +15,16 @@ export default function AvailabilityGrid({
   timezone,
   onChange,
   onTimezoneChange,
+  // PL-167: on the public intake form the person filling this in IS the
+  // family, so "Your timezone" is right; in the admin wizard it's the
+  // student's — the caller says whose it is.
+  timezoneLabel = 'Your timezone (the times above are in it)',
 }: {
   ranges: AvailabilityRange[]
   timezone: string
   onChange: (ranges: AvailabilityRange[]) => void
   onTimezoneChange: (tz: string) => void
+  timezoneLabel?: string
 }) {
   const add = (weekday: number) =>
     onChange([...ranges, { weekday, start_time: '16:00', end_time: '18:00' }])
@@ -46,6 +51,7 @@ export default function AvailabilityGrid({
                   <div key={idx} className="flex items-center gap-2">
                     <input
                       type="time"
+                      step={300}
                       value={r.start_time}
                       onChange={(e) => e.target.value && update(idx, { start_time: e.target.value })}
                       className="border border-gray-300 rounded p-1.5 text-sm"
@@ -53,6 +59,7 @@ export default function AvailabilityGrid({
                     <span className="text-gray-400 text-sm">to</span>
                     <input
                       type="time"
+                      step={300}
                       value={r.end_time}
                       onChange={(e) => e.target.value && update(idx, { end_time: e.target.value })}
                       className="border border-gray-300 rounded p-1.5 text-sm"
@@ -79,9 +86,7 @@ export default function AvailabilityGrid({
         })}
       </div>
       <div>
-        <label className="block text-xs text-gray-600 font-semibold mb-1">
-          Your timezone (the times above are in it)
-        </label>
+        <label className="block text-xs text-gray-600 font-semibold mb-1">{timezoneLabel}</label>
         <TimezoneSelect value={timezone} onChange={onTimezoneChange} />
       </div>
     </div>

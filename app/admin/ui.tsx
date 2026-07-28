@@ -72,6 +72,112 @@ const TZ_FALLBACK = [
   'Europe/London',
 ]
 
+/** PL-167: live autocomplete — matches render UNDER the input as you type,
+ *  keyboard-navigable (↑/↓ move, Enter picks, Esc closes). The old pattern
+ *  (a filter box over a separate select) worked but didn't SEEM to — you
+ *  typed, then had to click below to discover whether anything matched. */
+export function SearchCombobox({
+  value,
+  options,
+  onChange,
+  placeholder,
+  required = false,
+}: {
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (v: string) => void
+  placeholder: string
+  required?: boolean
+}) {
+  const [query, setQuery] = useState<string | null>(null) // null = not editing
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const selected = options.find((o) => o.value === value) ?? null
+  const display = query !== null ? query : (selected?.label ?? '')
+  const q = (query ?? '').trim().toLowerCase()
+  const matches = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options
+  const visible = matches.slice(0, 30)
+  const pick = (o: { value: string; label: string }) => {
+    onChange(o.value)
+    setQuery(null)
+    setOpen(false)
+  }
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={display}
+        required={required}
+        onFocus={() => {
+          setOpen(true)
+          setActive(0)
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setOpen(true)
+          setActive(0)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setOpen(true)
+            setActive((a) => Math.min(a + 1, visible.length - 1))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setActive((a) => Math.max(a - 1, 0))
+          } else if (e.key === 'Enter') {
+            if (open && visible[active]) {
+              e.preventDefault()
+              pick(visible[active])
+            }
+          } else if (e.key === 'Escape') {
+            setOpen(false)
+            setQuery(null)
+          }
+        }}
+        onBlur={() => {
+          // Delay so an option click lands before the list unmounts.
+          setTimeout(() => {
+            setOpen(false)
+            setQuery(null)
+          }, 150)
+        }}
+        placeholder={placeholder}
+        className="block w-full border border-gray-300 rounded-md p-2"
+      />
+      {open && (
+        <ul className="absolute z-20 left-0 right-0 mt-1 max-h-64 overflow-y-auto border border-gray-200 rounded-md bg-white shadow-lg divide-y divide-gray-50">
+          {visible.map((o, i) => (
+            <li key={o.value}>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  pick(o)
+                }}
+                onMouseEnter={() => setActive(i)}
+                className={`w-full text-left px-3 py-1.5 text-sm ${
+                  i === active ? 'bg-blue-50 text-hgl-slate' : 'text-gray-700'
+                } ${o.value === value ? 'font-semibold' : ''}`}
+              >
+                {o.label}
+              </button>
+            </li>
+          ))}
+          {matches.length === 0 && (
+            <li className="px-3 py-2 text-sm italic text-gray-400">No matches — check the spelling?</li>
+          )}
+          {matches.length > visible.length && (
+            <li className="px-3 py-1.5 text-xs text-gray-400">
+              …and {matches.length - visible.length} more — keep typing to narrow it down
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export function TimezoneSelect({
   value,
   onChange,
@@ -81,7 +187,6 @@ export function TimezoneSelect({
   onChange: (v: string) => void
   required?: boolean
 }) {
-  const [filter, setFilter] = useState('')
   const all = useMemo<string[]>(
     () =>
       typeof Intl.supportedValuesOf === 'function'
@@ -89,41 +194,14 @@ export function TimezoneSelect({
         : TZ_FALLBACK,
     []
   )
-  const filtered = filter.trim()
-    ? all.filter((tz) => tz.toLowerCase().includes(filter.trim().toLowerCase()))
-    : all
-  const groups = new Map<string, string[]>()
-  for (const tz of filtered) {
-    const region = tz.includes('/') ? tz.slice(0, tz.indexOf('/')) : 'Other'
-    groups.set(region, [...(groups.get(region) ?? []), tz])
-  }
   return (
-    <div>
-      <input
-        type="text"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder='Search timezones — e.g. "Berlin" or "Europe"'
-        className="block w-full border border-gray-300 rounded-md p-2 mb-1"
-      />
-      <select
-        value={value}
-        required={required}
-        onChange={(e) => onChange(e.target.value)}
-        className="block w-full border border-gray-300 rounded-md p-2 bg-white"
-      >
-        <option value="">Pick a timezone…</option>
-        {/* keep the current value selectable even when the filter hides it */}
-        {value && !filtered.includes(value) && <option value={value}>{value}</option>}
-        {[...groups.entries()].map(([region, zones]) => (
-          <optgroup key={region} label={region}>
-            {zones.map((tz) => (
-              <option key={tz} value={tz}>{tz}</option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </div>
+    <SearchCombobox
+      value={value}
+      onChange={onChange}
+      required={required}
+      options={all.map((tz) => ({ value: tz, label: tz }))}
+      placeholder='Type to search timezones — e.g. "Berlin" or "Denver"'
+    />
   )
 }
 

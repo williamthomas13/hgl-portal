@@ -506,7 +506,7 @@ function SessionDialog({
             <div className="flex gap-2 items-center flex-wrap">
               <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="border border-gray-300 rounded p-1.5" />
               <DateHint value={newDate} />
-              <input type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} className="border border-gray-300 rounded p-1.5" />
+              <input type="time" step={300} value={newTime} onChange={(e) => setNewTime(e.target.value)} className="border border-gray-300 rounded p-1.5" />
               <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="border border-gray-300 rounded p-1.5 bg-white">
                 {[30, 45, 60, 90, 120, 150, 180].map((m) => (
                   <option key={m} value={m}>{m} min</option>

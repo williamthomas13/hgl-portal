@@ -325,6 +325,7 @@ function TutorEditor({
                 </select>
                 <input
                   type="time"
+                  step={300}
                   value={w.start_time}
                   onChange={(e) =>
                     setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, start_time: e.target.value } : x)))
@@ -334,6 +335,7 @@ function TutorEditor({
                 <span className="text-gray-400 text-sm">to</span>
                 <input
                   type="time"
+                  step={300}
                   value={w.end_time}
                   onChange={(e) =>
                     setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, end_time: e.target.value } : x)))

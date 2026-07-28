@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../utils/supabase'
-import { DateHint, TimeSelect } from '../ui'
+import { DateHint, SearchCombobox, TimeSelect } from '../ui'
 import AvailabilityGrid from '../../components/AvailabilityGrid'
 import { generateOccurrences, horizonEndIso, addDaysIso } from '../../utils/tutoring'
 import { suggestWeeklySlots, type AvailabilityRange } from '../../utils/availability'
@@ -748,6 +748,7 @@ export default function EngagementWizard({
           <AvailabilityGrid
             ranges={availability}
             timezone={availabilityTz}
+            timezoneLabel="Student's timezone (the times above are in it)"
             onChange={(r) => {
               setAvailability(r)
               setAvailabilityDirty(true)
@@ -776,21 +777,21 @@ export default function EngagementWizard({
         </div>
       )}
 
-      {/* 2. Subject */}
+      {/* 2. Subject — PL-167: same live-autocomplete pattern as the timezone
+          picker, so both feel identical and both invite typing. */}
       <div>
         <label className="block text-xs text-gray-600 font-semibold mb-1">2 · Subject</label>
-        <select
+        <SearchCombobox
           value={subjectId}
-          onChange={(e) => setSubjectId(e.target.value)}
-          className="w-full border border-gray-300 rounded-md p-2 bg-white"
-        >
-          <option value="">Pick a subject…</option>
-          {subjects.filter((s) => s.active).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} — ${s.hourly_rate}/hr ({s.category === 'test_prep' ? 'test prep' : 'subject tutoring'})
-            </option>
-          ))}
-        </select>
+          onChange={setSubjectId}
+          placeholder="Type to search subjects — e.g. “SAT” or “Chemistry”…"
+          options={subjects
+            .filter((s) => s.active)
+            .map((s) => ({
+              value: s.id,
+              label: `${s.name} — $${s.hourly_rate}/hr (${s.category === 'test_prep' ? 'test prep' : 'subject tutoring'})`,
+            }))}
+        />
       </div>
 
       {/* 3. Tutor */}
@@ -896,6 +897,16 @@ export default function EngagementWizard({
               ))}
             </select>
           </label>
+          {/* PL-168: the fields are the plan, the slots are the truth — a
+              live tally keeps them honest without caging anyone. New slots
+              inherit the session length as their default. */}
+          {slots.length > 0 && (
+            <span
+              className={`font-semibold ${slots.length === sessionsPerWeek ? 'text-green-700' : 'text-amber-700'}`}
+            >
+              {slots.length} of {sessionsPerWeek} weekly slot{sessionsPerWeek === 1 ? '' : 's'} added
+            </span>
+          )}
         </div>
         {studentId && tutorId && availability.length === 0 && (
           <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-2 mb-2">
@@ -1139,11 +1150,25 @@ export default function EngagementWizard({
           />
           Send the parent this schedule to confirm
         </label>
+        {/* PL-172: OFF must own its consequence — the family never gets an
+            approve/decline step. */}
         <p className="text-xs text-gray-500 mt-1">
-          On: we&apos;ll email the family to confirm the times before anything&apos;s locked in.
-          Off: set it up now — use this when you&apos;ve already agreed the schedule.
+          <span className="font-semibold">On:</span>{' '}we&apos;ll email the family to confirm the
+          times before anything&apos;s locked in.{' '}
+          <span className="font-semibold">Off:</span>{' '}set it up now — the schedule is locked in
+          immediately and the family receives it as a done deal (use this when you&apos;ve already
+          agreed to the schedule by phone or email). They won&apos;t get an approve/decline step.
         </p>
       </div>
+
+      {/* PL-168: submit-time mismatch informs, never blocks. */}
+      {slots.length > 0 && slots.length !== sessionsPerWeek && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded p-2">
+          You said {sessionsPerWeek} session{sessionsPerWeek === 1 ? '' : 's'}/week but added{' '}
+          {slots.length} weekly slot{slots.length === 1 ? '' : 's'}
+          {' — '}that&apos;s fine if intentional.
+        </p>
+      )}
 
       <button
         onClick={submit}
