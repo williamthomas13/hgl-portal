@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from './supabase-server'
 import { supabaseAdmin } from './supabase-admin'
+import { escapeLike } from './like-escape'
 
 // Cookie-session parent gate for API routes (Phase 7d) — the family-side
 // sibling of staff-gate/tutor-gate. Identity is the signed-in email matching
@@ -14,7 +15,7 @@ export async function sessionFamily(): Promise<{ email: string; familyIds: strin
   const { data } = await supabaseAdmin
     .from('families')
     .select('id')
-    .ilike('parent_email', user.email)
+    .ilike('parent_email', escapeLike(user.email))
   if (!data || data.length === 0) return null
   return { email: user.email.toLowerCase(), familyIds: data.map((r) => r.id) }
 }

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin } from './supabase-admin'
 import { signingSecret } from './signing'
+import { escapeLike } from './like-escape'
 
 // Phase 4 account provisioning (docs/PHASE4_SPEC.md §2): passwordless login,
 // accounts provisioned implicitly from existing data. Every legitimate user
@@ -33,19 +34,20 @@ export async function deriveRoles(emailRaw: string): Promise<PortalRole[]> {
 
   if (adminAllowlist().includes(email)) roles.add('admin')
 
-  // ilike with no wildcards = case-insensitive equality. Counselor requires
+  // ilike + escapeLike = case-insensitive equality (PL-158: unescaped, a %
+  // or _ in the address itself acts as a wildcard). Counselor requires
   // an ACTIVE affiliation — an ended one keeps the contact row but grants no
   // role (turnover: access ends when the affiliation is closed).
   const [family, counselor, instructorRow, profile] = await Promise.all([
-    supabaseAdmin.from('families').select('id').ilike('parent_email', email).limit(1),
+    supabaseAdmin.from('families').select('id').ilike('parent_email', escapeLike(email)).limit(1),
     supabaseAdmin
       .from('school_affiliations')
       .select('id, contacts!inner(email)')
       .is('ended_at', null)
-      .ilike('contacts.email', email)
+      .ilike('contacts.email', escapeLike(email))
       .limit(1),
-    supabaseAdmin.from('instructors').select('id').ilike('email', email).limit(1),
-    supabaseAdmin.from('profiles').select('role').ilike('email', email).limit(1),
+    supabaseAdmin.from('instructors').select('id').ilike('email', escapeLike(email)).limit(1),
+    supabaseAdmin.from('profiles').select('role').ilike('email', escapeLike(email)).limit(1),
   ])
 
   if (family.data?.length) roles.add('parent')
@@ -82,7 +84,7 @@ export async function ensureAuthUser(emailRaw: string, roles: PortalRole[]): Pro
   const { data: profile } = await supabaseAdmin
     .from('profiles')
     .select('id, role')
-    .ilike('email', email)
+    .ilike('email', escapeLike(email))
     .limit(1)
     .single()
   if (!profile) return

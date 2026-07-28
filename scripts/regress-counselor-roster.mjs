@@ -43,11 +43,13 @@ const rnd = () => Math.random().toString(36).slice(2, 8)
 // The page's scoping query, reproduced exactly: this class, only if it
 // belongs to a school this counselor has an ACTIVE affiliation with.
 async function pageQuery(classId, counselorEmail) {
+  // PL-158: exact match on the lowercased email — ilike treated % / _ in
+  // the token-carried address as wildcards.
   const { data: affiliations } = await db
     .from('school_affiliations')
     .select('school_id, contacts!inner ( email )')
     .is('ended_at', null)
-    .ilike('contacts.email', counselorEmail)
+    .eq('contacts.email', counselorEmail.toLowerCase())
   const schoolIds = (affiliations ?? []).map((a) => a.school_id)
   if (schoolIds.length === 0) return null
   const { data } = await db
@@ -138,6 +140,13 @@ try {
     .update({ ended_at: null }).eq('id', counselorA.affiliationId)
   check('12. reinstating the affiliation restores access',
     (await pageQuery(classA, counselorA.email))?.id === classA)
+
+  // ---- 4. PL-158: wildcard characters in the address are literals ---------
+  const wildcard = counselorA.email.replace(/^billy/, 'billy%')
+  check('13. an address containing % matches nothing (not many)',
+    (await pageQuery(classA, wildcard)) === null)
+  check('14. a capitalized address still resolves to its affiliation',
+    (await pageQuery(classA, counselorA.email.toUpperCase()))?.id === classA)
 } catch (e) {
   check('flow ran without crashing', false, e.stack?.slice(0, 400) ?? e.message)
 } finally {

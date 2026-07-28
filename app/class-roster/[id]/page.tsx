@@ -62,11 +62,15 @@ export default async function ClassRosterPage({
   }
 
   // The counselor's ACTIVE affiliations (PL-122: active = ended_at IS NULL).
+  // PL-158: exact match on the normalized email — ilike treated % and _ in
+  // the token-carried address as wildcards, quietly widening schoolIds.
+  // Contacts emails are lowercased at write (counselors panel), so
+  // lowercasing the operand keeps the case-insensitivity ilike provided.
   const { data: affiliations } = await supabase
     .from('school_affiliations')
     .select('school_id, contacts!inner ( email ), schools ( name, nickname )')
     .is('ended_at', null)
-    .ilike('contacts.email', counselorEmail)
+    .eq('contacts.email', counselorEmail.toLowerCase())
   const schoolIds = (affiliations ?? []).map((a: { school_id: string }) => a.school_id)
   if (schoolIds.length === 0) {
     return (

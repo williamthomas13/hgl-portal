@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from './supabase-server'
 import { supabaseAdmin } from './supabase-admin'
+import { escapeLike } from './like-escape'
 
 // Cookie-session tutor gate for API routes (Phase 7b) — the tutor-side
 // sibling of staff-gate. Tutors are instructors: identity is the signed-in
@@ -14,7 +15,7 @@ export async function sessionTutor(): Promise<{ email: string; instructorIds: st
   const { data } = await supabaseAdmin
     .from('instructors')
     .select('id')
-    .ilike('email', user.email)
+    .ilike('email', escapeLike(user.email))
   if (!data || data.length === 0) return null
   return { email: user.email.toLowerCase(), instructorIds: data.map((r) => r.id) }
 }

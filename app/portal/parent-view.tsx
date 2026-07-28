@@ -6,6 +6,7 @@ import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreR
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
 import TutoringSection from './tutoring-section'
+import { escapeLike } from '../utils/like-escape'
 
 // Parent view (PHASE4_SPEC §3): one card per student, their enrollments with
 // status/instructor/location, the session calendar, receipts, and diagnostic
@@ -40,7 +41,7 @@ export default async function ParentView({
   const { data: familyRows } = await supabase
     .from('families')
     .select('id')
-    .ilike('parent_email', email)
+    .ilike('parent_email', escapeLike(email))
   const familyIds = (familyRows ?? []).map((f) => f.id)
 
   const { data: students } = await supabase

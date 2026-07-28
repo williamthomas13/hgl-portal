@@ -9,6 +9,7 @@ import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shar
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
 import CommsTimeline, { type TimelineItem } from './comms-timeline'
 import { TEMPLATE_LABELS } from '../utils/comms'
+import { escapeLike } from '../utils/like-escape'
 
 // Instructor view (PHASE4_SPEC §5): own classes with the session calendar,
 // enrollment count vs min/capacity, Synap group link, and full-intake rosters
@@ -26,7 +27,7 @@ export default async function InstructorView({
   email: string
 }) {
   const [{ data: instructorRows }, { data: classes }] = await Promise.all([
-    supabase.from('instructors').select('default_meeting_link').ilike('email', email),
+    supabase.from('instructors').select('default_meeting_link').ilike('email', escapeLike(email)),
     supabase
       .from('classes')
       .select(
@@ -47,7 +48,7 @@ export default async function InstructorView({
         )
       `
       )
-      .ilike('instructors.email', email)
+      .ilike('instructors.email', escapeLike(email))
       .order('start_date', { ascending: false }),
   ])
 

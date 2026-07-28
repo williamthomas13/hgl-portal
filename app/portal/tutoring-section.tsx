@@ -8,6 +8,7 @@ import {
 } from '../utils/tutoring-billing'
 import { loadContactInfo } from '../utils/tutoring-emails'
 import RescheduleRequest from './reschedule-request'
+import { escapeLike } from '../utils/like-escape'
 
 // Parent tutoring surface (Phase 7d, spec §8) — un-stubs the comms spec's C3
 // widget. Reads run as service role scoped to the signed-in parent's own
@@ -55,7 +56,7 @@ export default async function TutoringSection({ email }: { email: string }) {
   const { data: familyRows } = await supabase
     .from('families')
     .select('id, parent_email, timezone, autopay, stripe_payment_method_id')
-    .ilike('parent_email', email)
+    .ilike('parent_email', escapeLike(email))
   if (!familyRows || familyRows.length === 0) return null
   const familyIds = familyRows.map((f) => f.id)
 

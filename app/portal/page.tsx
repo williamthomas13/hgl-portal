@@ -6,6 +6,7 @@ import CounselorView from './counselor-view'
 import InstructorView from './instructor-view'
 import TutorView from './tutor-view'
 import SignOutButton from './signout-button'
+import { escapeLike } from '../utils/like-escape'
 
 // The Phase 4 portal (docs/PHASE4_SPEC.md §3–§5). One route, three views —
 // parent / counselor / instructor — picked by the roles this email actually
@@ -42,20 +43,20 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
   // user. Each is filtered by the email linkage explicitly — staff can read
   // every row under RLS, so "any visible row" would misdetect roles for them.
   const [families, counselorRows, taughtClasses, tutorRows, profile] = await Promise.all([
-    supabase.from('families').select('id').ilike('parent_email', email).limit(1),
+    supabase.from('families').select('id').ilike('parent_email', escapeLike(email)).limit(1),
     supabase
       .from('school_affiliations')
       .select('id, contacts!inner(email)')
       .is('ended_at', null)
-      .ilike('contacts.email', email)
+      .ilike('contacts.email', escapeLike(email))
       .limit(1),
     supabase
       .from('classes')
       .select('id, instructors!inner(email)')
-      .ilike('instructors.email', email)
+      .ilike('instructors.email', escapeLike(email))
       .limit(1),
     // Phase 7b: tutors are instructors with tutoring switched on.
-    supabase.from('instructors').select('id').ilike('email', email).eq('tutoring_active', true).limit(1),
+    supabase.from('instructors').select('id').ilike('email', escapeLike(email)).eq('tutoring_active', true).limit(1),
     supabase.from('profiles').select('role').eq('id', user.id).single(),
   ])
 

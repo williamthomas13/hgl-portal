@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import type { AvailabilityRange } from './availability'
 import { signingSecret } from './signing'
+import { escapeLike } from './like-escape'
 
 // Phase 7e intake & onboarding (docs/PHASE7_SPEC.md §11): signed-link tokens
 // for the public intake form and the policy-agreement page (house HMAC
@@ -131,7 +132,7 @@ export async function applyIntakeSubmission(
   const { data: existingFamily } = await supabase
     .from('families')
     .select('id')
-    .ilike('parent_email', sub.guardianEmail)
+    .ilike('parent_email', escapeLike(sub.guardianEmail))
     .limit(1)
     .maybeSingle()
 
@@ -153,7 +154,7 @@ export async function applyIntakeSubmission(
       const { data: raced } = await supabase
         .from('families')
         .select('id')
-        .ilike('parent_email', sub.guardianEmail)
+        .ilike('parent_email', escapeLike(sub.guardianEmail))
         .limit(1)
         .maybeSingle()
       if (!raced) return { ok: false, error: 'Could not save your family record.' }

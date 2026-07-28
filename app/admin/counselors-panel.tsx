@@ -4,6 +4,7 @@ import { Fragment, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
 import { formatDateAdmin } from '../utils/dates'
 import { SchoolCommsRow } from './school-comms'
+import { escapeLike } from '../utils/like-escape'
 
 // School contact management (PHASE4_SPEC §10 + admin UX addendum): a CONTACT
 // is the person; a SCHOOL_AFFILIATION is their tenure at a school (null
@@ -91,7 +92,7 @@ export default function CounselorsPanel({
     const { data: existing } = await supabase
       .from('contacts')
       .select('id')
-      .ilike('email', email)
+      .ilike('email', escapeLike(email))
       .maybeSingle()
     let contactId = existing?.id as string | undefined
     if (!contactId) {

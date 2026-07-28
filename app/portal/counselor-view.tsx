@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import CounselorClassCard from './counselor-class-card'
 import { one, type ScoreRow } from './shared'
 import { bySessionStart } from '../utils/dates'
+import { escapeLike } from '../utils/like-escape'
 
 // Counselor view (PHASE4_SPEC §4): the school's open/upcoming classes with
 // paid/capacity, waitlist depth, and the registration link; a roster per
@@ -24,7 +25,7 @@ export default async function CounselorView({
     .from('school_affiliations')
     .select('id, school_id, contacts!inner(email), schools ( id, name, nickname )')
     .is('ended_at', null)
-    .ilike('contacts.email', email)
+    .ilike('contacts.email', escapeLike(email))
 
   const schoolIds = (affiliationRows ?? []).map((c: any) => c.school_id)
   if (schoolIds.length === 0) {

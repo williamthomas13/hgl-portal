@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from '../../../utils/supabase-server'
 import { supabaseAdmin } from '../../../utils/supabase-admin'
 import { adminAllowlist } from '../../../utils/portal-auth'
 import { processLogo } from '../../../utils/logo-process'
+import { escapeLike } from '../../../utils/like-escape'
 
 // School logo upload (July 8 refinements §2): the browser posts the raw file
 // here instead of straight to storage, so every stored crest has its white
@@ -14,7 +15,7 @@ export const maxDuration = 30
 async function isStaff(email: string): Promise<boolean> {
   const lower = email.trim().toLowerCase()
   if (adminAllowlist().includes(lower)) return true
-  const { data } = await supabaseAdmin.from('profiles').select('role').ilike('email', lower).limit(1)
+  const { data } = await supabaseAdmin.from('profiles').select('role').ilike('email', escapeLike(lower)).limit(1)
   const role = data?.[0]?.role
   return role === 'admin' || role === 'manager'
 }

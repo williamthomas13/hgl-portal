@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { createSupabaseServerClient } from '../../../utils/supabase-server'
 import { adminAllowlist } from '../../../utils/portal-auth'
+import { escapeLike } from '../../../utils/like-escape'
 
 // PL-53d: the class instructor's handoff note for a student continuing to
 // 1-on-1 tutoring — written from the final-session attendance screen, read
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   // Authorization: staff, or the instructor of one of this student's classes.
   let allowed = adminAllowlist().includes(email)
   if (!allowed) {
-    const { data: profile } = await supabase.from('profiles').select('role').ilike('email', email).limit(1)
+    const { data: profile } = await supabase.from('profiles').select('role').ilike('email', escapeLike(email)).limit(1)
     const role = profile?.[0]?.role
     allowed = role === 'admin' || role === 'manager'
   }
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
       .from('enrollments')
       .select('id, classes!inner ( instructors!inner ( email ) )')
       .eq('student_id', studentId)
-      .ilike('classes.instructors.email', email)
+      .ilike('classes.instructors.email', escapeLike(email))
       .limit(1)
     allowed = (taught?.length ?? 0) > 0
   }

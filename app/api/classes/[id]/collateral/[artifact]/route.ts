@@ -8,6 +8,7 @@ import {
   type CollateralLanguage,
 } from '../../../../../utils/collateral'
 import { flyerHtml, letterHtml } from '../../../../../utils/collateral-templates'
+import { escapeLike } from '../../../../../utils/like-escape'
 import {
   loadStaticAssets,
   qrDataUrl,
@@ -35,14 +36,14 @@ async function canDownload(email: string, schoolId: string | null): Promise<bool
   const lower = email.trim().toLowerCase()
   if (adminAllowlist().includes(lower)) return true
   const [profile, affiliation] = await Promise.all([
-    supabaseAdmin.from('profiles').select('role').ilike('email', lower).limit(1),
+    supabaseAdmin.from('profiles').select('role').ilike('email', escapeLike(lower)).limit(1),
     schoolId
       ? supabaseAdmin
           .from('school_affiliations')
           .select('id, contacts!inner(email)')
           .eq('school_id', schoolId)
           .is('ended_at', null)
-          .ilike('contacts.email', lower)
+          .ilike('contacts.email', escapeLike(lower))
           .limit(1)
       : Promise.resolve({ data: [] }),
   ])

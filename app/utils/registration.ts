@@ -1,4 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { escapeLike } from './like-escape'
 
 // Family/student attachment for registrations (PHASE4_SPEC §7): the form must
 // match on parent email and attach new students/enrollments to the EXISTING
@@ -29,7 +30,7 @@ export async function upsertFamilyAndStudent(
   const { data: existingFamily } = await supabase
     .from('families')
     .select('id')
-    .ilike('parent_email', input.parentEmail)
+    .ilike('parent_email', escapeLike(input.parentEmail))
     .limit(1)
     .maybeSingle()
 
@@ -51,7 +52,7 @@ export async function upsertFamilyAndStudent(
       const { data: raced } = await supabase
         .from('families')
         .select('id')
-        .ilike('parent_email', input.parentEmail)
+        .ilike('parent_email', escapeLike(input.parentEmail))
         .limit(1)
         .maybeSingle()
       if (!raced) return { error: 'Error saving account: ' + (error?.message ?? 'unknown') }

@@ -16,6 +16,7 @@ import CoveragePanel, {
 } from './coverage-panel'
 import { supabaseAdmin } from '../utils/supabase-admin'
 import { loadContactInfo } from '../utils/tutoring-emails'
+import { escapeLike } from '../utils/like-escape'
 
 // Tutor view (Phase 7b §7): upcoming 1-on-1 sessions plus timecards. The
 // twice-monthly "reconstruct my calendar into a timecard" ritual becomes a
@@ -35,7 +36,7 @@ export default async function TutorView({
   const { data: instructorRows } = await supabase
     .from('instructors')
     .select('id, timezone, pay_type_titles')
-    .ilike('email', email)
+    .ilike('email', escapeLike(email))
   const tutor = instructorRows?.[0]
   if (!tutor) {
     return <p className="text-gray-500 bg-white rounded-lg border p-6">No tutoring profile found.</p>

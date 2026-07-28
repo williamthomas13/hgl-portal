@@ -7,6 +7,7 @@ import SessionCalendar from '../components/SessionCalendar'
 import { formatDateAdmin, addDays, monthYear } from '../utils/dates'
 import { DateHint, TimeSelect, TimezoneSelect } from './ui'
 import type { Instructor } from './instructors-panel'
+import { escapeLike } from '../utils/like-escape'
 
 // Class creation wizard (admin UX addendum, school-first revision):
 // school → details → sessions → review. Everything downstream hangs off the
@@ -213,7 +214,7 @@ export default function ClassWizard({
     const { data: existing } = await supabase
       .from('contacts')
       .select('id')
-      .ilike('email', email)
+      .ilike('email', escapeLike(email))
       .maybeSingle()
     let contactId = existing?.id as string | undefined
     if (!contactId) {

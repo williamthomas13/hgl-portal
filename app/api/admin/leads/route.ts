@@ -8,6 +8,7 @@ import { renderRegistered } from '../../../utils/comms-registered'
 import { contactBlockHtml } from '../../../utils/tutoring-emails'
 import { loadContactInfo } from '../../../utils/tutoring-emails'
 import { sendOnce } from '../../../utils/email'
+import { escapeLike } from '../../../utils/like-escape'
 import {
   loadGcalConnection,
   createGcalEvent,
@@ -196,7 +197,7 @@ export async function POST(req: Request) {
       const { data: existingFamily } = await supabase
         .from('families')
         .select('id')
-        .ilike('parent_email', email)
+        .ilike('parent_email', escapeLike(email))
         .limit(1)
         .maybeSingle()
       let familyId = existingFamily?.id as string | undefined
