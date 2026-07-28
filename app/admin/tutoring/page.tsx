@@ -100,9 +100,9 @@ export default function TutoringAdmin() {
       Object.fromEntries((((notesRes.data as any[]) ?? []).map((n) => [n.instructor_id, n.notes ?? ''])))
     )
 
-    // Next confirmed session per engagement + package draw-down (§5: hours
-    // remaining = purchased − (completed + no_show + forfeited + upcoming
-    // confirmed)).
+    // Next confirmed session per engagement + package draw-down — the same
+    // status set as packageHoursUsedBefore, the function that actually bills
+    // (PL-130's rule: never a parallel count that can drift from billing).
     const engIds = engs.map((e) => e.id)
     if (engIds.length > 0) {
       const { data: upcoming } = await supabase
@@ -122,11 +122,12 @@ export default function TutoringAdmin() {
       if (packageEngIds.length > 0) {
         const { data: consuming } = await supabase
           .from('tutoring_sessions')
-          .select('engagement_id, duration_minutes, status')
+          .select('engagement_id, duration_minutes, status, reschedule_notice')
           .in('engagement_id', packageEngIds)
-          .in('status', ['completed', 'no_show', 'forfeited', 'confirmed'])
+          .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
         const used: Record<string, number> = {}
         for (const s of consuming ?? []) {
+          if (s.status === 'rescheduled' && s.reschedule_notice !== 'late') continue
           used[s.engagement_id] = (used[s.engagement_id] ?? 0) + s.duration_minutes / 60
         }
         setPackageHoursUsed(used)
