@@ -215,6 +215,39 @@ export async function POST(req: Request) {
       if (body.funding === 'package' && !body.addon_id) {
         return NextResponse.json({ error: 'Package funding needs the package (add-on) to draw from.' }, { status: 400 })
       }
+      // PL-170: the wizard guides this, but the route is the authority — the
+      // package must belong to this student's family, and to no other live
+      // schedule (billing draws a package down per schedule, so sharing one
+      // would cover the same hours twice).
+      if (body.funding === 'package' && body.addon_id) {
+        const [{ data: stu }, { data: addon }, { data: attached }] = await Promise.all([
+          supabase.from('students').select('family_id').eq('id', student_id).maybeSingle(),
+          supabase
+            .from('enrollment_addons')
+            .select('id, enrollments!inner ( students!inner ( family_id ) )')
+            .eq('id', body.addon_id)
+            .maybeSingle(),
+          supabase
+            .from('tutoring_engagements')
+            .select('id')
+            .eq('addon_id', body.addon_id)
+            .in('status', ['active', 'pending_parent_confirmation'])
+            .limit(1),
+        ])
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const enr: any = Array.isArray((addon as any)?.enrollments) ? (addon as any).enrollments[0] : (addon as any)?.enrollments
+        const addonFamily = (Array.isArray(enr?.students) ? enr?.students[0] : enr?.students)?.family_id
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+        if (!addon || !stu?.family_id || addonFamily !== stu.family_id) {
+          return NextResponse.json({ error: "That package isn't on this family's account." }, { status: 400 })
+        }
+        if (attached?.length) {
+          return NextResponse.json(
+            { error: 'That package is already fueling another schedule — it can only fund one at a time.' },
+            { status: 400 }
+          )
+        }
+      }
       // PL-41: default ON — the parent confirms before anything locks in.
       // OFF is Kelsie's explicit override (schedule already agreed by phone).
       const requireApproval = body.require_approval !== false
@@ -338,6 +371,22 @@ export async function POST(req: Request) {
           { error: 'Two weekly slots overlap on the same day — fix them before saving.' },
           { status: 400 }
         )
+      }
+      // PL-170: same one-live-schedule-per-package rule on edit as on create.
+      if (body.addon_id) {
+        const { data: attached } = await supabase
+          .from('tutoring_engagements')
+          .select('id')
+          .eq('addon_id', body.addon_id)
+          .neq('id', body.id)
+          .in('status', ['active', 'pending_parent_confirmation'])
+          .limit(1)
+        if (attached?.length) {
+          return NextResponse.json(
+            { error: 'That package is already fueling another schedule — it can only fund one at a time.' },
+            { status: 400 }
+          )
+        }
       }
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       for (const k of ['hourly_rate', 'funding', 'addon_id', 'recurrence', 'location', 'notes', 'status', 'end_date'] as const) {

@@ -2,7 +2,7 @@
 
 Opened July 27, first item from Scarlett's email review. Scarlett will say when it's ready to pull; if it's extended after you've pulled it, wait for an explicit re-read ask.
 
-Next PL after this batch: **PL-180**.
+Next PL after this batch: **PL-183**.
 
 **Standing rules:** plain-English statuses · no internal shorthand · every alert deep-links its record · samples from composers · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
 
@@ -29,3 +29,38 @@ Scarlett's rationale (Jul 27): an instructor knows how to get ready for their ow
 - Applies wherever the substitute sees the session: upcoming list, and the PL-160 calendar view when it lands (a covered block should carry the same marker).
 
 **Verify:** accepted coverage → row shows "Covering for {name}" with handoff link · handoff note reachable in one tap from the row · own sessions unaffected · marker clears if coverage is withdrawn/reassigned · PL-160 (when built) renders the marker on the calendar block.
+
+## PL-180 · Calendar edits flow BACK to the portal — two-way sync with a human gate
+
+Scarlett moved a tutoring session directly in the billy@ Google Calendar and the portal never noticed (Jul 27). She's right that this can't be prevented — tutors live in their calendars, and an event that LOOKS draggable will get dragged. Today the sync is one-way (portal → calendar, with portal-side edits patching drifted events), so a calendar-side edit silently forks reality: the tutor's calendar says one time, the portal — and everything it drives — says another.
+
+Why not silent two-way: a session time is not just a calendar fact. It drives parent schedule notices (T3), billing lines, timecards, and attendance. Silently adopting a calendar drag would let one gesture in Google bypass the notice/urgency machinery (PL-81), the late-reschedule fee logic, and the family's approved schedule. So: **detect always, adopt deliberately.**
+
+- **Detect:** extend the existing drift machinery (the XCL- audit pattern, already comparing portal sessions to calendar events) to tutoring session events — compare on the sweep AND on tutoring-page load, so detection isn't a day behind.
+- **Surface — and say WHO, not just WHAT (Scarlett, Jul 28):** the alert is attributional, not neutral. The portal knows what it last wrote to the event, so a differing calendar state means someone edited it calendar-side — on the tutor's own calendar, that's the tutor. Copy shape: "**Billy moved Ana's Tuesday session in his Google Calendar — 4:00 → 5:00.** The family hasn't been told and billing hasn't changed. Adopt (runs the normal reschedule) or revert his calendar." A neutral "mismatch" framing hides the two facts that drive the decision: a person made a change, and none of the machinery has run. Needs-attention row + a marker on the session row; deep-link per the standing rule.
+- **Resolve, one click each way:** **Adopt** runs the NORMAL reschedule machinery with the calendar's time (parent notice, fee logic, timecard implications — everything a portal-side reschedule would do), so adopting is never a back door. **Revert** patches the calendar event back to the portal's time (which the sync already knows how to do).
+- **Optional accelerator, Scarlett's call at review:** if the same tutor's calendar edits are adopted routinely, a per-tutor "auto-adopt with notice" setting later — start gated, earn the automation.
+
+**Verify:** calendar-side time drag → detected on next sweep AND on page load · adopt fires the reschedule path (T3/urgency/fee logic all engage, verified against a <24h session) · revert restores the calendar event · portal-side edits still patch outward untouched · no detection loop (adopt/revert converge, don't re-flag).
+
+## PL-181 (small) · Test scores live everywhere the student does: profile, class roster, and 1-on-1
+
+Scores exist (the milestone machinery, counselor-view display), but entry/viewing doesn't follow the student. Classes ALWAYS include two diagnostics, and instructors read those results as a group; 1-on-1 students often have diagnostics too.
+
+- **One score store, three surfaces:** (1) the student profile — view + enter, full history; (2) the class page/roster — view + enter for that class's students as a group (the instructor's two-diagnostics workflow: enter a column of scores in one sitting, see the group side by side); (3) the tutoring page — the existing milestone entry stays, backed by the same store.
+- Class surface supports the group read: per-diagnostic columns (Diag 1 / Diag 2), students as rows — the "is this group moving" glance the instructors actually do.
+- Same score visible from every surface the moment it's entered on any of them (one table, no syncing).
+- Role visibility follows existing rules (counselor sees what counselor-view already grants; parents unchanged).
+
+**Verify:** score entered on the class roster appears on the student profile and tutoring view instantly · group grid renders both diagnostics · history preserved · role-gated correctly.
+
+## PL-182 (small) · One prospective-student form: quick add and full add merge
+
+The quick add "on a phone call" flow and the full add-prospective-student form are nearly the same thing with an arbitrary wall between them. Remove the wall (Scarlett, Jul 27):
+
+- **Remove the separate "on a phone call" quick add.**
+- **One add-prospective-student form where everything except the bare minimum is optional** (minimum: enough to identify them — name; whatever contact info exists). Kelsie enters whatever she has at the time; the rest arrives via the intake sheet anyway, which is where completeness is actually enforced.
+- The form should make partial entry feel normal, not like an error state — no required-field noise on fields the intake sheet will fill.
+- **Completeness still gates the right things downstream:** whatever currently requires full info before a student starts (intake complete markers, scheduling) keeps requiring it — this changes where data ENTERS, not what's required to proceed.
+
+**Verify:** add with name only → saves, appears in pipeline · intake sheet later fills the gaps onto the same record (no duplicate) · downstream gates still hold · the old quick-add path is gone and nothing references it.

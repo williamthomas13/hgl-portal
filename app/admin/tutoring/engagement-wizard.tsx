@@ -30,7 +30,15 @@ import {
 // Google free time ∩ offer windows over the whole generated-session horizon.
 // Suggestion chips just pre-fill the slot rows; they never gate Create.
 
-type AddonOption = { id: string; hours: number; label: string }
+type AddonOption = {
+  id: string
+  hours: number
+  /** Purchased minus drawn-down across EVERY engagement on this addon. */
+  remaining: number
+  /** First name of the student whose active schedule already draws on it. */
+  attachedTo: string | null
+  label: string
+}
 
 type BusyBlockUI = { start: string; end: string; title: string | null; private: boolean; allDay?: boolean }
 
@@ -255,29 +263,98 @@ export default function EngagementWizard({
     else setLocation(tutor?.default_location ?? '')
   }, [tutor, locationMode])
 
-  // Package options for the picked student (their enrollments' add-ons).
+  // PL-170: package options for the picked student's FAMILY (a sibling's
+  // unused package is still the family's prepaid money), with hours remaining
+  // computed across every engagement drawing on each addon — the same status
+  // set as packageHoursUsedBefore, the function that actually bills.
+  // Packages win by default: if usable prepaid hours exist, funding defaults
+  // to package (auto-picking when there's exactly one); invoicing while
+  // hours sit unused gets a warning below, never a block.
+  const [familyUnusedHours, setFamilyUnusedHours] = useState(0)
   useEffect(() => {
     setAddonId('')
-    if (!studentId) {
-      setAddons([])
-      return
-    }
-    supabase
-      .from('enrollment_addons')
-      .select('id, hours, source, tutoring_packages ( name ), enrollments!inner ( student_id )')
-      .eq('enrollments.student_id', studentId)
-      .then(({ data }) => {
-        setAddons(
-          (data ?? []).map((a) => {
-            /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-            const pkg: any = Array.isArray(a.tutoring_packages) ? a.tutoring_packages[0] : a.tutoring_packages
-            // PL-84: conversion packages have no catalog package behind them.
-            const name = pkg?.name ?? (a.source === 'cancellation_conversion' ? 'Cancellation conversion' : 'Package')
-            return { id: a.id, hours: Number(a.hours), label: `${name} — ${a.hours}h purchased` }
-          })
+    setAddons([])
+    setFamilyUnusedHours(0)
+    if (!studentId) return
+    const familyId = students.find((x) => x.id === studentId)?.families?.id
+    if (!familyId) return
+    let stale = false
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    ;(async () => {
+      const { data: addonRows } = await supabase
+        .from('enrollment_addons')
+        .select(
+          'id, hours, source, tutoring_packages ( name ), enrollments!inner ( students!inner ( id, first_name, family_id ) )'
         )
+        .eq('enrollments.students.family_id', familyId)
+      const rows = (addonRows as any[]) ?? []
+      const usedByAddon: Record<string, number> = {}
+      const attachedTo: Record<string, string> = {}
+      if (rows.length > 0) {
+        const { data: engs } = await supabase
+          .from('tutoring_engagements')
+          .select('id, addon_id, status, students ( first_name )')
+          .in('addon_id', rows.map((a) => a.id))
+        const engAddon: Record<string, string> = {}
+        for (const e of (engs as any[]) ?? []) {
+          engAddon[e.id] = e.addon_id
+          // Billing draws down per engagement, so an addon can only safely
+          // fuel ONE live schedule — mark the ones already committed.
+          if (e.status === 'active' || e.status === 'pending_parent_confirmation') {
+            const s = Array.isArray(e.students) ? e.students[0] : e.students
+            attachedTo[e.addon_id] = s?.first_name ?? 'a student'
+          }
+        }
+        const engIds = Object.keys(engAddon)
+        if (engIds.length > 0) {
+          const { data: consuming } = await supabase
+            .from('tutoring_sessions')
+            .select('engagement_id, duration_minutes, status, reschedule_notice')
+            .in('engagement_id', engIds)
+            .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
+          for (const s of (consuming as any[]) ?? []) {
+            if (s.status === 'rescheduled' && s.reschedule_notice !== 'late') continue
+            const aid = engAddon[s.engagement_id]
+            if (aid) usedByAddon[aid] = (usedByAddon[aid] ?? 0) + s.duration_minutes / 60
+          }
+        }
+      }
+      if (stale) return
+      const options: AddonOption[] = rows.map((a) => {
+        const pkg: any = Array.isArray(a.tutoring_packages) ? a.tutoring_packages[0] : a.tutoring_packages
+        // PL-84: conversion packages have no catalog package behind them.
+        const name = pkg?.name ?? (a.source === 'cancellation_conversion' ? 'Cancellation conversion' : 'Package')
+        const enr: any = Array.isArray(a.enrollments) ? a.enrollments[0] : a.enrollments
+        const stu: any = Array.isArray(enr?.students) ? enr?.students[0] : enr?.students
+        const remaining = Math.max(0, Number(a.hours) - (usedByAddon[a.id] ?? 0))
+        const whose = stu && stu.id !== studentId ? ` — bought with ${stu.first_name}'s registration` : ''
+        const state = attachedTo[a.id]
+          ? ` — already fueling ${attachedTo[a.id]}'s schedule`
+          : ` · ${remaining.toFixed(1)}h left`
+        return {
+          id: a.id,
+          hours: Number(a.hours),
+          remaining,
+          attachedTo: attachedTo[a.id] ?? null,
+          label: `${name} — ${a.hours}h purchased${state}${whose}`,
+        }
       })
-  }, [studentId])
+      setAddons(options)
+      // "Sitting unused" = hours on packages no live schedule is consuming.
+      const usable = options.filter((o) => o.remaining > 0 && !o.attachedTo)
+      setFamilyUnusedHours(usable.reduce((sum, o) => sum + o.remaining, 0))
+      if (usable.length > 0) {
+        setFunding('package')
+        if (usable.length === 1) setAddonId(usable[0].id)
+      } else {
+        setFunding('monthly_billed')
+      }
+    })()
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    return () => {
+      stale = true
+    }
+  }, [studentId, students])
 
   useEffect(() => {
     setHandoffNote(null)
@@ -925,14 +1002,23 @@ export default function EngagementWizard({
           <label className="block text-xs text-gray-600 font-semibold mb-1">
             Rate $/hour <span className="font-normal text-gray-400">(EB / international / discounts: override here)</span>
           </label>
+          {/* PL-170: a package sets the economics — an editable rate next to
+              a package selection implies a choice that doesn't exist. */}
           <input
             type="number"
             value={rate}
             onChange={(e) => setRate(e.target.value)}
             min={0}
             step={5}
-            className="w-full border border-gray-300 rounded-md p-2"
+            disabled={funding === 'package' && !!addonId}
+            className="w-full border border-gray-300 rounded-md p-2 disabled:bg-gray-100 disabled:text-gray-400"
           />
+          {funding === 'package' && !!addonId && (
+            <p className="text-xs text-gray-500 mt-1">
+              Covered by the package — the family already paid. This rate only matters if sessions
+              ever run past the package hours (it defaults from the subject).
+            </p>
+          )}
         </div>
         <div>
           {/* PL-23: plain English, no build-phase numbers in UI copy */}
@@ -953,14 +1039,32 @@ export default function EngagementWizard({
             >
               <option value="">Pick the package…</option>
               {addons.map((a) => (
-                <option key={a.id} value={a.id}>{a.label}</option>
+                // PL-170: billing draws a package down per schedule, so one
+                // already fueling a live schedule can't safely fuel a second.
+                <option key={a.id} value={a.id} disabled={!!a.attachedTo || a.remaining <= 0}>
+                  {a.label}
+                  {a.remaining <= 0 && !a.attachedTo ? ' — used up' : ''}
+                </option>
               ))}
             </select>
           )}
           {funding === 'package' && addons.length === 0 && studentId && (
             <p className="text-xs text-amber-700 mt-1">
-              This student has no purchased hour packages on file — families buy them with a class
+              This family has no purchased hour packages on file — families buy them with a class
               registration or from their portal, or switch to monthly billing.
+            </p>
+          )}
+          {/* PL-170: invoicing while prepaid hours sit unused is the money
+              mistake this flag exists to catch — proceed allowed, never silent. */}
+          {funding === 'monthly_billed' && familyUnusedHours > 0 && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded p-2 mt-1">
+              <span className="font-semibold">
+                This family has {familyUnusedHours.toFixed(1)}h remaining on a paid package — invoice
+                anyway?
+              </span>{' '}
+              Monthly billing here means new invoices while those prepaid hours sit unused. That can
+              be right (a different student&apos;s package, or a separate rate agreement) — your
+              call, but never by accident.
             </p>
           )}
         </div>
