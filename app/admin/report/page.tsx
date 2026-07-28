@@ -54,7 +54,11 @@ export default function TermReportPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             Computed from the same paid records QuickBooks sync reads — the numbers can&apos;t disagree with QBO.
-            Read-only{isAdmin ? '' : ' · enrollment view'}.
+            Read-only{isAdmin ? '' : ' · enrollment view'}.{' '}
+            {/* PL-218: the spreadsheet replacement lives beside this report. */}
+            <a href="/admin/report/tutor-hours" className="text-hgl-blue underline">
+              Tutor hours breakdown →
+            </a>
           </p>
         </div>
 

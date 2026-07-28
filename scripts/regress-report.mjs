@@ -22,7 +22,7 @@ for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 const out = path.join(process.cwd(), 'scripts', '.tmp-build-regress-report')
 rmSync(out, { recursive: true, force: true })
 execSync(
-  `npx tsc app/utils/term-report.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`,
+  `npx tsc app/utils/term-report.ts app/utils/tutor-hours-report.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`,
   { stdio: 'inherit' }
 )
 const require = createRequire(import.meta.url)
@@ -114,6 +114,32 @@ try {
   scan(manager, '$')
   check('8. manager payload deep-scan: zero dollar-shaped keys', badKeys.length === 0, badKeys.slice(0, 5).join(', '))
   check('9. manager role stamped + counts intact', manager.role === 'manager' && manager.classes.find((c) => c.id === cls.id)?.enrolled === 2, '')
+
+  // PL-218: the tutor-hours report holds the same line — the manager variant
+  // carries hours only. Hours-shaped keys (totalHours, totalsByMonth …) are
+  // legitimate; dollar-shaped ones (revenue, listRate, amount, price) never.
+  const thr = require(path.join(out, 'tutor-hours-report.js'))
+  const now = new Date()
+  const toM = now.toISOString().slice(0, 7)
+  const fromM = `${now.getFullYear() - 1}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const hoursReport = await thr.loadTutorHoursReport({ tutorId: 'all', fromMonth: fromM, toMonth: toM })
+  check('10. tutor-hours admin payload has revenue fields available',
+    hoursReport.role === 'admin' && hoursReport.rows.every((r) => 'revenue' in r), '')
+  const hoursManager = thr.stripTutorHoursRevenue(hoursReport)
+  const badHourKeys = []
+  const scanHours = (obj, pathStr) => {
+    if (Array.isArray(obj)) return obj.forEach((v, i) => scanHours(v, `${pathStr}[${i}]`))
+    if (obj && typeof obj === 'object')
+      for (const [k, v] of Object.entries(obj)) {
+        if (/revenue|price|amount|dollar|rate/i.test(k)) badHourKeys.push(`${pathStr}.${k}`)
+        scanHours(v, `${pathStr}.${k}`)
+      }
+  }
+  scanHours(hoursManager, '$')
+  check('11. tutor-hours manager payload deep-scan: zero dollar-shaped keys',
+    hoursManager.role === 'manager' && badHourKeys.length === 0, badHourKeys.slice(0, 5).join(', '))
+  check('12. tutor-hours category keys are stable machine keys',
+    hoursReport.rows.every((r) => /^(1on1|worktype|class|consult):/.test(r.key)), JSON.stringify(hoursReport.rows.map((r) => r.key).slice(0, 5)))
 } finally {
   await destroy()
   rmSync(out, { recursive: true, force: true })
