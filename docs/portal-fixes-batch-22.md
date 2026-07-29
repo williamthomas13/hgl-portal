@@ -1,4 +1,4 @@
-# Portal fixes — batch 22 (✅ READY — handed to Code July 28; 13 items, PL-207…219)
+# Portal fixes — batch 22 (✅ ALL 13 SHIPPED July 28 — PL-207…219; per-item notes below)
 
 Closed and handed off July 28 (13 items). If this doc is extended after you've pulled it, wait for an explicit re-read ask. Suggested order in the handoff prompt: quick copy tier (209 · 210 · 215 · 216) → 217 → 212 → 211 → 213 → 208 → 214 (copy appendix at bottom is final — use verbatim) → 207 → 218 → 219 (v1 → v1.5; v2 is roadmap, do not build without a pull).
 
