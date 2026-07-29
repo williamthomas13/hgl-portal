@@ -751,7 +751,7 @@ export async function generateMonthlyCycle(
         <ul>${unagreedFamilies.map((f) => `<li>${f}</li>`).join('')}</ul>
         <p>Send or re-send agreement links from
         <a href="${appUrl()}/admin/agreements" style="color:#00AEEE">the agreements panel</a>
-        — each name above lands on that family's row.</p>`,
+        — or click a family's name above to jump straight to their row.</p>`,
     }).catch((e) => console.error('unagreed-families alert failed:', e))
   }
   return result

@@ -1262,7 +1262,7 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   AL_UNAGREED: {
     alertCounts: '2 tutoring families',
     alertDetailsBlock:
-      '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Alex García</a> (sample-parent@example.com)</li><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Jordan Lee</a> (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">the agreements panel</a> — each name above lands on that family\'s row.</p>',
+      '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Alex García</a> (sample-parent@example.com)</li><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Jordan Lee</a> (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">the agreements panel</a> — or click a family\'s name above to jump straight to their row.</p>',
   },
   // availability route (PL-92 shape): schedule-now opens the wizard preloaded.
   AL_AVAILABILITY_SHARED: {

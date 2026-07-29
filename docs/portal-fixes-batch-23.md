@@ -1,0 +1,159 @@
+# Portal fixes — batch 23 (READY — handed to Code Jul 29; 14 items, PL-220…233)
+
+Closed and handed off July 29 (14 items). If this doc is extended after you've pulled it, wait for an explicit re-read ask.
+
+**Suggested order:** quick tier (224 alert reword · 221 admin space sweep · 233 thread-filter UX) → 228 overflow fix + sweep → email tier: 220 + 222 as ONE new T8 version (portal block + fold the activation pair) → 225 CS trims + conditional announcement → 223 access-aware retire → **shared sidebar layout component**, then its consumers in this order: 227 Tutoring → 229 Contacts (incl. Communications/Campaigns/Agreements coming home) → 230 unified Family profile (largest item; absorbs student/parent pages) → 226 instructors consolidation (Contacts is the edit surface, Tutors panel = representation + finder) → 231 mailto/tel everywhere → 232 intake address + profile field.
+
+Next PL after this batch: **PL-234**.
+
+**Decisions noted Jul 29:** rollout-gated tutors (tutoring_active=false, instructor active) keep login, tutor view hidden — final · retire is access-aware per PL-223 · parent/student profile pages unify into the Family profile (PL-230) · no QBO address auto-sync yet (PL-232).
+
+**Standing rules:** plain-English statuses · no internal shorthand · every alert deep-links its record · samples from composers · `git push` after committing · PL-x IDs in commits · check items off here when shipped.
+
+---
+
+## PL-220 — Tutoring-only families never get the full "you have a family portal" introduction (reported Jul 29)
+
+PL-208 (batch 22) put the full portal-discovery block in #0-parent — but #0 is the class-registration path. A tutoring-only family (intake pipeline, never registered for a class) never receives #0; their only portal introduction is the standing footer one-liner plus the passing "from your parent portal" mention in T_SCHEDULE_SET.
+
+Fix (Scarlett-approved Jul 29): add the same "One more thing worth knowing: you have a family portal…" block to **T8_WELCOME_HANDOFF** — it's already the once-per-family relationship welcome (PL-185 dedupe), so the block lands exactly once per family regardless of entry path, and a class family who already saw it in #0 never gets T8's copy twice in a confusing order (T8 fires only when a tutoring schedule activates).
+
+- Adapt the contents line to the tutoring context: schedule, receipts/invoices, session notes ("what they worked on"), reschedule-a-session, calendar feed. Login is just this email address — no password.
+- Both the registry template (publish as a new version with the exact-string anchor-guard patch method from PL-208, never re-seed) AND the code twin in `intake-emails.ts`.
+- Keep it parent-voiced, no shorthand.
+
+## PL-221 — Inline-element space-eating sweep missed admin-side pages (found Jul 29, batch-22 verification)
+
+The PL-215 root cause (compiler eats the space after inline elements when text wraps inside a conditional) was swept across 24 at-risk joins on parent-facing pages. The Team access panel (admin side) shows the same bug live: "Admin access comes from the `ADMIN_EMAILS`environment allowlist" — missing space after the inline code element.
+
+- Fix that instance, then run the same probe-page rule over admin-facing surfaces (settings panels, tutoring page, dashboards) — anywhere an inline `<code>`/`<strong>`/link abuts following text inside a conditional.
+- Low stakes (staff-facing), but it's the identical defect class with a known mechanical fix.
+
+## PL-222 — First-time families get two near-duplicate emails at activation: fold the pair (reported Jul 29)
+
+When a first-time family's schedule activates (parent confirm or staff override), T8_WELCOME_HANDOFF and T_SCHEDULE_SET fire back-to-back on the same transition — seconds apart, similar content (both carry the schedule; one has policies/autopay, the other calendar-subscribe/PDF/reschedule line). Reads like a glitch. A repeat/sibling engagement correctly gets only the all-set (T8 is once-per-family via PL-185).
+
+Fix (proposed): when the activation transition would send BOTH, send **only T8**, extended with the all-set's unique payload — [Add to your calendar]({calendarLink}) subscribe button, [Download the schedule (PDF)]({schedulePdfLink}), and the "you can reschedule any single session yourself from your parent portal" line. Repeat engagements (T8 dedupe hits) still get T_SCHEDULE_SET exactly as today. No template deleted — T_SCHEDULE_SET stays for the repeat path; the T8 registry template gets a new version via the anchor-guard patch method + code twin. Note this composes with PL-220 (portal block also lands in T8) — coordinate the two edits into one new T8 version.
+
+Ordering note: keep the existing sequencing guarantee that the PL-200 mid-month remainder T1 never races the welcome into the inbox.
+
+## PL-223 — Tutors-panel "retire" should end login when it's the person's only access (reported Jul 29, Scarlett decision)
+
+Today retire only clears `tutoring_active`; ending login requires a second action on the Instructors page (`instructors.active`). Kelsie retiring a departing tutor-only person would leave a live login behind — two actions in two places for the obvious single intent.
+
+Fix (Scarlett-approved Jul 29): make retire access-aware, one click, correct in both cases:
+- **Tutor-only person** (no other active teaching/roles): retire also sets `instructors.active=false` — the confirm dialog says plainly "this also ends their portal login."
+- **Dual-role person** (still teaches classes / has other active roles): retire ends tutoring only; the dialog says "their login stays because they still teach classes — deactivate them on the Instructors page if they're leaving entirely."
+- Reactivation from the Former tab restores both flags' prior meaning (un-retire shouldn't silently re-enable a login someone separately deactivated — preserve `instructors.active` as-is on un-retire unless it was retired-off by this same flow; keep it simple and say what happened in the toast).
+- Rollout-gated tutors unchanged: `tutoring_active=false` with an active instructor record still signs in and simply doesn't see the tutor view (Jul 29 decision — correct behavior, don't touch).
+
+## PL-224 — AL_UNAGREED alert: "each name above lands on that family's row" is unclear (reported Jul 29)
+
+The unagreed-families billing alert ends: "Send or re-send agreement links from [the agreements panel] — each name above lands on that family's row." The intent (PL-97: each listed family name is a deep link into its agreements-panel row) doesn't come through.
+
+Fix: reword to — "Send or re-send agreement links from [the agreements panel] — or click a family's name above to jump straight to their row." (Scarlett may adjust wording at handoff.) Update all three renders so they can't drift: the code twin in `app/utils/tutoring-billing.ts`, the AL_UNAGREED registry template (anchor-guard patch method, new version — never re-seed), and the editor sample in `app/utils/comms-variables.ts`.
+
+**✅ SHIPPED (Jul 29).** Exact wording adopted. Two renders updated, not three — verified against the live DB that AL_UNAGREED v2's body is just `{alertDetailsBlock}` (the sentence never lived in the registry; it arrives entirely via the code-composed details block), so there was no template version to patch and no anchor to patch against — the registry cannot drift on this sentence by construction. Changed: the composer in `tutoring-billing.ts` and the editor sample in `comms-variables.ts`. `regress:alert-pins` green (18 checks), tsc clean.
+
+## PL-225 — CS counselor welcome: trim the portal paragraph; make the sample announcement conditional (reported Jul 29)
+
+Two changes to CS_CLASS_CONFIRMED ("Everything's ready for {className} at {schoolNickname}"):
+
+**A. Copy trims (Scarlett, Jul 29).** In the school-portal paragraph, remove "(no more asking us for a count)", ", your student roster", and ", every past class at {schoolNickname} with its results" (the last isn't true yet — pre-portal history lives in spreadsheets and reports never zero-fill; restore the phrase only if/when history is imported). Resulting list reads: "…you'll find live enrollment for {className}, attendance, and diagnostic scores once the class is underway, and fresh downloads of the letter and flyer in every format{collateralLanguagesPhrase} — always reflecting the latest class details…". Apply via the anchor-guard patch method (new template version, never re-seed) + any code twin.
+
+**A2. Further copy edits from Scarlett's live review of the ISD send (Jul 29, final — apply with A):**
+- Subject: **"Everything's ready for {className}"** — drop " at {schoolNickname}". {className} already contains the school nickname ("ISD SAT Prep"), so the old subject doubled it ("…ISD SAT Prep at ISD").
+- "you have a **school portal**" → "**we set up a school portal for you**".
+- "no password, we'll send you a login link" → "no password **needed**, we'll send you a login link".
+
+**B. Sample announcement is conditional.** The forwardable announcement at the bottom (written in "we're partnering" new-partnership voice) should render only for a NEW school or a NEW contact at the school, and be suppressed for contacts already used to working with us — plus the lead-in line "Below is a sample email you could use…" suppresses with it.
+
+Detection caveat: the portal CANNOT reliably infer "new school" — portal history starts 2026-07-20, so long-standing partners look new in the data. Since CS is admin-initiated (button on the collateral card, never blind automation), proposed shape: a checkbox on the send dialog, "Include the sample announcement (new school or new contact)". Default it by heuristic — suppress if this school already has any completed class in the portal OR this contact has already received a CS send; include otherwise — but the admin always sees and can flip the checkbox before sending, which absorbs the pre-portal blind spot. Sample preview in the composer should reflect the toggle.
+
+## PL-226 — Instructors and Tutors are one table but read as two systems: consolidate add/edit in Contacts, make 1-on-1→Tutors a representation + finder (reported Jul 29)
+
+Reality: one `instructors` table, two flags (`active` = login/scheduling, `tutoring_active` = tutor rollout), two panels each showing only its own flag — so Contacts can show "inactive" while 1-on-1→Tutors shows the same person under "Active", and retiring in one place visibly changes nothing in the other. Also: the Contacts add form takes only name/email/meeting-link (no subjects, timezone, phone…), while the rich profile editor lives only in the tutors panel; Contacts can't edit name or email at all (meeting link only, via a prompt()).
+
+Fix (Scarlett's design, Jul 29):
+
+**A. Contacts→Instructors is THE place to add and edit instructors (instructors = tutors).**
+- The add/edit form grows to the full tutoring profile (the current tutors-panel profile editor is the model — keep it): subjects with the ready/with-prep/off cycle, timezone, Google calendar id, offer windows, default Zoom link, QBO pay-type titles, pay type (hourly/salaried), matching notes (staff-only), PLUS name, email, and **phone (new `instructors.phone` column — display anywhere staff contact info shows)**, and the active/inactive lifecycle it already has.
+- Name, email, and phone become properly editable (no prompt() hacks). CARE on email edits: email is the login identity (magic link) and the identity key for the instructor RLS policies and Google Workspace push — the edit must cascade correctly or warn plainly about what changes.
+
+**B. 1-on-1→Tutors becomes a read-only REPRESENTATION of that data + a finder.**
+- Keep the table (subjects, timezone, offer windows, zoom, matching notes — notes stay staff/Kelsie-only, never parent- or tutor-visible) and the tutoring-specific action (onboard/retire per PL-223's access-aware behavior), but add/edit of identity+profile moves out.
+- Add a note linking to Contacts→Instructors: "To add a tutor or edit their profile, go to Contacts → Instructors."
+- Surface BOTH flags coherently so the two panels can never contradict: a person who is instructor-inactive shows an explicit "inactive — can't sign in" state in the tutors panel (not silently listed as Active), and retire/inactive actions reference each other per PL-223's dialogs.
+
+**C. Search/filter in 1-on-1→Tutors** so Kelsie can answer matching questions fast:
+- Filter by **subject** (any subject chip, matching ready and with-prep — show which) and by **timezone** (group into friendly regions — Americas / Europe & Africa / Asia-Pacific — and/or a UTC-offset range) — answers "who can tutor Algebra", "who works in a European timezone", "who could teach an online SAT class on Chinese time" (offset + offer-windows overlap makes this answerable; showing each match's windows converted to the target zone would seal it — nice-to-have, Code's call on scope).
+- Filters combine (subject AND timezone), and search includes name.
+
+Prod note Jul 29: Scarlett flipped Billy Thomas inactive in Contacts while exploring — the inactive cascade also turns OFF class emails + calendar sync. If not already reverted: reactivate AND re-enable his class comms (reactivation deliberately leaves comms off).
+
+## PL-227 — Tutoring page: adopt the Contacts sidebar layout (reported Jul 29)
+
+The admin Tutoring page is one long scroll of stacked collapsible tiles; Contacts' left-sidebar pattern navigates much better. Restructure `app/admin/tutoring/page.tsx` to match Contacts:
+
+- **Always visible at the top (unchanged, no extra clicks):** "New student schedule" (wizard entry) and "Current Student Schedules" (per-tutor week / all-tutors day calendar) — these are the frequent flows.
+- **The five lower tiles become left-sidebar sections** (one visible at a time, like Contacts→Students/Parents/Instructors/…): **Recent parent activity · Students · Billing · Timecards · Tutors.**
+- Keep deep-links working: existing `?schedule={engagementId}` / alert deep-links into billing rows, timecard rows, tutors etc. must land with the right sidebar section selected and the row scrolled into view (same behavior contract as today's anchors). Needs-Attention links are the main consumers — verify a few after the change.
+- Same component internals — this is layout/navigation only; panels themselves don't change (PL-226 changes the Tutors panel's content separately; coordinate merge order with Code).
+
+## PL-228 — Content spills outside its card (seen on Contacts→Policy agreements Families table; occurs elsewhere too) (reported Jul 29, screenshot on file)
+
+On the agreements page's Families table, the right-side action links ("Send agreement link", "Restart automatic nudges") render past the card's right edge, clipped/overflowing the container; the inline confirm banner ("Re-send the agreement to … and re-arm the +3d/+7d chase (round 1)? Restart the chase · cancel") is the visible widener — it stretches its row wider than the card and drags the whole table's action column outside. Scarlett has seen the same class of overflow on other pages.
+
+Fix:
+- The row-level fix: the inline confirm banner must wrap (max-width / flex-wrap / min-width:0 on the row) instead of widening the row; action links stay inside the card at desktop widths, wrapping to a second line when needed.
+- Then a **sweep for the defect class**, same spirit as the PL-215/221 space sweep: any admin table/row that appends wide inline content (confirm banners, long emails, long URLs) into a flex row without min-width:0/wrap is at risk — check the other panels with inline confirms (billing rows, timecards, tutors, needs-attention rows) at 1280–1512px widths.
+- Phone-width parent surfaces already passed the PL-217 390px pass — this is the admin-side equivalent; verify none of the fixes regress that.
+
+## PL-229 — Contacts sidebar: every section opens ready to work, and the ↗ pages come home (reported Jul 29, screenshots on file)
+
+Two inconsistencies in Contacts:
+
+**A. Instructors and School contacts open collapsed.** Students and Parents land you in a working view (search box + list, already open); Instructors and School contacts land on a collapsed card that needs a second click on the chevron. Make all sidebar sections open expanded and ready to work — selecting a section IS the intent to open it; drop the extra collapse layer for the single-card sections.
+
+**B. Communications, Campaigns, and Agreements navigate AWAY (the ↗) and lose the sidebar.** From those pages the only way back is "← Back to admin", which overshoots — it doesn't return to Contacts where you came from. Bring all three INTO the Contacts layout: same left sidebar, selected state, content renders in the right pane like the other sections. No ↗, no navigation loss.
+- These are currently standalone routes (`/admin/communications`, `/admin/agreements`, campaigns page) — keep the routes working (deep links from alerts/emails point at them, e.g. AL_UNAGREED → `/admin/agreements?family=`), but render them within the Contacts chrome (or redirect into `?tab=` equivalents) so arriving by deep link ALSO gets the sidebar.
+- If any of the three is too heavy to inline wholesale, the fallback is: keep the page but give it the same sidebar chrome so navigation never disappears — the requirement is "never lose the left-hand navigation," not a specific implementation.
+- Composes with PL-227 (Tutoring adopts the same sidebar pattern) — same layout component would serve both; Code's call.
+
+## PL-230 — Unified FAMILY profile: one hub per household, sidebar layout, every person-name click-through (reported Jul 29; unification decided by Scarlett Jul 29)
+
+Parent and student profile pages unify into ONE **Family profile** — the data is already family-shaped (families own login/billing/agreement/autopay/consult history; students own enrollments, tutoring, scores, notes). A separate parent page can only ever be a thin pointer at student pages; kill the split.
+
+**A. One Family profile page, left-sidebar layout (same component family as PL-227/229):**
+- Sections: **Household** (parent + second guardian contact info, portal access, agreement status, marketing opt-out). The Household card must answer "who do I contact right now?" at a glance: preferred contact method, and the intake's late/absent protocol (absentContactWho/How — e.g. "student late → text parent") rendered as a prominent plain-English line, not buried in intake answers · **one section per student** (enrollments, tutoring engagement, scores, session notes, materials — the current student-page tiles, grouped per student and clearly separated so a multi-student family never mixes up whose data is whose) · **Billing** (invoices, autopay, receipts) · **Communications history** · **Prospect/consult trail** (lead record, consult notes).
+- The DEFAULT open section depends on where you clicked in from: from Agreements → Household/agreement; from Communications → comms history; from a class roster or tutoring → that student's section. Always the same record through a different organizational pane.
+
+**B. Contacts→Students and Contacts→Parents stay as separate search lenses** (different question shapes) but both resolve into the Family profile — a student result lands on that student's section, a parent result on Household. No separate parent page anymore.
+
+**C. Names are doors, platform-wide.** Every rendered person name in any admin table, alert row, digest, or panel (Agreements' Families table, Communications' recipient column, rosters, needs-attention rows, billing rows…) links to the Family profile, landing per (A). Students/tutors/school contacts too (tutors → Contacts→Instructors profile per PL-226; school contacts → their contact record). Sweep tables that currently render names as plain text.
+
+Composes with: PL-226 (instructor profile hub), PL-227/229 (shared sidebar layout), PL-231 (mailto/tel inside the profile).
+
+## PL-231 — Emails and phone numbers are actionable everywhere (reported Jul 29)
+
+Searching contacts often means intending to contact them. Platform-wide (admin surfaces): render every email address as a `mailto:` link and every phone number as a `tel:` link — clicking hands off outside the platform (mail client opens a draft; tel: opens the default dialer, e.g. Quo once its desktop/mobile app claims tel:, or the phone's dialer). Notes:
+- No custom composer, no in-portal calling — this is a plain protocol handoff; the OS decides the app.
+- Phone display keeps the existing formatting; the href gets the E.164 form where available.
+- Applies to admin-facing surfaces (contacts panes, profile pages, tables, needs-attention rows). Parent/tutor/counselor surfaces already link contact info where it appears in copy blocks — leave those as-is unless a plain-text instance turns up.
+
+## PL-232 — Collect billing address at intake; show it on the family profile (reported Jul 29)
+
+QBO customers normally carry a billing address; the portal collects none anywhere (intake has phones/guardians/emergency contact only; Stripe's checkout address stays in Stripe). Add:
+- An optional **address block on the intake form** (one street line + city + region/postal + country; keep it phone-friendly, clearly optional so completion rate doesn't suffer).
+- Stored on `families` (new columns or a single jsonb address), **viewable and editable on the Family profile (PL-230 Household section)** — visible to admin AND manager (it's contact info, not an owner-level corner).
+- Class-registration path: don't add a required field to checkout; families arriving that way can be filled in later from the profile.
+- QBO note: no automatic sync for now — the bookkeeper can copy it when creating the QBO customer; revisit auto-carry when the QBO customer-create flow next gets touched.
+
+## PL-233 — Communications "thread" filter: no feedback it worked, and the dead buttons stay (reported Jul 29, screenshots on file)
+
+Clicking "thread" on a Communications row filters the list to that enrollment's thread — but it happens instantly with no visible state change, so it's hard to tell it worked, and every resulting row still shows its own "thread" button (which now does nothing).
+
+Fix:
+- **Visible thread state:** a banner/chip above the list — "Showing thread: {student} · {className} ({n} emails) ✕ clear" — so the filtered state is obvious and reversible in one click (clear returns to the previous Upcoming/History view + filters).
+- **Inside a thread, hide the per-row "thread" buttons** (they're inert there). 
+- Nice-to-have: entering a thread scrolls to top and the filter dropdowns visibly reflect/disable while threaded, so the two filter systems can't silently fight.
