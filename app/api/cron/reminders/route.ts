@@ -28,6 +28,7 @@ import {
   classFullNoticeEmail,
   classroomRequestEmail,
   counselorDigestEmail,
+  classSurveyEmail,
   digestClassListHtml,
   digestFrequencyHtml,
   digestSubjectCount,
@@ -59,6 +60,7 @@ import {
   schedulingCtaBlockHtml,
 } from '../../../utils/email'
 import { renderEmail, type RenderedWithVersion } from '../../../utils/comms-db-render'
+import { studentSurveyUrl } from '../../../utils/survey'
 import { renderRegistered } from '../../../utils/comms-registered'
 import {
   ADMIN_EMAIL,
@@ -592,6 +594,100 @@ async function addonSchedulingState(enrollmentId: string): Promise<{
     hasAvailability: (availabilityCount ?? 0) > 0,
     hasSchedule,
     portalFlowDone,
+  }
+}
+
+// PL-219 v1.5: the post-class survey ask — automated after the final session
+// regardless of the instructor. Per-student pre-bound link (the ONLY named
+// channel); ONE reminder at +4 days to non-responders, whose copy owns the
+// in-class-anonymous tradeoff ("already did this in class? ignore us").
+// Window-limited (1–21 days after the last session) so a deploy never sprays
+// classes that ended before the feature existed.
+async function sweepClassSurveys(bundle: ClassBundle, c: Counters) {
+  if (bundle.status === 'cancelled') return
+  const today = localDate(bundle.timezone)
+  const daysSinceEnd =
+    (Date.parse(today) - Date.parse(bundle.lastSession)) / 86_400_000
+  if (!Number.isFinite(daysSinceEnd) || daysSinceEnd < 1 || daysSinceEnd > 21) return
+
+  const { data: enrRows } = await supabase
+    .from('enrollments')
+    .select('id, survey_responded_at')
+    .eq('class_id', bundle.id)
+  const respondedByEnr = new Map(
+    ((enrRows as { id: string; survey_responded_at: string | null }[]) ?? []).map((e) => [
+      e.id,
+      e.survey_responded_at,
+    ])
+  )
+
+  for (const e of bundle.enrollments) {
+    if (!['Paid', 'Completed'].includes(e.payment_status)) continue
+    const to = e.studentEmail || e.parentEmail
+    if (!to) continue
+    if (respondedByEnr.get(e.id)) continue
+    const ctx = emailContext(bundle, e)
+    const surveyUrl = studentSurveyUrl(e.id)
+
+    const first = await renderEmail(
+      'SV_CLASS_SURVEY',
+      ctx,
+      e.studentEmail ? 'student' : 'parent',
+      { surveyLink: surveyUrl, surveyReminderLine: '' },
+      () => classSurveyEmail(ctx, { surveyUrl, reminder: false })
+    )
+    const firstStatus = await sendOnce({
+      dedupeKey: `class_survey:${e.id}`,
+      emailType: 'class_survey',
+      enrollmentId: e.id,
+      classId: bundle.id,
+      to: [to],
+      from: first.from,
+      subject: first.subject,
+      html: first.html,
+      templateKey: 'SV_CLASS_SURVEY',
+      bodySnapshotId: (first as RenderedWithVersion).versionId,
+    })
+    if (firstStatus === 'sent') {
+      bump(c, 'class_survey')
+      continue // the reminder clock starts from this send, never same-pass
+    }
+
+    // The one reminder: +4 days after the first ask, still no responded-bit.
+    if (daysSinceEnd >= 5) {
+      const { data: firstSend } = await supabase
+        .from('email_sends')
+        .select('sent_at')
+        .eq('dedupe_key', `class_survey:${e.id}`)
+        .in('status', ['sent', 'delivered'])
+        .maybeSingle()
+      if (!firstSend?.sent_at) continue
+      if ((Date.now() - new Date(firstSend.sent_at).getTime()) / 86_400_000 < 4) continue
+      const rem = await renderEmail(
+        'SV_CLASS_SURVEY',
+        ctx,
+        e.studentEmail ? 'student' : 'parent',
+        {
+          surveyLink: surveyUrl,
+          surveyReminderLine:
+            '<p><strong>Already filled it out in class? Ignore us</strong> — those answers are anonymous, so we can’t tell, and that’s on purpose.</p>',
+        },
+        () => classSurveyEmail(ctx, { surveyUrl, reminder: true })
+      )
+      const remStatus = await sendOnce({
+        dedupeKey: `class_survey_reminder:${e.id}`,
+        emailType: 'class_survey',
+        enrollmentId: e.id,
+        classId: bundle.id,
+        to: [to],
+        from: rem.from,
+        subject: rem.subject,
+        html: rem.html,
+        templateKey: 'SV_CLASS_SURVEY',
+        bodySnapshotId: (rem as RenderedWithVersion).versionId,
+      })
+      if (remStatus === 'sent') bump(c, 'class_survey_reminded')
+    }
   }
 }
 
@@ -1712,6 +1808,7 @@ export async function GET(req: Request) {
     await sweepInstructorNudges(bundle, counters)
     await sweepDeadlinePush(bundle, counselorsBySchool, counters)
     await sweepClassroomRequests(bundle, counselorsBySchool, counters)
+    await sweepClassSurveys(bundle, counters)
   }
   await sweepCounselorDigests(bundles, counselorsBySchool, counters)
   await sweepAdminRosterReport(bundles, counters)

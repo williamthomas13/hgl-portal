@@ -151,6 +151,19 @@ export default function CollateralCard({
         </button>
       </div>
 
+      {/* PL-219: the live performance report + admin-only PDF handouts. */}
+      <p className="mb-3 text-xs">
+        <a href={`/class-report/${classId}`} className="text-hgl-blue underline mr-3">
+          Performance report (live) →
+        </a>
+        <a href={`/api/class-report-pdf?class=${classId}&flavor=anonymized`} className="text-hgl-blue underline mr-3">
+          One-pager PDF (anonymized)
+        </a>
+        <a href={`/api/class-report-pdf?class=${classId}&flavor=named`} className="text-hgl-blue underline">
+          One-pager PDF (named)
+        </a>
+      </p>
+
       {/* PL-214: the "class is ready" welcome to the school's counselor(s) —
           sales-page link + deadline, letter + flyer attached (generated
           fresh), the portal intro, and a forwardable sample announcement. */}

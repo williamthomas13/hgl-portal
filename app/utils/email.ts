@@ -1706,6 +1706,43 @@ export function cancellationCounselorEmail(opts: {
 // school-district link-scanners that consume one-time URLs.
 // ---------------------------------------------------------------------------
 
+// PL-219 v1.5: the post-class survey ask (code twin of SV_CLASS_SURVEY).
+// Student-voiced, four questions behind the button, no login. The reminder
+// send carries the "already did this in class? ignore us" line — anonymous
+// in-class responses can't be matched, and the copy owns that tradeoff.
+export function classSurveyEmail(
+  ctx: EnrollmentEmailContext,
+  opts: { surveyUrl: string; reminder: boolean }
+): Rendered {
+  const first = ctx.studentFirstName
+  return {
+    subject: opts.reminder
+      ? `Still time — 2 minutes on the ${ctx.className} class?`
+      : `2 minutes on the ${ctx.className} class?`,
+    html: wrap(
+      `
+      <p>Hi ${first},</p>
+      ${
+        opts.reminder
+          ? `<p>Quick nudge about the ${ctx.className} feedback form. <strong>Already filled it
+             out in class? Ignore us</strong> — those answers are anonymous, so we can't tell,
+             and that's on purpose.</p>`
+          : `<p>You made it through the ${ctx.className} class — nicely done. Before it all fades:
+             how was it?</p>`
+      }
+      <p>Four questions, two minutes, no login. Your answers shape how we run the next one.</p>
+      ${button('Give your feedback', opts.surveyUrl)}
+      <p style="font-size:13px;color:#64748b">Rather not be named? There's an anonymous option
+      right on the form.</p>
+    `,
+      {
+        preheader: 'Four questions, two minutes, no login.',
+        footer: footerT(),
+      }
+    ),
+  }
+}
+
 export function loginLinkEmail(confirmUrl: string, otp: string): Rendered {
   return {
     subject: `Your Higher Ground Learning sign-in link`,

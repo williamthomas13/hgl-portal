@@ -1061,6 +1061,34 @@ Already accepted them? Then our systems are just catching up — you can ignore 
   // composed data rides block variables (framing editable, guts computed).
   // ---------------------------------------------------------------------------
 
+  // PL-219 v1.5: the post-class survey ask (student-voiced; sent to the
+  // student email, parent as fallback). DRAFT until Scarlett ramps it —
+  // the code twin sends meanwhile (classSurveyEmail). {surveyReminderLine}
+  // is empty on the first send and carries the "already did this in class?
+  // ignore us" paragraph on the one reminder.
+  {
+    template_key: 'SV_CLASS_SURVEY',
+    display_name: 'SV — Post-class survey ask',
+    sequence_number: 'SV',
+    audience: 'student',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '2 minutes on the {className} class?',
+    preheader: 'Four questions, two minutes, no login.',
+    footer_note: null,
+    body_markdown: `Hi {studentFirstName},
+
+You made it through the {className} class — nicely done. Before it all fades: how was it?
+
+{surveyReminderLine}
+
+Four questions, two minutes, no login. Your answers shape how we run the next one.
+
+[button:Give your feedback]({surveyLink})
+
+Rather not be named? There's an anonymous option right on the form.`,
+  },
+
   // --- Counselors & schools --------------------------------------------------
   // PL-214: the "your class is set up" welcome the sequence never had —
   // replaces Billy's manual email. Admin-initiated (button on the class's

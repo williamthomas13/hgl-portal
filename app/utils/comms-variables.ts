@@ -134,6 +134,12 @@ export type ExtraVars = {
   enrollmentDeadline?: string
   /** Class capacity as text, e.g. "15". */
   classCapacity?: string
+
+  // --- PL-219 v1.5: post-class survey -----------------------------------------
+  /** The pre-bound per-student survey link (the only named channel). */
+  surveyLink?: string
+  /** Empty on the first ask; the "already did this in class? ignore us" paragraph on the reminder. */
+  surveyReminderLine?: string
   /** "September 1 – September 15" (T5 timecard). */
   payPeriodRange?: string
   /** "14.5" (T5 timecard hours). */
@@ -681,6 +687,16 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'Class capacity (e.g. "15")',
     resolve: (_c, _a, e) => e.classCapacity ?? '—',
   },
+  // PL-219 v1.5: post-class survey.
+  surveyLink: {
+    description: 'SV: the pre-bound per-student survey link',
+    resolve: (c, _a, e) => e.surveyLink ?? c.portalUrl,
+  },
+  surveyReminderLine: {
+    description: 'SV: empty on the first ask; the "already did this in class? ignore us" paragraph on the reminder',
+    block: true,
+    resolve: (_c, _a, e) => e.surveyReminderLine ?? '',
+  },
   coverageRespondLink: {
     description: 'SUB: tutor portal link where the candidate answers',
     resolve: (c, _a, e) => e.coverageRespondLink ?? c.portalUrl,
@@ -987,6 +1003,9 @@ const SAMPLE_COVERAGE_NOTE_BLOCK = coverageNoteHtml(SAMPLE_COVERAGE_NOTE_PROSE)
 // actually builds; T4's is the attempt-3 (retries exhausted) render — the
 // highest-stakes email in the set.
 export const SAMPLE_EXTRA: ExtraVars = {
+  // PL-219: survey samples.
+  surveyLink: 'https://hgl-portal.vercel.app/test-link',
+  surveyReminderLine: '',
   // PL-214: CS class-confirmed welcome + SA block samples.
   salesPageLink: 'https://hgl.co/aisj',
   collateralLanguagesPhrase: ' and language (English and Spanish)',

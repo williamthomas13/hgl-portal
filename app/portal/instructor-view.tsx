@@ -202,6 +202,34 @@ export default async function InstructorView({
                   Starts {formatDate(effectiveStartDate(c.start_date, sessions))} ·{' '}
                   {c.delivery_mode === 'online' ? 'Online' : 'In person'}
                 </p>
+                {/* PL-219: instructors see their own class's report; the
+                    projectable survey QR surfaces as the final session
+                    approaches (and stays for wrap-up). */}
+                {c.status !== 'cancelled' && (
+                  <span className="text-xs space-x-3">
+                    <a href={`/class-report/${c.id}`} className="text-hgl-blue underline">
+                      Performance report →
+                    </a>
+                    {(() => {
+                      const dates = (sessions ?? []).map((s: any) => s.session_date).sort()
+                      const last = dates[dates.length - 1]
+                      if (!last) return null
+                      const dayBeforeLast = new Date(new Date(last + 'T12:00:00Z').getTime() - 86400000)
+                        .toISOString()
+                        .slice(0, 10)
+                      const today = new Date().toLocaleDateString('en-CA')
+                      if (today < dayBeforeLast) return null
+                      return (
+                        <a
+                          href={`/survey-qr/${c.id}`}
+                          className="font-bold bg-hgl-blue text-white rounded px-2.5 py-1 no-underline"
+                        >
+                          Show survey QR
+                        </a>
+                      )
+                    })()}
+                  </span>
+                )}
                 <p className="text-sm text-gray-600">
                   {c.delivery_mode === 'online' ? 'Meeting link' : 'Classroom'}:{' '}
                   {location ? (

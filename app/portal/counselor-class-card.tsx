@@ -60,6 +60,13 @@ base: string
             Starts {formatDate(c.firstSession)} · ${Number(c.price).toLocaleString()} per student
             {` · ${one<any>(c.instructors)?.name ?? one<any>(c.instructors)?.email ?? 'instructor to be announced'}`}
           </p>
+          {/* PL-219: the live performance report — same trust boundary as the
+              roster and scores this card already shows. */}
+          {c.status !== 'cancelled' && (
+            <a href={`/class-report/${c.id}`} className="text-xs text-hgl-blue underline">
+              Performance report — scores, gains &amp; attendance →
+            </a>
+          )}
         </div>
         <div className="text-right">
           <div className="text-lg font-bold text-hgl-slate">

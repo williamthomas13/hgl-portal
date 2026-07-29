@@ -95,6 +95,9 @@ export function templateMetaFor(
     // PL-214: admin-initiated class-confirmed welcome (button, not automation).
     case 'counselor_class_confirmed':
       return { key: 'CS_CLASS_CONFIRMED', role: 'counselor' }
+    // PL-219 v1.5: the post-class survey ask (+ its one reminder).
+    case 'class_survey':
+      return { key: 'SV_CLASS_SURVEY', role: 'student' }
     case 'classroom_request':
       return { key: 'CR_CLASSROOM_REQUEST', role: 'counselor' }
     case 'deadline_push':
@@ -224,6 +227,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   LR_WELCOME: 'LR — Late-registration welcome',
   CD_COUNSELOR_DIGEST: 'CD — Counselor digest',
   CS_CLASS_CONFIRMED: 'CS — Counselor class-confirmed welcome',
+  SV_CLASS_SURVEY: 'SV — Post-class survey ask',
   CR_CLASSROOM_REQUEST: 'CR — Classroom request',
   FP_DEADLINE_PUSH: 'FP — Final-days push',
   FP_ALT_CLASS_FULL: 'FP-alt — Class full notice',
@@ -276,7 +280,7 @@ export function zonedTimeToUtc(dateISO: string, hour: number, tz: string): Date 
 // the FIRST matching group; anything unmatched lands in "Class sequence"
 // (the E-series + LR + SU).
 export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[] = [
-  { name: 'Class sequence', match: (k) => /^E\d|^LR_|^SU_/.test(k) && !/^E8_ADDON/.test(k) },
+  { name: 'Class sequence', match: (k) => /^E\d|^LR_|^SU_|^SV_/.test(k) && !/^E8_ADDON/.test(k) },
   { name: 'Payment reminders', match: (k) => /^PR\d/.test(k) },
   { name: 'Waitlist & interest', match: (k) => /^W\d|^NW_|^WR_/.test(k) },
   { name: 'Cancellation', match: (k) => /^CX_/.test(k) && k !== 'CX_C_CANCELLATION' },
