@@ -1115,7 +1115,7 @@ Rather not be named? There's an anonymous option right on the form.`,
     audience: 'parent',
     from_identity: 'billy',
     category: 'transactional',
-    subject: "Everything's ready for {className} at {schoolNickname}",
+    subject: "Everything's ready for {className}",
     preheader: 'Registration is live — materials attached, and a sample announcement you can forward.',
     footer_note: null,
     body_markdown: `Hi {counselorFirstName},
@@ -1129,7 +1129,7 @@ Registration closes **{enrollmentDeadline}**, and the first session is {firstSes
 - A **letter** meant to be shared with parents (forward it in your parent communications, or print it)
 - A **flyer** meant for students — it works well on bulletin boards, hallway screens, and in student newsletters
 
-One more thing that makes your life easier: you have a **school portal** with Higher Ground. Sign in at [{portalLink}]({portalLink}) with just this email address — no password, we'll send you a login link. In it you'll find live enrollment for {className} (no more asking us for a count), your student roster, attendance, and diagnostic scores once the class is underway, every past class at {schoolNickname} with its results, and fresh downloads of the letter and flyer in every format{collateralLanguagesPhrase} — always reflecting the latest class details, so you never have to worry about a stale copy.
+One more thing that makes your life easier: **we set up a school portal for you** with Higher Ground. Sign in at [{portalLink}]({portalLink}) with just this email address — no password needed, we'll send you a login link. In it you'll find live enrollment for {className}, attendance, and diagnostic scores once the class is underway, and fresh downloads of the letter and flyer in every format{collateralLanguagesPhrase} — always reflecting the latest class details, so you never have to worry about a stale copy.
 
 Below is a sample email you could use to introduce the course to students and parents. And as always — if you'd like any changes to the schedule or anything else, just reply. I'm happy to help however I can.
 

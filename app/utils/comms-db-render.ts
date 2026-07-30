@@ -86,16 +86,25 @@ export function renderVersion(
   }
 }
 
-/** DB render when the template is live; null → caller uses the code fallback. */
+/** DB render when the template is live; null → caller uses the code fallback.
+ *  PL-225: `transformBody` lets a send site adjust the active body/preheader
+ *  before render (the CS conditional announcement) — the template stays the
+ *  single copy source; the transform only ever REMOVES sections, and callers
+ *  fail open (send untransformed) when their anchors have drifted. */
 export async function renderDbEmail(
   templateKey: string,
   ctx: EnrollmentEmailContext,
   audience: Audience,
-  extra: ExtraVars = {}
+  extra: ExtraVars = {},
+  transformBody?: (v: { body_markdown: string; preheader: string }) => {
+    body_markdown: string
+    preheader: string
+  }
 ): Promise<RenderedWithVersion | null> {
   const tpl = await loadActiveTemplate(templateKey)
   if (!tpl || !tpl.live || !tpl.version) return null
-  return { ...renderVersion(tpl.version, tpl, ctx, audience, extra), versionId: tpl.version.id }
+  const version = transformBody ? { ...tpl.version, ...transformBody(tpl.version) } : tpl.version
+  return { ...renderVersion(version, tpl, ctx, audience, extra), versionId: tpl.version.id }
 }
 
 /**

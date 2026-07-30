@@ -56,6 +56,20 @@ export default function CollateralCard({
   const [showPreviews, setShowPreviews] = useState(false)
   // PL-214: the admin-initiated CS welcome send (button, never automation).
   const [sendingCs, setSendingCs] = useState(false)
+  // PL-225 B: the send dialog — recipients, the include-the-announcement
+  // checkbox (heuristic default; the admin always confirms — portal history
+  // starts 2026-07-20, so long-standing partners can look new in the data),
+  // and a preview that reflects the toggle.
+  const [csDialog, setCsDialog] = useState<null | {
+    loading: boolean
+    counselors: { email: string; name: string; priorCs: boolean }[]
+    schoolHasCompletedClass: boolean
+    defaultInclude: boolean
+    include: boolean
+    canSuppress: boolean
+    previews: { include: string; exclude: string } | null
+    error?: string
+  }>(null)
   // Cache-buster so reopened previews reflect saved edits.
   const [previewNonce, setPreviewNonce] = useState(0)
 
@@ -170,38 +184,143 @@ export default function CollateralCard({
       <div className="mb-3 flex items-center gap-3">
         <button
           type="button"
-          disabled={sendingCs}
+          disabled={sendingCs || (csDialog?.loading ?? false)}
           onClick={async () => {
-            if (
-              !window.confirm(
-                'Send the "everything\'s ready" welcome email to every active contact at this school? It carries the sales-page link, the enrollment deadline, the parent letter + student flyer as attachments, the portal intro, and a sample announcement they can forward.'
-              )
-            )
+            if (csDialog) {
+              setCsDialog(null)
               return
-            setSendingCs(true)
-            setMessage('')
+            }
+            setCsDialog({
+              loading: true,
+              counselors: [],
+              schoolHasCompletedClass: false,
+              defaultInclude: true,
+              include: true,
+              canSuppress: false,
+              previews: null,
+            })
             try {
-              const res = await fetch('/api/admin/class-confirmed', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ class_id: classId }),
-              })
+              const res = await fetch(`/api/admin/class-confirmed?class_id=${classId}`)
               const json = await res.json().catch(() => ({}))
-              setMessage(res.ok ? json.message : 'Error: ' + json.error)
+              if (!res.ok) {
+                setCsDialog((d) => (d ? { ...d, loading: false, error: json.error ?? 'Failed to load.' } : d))
+                return
+              }
+              setCsDialog({
+                loading: false,
+                counselors: json.counselors ?? [],
+                schoolHasCompletedClass: !!json.schoolHasCompletedClass,
+                defaultInclude: !!json.defaultInclude,
+                include: !!json.defaultInclude,
+                canSuppress: !!json.canSuppress,
+                previews: json.previews ?? null,
+              })
             } catch {
-              setMessage("Error: couldn't reach the server — nothing was sent.")
-            } finally {
-              setSendingCs(false)
+              setCsDialog((d) =>
+                d ? { ...d, loading: false, error: "Couldn't reach the server." } : d
+              )
             }
           }}
           className="text-xs font-semibold bg-hgl-slate text-white rounded px-3 py-1.5 disabled:opacity-50"
         >
-          {sendingCs ? 'Sending…' : 'Send "class is ready" welcome to the school'}
+          {sendingCs ? 'Sending…' : csDialog ? 'Close send panel' : 'Send "class is ready" welcome to the school'}
         </button>
         <span className="text-xs text-gray-500">
           Letter + flyer attached, generated fresh. Needs the short link and deadline set.
         </span>
       </div>
+
+      {csDialog && (
+        <div className="mb-3 border border-gray-300 rounded-lg p-3 bg-gray-50 text-sm space-y-2">
+          <p className="font-semibold text-hgl-slate">Send the &quot;everything&apos;s ready&quot; welcome</p>
+          {csDialog.loading ? (
+            <p className="text-xs text-gray-500 animate-pulse">Checking who this goes to…</p>
+          ) : csDialog.error ? (
+            <p className="text-xs text-red-600">{csDialog.error}</p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-600">
+                Goes to every active contact at this school:{' '}
+                <strong>{csDialog.counselors.map((c) => `${c.name} (${c.email})`).join(', ')}</strong>
+                {' '}— sales-page link, deadline, portal intro, and the letter + flyer attached (generated fresh).
+              </p>
+              <label className="flex items-start gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={csDialog.include}
+                  onChange={(e) => setCsDialog((d) => (d ? { ...d, include: e.target.checked } : d))}
+                  className="mt-0.5"
+                />
+                <span>
+                  <strong>Include the sample announcement</strong>{' '}(the forwardable
+                  &quot;we&apos;re partnering&quot; intro — for a new school or a new contact).{' '}
+                  <span className="text-gray-500">
+                    {csDialog.defaultInclude
+                      ? 'Suggested: include — nothing on file says this school or contact has worked with us before.'
+                      : csDialog.schoolHasCompletedClass
+                        ? 'Suggested: leave it out — this school already has a completed class with us.'
+                        : 'Suggested: leave it out — everyone listed has received this welcome before.'}
+                    {' '}Portal history only goes back to July 2026, so trust your own read and flip this if it&apos;s wrong.
+                  </span>
+                </span>
+              </label>
+              {!csDialog.include && !csDialog.canSuppress && (
+                <p className="text-xs text-amber-700">
+                  Note: the template&apos;s announcement section couldn&apos;t be located (the copy has
+                  changed since this was built) — if you send, the full email including the
+                  announcement goes out.
+                </p>
+              )}
+              {csDialog.previews && (
+                <details>
+                  <summary className="cursor-pointer text-xs text-hgl-blue underline">
+                    Preview what they&apos;ll receive ({csDialog.include ? 'with' : 'without'} the announcement)
+                  </summary>
+                  <iframe
+                    title="CS welcome preview"
+                    srcDoc={csDialog.include ? csDialog.previews.include : csDialog.previews.exclude}
+                    className="w-full h-96 bg-white border border-gray-200 rounded mt-2"
+                  />
+                </details>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={sendingCs}
+                  onClick={async () => {
+                    setSendingCs(true)
+                    setMessage('')
+                    try {
+                      const res = await fetch('/api/admin/class-confirmed', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ class_id: classId, include_announcement: csDialog.include }),
+                      })
+                      const json = await res.json().catch(() => ({}))
+                      setMessage(res.ok ? json.message : 'Error: ' + json.error)
+                      if (res.ok) setCsDialog(null)
+                    } catch {
+                      setMessage("Error: couldn't reach the server — nothing was sent.")
+                    } finally {
+                      setSendingCs(false)
+                    }
+                  }}
+                  className="text-xs font-bold bg-hgl-blue text-white rounded px-3 py-1.5 disabled:opacity-50"
+                >
+                  {sendingCs ? 'Sending…' : 'Send it'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCsDialog(null)}
+                  className="text-xs text-gray-500 underline"
+                >
+                  cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* PL-15: the urgency date on the printed pieces is deliberately the
           EARLY commit-by date, not when registration actually closes. */}
