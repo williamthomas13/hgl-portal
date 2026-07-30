@@ -296,20 +296,28 @@ export default function CommunicationsDashboard() {
         {error && (
           <div className="p-3 rounded bg-red-100 text-red-700 font-semibold text-sm">{error}</div>
         )}
+        {/* PL-233: the threaded state must be unmissable and reversible in one
+            click — clicking "thread" mid-table also scrolls up here, the
+            per-row thread buttons hide, and the class/family dropdowns
+            disable so the two filter systems can't silently fight. */}
         {enrollmentFilter && (
-          <div className="p-3 rounded bg-blue-50 border border-blue-200 text-sm text-hgl-slate flex items-center justify-between">
+          <div className="p-3 rounded bg-blue-50 border border-blue-200 text-sm text-hgl-slate flex items-center justify-between gap-3 flex-wrap">
             <span>
-              Showing the communication thread for one enrollment
               {filtered[0] && studentName(filtered[0]) ? (
                 <>
-                  {' '}
-                  — <strong>{studentName(filtered[0])}</strong> · {classLabel(filtered[0])}
+                  Showing thread: <strong>{studentName(filtered[0])}</strong>{' '}· {classLabel(filtered[0])}
                 </>
-              ) : null}
-              . Both tabs are filtered.
+              ) : (
+                <>Showing one enrollment&apos;s communication thread</>
+              )}
+              {' '}— {filtered.length === 1 ? '1 email' : `${filtered.length} emails`} in this tab; both
+              tabs are filtered.
             </span>
-            <button onClick={() => setEnrollmentFilter('')} className="underline text-hgl-blue">
-              clear
+            <button
+              onClick={() => setEnrollmentFilter('')}
+              className="font-semibold underline text-hgl-blue whitespace-nowrap"
+            >
+              ✕ clear
             </button>
           </div>
         )}
@@ -336,7 +344,13 @@ export default function CommunicationsDashboard() {
 
         {/* Filters */}
         <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap gap-2 items-center text-sm">
-          <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className="border rounded p-1.5">
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            disabled={!!enrollmentFilter}
+            title={enrollmentFilter ? 'Not available while viewing a thread — clear the thread first' : undefined}
+            className="border rounded p-1.5 disabled:opacity-50"
+          >
             <option value="">all classes</option>
             {classOptions.map(([id, label]) => (
               <option key={id} value={id}>
@@ -371,7 +385,9 @@ export default function CommunicationsDashboard() {
               <select
                 value={familyFilter}
                 onChange={(e) => setFamilyFilter(e.target.value)}
-                className="border rounded p-1.5 max-w-56"
+                disabled={!!enrollmentFilter}
+                title={enrollmentFilter ? 'Not available while viewing a thread — clear the thread first' : undefined}
+                className="border rounded p-1.5 max-w-56 disabled:opacity-50"
               >
                 <option value="">all families</option>
                 {familyOptions.map((f) => (
@@ -498,9 +514,14 @@ export default function CommunicationsDashboard() {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600">
                         {classLabel(r)}
-                        {r.enrollment_id && (
+                        {/* PL-233: inside a thread every row is already the
+                            thread — the buttons would be inert, so hide them. */}
+                        {r.enrollment_id && !enrollmentFilter && (
                           <button
-                            onClick={() => setEnrollmentFilter(r.enrollment_id!)}
+                            onClick={() => {
+                              setEnrollmentFilter(r.enrollment_id!)
+                              window.scrollTo({ top: 0, behavior: 'smooth' })
+                            }}
                             className="block text-xs text-hgl-blue underline"
                             title="All communications for this enrollment"
                           >
@@ -630,7 +651,7 @@ export default function CommunicationsDashboard() {
               </button>
             </div>
             <p className="text-gray-600">
-              To <strong>{detail.recipient_email}</strong> ({detail.recipient_role})
+              To <strong>{detail.recipient_email}</strong>{' '}({detail.recipient_role})
               {studentName(detail) ? ` · ${studentName(detail)} · ${classLabel(detail)}` : ''}
             </p>
             {detail.subject_rendered && <p className="text-gray-800">“{detail.subject_rendered}”</p>}
