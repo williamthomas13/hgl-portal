@@ -73,11 +73,16 @@ export default function TeamAccessPanel() {
     <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-6 space-y-5">
       <div>
         <h2 className="text-lg font-bold text-hgl-slate">Team access</h2>
+        {/* PL-236: matches the PL-213/223/226 access model — the login gate
+            is instructors.active, edited on Contacts → Instructors; the
+            tutors panel's retire is access-aware. */}
         <p className="text-xs text-gray-500 mt-1">
-          Who can open the admin side, and how everyone else&apos;s access works. Tutors sign in
-          while they&apos;re active in the tutors panel (making one inactive ends their login);
-          school contacts sign in while their affiliation is open; families always can. Nothing
-          here deletes history — access ends, records stay.
+          Who can open the admin side, and how everyone else&apos;s access works. Instructors and
+          tutors sign in while they&apos;re active on Contacts → Instructors (deactivating them
+          there ends their login; retiring a tutor-only person from the tutors panel ends it
+          too — the retire dialog says which applies); school contacts sign in while their
+          affiliation is open; families always can. Nothing here deletes history — access ends,
+          records stay.
         </p>
       </div>
 

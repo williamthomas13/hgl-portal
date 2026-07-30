@@ -42,6 +42,8 @@ Each = new registry version (anchor-guard patch) + matching code twin. Verbatim:
 
 The panel intro still says "Tutors sign in while they're active in the tutors panel (making one inactive ends their login)". Since PL-213/223/226, the login gate is `instructors.active` (edited in Contacts → Instructors), and the tutors panel's retire only ends login for tutor-only people (access-aware, with the dialog explaining). Reword to match, e.g.: "Instructors and tutors sign in while they're active on Contacts → Instructors (deactivating there ends their login; retiring a tutor-only person ends it too, and the retire dialog says which applies); school contacts sign in while their affiliation is open; families always can."
 
+**✅ SHIPPED (Jul 30).** Reworded essentially as suggested: "Instructors and tutors sign in while they're active on Contacts → Instructors (deactivating them there ends their login; retiring a tutor-only person from the tutors panel ends it too — the retire dialog says which applies); school contacts sign in while their affiliation is open; families always can. Nothing here deletes history — access ends, records stay."
+
 ## PL-237 — Class wizard: move branding & collateral into its own step (Sessions → **Branding & Collateral** → Review), with Skip / Skip-for-now + no-collateral welcome path (reported Jul 30, screenshots on file)
 
 Scarlett's redesign of the Add-a-New-Class flow:
