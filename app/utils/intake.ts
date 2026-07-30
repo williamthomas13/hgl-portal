@@ -89,6 +89,11 @@ export type IntakeSubmission = {
   emergencyName: string | null
   emergencyPhone: string | null
   emergencyRelation: string | null
+  // PL-232: optional billing address (street / city / region+postal / country)
+  addressStreet: string | null
+  addressCity: string | null
+  addressRegion: string | null
+  addressCountry: string | null
   // About
   howHeard: string | null
   reason: string | null
@@ -225,11 +230,22 @@ export async function applyIntakeSubmission(
       .select('parent_phone')
       .eq('id', familyId)
       .maybeSingle()
-    const patch: Record<string, string | null> = {}
+    const patch: Record<string, unknown> = {}
     if (sub.guardianPhone && !fam?.parent_phone) patch.parent_phone = sub.guardianPhone
     if (sub.guardian2Name) patch.guardian2_name = sub.guardian2Name
     if (sub.guardian2Phone) patch.guardian2_phone = sub.guardian2Phone
     if (sub.guardian2Email) patch.guardian2_email = sub.guardian2Email
+    // PL-232: the billing address is family-stated truth — refresh whenever
+    // the intake actually provides one (an empty block never clobbers a
+    // staff-curated address).
+    if (sub.addressStreet || sub.addressCity || sub.addressRegion || sub.addressCountry) {
+      patch.address = {
+        street: sub.addressStreet,
+        city: sub.addressCity,
+        region: sub.addressRegion,
+        country: sub.addressCountry,
+      }
+    }
     if (Object.keys(patch).length > 0) {
       const { error: famError } = await supabase.from('families').update(patch).eq('id', familyId)
       if (famError) console.error('intake family detail update failed (submission stands):', famError.message)

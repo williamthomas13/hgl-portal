@@ -84,6 +84,91 @@ const CONTACT_METHOD_LABELS: Record<string, string> = {
   email: 'email',
 }
 
+// PL-232: the billing address — collected optionally at intake, editable
+// here by admin AND manager (contact info, not an owner-level corner). No
+// QBO auto-sync: the bookkeeper copies it when creating the QBO customer.
+type Address = { street?: string | null; city?: string | null; region?: string | null; country?: string | null }
+const addressLine = (a: Address | null) =>
+  a ? [a.street, a.city, a.region, a.country].filter(Boolean).join(', ') : ''
+
+function AddressEditor({
+  familyId,
+  address,
+  onSaved,
+}: {
+  familyId: string
+  address: Address | null
+  onSaved: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [street, setStreet] = useState(address?.street ?? '')
+  const [city, setCity] = useState(address?.city ?? '')
+  const [region, setRegion] = useState(address?.region ?? '')
+  const [country, setCountry] = useState(address?.country ?? '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  if (!editing) {
+    return (
+      <span className="text-xs">
+        {addressLine(address) || <span className="text-gray-400 italic">none on file</span>}{' '}
+        <button onClick={() => setEditing(true)} className="text-hgl-blue underline">
+          edit
+        </button>
+      </span>
+    )
+  }
+  return (
+    <span className="block text-xs space-y-1.5 mt-1">
+      <input value={street} onChange={(e) => setStreet(e.target.value)} placeholder="Street address" className="w-full border border-gray-300 rounded p-1.5" />
+      <span className="grid grid-cols-3 gap-1.5">
+        <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="border border-gray-300 rounded p-1.5" />
+        <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="State/region + postal" className="border border-gray-300 rounded p-1.5" />
+        <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Country" className="border border-gray-300 rounded p-1.5" />
+      </span>
+      {err && <span className="block text-red-600">{err}</span>}
+      <span className="flex gap-2">
+        <button
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true)
+            setErr('')
+            const empty = !street.trim() && !city.trim() && !region.trim() && !country.trim()
+            const { error } = await supabase
+              .from('families')
+              .update({
+                address: empty
+                  ? null
+                  : {
+                      street: street.trim() || null,
+                      city: city.trim() || null,
+                      region: region.trim() || null,
+                      country: country.trim() || null,
+                    },
+              })
+              .eq('id', familyId)
+            setSaving(false)
+            if (error) setErr('Error: ' + error.message)
+            else {
+              setEditing(false)
+              onSaved()
+            }
+          }}
+          className="text-white bg-hgl-slate rounded px-2.5 py-1 font-semibold disabled:opacity-50"
+        >
+          Save
+        </button>
+        <button onClick={() => setEditing(false)} className="text-gray-500 underline">
+          cancel
+        </button>
+      </span>
+      <span className="block text-gray-400">
+        Not synced to QuickBooks — the bookkeeper copies it when creating the QBO customer.
+      </span>
+    </span>
+  )
+}
+
 export default function FamilyProfilePage() {
   const params = useParams<{ id: string }>()
   const familyId = params?.id ?? ''
@@ -107,7 +192,7 @@ export default function FamilyProfilePage() {
         `id, parent_first_name, parent_last_name, parent_email, parent_phone,
          guardian2_name, guardian2_email, guardian2_phone,
          billing_email, billing_cc_emails, autopay, timezone, marketing_opt_out,
-         billing_notes, created_at`
+         billing_notes, address, created_at`
       )
       .eq('id', familyId)
       .maybeSingle()
@@ -394,6 +479,17 @@ export default function FamilyProfilePage() {
                         {fam.marketing_opt_out
                           ? 'Opted out — offers and announcements are suppressed'
                           : 'Receiving offers and announcements'}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs font-semibold text-gray-500">Billing address</dt>
+                      <dd>
+                        <AddressEditor
+                          key={addressLine(fam.address)}
+                          familyId={fam.id}
+                          address={fam.address ?? null}
+                          onSaved={load}
+                        />
                       </dd>
                     </div>
                     {fam.billing_email && (

@@ -84,6 +84,11 @@ export async function POST(req: Request) {
     emergencyName: str(body.emergencyName, 200),
     emergencyPhone: str(body.emergencyPhone, 50),
     emergencyRelation: str(body.emergencyRelation, 100),
+    // PL-232: optional billing address.
+    addressStreet: str(body.addressStreet, 300),
+    addressCity: str(body.addressCity, 120),
+    addressRegion: str(body.addressRegion, 120),
+    addressCountry: str(body.addressCountry, 120),
     howHeard: str(body.howHeard, 500),
     reason: str(body.reason, 2000),
     specialNeeds: str(body.specialNeeds, 2000),

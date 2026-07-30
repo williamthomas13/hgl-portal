@@ -76,6 +76,12 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
     guardian2Name: '',
     guardian2Phone: '',
     guardian2Email: '',
+    // PL-232: optional billing address — clearly optional so completion
+    // rate doesn't suffer; staff can fill it in later from the profile.
+    addressStreet: '',
+    addressCity: '',
+    addressRegion: '',
+    addressCountry: '',
     preferredContactMethod: '',
     absentContactWho: '',
     absentContactHow: '',
@@ -250,6 +256,29 @@ export default function IntakeForm({ token, prefill }: { token: string; prefill:
           </Field>
           <Field label="Email">
             <input className={inputCls} type="email" value={f.guardian2Email} onChange={(e) => set('guardian2Email')(e.target.value)} />
+          </Field>
+        </div>
+      </details>
+
+      {/* PL-232: optional billing address — one street line, phone-friendly. */}
+      <details className="mt-4">
+        <summary className="text-sm font-semibold text-gray-600 cursor-pointer">
+          Billing address <span className="font-normal text-gray-400">(optional — helps our bookkeeping; skip it if you&apos;re short on time)</span>
+        </summary>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3">
+          <div className="sm:col-span-3">
+            <Field label="Street address">
+              <input className={inputCls} value={f.addressStreet} onChange={(e) => set('addressStreet')(e.target.value)} placeholder="123 Camino Alto" />
+            </Field>
+          </div>
+          <Field label="City">
+            <input className={inputCls} value={f.addressCity} onChange={(e) => set('addressCity')(e.target.value)} />
+          </Field>
+          <Field label="State / region & postal code">
+            <input className={inputCls} value={f.addressRegion} onChange={(e) => set('addressRegion')(e.target.value)} placeholder="NM 87501" />
+          </Field>
+          <Field label="Country">
+            <input className={inputCls} value={f.addressCountry} onChange={(e) => set('addressCountry')(e.target.value)} placeholder="USA" />
           </Field>
         </div>
       </details>
