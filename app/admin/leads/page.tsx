@@ -881,7 +881,7 @@ function LeadDetail({
       ) : (
         /* PL-22: the one door for creating a family/student that didn't come
            through a class — the schedule wizard only lists existing students. */
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ConfirmAction
             label="Create family + student"
             message={`Create records for ${lead.contact_name ?? lead.contact_email ?? 'this family'} / ${lead.student_name ?? 'the student'}? An existing family with the same parent email is reused, never duplicated.`}

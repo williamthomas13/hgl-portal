@@ -33,7 +33,10 @@ export function ConfirmAction({
     )
   }
   return (
-    <span className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+    // PL-228: the armed banner must WRAP, not widen its row — flex-wrap +
+    // a hard max-width (fixed, because percentage caps don't bite inside
+    // auto-layout table cells) + whitespace-normal to beat any nowrap cell.
+    <span className="inline-flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-1 max-w-md whitespace-normal text-left align-top">
       <span className="text-amber-900">{message}</span>
       <button
         type="button"

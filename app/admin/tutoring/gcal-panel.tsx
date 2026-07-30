@@ -140,7 +140,7 @@ export default function GcalPanel() {
             placeholder='{"type": "service_account", "client_email": "…", "private_key": "…"}'
             className="w-full border border-gray-300 rounded-md p-2 font-mono text-xs"
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={connect}
               disabled={busy || !saJson.trim()}

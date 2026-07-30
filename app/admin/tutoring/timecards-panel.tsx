@@ -329,7 +329,9 @@ export default function TimecardsPanel() {
                         <span className="text-xs text-gray-400 ml-2">by {r.approved_by}</span>
                       )}
                     </td>
-                    <td className="py-1.5 text-right whitespace-nowrap">
+                    {/* PL-228: no nowrap — armed confirm banners wrap instead
+                        of widening the table past the card. */}
+                    <td className="py-1.5 text-right">
                       {/* PL-104: schedule-vs-claimed in one click, and the
                           hours-by-title handoff for QBO transcription. */}
                       <button

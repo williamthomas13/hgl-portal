@@ -372,7 +372,9 @@ export default function EngagementsPanel({
                   {e.start_date && (
                     <span className="text-xs text-gray-400">since {formatDateShort(e.start_date)}</span>
                   )}
-                  <span className="ml-auto flex gap-2 text-xs items-center">
+                  {/* PL-228: flex-wrap — the long regenerate confirm banner
+                      must fold under, not stretch the header row. */}
+                  <span className="ml-auto flex flex-wrap gap-2 text-xs items-center justify-end">
                     {e.status === 'active' && (
                       <>
                         {/* PL-165: the confirm body states the scope — a

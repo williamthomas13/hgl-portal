@@ -144,7 +144,9 @@ function FamilyRowView({
           <span className="text-red-700 font-semibold">Not accepted</span>
         )}
       </td>
-      <td className="py-2 text-sm text-right whitespace-nowrap space-x-3">
+      {/* PL-228: no nowrap — action links wrap to a second line instead of
+          pushing the table past the card edge when a confirm banner arms. */}
+      <td className="py-2 text-sm text-right space-x-3">
         {acceptance?.pdf_snapshot_path && (
           <button type="button" disabled={busy} onClick={openPdf} className="text-hgl-blue underline">
             PDF
