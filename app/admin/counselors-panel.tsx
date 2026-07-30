@@ -281,7 +281,13 @@ export default function CounselorsPanel({
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-2 text-hgl-blue">{a.contacts?.email}</td>
+                <td className="px-4 py-2">
+                  {a.contacts?.email && (
+                    <a href={`mailto:${a.contacts.email}`} className="text-hgl-blue hover:underline">
+                      {a.contacts.email}
+                    </a>
+                  )}
+                </td>
                 <td className="px-4 py-2 text-gray-500">{formatDateAdmin(a.started_at)}</td>
                 <td className="px-4 py-2">
                   <select
@@ -333,7 +339,13 @@ export default function CounselorsPanel({
                 <td className="px-4 py-2">
                   {a.contacts?.first_name} {a.contacts?.last_name}
                 </td>
-                <td className="px-4 py-2">{a.contacts?.email}</td>
+                <td className="px-4 py-2">
+                  {a.contacts?.email && (
+                    <a href={`mailto:${a.contacts.email}`} className="text-hgl-blue hover:underline">
+                      {a.contacts.email}
+                    </a>
+                  )}
+                </td>
                 <td className="px-4 py-2 text-gray-500">
                   {formatDateAdmin(a.started_at)} – {a.ended_at ? formatDateAdmin(a.ended_at) : ''}
                 </td>

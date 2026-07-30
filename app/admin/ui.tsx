@@ -6,6 +6,25 @@ import { formatDateAdmin } from '../utils/dates'
 // Small shared admin UI pieces (admin UX addendum): collapsible sections and
 // the 24-hour / 5-minute time picker used everywhere a session time is set.
 
+// PL-231: contact info is actionable everywhere on admin surfaces — a plain
+// protocol handoff (mailto:/tel:), the OS decides the app. Display keeps the
+// stored formatting; the tel: href strips to digits (+ kept) so E.164-ish
+// values dial cleanly.
+export function EmailLink({ email, className }: { email: string; className?: string }) {
+  return (
+    <a href={`mailto:${email}`} className={className ?? 'text-hgl-blue hover:underline'}>
+      {email}
+    </a>
+  )
+}
+export function PhoneLink({ phone, className }: { phone: string; className?: string }) {
+  return (
+    <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className={className ?? 'text-hgl-blue hover:underline'}>
+      {phone}
+    </a>
+  )
+}
+
 export function CollapsibleSection({
   title,
   subtitle,

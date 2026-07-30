@@ -161,6 +161,8 @@ Searching contacts often means intending to contact them. Platform-wide (admin s
 - Phone display keeps the existing formatting; the href gets the E.164 form where available.
 - Applies to admin-facing surfaces (contacts panes, profile pages, tables, needs-attention rows). Parent/tutor/counselor surfaces already link contact info where it appears in copy blocks — leave those as-is unless a plain-text instance turns up.
 
+**✅ SHIPPED (Jul 29).** Shared `EmailLink`/`PhoneLink` helpers in `app/admin/ui.tsx` — display keeps the stored formatting, the `tel:` href strips to digits (+ kept) so E.164-ish values dial cleanly; no composer, no in-portal calling, the OS picks the app. Swept: Contacts directory (both lenses, incl. guardian-2), Family profile (built linked from day one — household card, guardians, billing emails, student contact, emergency contact), Contacts→Instructors table (email + new phone), Tutors panel emails, School contacts panel (both tables), agreements Families table emails, Communications recipient column, tutoring billing-row and engagement-header emails. Left alone deliberately: the leads editor's contact fields (editable inputs, not display text) and staff-only allowlist listings. Verified in the browser: parents lens renders 57 mailto links and tel hrefs like `tel:+3388988989999`.
+
 ## PL-232 — Collect billing address at intake; show it on the family profile (reported Jul 29)
 
 QBO customers normally carry a billing address; the portal collects none anywhere (intake has phones/guardians/emergency contact only; Stripe's checkout address stays in Stripe). Add:

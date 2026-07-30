@@ -234,8 +234,15 @@ export default function EngagementsPanel({
             ) : (
               <span className="font-bold text-hgl-slate">{group.label}</span>
             )}
-            <span className="text-xs text-gray-400">
-              {group.rows[0]?.students?.families?.parent_email}
+            <span className="text-xs">
+              {group.rows[0]?.students?.families?.parent_email && (
+                <a
+                  href={`mailto:${group.rows[0].students.families.parent_email}`}
+                  className="text-gray-400 hover:text-hgl-blue hover:underline"
+                >
+                  {group.rows[0].students.families.parent_email}
+                </a>
+              )}
             </span>
           </div>
           {/* PL-195: the persistent generation-failure marker + the retry.

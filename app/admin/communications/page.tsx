@@ -526,7 +526,11 @@ export default function CommunicationsDashboard() {
                             <span className="block text-gray-800">{studentName(r)}</span>
                           ))}
                         <span className="text-xs text-gray-500">
-                          {r.recipient_email} · {r.recipient_role}
+                          {/* PL-231: contact info is actionable. */}
+                          <a href={`mailto:${r.recipient_email}`} className="hover:text-hgl-blue hover:underline">
+                            {r.recipient_email}
+                          </a>
+                          {' '}· {r.recipient_role}
                         </span>
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600">

@@ -207,7 +207,16 @@ export default function InvoicesPanel() {
                     >
                       {r.families?.parent_first_name} {r.families?.parent_last_name ?? ''}
                     </a>
-                    <span className="text-xs text-gray-400">{r.families?.parent_email}</span>
+                    <span className="text-xs">
+                      {r.families?.parent_email && (
+                        <a
+                          href={`mailto:${r.families.parent_email}`}
+                          className="text-gray-400 hover:text-hgl-blue hover:underline"
+                        >
+                          {r.families.parent_email}
+                        </a>
+                      )}
+                    </span>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[r.status]}`}>
                       {STATUS_LABELS[r.status]}
                     </span>

@@ -121,7 +121,13 @@ function FamilyRowView({
         >
           {family.name}
         </a>
-        {family.email && <span className="block text-xs text-gray-400">{family.email}</span>}
+        {family.email && (
+          <span className="block text-xs">
+            <a href={`mailto:${family.email}`} className="text-gray-400 hover:text-hgl-blue hover:underline">
+              {family.email}
+            </a>
+          </span>
+        )}
       </td>
       <td className="py-2 pr-3 text-sm">
         {family.activeTutoring ? (

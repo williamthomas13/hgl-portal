@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
+import { EmailLink, PhoneLink } from './ui'
 
 // PL-192: Contacts is a TWO-WAY directory — Students ↔ Parents. Kelsie's
 // referential habit comes from QBO (students are the main contacts with
@@ -147,12 +148,17 @@ export default function ContactsDirectory({ mode }: { mode: 'students' | 'parent
                 {s.grade_level && <span className="text-xs text-gray-500 ml-2">Grade {s.grade_level}</span>}
                 {s.school && <span className="text-xs text-gray-500 ml-2">{s.school}</span>}
                 <p className="text-xs text-gray-600 mt-0.5">
-                  {fam
-                    ? `${`${fam.parent_first_name ?? ''} ${fam.parent_last_name ?? ''}`.trim() || '—'}${
-                        fam.parent_email ? ` · ${fam.parent_email}` : ''
-                      }${fam.parent_phone ? ` · ${fam.parent_phone}` : ''}`
-                    : 'No family record linked yet.'}
-                  {fam?.guardian2_name ? ` · ${fam.guardian2_name}` : ''}
+                  {/* PL-231: contact info is actionable. */}
+                  {fam ? (
+                    <>
+                      {`${fam.parent_first_name ?? ''} ${fam.parent_last_name ?? ''}`.trim() || '—'}
+                      {fam.parent_email && <> · <EmailLink email={fam.parent_email} /></>}
+                      {fam.parent_phone && <> · <PhoneLink phone={fam.parent_phone} /></>}
+                      {fam.guardian2_name && <> · {fam.guardian2_name}</>}
+                    </>
+                  ) : (
+                    'No family record linked yet.'
+                  )}
                 </p>
                 {sibs.length > 0 && (
                   <p className="text-xs text-gray-500 mt-0.5">
@@ -186,9 +192,21 @@ export default function ContactsDirectory({ mode }: { mode: 'students' | 'parent
                 {`${fam.parent_first_name ?? ''} ${fam.parent_last_name ?? ''}`.trim() || '—'}
               </a>
               <p className="text-xs text-gray-600 mt-0.5">
-                {[fam.parent_email, fam.parent_phone].filter(Boolean).join(' · ') || 'no contact info'}
-                {fam.guardian2_name &&
-                  ` · ${fam.guardian2_name}${fam.guardian2_email ? ` (${fam.guardian2_email})` : ''}`}
+                {/* PL-231: contact info is actionable. */}
+                {!fam.parent_email && !fam.parent_phone && 'no contact info'}
+                {fam.parent_email && <EmailLink email={fam.parent_email} />}
+                {fam.parent_email && fam.parent_phone && ' · '}
+                {fam.parent_phone && <PhoneLink phone={fam.parent_phone} />}
+                {fam.guardian2_name && (
+                  <>
+                    {' '}· {fam.guardian2_name}
+                    {fam.guardian2_email && (
+                      <>
+                        {' '}(<EmailLink email={fam.guardian2_email} />)
+                      </>
+                    )}
+                  </>
+                )}
               </p>
               <p className="text-xs text-gray-500 mt-0.5">
                 Students:{' '}
