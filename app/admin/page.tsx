@@ -19,6 +19,7 @@ import AttendancePanel from '../portal/attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
 import ClassScoresGrid from '../components/ClassScoresGrid'
 import ContactsDirectory from './contacts-directory'
+import { SidebarNav } from './sidebar'
 import CallsPanel from './calls-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h, useDeepLinkFocus } from './ui'
@@ -293,7 +294,14 @@ export default function AdminDashboard() {
     const tab = q.get('tab')
     if (tab && NAV_GROUPS[tab]) {
       setActiveGroup(tab)
-      setActiveSection(NAV_GROUPS[tab].default)
+      // PL-229: ?section= lands on a specific filed page (the standalone
+      // pages' sidebars link back here with it); default otherwise.
+      const section = q.get('section')
+      setActiveSection(
+        section && NAV_GROUPS[tab].entries.some((e) => e.id === section && !e.href)
+          ? section
+          : NAV_GROUPS[tab].default
+      )
     }
     const classId = q.get('class')
     if (classId) {
@@ -1447,35 +1455,15 @@ export default function AdminDashboard() {
             unmounting so deep links, data loads, and the focus machinery
             behave exactly as before. */}
         <div className="md:flex md:gap-6 md:items-start">
+          {/* PL-229: shared SidebarNav — href entries lost their ↗ because
+              those pages now wear this same sidebar chrome; nothing
+              navigates you out of the left-hand navigation anymore. */}
           {(NAV_GROUPS[activeGroup]?.entries.length ?? 0) > 1 && (
-            <nav
-              aria-label="Admin sections"
-              className="flex md:flex-col gap-1 md:w-52 shrink-0 md:sticky md:top-6 overflow-x-auto pb-2 md:pb-0 mb-4 md:mb-0"
-            >
-              {NAV_GROUPS[activeGroup].entries.map((s) =>
-                s.href ? (
-                  <a
-                    key={s.id}
-                    href={s.href}
-                    className="text-left text-sm rounded-md px-3 py-2 whitespace-nowrap font-semibold transition text-gray-600 hover:bg-gray-200"
-                  >
-                    {s.label} ↗
-                  </a>
-                ) : (
-                  <button
-                    key={s.id}
-                    onClick={() => setActiveSection(s.id)}
-                    className={`text-left text-sm rounded-md px-3 py-2 whitespace-nowrap font-semibold transition ${
-                      activeSection === s.id
-                        ? 'bg-hgl-slate text-white'
-                        : 'text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                )
-              )}
-            </nav>
+            <SidebarNav
+              entries={NAV_GROUPS[activeGroup].entries}
+              active={activeSection}
+              onSelect={setActiveSection}
+            />
           )}
           <div className="flex-1 min-w-0 space-y-6">
 
