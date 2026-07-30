@@ -429,11 +429,20 @@ export async function POST(req: Request) {
                 console.error('schedule approval email failed:', e)
               )
             : sendWelcomeHandoff(engagementId)
-                .catch((e) => console.error('T8 welcome handoff failed:', e))
-                .then(() =>
-                  sendScheduleSetEmail(engagementId).catch((e) =>
-                    console.error('T_SCHEDULE_SET failed:', e)
-                  )
+                .catch((e) => {
+                  console.error('T8 welcome handoff failed:', e)
+                  return 'failed' as const
+                })
+                // PL-222: fold — the extended T8 already carries the all-set
+                // payload; skip T_SCHEDULE_SET only when T8 confirmed 'sent'.
+                // Repeat/sibling families ('duplicate') and every failure
+                // shape still get the all-set, exactly as before.
+                .then((t8Result) =>
+                  t8Result === 'sent'
+                    ? undefined
+                    : sendScheduleSetEmail(engagementId).catch((e) =>
+                        console.error('T_SCHEDULE_SET failed:', e)
+                      )
                 )
                 // PL-200: the already-agreed path is live immediately, so the
                 // mid-month remainder bills right behind the welcome/all-set.

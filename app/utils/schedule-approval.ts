@@ -465,15 +465,24 @@ export async function activatePendingEngagement(
 
   // PL-185: the welcome waits for THIS transition — confirmation is what
   // makes the schedule real. sendWelcomeHandoff enforces one-per-family
-  // internally; T_SCHEDULE_SET dedupes per engagement. Order: the warm
-  // handoff first, then the all-set schedule email.
+  // internally; T_SCHEDULE_SET dedupes per engagement.
+  // PL-222: the extended T8 now carries the all-set's payload (calendar
+  // subscribe, PDF, reschedule line), so when BOTH would fire on this
+  // transition only T8 goes out. The fold is deliberately one-sided: the
+  // all-set is skipped ONLY on a confirmed 'sent' of the extended T8 —
+  // 'duplicate' (repeat/sibling family), 'failed', 'suppressed', 'skipped',
+  // or a thrown error all still send T_SCHEDULE_SET, so no activation can
+  // end up with neither email.
   const { sendWelcomeHandoff } = await import('./intake-emails')
-  await sendWelcomeHandoff(engagementId).catch((e) =>
+  const t8Result = await sendWelcomeHandoff(engagementId).catch((e) => {
     console.error('T8 welcome failed (activation stands):', e)
-  )
-  await sendScheduleSetEmail(engagementId).catch((e) =>
-    console.error('T_SCHEDULE_SET failed (activation stands):', e)
-  )
+    return 'failed' as const
+  })
+  if (t8Result !== 'sent') {
+    await sendScheduleSetEmail(engagementId).catch((e) =>
+      console.error('T_SCHEDULE_SET failed (activation stands):', e)
+    )
+  }
   // PL-200: a mid-month start bills its current-month remainder now (and,
   // post-20th, folds into the already-generated next month). Sequenced after
   // the welcome/all-set so the remainder T1 never races them into the inbox.

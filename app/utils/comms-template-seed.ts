@@ -810,13 +810,25 @@ Hi {parentFirstName},
 
 {scheduleBlock}
 
-**One thing we need:** please read and accept our scheduling & billing policies (two minutes, one click):
+A couple of things to make life easier:
+
+[button:Add to your calendar]({calendarLink})
+
+Subscribe once and every session (and any future change) shows up automatically.
+
+[button:Download the schedule (PDF)]({schedulePdfLink})
+
+You can reschedule any single session yourself from your parent portal — no need to email us for the small stuff.
+
+**One thing we need before sessions can start:** please read and accept our scheduling & billing policies — we can't start {studentFirstName}'s sessions until they're signed, and they protect your family as much as they protect us (two minutes, one click):
 
 [button:Read & accept the policies]({agreementsLink})
 
 **The one rule worth remembering:** with 24+ hours' notice, rescheduling a session is always free — inside 24 hours the prepaid session is forfeited or carries a $40/hour reschedule fee, because {tutorFirstName} is still paid for the reserved time.
 
 Prefer not to think about invoices? [Set up autopay]({autopayLink}) and each month's confirmed invoice charges your saved card or bank account automatically.
+
+**One more thing worth knowing: you have a family portal.** [Open it any time]({portalLink}) — it's yours for the whole tutoring journey. Inside you'll find {studentFirstName}'s schedule, your receipts and invoices, session notes on what {studentFirstName} worked on, one-click rescheduling for any single session, and a calendar feed you can subscribe to. Signing in never needs a password — just this email address.
 
 {contactBlock}`,
   },

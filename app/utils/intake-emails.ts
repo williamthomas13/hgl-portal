@@ -2,7 +2,7 @@ import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT } from './email'
 import { loadContactInfo, contactBlockHtml, type ContactInfo } from './tutoring-emails'
-import { autopayToken } from './tutoring-billing'
+import { autopayToken, tutoringIcsToken } from './tutoring-billing'
 import { agreementToken } from './intake'
 import { renderRegistered } from './comms-registered'
 
@@ -183,6 +183,14 @@ export async function sendWelcomeHandoff(
   const contact = await loadContactInfo()
   const agreementsLink = `${appUrl()}/agreements/${agreementToken(family.id)}`
   const autopayLink = `${appUrl()}/tutoring/autopay/${autopayToken(family.id)}`
+  // PL-222: T8 absorbed the all-set's unique payload (calendar subscribe,
+  // schedule PDF, the reschedule-it-yourself line) — on a first-time family's
+  // activation only the extended T8 goes out; T_SCHEDULE_SET stays for
+  // repeat/sibling engagements (the callers fold on this function's return).
+  const icsToken = tutoringIcsToken(family.id)
+  const calendarLink = `webcal://${appUrl().replace(/^https?:\/\//, '')}/api/tutoring/calendar/${icsToken}`
+  const schedulePdfLink = `${appUrl()}/api/tutoring/schedule.pdf/${icsToken}`
+  const portalLink = `${appUrl()}/portal`
 
   const codeSubject = `Welcome! ${student.first_name}'s ${subjectName} tutoring with ${tutorFirst}`
   const html = wrap(
@@ -204,6 +212,13 @@ export async function sendWelcomeHandoff(
          : `<p>We'll send the session schedule shortly — each month you'll get the next
             month's plan by email to confirm or adjust.</p>`
      }
+     <p>A couple of things to make life easier:</p>
+     ${button('Add to your calendar', calendarLink)}
+     <p style="color:#64748b;font-size:13px;margin-top:-12px">Subscribe once and every session
+     (and any future change) shows up automatically.</p>
+     ${button('Download the schedule (PDF)', schedulePdfLink)}
+     <p>You can reschedule any single session yourself from your parent portal — no need to
+     email us for the small stuff.</p>
      <p><strong>One thing we need:</strong> please read and accept our scheduling &amp;
      billing policies — sessions can't start until they're signed, and they protect your
      family as much as they protect us (two minutes, one click):</p>
@@ -215,6 +230,12 @@ export async function sendWelcomeHandoff(
      <p style="color:#64748b;font-size:13px">Prefer not to think about invoices?
      <a href="${autopayLink}" style="color:#00AEEE">Set up autopay</a> and each month's
      confirmed invoice charges your saved card or bank account automatically.</p>
+     <p><strong>One more thing worth knowing: you have a family portal.</strong>
+     <a href="${portalLink}" style="color:#00AEEE">Open it any time</a> — it's yours for the
+     whole tutoring journey. Inside you'll find ${student.first_name}'s schedule, your receipts
+     and invoices, session notes on what ${student.first_name} worked on, one-click rescheduling
+     for any single session, and a calendar feed you can subscribe to. Signing in never needs a
+     password — just this email address.</p>
      ${contactBlockHtml(contact)}`,
     {
       preheader: `${student.first_name} + ${tutorFirst}: schedule, policies, and everything else.`,
@@ -229,6 +250,9 @@ export async function sendWelcomeHandoff(
       parentFirstName: family.parent_first_name ?? 'there',
       parentEmail: family.parent_email,
       studentFirstName: student.first_name,
+      // PL-222: {calendarLink} resolves from the stub's calendarPageUrl —
+      // here that's the family's live-updating tutoring calendar feed.
+      calendarPageUrl: calendarLink,
     },
     {
       tutoringSubject: subjectName,
@@ -249,6 +273,7 @@ export async function sendWelcomeHandoff(
              month's plan by email to confirm or adjust.</p>`,
       agreementsLink,
       autopayLink,
+      schedulePdfLink,
       contactBlock: contactBlockHtml(contact),
     },
     () => ({ subject: codeSubject, html })
