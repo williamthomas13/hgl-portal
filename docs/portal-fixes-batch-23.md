@@ -1,6 +1,6 @@
-# Portal fixes — batch 23 (READY — handed to Code Jul 29; 14 items, PL-220…233)
+# Portal fixes — batch 23 (✅ ALL 14 SHIPPED July 29 — PL-220…233; per-item notes below)
 
-Closed and handed off July 29 (14 items). If this doc is extended after you've pulled it, wait for an explicit re-read ask.
+Closed and handed off July 29 (14 items); **all 14 shipped + pushed the same day** — per-item ✅ notes under each heading. Gate battery green at close: `tsc` · `next build` · `smoke:public` · `regress:links` · `regress:pronouns` · `regress:cancel-class` · `regress:resume-addon` · `regress:alert-pins`. Migrations `20260821000001` (retire login marker), `20260821000002` (instructors.phone), `20260821000003` (families.address) all applied via the Management API. Templates published live: T8_WELCOME_HANDOFF v3, CS_CLASS_CONFIRMED v3 (AL_UNAGREED needed no version — its sentence lives in the composed details block). QA fixtures pristine (every round-trip restored; Willie Tomás untouched).
 
 **Suggested order:** quick tier (224 alert reword · 221 admin space sweep · 233 thread-filter UX) → 228 overflow fix + sweep → email tier: 220 + 222 as ONE new T8 version (portal block + fold the activation pair) → 225 CS trims + conditional announcement → 223 access-aware retire → **shared sidebar layout component**, then its consumers in this order: 227 Tutoring → 229 Contacts (incl. Communications/Campaigns/Agreements coming home) → 230 unified Family profile (largest item; absorbs student/parent pages) → 226 instructors consolidation (Contacts is the edit surface, Tutors panel = representation + finder) → 231 mailto/tel everywhere → 232 intake address + profile field.
 
