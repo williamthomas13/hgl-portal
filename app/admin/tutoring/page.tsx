@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { CollapsibleSection, useDeepLinkFocus } from '../ui'
+import { SidebarLayout, SidebarPanel } from '../sidebar'
 import TutorsPanel from './tutors-panel'
 import TimecardsPanel from './timecards-panel'
 import InvoicesPanel from './invoices-panel'
@@ -44,15 +45,21 @@ export default function TutoringAdmin() {
   const [wizardOpenSignal, setWizardOpenSignal] = useState(0)
   const [focusElement, setFocusElement] = useState<string | null>(null)
   const [wizardPreload, setWizardPreload] = useState<string | null>(null)
+  // PL-227: the five lower tiles are sidebar sections now — deep links must
+  // land with the RIGHT section selected (hidden panels stay mounted, but a
+  // scroll-into-view inside a hidden panel would be invisible).
+  const [activeSection, setActiveSection] = useState<string>('activity')
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
     const family = q.get('family')
     const schedule = q.get('schedule')
     if (invoice) {
+      setActiveSection('billing')
       setBillingOpenSignal((n) => n + 1)
       setFocusElement(`invoice-${invoice}`)
     } else if (family) {
+      setActiveSection('students')
       setFocusElement(`family-${family}`)
     } else if (schedule) {
       setWizardOpenSignal((n) => n + 1)
@@ -224,47 +231,78 @@ export default function TutoringAdmin() {
               <ScheduleView tutors={tutors} refreshSignal={refreshSignal} />
             </CollapsibleSection>
 
-            <CollapsibleSection
-              title="Recent parent activity"
-              subtitle="Reschedules families completed themselves in the portal — nothing happens invisibly"
-              defaultOpen
+            {/* PL-227: the five lower tiles are left-sidebar sections (one
+                visible at a time, Contacts-style); every section opens ready
+                to work. Panels stay mounted-hidden — the PL-99 lesson. */}
+            <SidebarLayout
+              entries={[
+                { id: 'activity', label: 'Recent parent activity' },
+                { id: 'students', label: 'Students' },
+                { id: 'billing', label: 'Billing' },
+                { id: 'timecards', label: 'Timecards' },
+                { id: 'tutors', label: 'Tutors' },
+              ]}
+              active={activeSection}
+              onSelect={setActiveSection}
             >
-              <ActivityFeed refreshSignal={refreshSignal} />
-            </CollapsibleSection>
+              <SidebarPanel id="activity" active={activeSection}>
+                <CollapsibleSection
+                  title="Recent parent activity"
+                  subtitle="Reschedules families completed themselves in the portal — nothing happens invisibly"
+                  defaultOpen
+                >
+                  <ActivityFeed refreshSignal={refreshSignal} />
+                </CollapsibleSection>
+              </SidebarPanel>
 
-            <CollapsibleSection
-              title="Students"
-              subtitle={`${activeStudents} student${activeStudents === 1 ? '' : 's'} with a regular schedule`}
-              defaultOpen
-            >
-              <EngagementsPanel
-                engagements={engagements}
-                nextSessions={nextSessions}
-                packageHoursUsed={packageHoursUsed}
-                addonHours={addonHours}
-                conversions={conversions}
-                onChange={refresh}
-              />
-            </CollapsibleSection>
+              <SidebarPanel id="students" active={activeSection}>
+                <CollapsibleSection
+                  title="Students"
+                  subtitle={`${activeStudents} student${activeStudents === 1 ? '' : 's'} with a regular schedule`}
+                  defaultOpen
+                >
+                  <EngagementsPanel
+                    engagements={engagements}
+                    nextSessions={nextSessions}
+                    packageHoursUsed={packageHoursUsed}
+                    addonHours={addonHours}
+                    conversions={conversions}
+                    onChange={refresh}
+                  />
+                </CollapsibleSection>
+              </SidebarPanel>
 
-            <CollapsibleSection
-              title="Billing"
-              subtitle="Monthly cycle: propose on the 20th → family confirms → invoice or autopay, due month-end"
-              openSignal={billingOpenSignal}
-            >
-              <InvoicesPanel />
-            </CollapsibleSection>
+              <SidebarPanel id="billing" active={activeSection}>
+                <CollapsibleSection
+                  title="Billing"
+                  subtitle="Monthly cycle: propose on the 20th → family confirms → invoice or autopay, due month-end"
+                  defaultOpen
+                  openSignal={billingOpenSignal}
+                >
+                  <InvoicesPanel />
+                </CollapsibleSection>
+              </SidebarPanel>
 
-            <CollapsibleSection
-              title="Timecards"
-              subtitle="Semi-monthly, hours only — approve, then export for QBO Payroll"
-            >
-              <TimecardsPanel />
-            </CollapsibleSection>
+              <SidebarPanel id="timecards" active={activeSection}>
+                <CollapsibleSection
+                  title="Timecards"
+                  subtitle="Semi-monthly, hours only — approve, then export for QBO Payroll"
+                  defaultOpen
+                >
+                  <TimecardsPanel />
+                </CollapsibleSection>
+              </SidebarPanel>
 
-            <CollapsibleSection title="Tutors" subtitle="Who tutors, their subjects, timezone, and matching notes">
-              <TutorsPanel tutors={tutors} subjects={subjects} notes={tutorNotes} onChange={refresh} />
-            </CollapsibleSection>
+              <SidebarPanel id="tutors" active={activeSection}>
+                <CollapsibleSection
+                  title="Tutors"
+                  subtitle="Who tutors, their subjects, timezone, and matching notes"
+                  defaultOpen
+                >
+                  <TutorsPanel tutors={tutors} subjects={subjects} notes={tutorNotes} onChange={refresh} />
+                </CollapsibleSection>
+              </SidebarPanel>
+            </SidebarLayout>
 
             {/* PL-33: the Google Calendar connection card moved to the main
                 admin page, grouped with QuickBooks — owner-level config, not
