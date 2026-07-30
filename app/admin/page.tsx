@@ -1474,9 +1474,11 @@ export default function AdminDashboard() {
         </div>
 
         <div className={activeSection === 'add-class' ? '' : 'hidden'}>
+        {/* PL-241 (PL-229A rule): selecting the section IS the intent. */}
         <CollapsibleSection
           title="Add a new class"
           accent="border-hgl-slate"
+          defaultOpen
           openSignal={wizardOpenSignal}
         >
           {/* Two paths (Phase 5): start blank, or copy a previous class. */}
@@ -1687,9 +1689,11 @@ export default function AdminDashboard() {
 
         {/* Out-of-flow branding edits — setup happens in the new-school wizard branch. */}
         <div className={activeSection === 'branding' ? '' : 'hidden'}>
+        {/* PL-241 (PL-229A rule): selecting the section IS the intent. */}
         <CollapsibleSection
           title="School branding &amp; collateral defaults"
           subtitle="Logo, accent color, and default language for the generated flyer + parent letter"
+          defaultOpen
         >
           <SchoolBrandingPanel schools={schools} onChange={fetchSchools} />
         </CollapsibleSection>
@@ -1699,9 +1703,11 @@ export default function AdminDashboard() {
         </div>
 
         <div className={activeSection === 'qbo' ? '' : 'hidden'}>
+        {/* PL-241 (PL-229A rule): selecting the section IS the intent. */}
         <CollapsibleSection
           title="QuickBooks"
           subtitle="Stripe payments post to QuickBooks automatically — connection, item mapping, and the sync log"
+          defaultOpen
           openSignal={qboOpenSignal}
         >
           <QboPanel status={qboStatus} onStatusChange={fetchQboStatus} />
@@ -1712,9 +1718,11 @@ export default function AdminDashboard() {
         </div>
 
         <div className={activeSection === 'gcal' ? '' : 'hidden'}>
+        {/* PL-241 (PL-229A rule): selecting the section IS the intent. */}
         <CollapsibleSection
           title="Google Calendar"
           subtitle="Service-account connection and push queue for tutoring sessions"
+          defaultOpen
         >
           <GcalPanel />
         </CollapsibleSection>
