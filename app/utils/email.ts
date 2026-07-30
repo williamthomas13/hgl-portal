@@ -359,7 +359,8 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       ${detail('Testing accommodations', ctx.accommodations)}
       ${detail('Previous test scores', ctx.previousScores)}
       ${detail('Notes', ctx.notes)}</p>
-      <p><strong>One more thing worth knowing: you have a family portal.</strong> The button below
+      <p><strong>One more thing: we set up access for your family in the Higher Ground Learning
+      portal.</strong> The button below
       opens it — and it's yours for the whole journey, not just this class. Inside you'll find
       ${ctx.studentFirstName}'s schedule, your receipts, diagnostic scores once they're in, a
       calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in
@@ -1727,13 +1728,12 @@ export function classSurveyEmail(
           ? `<p>Quick nudge about the ${ctx.className} feedback form. <strong>Already filled it
              out in class? Ignore us</strong> — those answers are anonymous, so we can't tell,
              and that's on purpose.</p>`
-          : `<p>You made it through the ${ctx.className} class — nicely done. Before it all fades:
+          : `<p>You made it through the ${ctx.className} class — nicely done! Before it all fades:
              how was it?</p>`
       }
       <p>Four questions, two minutes, no login. Your answers shape how we run the next one.</p>
       ${button('Give your feedback', opts.surveyUrl)}
-      <p style="font-size:13px;color:#64748b">Rather not be named? There's an anonymous option
-      right on the form.</p>
+      <p style="font-size:13px;color:#64748b">(You can even do it anonymously if you want.)</p>
     `,
       {
         preheader: 'Four questions, two minutes, no login.',

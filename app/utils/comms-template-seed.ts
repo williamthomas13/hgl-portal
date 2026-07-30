@@ -42,7 +42,7 @@ If you have any questions between now and then, you can respond to this email (b
 
 {registrationDetailsBlock}
 
-**One more thing worth knowing: you have a family portal.** The button below opens it — and it's yours for the whole journey, not just this class. Inside you'll find {studentFirstName}'s schedule, your receipts, diagnostic scores once they're in, a calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in never needs a password — just this email address.
+**One more thing: we set up access for your family in the Higher Ground Learning portal.** The button below opens it — and it's yours for the whole journey, not just this class. Inside you'll find {studentFirstName}'s schedule, your receipts, diagnostic scores once they're in, a calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in never needs a password — just this email address.
 
 [button:View your registration]({portalLink})`,
   },
@@ -818,7 +818,7 @@ Subscribe once and every session (and any future change) shows up automatically.
 
 [button:Download the schedule (PDF)]({schedulePdfLink})
 
-You can reschedule any single session yourself from your parent portal — no need to email us for the small stuff.
+You can reschedule any single session yourself from your parent portal — no need to email us for the small stuff if you don't want to.
 
 **One thing we need before sessions can start:** please read and accept our scheduling & billing policies — we can't start {studentFirstName}'s sessions until they're signed, and they protect your family as much as they protect us (two minutes, one click):
 
@@ -828,7 +828,7 @@ You can reschedule any single session yourself from your parent portal — no ne
 
 Prefer not to think about invoices? [Set up autopay]({autopayLink}) and each month's confirmed invoice charges your saved card or bank account automatically.
 
-**One more thing worth knowing: you have a family portal.** [Open it any time]({portalLink}) — it's yours for the whole tutoring journey. Inside you'll find {studentFirstName}'s schedule, your receipts and invoices, session notes on what {studentFirstName} worked on, one-click rescheduling for any single session, and a calendar feed you can subscribe to. Signing in never needs a password — just this email address.
+**One more thing: we set up access for your family in the [Higher Ground Learning portal]({portalLink}).** Inside you'll find {studentFirstName}'s schedule, your receipts and invoices, session notes on what {studentFirstName} worked on, one-click rescheduling for any single session, and a calendar feed you can subscribe to. Signing in never needs a password — just this email address.
 
 {contactBlock}`,
   },
@@ -914,7 +914,7 @@ A couple of things to make life easier:
 
 [button:Download the schedule (PDF)]({schedulePdfLink})
 
-You can reschedule any single session yourself from your parent portal — no need to email us for the small stuff. And if the regular time ever needs to change, just reach out and we'll take care of it.
+You can reschedule any single session yourself from your parent portal — no need to email us for the small stuff if you don't want to. And if the regular time ever needs to change, just reach out and we'll take care of it.
 
 We're looking forward to working with {studentFirstName}.
 
@@ -1090,7 +1090,7 @@ Already accepted them? Then our systems are just catching up — you can ignore 
     footer_note: null,
     body_markdown: `Hi {studentFirstName},
 
-You made it through the {className} class — nicely done. Before it all fades: how was it?
+You made it through the {className} class — nicely done! Before it all fades: how was it?
 
 {surveyReminderLine}
 
@@ -1098,7 +1098,7 @@ Four questions, two minutes, no login. Your answers shape how we run the next on
 
 [button:Give your feedback]({surveyLink})
 
-Rather not be named? There's an anonymous option right on the form.`,
+(You can even do it anonymously if you want.)`,
   },
 
   // --- Counselors & schools --------------------------------------------------

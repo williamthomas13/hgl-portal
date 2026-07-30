@@ -222,7 +222,7 @@ export async function sendWelcomeHandoff(
      (and any future change) shows up automatically.</p>
      ${button('Download the schedule (PDF)', schedulePdfLink)}
      <p>You can reschedule any single session yourself from your parent portal — no need to
-     email us for the small stuff.</p>
+     email us for the small stuff if you don't want to.</p>
      <p><strong>One thing we need:</strong> please read and accept our scheduling &amp;
      billing policies — sessions can't start until they're signed, and they protect your
      family as much as they protect us (two minutes, one click):</p>
@@ -234,9 +234,9 @@ export async function sendWelcomeHandoff(
      <p style="color:#64748b;font-size:13px">Prefer not to think about invoices?
      <a href="${autopayLink}" style="color:#00AEEE">Set up autopay</a> and each month's
      confirmed invoice charges your saved card or bank account automatically.</p>
-     <p><strong>One more thing worth knowing: you have a family portal.</strong>
-     <a href="${portalLink}" style="color:#00AEEE">Open it any time</a> — it's yours for the
-     whole tutoring journey. Inside you'll find ${student.first_name}'s schedule, your receipts
+     <p><strong>One more thing: we set up access for your family in
+     the <a href="${portalLink}" style="color:#00AEEE">Higher Ground Learning portal</a>.</strong>
+     Inside you'll find ${student.first_name}'s schedule, your receipts
      and invoices, session notes on what ${student.first_name} worked on, one-click rescheduling
      for any single session, and a calendar feed you can subscribe to. Signing in never needs a
      password — just this email address.</p>

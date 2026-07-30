@@ -343,8 +343,8 @@ export async function sendScheduleSetEmail(
          (and any future change) shows up automatically.</p>
          ${button('Download the schedule (PDF)', pdfLink)}
          <p>You can reschedule any single session yourself from your parent portal — no need to
-         email us for the small stuff. And if the regular time ever needs to change, just reach
-         out and we'll take care of it.</p>
+         email us for the small stuff if you don't want to. And if the regular time ever needs to
+         change, just reach out and we'll take care of it.</p>
          <p>We're looking forward to working with ${e.studentFirst}.</p>
          ${contactBlockHtml(contact)}`,
         {
