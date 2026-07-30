@@ -1072,8 +1072,11 @@ export const SAMPLE_EXTRA: ExtraVars = {
   autopayLink: 'https://hgl-portal.vercel.app/test-link',
   tutorContactLine:
     '<p><strong>Your tutor: Billy Thomas</strong> — <a href="mailto:billy@highergroundlearning.com" style="color:#00AEEE">billy@highergroundlearning.com</a></p>',
+  // PL-234: the sample shows the COMMON case (a real link) — the "tutor
+  // sends the meeting link" fallback only renders when no link exists
+  // anywhere, so test renders must not imply it's the default.
   locationBlock:
-    '<p>Sessions happen online — Billy sends the meeting link before each session.</p>',
+    '<p><strong>Where:</strong> sessions are online — join here each time: <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">https://hgl-portal.vercel.app/test-link</a></p>',
   schedulePdfLink: 'https://hgl-portal.vercel.app/test-link',
   contactBlock:
     '<p style="margin-top:24px;padding:12px 16px;background:#f1f5f9;border-radius:8px;color:#334155;font-size:14px">Questions, or want to handle this by hand? Email <a href="mailto:info@highergroundlearning.com" style="color:#00AEEE">info@highergroundlearning.com</a> or give us a call at <strong>+1 (505) 555-0100</strong> — replying to this email works too, and we\'ll take care of it for you.</p>',

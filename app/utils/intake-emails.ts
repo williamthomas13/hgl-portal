@@ -170,16 +170,20 @@ export async function sendWelcomeHandoff(
     return `${day} · ${t1}–${t2}`
   })
 
+  const tutorFirst = (tutor.name ?? 'your tutor').split(' ')[0]
   const location = eng.location ?? tutor.default_meeting_link ?? null
   const isLink = location ? /^https?:\/\//i.test(location) : false
+  // PL-234: the "tutor sends the meeting link" line renders ONLY when nothing
+  // anywhere names a location (engagement empty AND tutor default empty — the
+  // same test as PL-211's no-location walk-past). Any known link or place
+  // renders as itself.
   const locationHtml = location
     ? isLink
       ? `<p><strong>Where:</strong> sessions are online — join here each time:
          <a href="${location}" style="color:#00AEEE">${location}</a></p>`
       : `<p><strong>Where:</strong> ${location}</p>`
-    : ''
-
-  const tutorFirst = (tutor.name ?? 'your tutor').split(' ')[0]
+    : `<p><strong>Where:</strong> sessions happen online — ${tutorFirst} sends the meeting
+       link before each session.</p>`
   const contact = await loadContactInfo()
   const agreementsLink = `${appUrl()}/agreements/${agreementToken(family.id)}`
   const autopayLink = `${appUrl()}/tutoring/autopay/${autopayToken(family.id)}`
