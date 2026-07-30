@@ -36,13 +36,59 @@ export default function TutorsPanel({
     })
   }, [])
 
-  async function toggleActive(t: Tutor) {
-    const { error } = await supabase
-      .from('instructors')
-      .update({ tutoring_active: !t.tutoring_active })
-      .eq('id', t.id)
-    if (error) setMessage('Error: ' + error.message)
-    else onChange()
+  // PL-223: retire is access-aware — the server checks whether the person
+  // still teaches classes, and the confirm says plainly what will happen to
+  // their login BEFORE the click. Un-retire restores only what retire took.
+  const [armedRetire, setArmedRetire] = useState<null | {
+    id: string
+    tutorOnly: boolean
+    active: boolean
+    teachingClasses: string[]
+  }>(null)
+  const [busyRetire, setBusyRetire] = useState(false)
+
+  async function armRetire(t: Tutor) {
+    setBusyRetire(true)
+    setMessage('')
+    try {
+      const res = await fetch(`/api/admin/tutoring/retire?instructor=${t.id}`)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) setMessage('Error: ' + (json.error ?? res.status))
+      else
+        setArmedRetire({
+          id: t.id,
+          tutorOnly: json.tutorOnly,
+          active: json.active,
+          teachingClasses: json.teachingClasses ?? [],
+        })
+    } catch {
+      setMessage("Error: couldn't reach the server.")
+    } finally {
+      setBusyRetire(false)
+    }
+  }
+
+  async function retireCall(t: Tutor, action: 'retire' | 'unretire') {
+    setBusyRetire(true)
+    setMessage('')
+    try {
+      const res = await fetch('/api/admin/tutoring/retire', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructor_id: t.id, action }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) setMessage('Error: ' + (json.error ?? res.status))
+      else {
+        setMessage(json.message ?? 'Done.')
+        setArmedRetire(null)
+        onChange()
+      }
+    } catch {
+      setMessage("Error: couldn't reach the server.")
+    } finally {
+      setBusyRetire(false)
+    }
   }
 
   const active = tutors.filter((t) => t.tutoring_active)
@@ -138,16 +184,47 @@ export default function TutorsPanel({
                 <td className="px-3 py-2 text-gray-600 max-w-56">
                   <span className="line-clamp-2">{notes[t.id] || <span className="italic text-gray-400">—</span>}</span>
                 </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
+                {/* PL-228: no nowrap — the armed retire banner wraps in place. */}
+                <td className="px-3 py-2 text-right">
                   <button onClick={() => setEditing(t)} className="text-xs text-hgl-blue underline mr-3">
                     edit
                   </button>
-                  {view === 'active' ? (
-                    <button onClick={() => toggleActive(t)} className="text-xs text-gray-500 underline">
+                  {armedRetire?.id === t.id ? (
+                    <span className="inline-flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-1 max-w-md whitespace-normal text-left align-top text-xs">
+                      <span className="text-amber-900">
+                        {armedRetire.tutorOnly
+                          ? armedRetire.active
+                            ? `Retire ${t.name ?? 'this tutor'}? They have no other active role, so this also ends their portal login. History stays; reactivate any time from the Former tab.`
+                            : `Retire ${t.name ?? 'this tutor'}? Their portal login is already off; this ends 1-on-1 tutoring.`
+                          : `Retire ${t.name ?? 'this tutor'} from 1-on-1 tutoring? Their login stays because they still teach ${armedRetire.teachingClasses.join(', ')} — deactivate them on the Instructors page if they're leaving entirely.`}
+                      </span>
+                      <button
+                        disabled={busyRetire}
+                        onClick={() => retireCall(t, 'retire')}
+                        className="text-red-700 font-semibold underline"
+                      >
+                        {armedRetire.tutorOnly && armedRetire.active
+                          ? 'Retire & end their login'
+                          : 'Retire from tutoring'}
+                      </button>
+                      <button onClick={() => setArmedRetire(null)} className="text-gray-500 underline">
+                        cancel
+                      </button>
+                    </span>
+                  ) : view === 'active' ? (
+                    <button
+                      disabled={busyRetire}
+                      onClick={() => armRetire(t)}
+                      className="text-xs text-gray-500 underline disabled:opacity-50"
+                    >
                       retire
                     </button>
                   ) : (
-                    <button onClick={() => toggleActive(t)} className="text-xs text-green-700 underline font-semibold">
+                    <button
+                      disabled={busyRetire}
+                      onClick={() => retireCall(t, 'unretire')}
+                      className="text-xs text-green-700 underline font-semibold disabled:opacity-50"
+                    >
                       reactivate
                     </button>
                   )}
@@ -171,7 +248,15 @@ export default function TutorsPanel({
         />
       )}
 
-      {message && <div className="p-3 rounded bg-red-100 text-red-700 font-semibold text-center">{message}</div>}
+      {message && (
+        <div
+          className={`p-3 rounded font-semibold text-center ${
+            message.startsWith('Error') ? 'bg-red-100 text-red-700' : 'bg-emerald-50 text-emerald-800'
+          }`}
+        >
+          {message}
+        </div>
+      )}
     </div>
   )
 }
