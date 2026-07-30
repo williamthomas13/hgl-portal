@@ -2,16 +2,19 @@
 
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
+import InstructorEditor from './instructor-editor'
 
-// Instructor management (PHASE4_SPEC §5/§10). The key field is
-// default_meeting_link: creating an ONLINE class with a blank location
-// auto-fills it from the instructor's default, and the instructor portal
-// shows it as the effective location. Admin can still override per class.
+// Instructor management (PHASE4_SPEC §5/§10). PL-226: THIS is the place to
+// add and edit instructors (instructors = tutors — one table, one profile).
+// The edit button opens the full profile editor (identity + phone + the
+// whole tutoring profile); the 1-on-1→Tutors panel is a read-only
+// representation + finder that points here.
 
 export type Instructor = {
   id: string
   email: string
   name: string | null
+  phone: string | null
   default_meeting_link: string | null
   comms_enabled: boolean
   /** PL-176: false = hidden from active pickers/rosters; history intact. */
@@ -26,50 +29,13 @@ export default function InstructorsPanel({
   onChange: () => void
 }) {
   const [message, setMessage] = useState('')
-  const [loading, setLoading] = useState(false)
   // PL-176: Active / Inactive tabs (active default).
   const [view, setView] = useState<'active' | 'inactive'>('active')
+  // PL-226: the full-profile editor — 'new' opens create mode.
+  const [editing, setEditing] = useState<string | 'new' | null>(null)
   const activeRows = instructors.filter((i) => i.active)
   const inactiveRows = instructors.filter((i) => !i.active)
   const visible = view === 'active' ? activeRows : inactiveRows
-
-  async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setLoading(true)
-    setMessage('')
-    const fd = new FormData(e.currentTarget)
-    const { error } = await supabase.from('instructors').insert([
-      {
-        email: (fd.get('email') as string).trim().toLowerCase(),
-        name: (fd.get('name') as string).trim() || null,
-        default_meeting_link: (fd.get('default_meeting_link') as string).trim() || null,
-      },
-    ])
-    if (error) {
-      setMessage(
-        'Error: ' + (error.code === '23505' ? 'that email is already an instructor.' : error.message)
-      )
-    } else {
-      setMessage('Instructor added.')
-      ;(e.target as HTMLFormElement).reset()
-      onChange()
-    }
-    setLoading(false)
-  }
-
-  async function handleEditLink(i: Instructor) {
-    const next = prompt(
-      `Default meeting link for ${i.name ?? i.email} (used for online classes with no per-class location):`,
-      i.default_meeting_link ?? ''
-    )
-    if (next == null) return
-    const { error } = await supabase
-      .from('instructors')
-      .update({ default_meeting_link: next.trim() || null })
-      .eq('id', i.id)
-    if (error) alert('Error updating link: ' + error.message)
-    else onChange()
-  }
 
   // PL-78: the explicit opt-in switch — flipping ON backfills the welcome
   // email + calendar events for current assignments (server-side, idempotent).
@@ -161,7 +127,7 @@ export default function InstructorsPanel({
         <table className="min-w-full divide-y divide-gray-200 mb-6">
           <thead className="bg-gray-100">
             <tr>
-              {['Name', 'Email', 'Default meeting link', 'Class emails', ''].map((h) => (
+              {['Name', 'Email', 'Phone', 'Default meeting link', 'Class emails', ''].map((h) => (
                 <th key={h} className="px-4 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -172,17 +138,24 @@ export default function InstructorsPanel({
             {visible.map((i) => (
               <tr key={i.id} className="hover:bg-gray-50 transition text-sm">
                 <td className="px-4 py-2 font-semibold text-hgl-slate">{i.name ?? '—'}</td>
-                <td className="px-4 py-2 text-hgl-blue">{i.email}</td>
+                <td className="px-4 py-2">
+                  <a href={`mailto:${i.email}`} className="text-hgl-blue hover:underline">
+                    {i.email}
+                  </a>
+                </td>
+                <td className="px-4 py-2 text-gray-600">
+                  {i.phone ? (
+                    <a href={`tel:${i.phone.replace(/[^\d+]/g, '')}`} className="text-hgl-blue hover:underline">
+                      {i.phone}
+                    </a>
+                  ) : (
+                    <span className="italic text-gray-400">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-2 text-gray-600">
                   <span className="truncate inline-block max-w-72 align-bottom">
                     {i.default_meeting_link ?? <span className="italic text-gray-400">none</span>}
                   </span>
-                  <button
-                    onClick={() => handleEditLink(i)}
-                    className="ml-2 text-xs text-gray-500 underline hover:text-hgl-blue"
-                  >
-                    edit
-                  </button>
                 </td>
                 <td className="px-4 py-2">
                   <button
@@ -196,6 +169,14 @@ export default function InstructorsPanel({
                   </button>
                 </td>
                 <td className="px-4 py-2 text-right">
+                  {/* PL-226: the full profile (identity + tutoring) edits here. */}
+                  <button
+                    onClick={() => setEditing(i.id)}
+                    className="text-xs text-hgl-blue underline mr-3"
+                    title="Name, email, phone, subjects, timezone, offer windows, pay — the whole profile"
+                  >
+                    edit profile
+                  </button>
                   {i.active ? (
                     <button
                       onClick={() => handleMakeInactive(i)}
@@ -216,27 +197,27 @@ export default function InstructorsPanel({
         </table>
       )}
 
-      <form onSubmit={handleAdd} className="grid grid-cols-4 gap-2 items-end text-sm">
-        <div>
-          <label className="block text-xs text-gray-600">Name</label>
-          <input type="text" name="name" placeholder="e.g. Sarah" className="mt-1 w-full border rounded p-2" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-600">Email</label>
-          <input type="email" name="email" required className="mt-1 w-full border rounded p-2" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-600">Default meeting link</label>
-          <input type="url" name="default_meeting_link" placeholder="https://zoom.us/j/…" className="mt-1 w-full border rounded p-2" />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-hgl-slate text-white py-2 px-3 rounded hover:opacity-90 disabled:opacity-60"
-        >
-          Add instructor
-        </button>
-      </form>
+      {/* PL-226: adding opens the SAME full editor — every field available
+          from the first save, no prompt() hacks anywhere. */}
+      <button
+        onClick={() => setEditing('new')}
+        className="bg-hgl-slate text-white py-2 px-4 rounded text-sm font-semibold hover:opacity-90"
+      >
+        Add an instructor
+      </button>
+
+      {editing && (
+        <InstructorEditor
+          instructorId={editing === 'new' ? null : editing}
+          onClose={(changed) => {
+            setEditing(null)
+            if (changed) {
+              setMessage('Saved.')
+              onChange()
+            }
+          }}
+        />
+      )}
 
       {message && (
         <div className={`mt-4 p-3 rounded text-center text-sm font-semibold ${

@@ -1,0 +1,479 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { supabase } from '../utils/supabase'
+import { TimezoneSelect } from './ui'
+import { WEEKDAYS } from './tutoring/types'
+import type { OfferWindowUI } from './tutoring/types'
+
+// PL-226: THE instructor add/edit surface (instructors = tutors — one table,
+// one profile). Lives on Contacts→Instructors; the 1-on-1→Tutors panel is a
+// read-only representation + finder that points here. Grown from the old
+// tutors-panel TutorEditor (that editor moved here, plus identity fields:
+// name, email, phone, and a plain-English email-change warning — email is
+// the login identity, the instructor-RLS key, and, when no calendar id is
+// set, the Google-calendar push target).
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+type SubjectRow = { id: string; name: string; category: string }
+
+export default function InstructorEditor({
+  instructorId,
+  onClose,
+}: {
+  /** null = create a new instructor. */
+  instructorId: string | null
+  onClose: (changed: boolean) => void
+}) {
+  const [loaded, setLoaded] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [subjects, setSubjects] = useState<SubjectRow[]>([])
+  const [originalEmail, setOriginalEmail] = useState('')
+
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [picked, setPicked] = useState<string[]>([])
+  const [pickedPrep, setPickedPrep] = useState<string[]>([])
+  const [timezone, setTimezone] = useState('America/Denver')
+  const [calendarId, setCalendarId] = useState('')
+  const [location, setLocation] = useState('')
+  const [windows, setWindows] = useState<OfferWindowUI[]>([])
+  const [payTitles, setPayTitles] = useState<string[]>([])
+  const [newTitle, setNewTitle] = useState('')
+  const [payType, setPayType] = useState<'hourly' | 'salaried'>('hourly')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    ;(async () => {
+      const [{ data: subj }, { data: auth }] = await Promise.all([
+        supabase.from('subjects').select('id, name, category').order('category').order('name'),
+        supabase.auth.getUser(),
+      ])
+      setSubjects((subj as SubjectRow[]) ?? [])
+      if (auth.user) {
+        const { data: p } = await supabase.from('profiles').select('role').eq('id', auth.user.id).single()
+        setIsAdmin(p?.role === 'admin')
+      }
+      if (instructorId) {
+        const [{ data: row }, { data: noteRow }] = await Promise.all([
+          supabase
+            .from('instructors')
+            .select(
+              `id, email, name, phone, subjects, subjects_with_prep, timezone, google_calendar_id,
+               default_meeting_link, offer_windows, pay_type_titles, pay_type`
+            )
+            .eq('id', instructorId)
+            .maybeSingle(),
+          supabase.from('tutor_notes').select('notes').eq('instructor_id', instructorId).maybeSingle(),
+        ])
+        if (row) {
+          setName(row.name ?? '')
+          setEmail(row.email ?? '')
+          setOriginalEmail(row.email ?? '')
+          setPhone(row.phone ?? '')
+          setPicked((row.subjects as string[]) ?? [])
+          setPickedPrep((row.subjects_with_prep as string[]) ?? [])
+          setTimezone(row.timezone ?? 'America/Denver')
+          setCalendarId(row.google_calendar_id ?? '')
+          setLocation(row.default_meeting_link ?? '')
+          setWindows((row.offer_windows as OfferWindowUI[]) ?? [])
+          setPayTitles((row.pay_type_titles as string[]) ?? [])
+          setPayType((row.pay_type as any) ?? 'hourly')
+        }
+        setNotes(noteRow?.notes ?? '')
+      }
+      setLoaded(true)
+    })()
+  }, [instructorId])
+
+  const emailChanged = instructorId != null && email.trim().toLowerCase() !== originalEmail.toLowerCase()
+
+  async function save() {
+    const cleanEmail = email.trim().toLowerCase()
+    if (!cleanEmail) {
+      setError('An email address is required — it is how they sign in.')
+      return
+    }
+    if (windows.some((w) => !w.start_time || !w.end_time || w.end_time <= w.start_time)) {
+      setError('Each offer window needs a start time before its end time.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    const fields = {
+      email: cleanEmail,
+      name: name.trim() || null,
+      phone: phone.trim() || null,
+      subjects: picked,
+      subjects_with_prep: pickedPrep,
+      timezone: timezone || 'America/Denver',
+      google_calendar_id: calendarId.trim() || null,
+      default_meeting_link: location.trim() || null,
+      offer_windows: windows,
+      // Managers must not touch titles or the pay-type flag (the DB trigger
+      // refuses the whole update) — only include when the caller may edit.
+      ...(isAdmin ? { pay_type_titles: payTitles, pay_type: payType } : {}),
+    }
+    let id = instructorId
+    if (id) {
+      const { error: e1 } = await supabase.from('instructors').update(fields).eq('id', id)
+      if (e1) {
+        setError('Error: ' + (e1.code === '23505' ? 'that email is already an instructor.' : e1.message))
+        setSaving(false)
+        return
+      }
+    } else {
+      const { data: inserted, error: e1 } = await supabase
+        .from('instructors')
+        .insert([fields])
+        .select('id')
+        .single()
+      if (e1 || !inserted) {
+        setError('Error: ' + (e1?.code === '23505' ? 'that email is already an instructor.' : e1?.message))
+        setSaving(false)
+        return
+      }
+      id = inserted.id
+    }
+    const { error: e2 } = await supabase
+      .from('tutor_notes')
+      .upsert({ instructor_id: id, notes: notes.trim() || null, updated_at: new Date().toISOString() })
+    if (e2) {
+      setError('Error: ' + e2.message)
+      setSaving(false)
+      return
+    }
+    onClose(true)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <h3 className="text-lg font-bold text-hgl-slate">
+          {instructorId ? `${name || email || 'Instructor'} — profile` : 'Add an instructor'}
+        </h3>
+        {!loaded ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-600 font-semibold mb-1">Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 font-semibold mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+1 (505) 555-0100"
+                  className="w-full border border-gray-300 rounded-md p-2"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Email — how they sign in
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full border border-gray-300 rounded-md p-2"
+              />
+              {emailChanged && (
+                <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+                  <p className="font-semibold">Changing the email moves their whole identity:</p>
+                  <p>
+                    · They sign in with the NEW address from now on — the old address can&apos;t
+                    open their portal anymore (any session it has loses access on its next page
+                    load).
+                  </p>
+                  <p>
+                    · Their own portal views (sessions, timecards, notes) follow the new address
+                    automatically.
+                  </p>
+                  {!calendarId.trim() && (
+                    <p>
+                      · No Google calendar id is set, so sessions push to the calendar of the
+                      email address itself — future pushes go to the NEW address&apos;s calendar.
+                      Set an explicit calendar id below if their calendar should stay put.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Subjects{' '}
+                <span className="font-normal text-gray-400">
+                  — click to cycle: <span className="font-semibold text-hgl-slate">ready</span> →{' '}
+                  <span className="font-semibold text-amber-700">with prep, confirm first</span>{' '}→ off.
+                  Ready subjects auto-match in the wizard; with-prep ones never do.
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {subjects.map((s) => {
+                  const state = picked.includes(s.name) ? 'ready' : pickedPrep.includes(s.name) ? 'prep' : 'off'
+                  const cycle = () => {
+                    if (state === 'ready') {
+                      setPicked((p) => p.filter((x) => x !== s.name))
+                      setPickedPrep((p) => [...p, s.name])
+                    } else if (state === 'prep') {
+                      setPickedPrep((p) => p.filter((x) => x !== s.name))
+                    } else {
+                      setPicked((p) => [...p, s.name])
+                    }
+                  }
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={cycle}
+                      className={`px-2 py-1 rounded border cursor-pointer text-xs ${
+                        state === 'ready'
+                          ? 'bg-hgl-slate text-white border-hgl-slate'
+                          : state === 'prep'
+                            ? 'bg-amber-50 text-amber-800 border-amber-400'
+                            : 'bg-white text-gray-600 border-gray-300'
+                      }`}
+                      title={
+                        state === 'ready'
+                          ? 'Ready — auto-matchable'
+                          : state === 'prep'
+                            ? 'Capable with prep — confirm with the tutor first, never auto-suggested'
+                            : 'Not offered'
+                      }
+                    >
+                      {s.name}
+                      {state === 'prep' ? ' *' : ''}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">Timezone</label>
+              <TimezoneSelect value={timezone} onChange={setTimezone} />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Google calendar id (blank = their primary calendar, i.e. their email)
+              </label>
+              <input
+                type="text"
+                value={calendarId}
+                onChange={(e) => setCalendarId(e.target.value)}
+                placeholder={email || 'their email'}
+                className="w-full border border-gray-300 rounded-md p-2"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Offer windows — when the portal may offer this tutor&apos;s open times to families
+                rescheduling a session themselves (their local time). Leave empty to default to their
+                existing session hours ±2 hours. Families only ever see the 2–3 offered times, never
+                the calendar.
+              </label>
+              <div className="space-y-1.5">
+                {windows.map((w, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <select
+                      value={w.weekday}
+                      onChange={(e) =>
+                        setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, weekday: Number(e.target.value) } : x)))
+                      }
+                      className="border border-gray-300 rounded p-1.5 text-sm"
+                    >
+                      {WEEKDAYS.map((d, di) => (
+                        <option key={d} value={di + 1}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="time"
+                      step={300}
+                      value={w.start_time}
+                      onChange={(e) =>
+                        setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, start_time: e.target.value } : x)))
+                      }
+                      className="border border-gray-300 rounded p-1.5 text-sm"
+                    />
+                    <span className="text-gray-400 text-sm">to</span>
+                    <input
+                      type="time"
+                      step={300}
+                      value={w.end_time}
+                      onChange={(e) =>
+                        setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, end_time: e.target.value } : x)))
+                      }
+                      className="border border-gray-300 rounded p-1.5 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setWindows((ws) => ws.filter((_, j) => j !== i))}
+                      className="text-xs text-gray-500 underline"
+                    >
+                      remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWindows((ws) => [...ws, { weekday: 1, start_time: '15:00', end_time: '19:00' }])
+                  }
+                  className="text-xs text-hgl-blue underline"
+                >
+                  + add window
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Default Zoom link (one field everywhere — prefills online schedules and online classes)
+              </label>
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="https://meet.google.com/… or the SLC office"
+                className="w-full border border-gray-300 rounded-md p-2"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                QBO pay-type titles — the named additional pay types this tutor has in QBO Payroll
+                (e.g. Class/Workshop, chem prep). Titles only: rates and dollar amounts live in QBO
+                and never enter the portal. Base pay (1-on-1 / Test Prep) is implicit — don&apos;t list it.
+              </label>
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {payTitles.map((t) => (
+                  <span
+                    key={t}
+                    className="inline-flex items-center gap-1 bg-gray-100 border border-gray-300 rounded px-2 py-0.5 text-xs"
+                  >
+                    {t}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setPayTitles((p) => p.filter((x) => x !== t))}
+                        className="text-gray-400 hover:text-red-600"
+                        title="Remove this title"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+                {payTitles.length === 0 && !isAdmin && (
+                  <span className="text-xs text-gray-400 italic">none listed</span>
+                )}
+                {isAdmin ? (
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        const t = newTitle.trim()
+                        if (t && !payTitles.includes(t)) setPayTitles((p) => [...p, t])
+                        setNewTitle('')
+                      }
+                    }}
+                    placeholder="Add a title, press Enter"
+                    className="border border-gray-300 rounded p-1.5 text-xs w-44"
+                  />
+                ) : (
+                  <span className="text-xs text-gray-400">— edited by the admin only</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Pay type — salaried tutors&apos; sessions and timecards are tracked exactly the same,
+                but their timecards are labeled &ldquo;not paid hourly&rdquo; and the payroll export
+                separates them. Salary amounts never enter the portal.
+              </label>
+              {isAdmin ? (
+                <div className="flex gap-2">
+                  {(['hourly', 'salaried'] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setPayType(v)}
+                      className={`px-3 py-1.5 rounded border text-xs font-semibold ${
+                        payType === v
+                          ? 'bg-hgl-slate text-white border-hgl-slate'
+                          : 'bg-white text-gray-600 border-gray-300'
+                      }`}
+                    >
+                      {v === 'hourly' ? 'Paid hourly' : 'Salaried — hours tracked for records'}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  {payType === 'salaried'
+                    ? 'Salaried — hours tracked for records; not paid hourly'
+                    : 'Paid hourly'}{' '}
+                  <span className="text-gray-400">— changed by the admin only</span>
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Matching notes (staff-only — personality, style, who they click with; tutors never see this)
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                className="w-full border border-gray-300 rounded-md p-2"
+              />
+            </div>
+
+            {error && <div className="p-2 rounded bg-red-100 text-red-700 text-sm font-semibold">{error}</div>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => onClose(false)}
+                className="py-2 px-4 rounded border border-gray-300 text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="bg-hgl-slate text-white py-2 px-4 rounded hover:opacity-90 disabled:opacity-60"
+              >
+                {emailChanged ? 'Save — email changes their login' : 'Save'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

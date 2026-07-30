@@ -1,16 +1,29 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { supabase } from '../../utils/supabase'
-import { TimezoneSelect } from '../ui'
+import { useState } from 'react'
 import { WEEKDAYS } from './types'
-import type { OfferWindowUI, Subject, Tutor } from './types'
+import type { Subject, Tutor } from './types'
 
-// Tutor management (Phase 7a §2/§3): tutors ARE instructors — this panel
-// flips the tutoring flag on an instructors row and fills in the tutoring
-// profile (subjects, timezone, calendar id, default location). Matching
+// PL-226: tutors ARE instructors, and this panel is now a read-only
+// REPRESENTATION of that shared record + a matching FINDER (subject +
+// timezone + name). Identity and profile editing moved to
+// Contacts→Instructors (the one edit surface); the tutoring-specific action
+// that stays here is onboard/retire (PL-223's access-aware flow). Matching
 // notes live in tutor_notes (staff-only table) so a tutor reading their own
 // instructors row never sees them.
+
+// PL-226 C: friendly timezone regions for the finder.
+function tzRegion(tz: string): 'americas' | 'emea' | 'apac' | 'other' {
+  if (/^America\//.test(tz)) return 'americas'
+  if (/^(Europe|Africa|Atlantic)\//.test(tz) || tz === 'UTC') return 'emea'
+  if (/^(Asia|Australia|Pacific|Indian)\//.test(tz)) return 'apac'
+  return 'other'
+}
+const TZ_REGION_LABELS: Record<string, string> = {
+  americas: 'Americas',
+  emea: 'Europe & Africa',
+  apac: 'Asia-Pacific',
+}
 
 export default function TutorsPanel({
   tutors,
@@ -23,18 +36,11 @@ export default function TutorsPanel({
   notes: Record<string, string>
   onChange: () => void
 }) {
-  const [editing, setEditing] = useState<Tutor | null>(null)
   const [message, setMessage] = useState('')
-  // PL-104/PL-102: pay-type titles are edited by admins only — managers see
-  // them read-only (a DB trigger enforces this server-side regardless).
-  const [isAdmin, setIsAdmin] = useState(false)
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return
-      const { data: p } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
-      setIsAdmin(p?.role === 'admin')
-    })
-  }, [])
+  // PL-226 C: the finder — filters combine (subject AND timezone AND name).
+  const [search, setSearch] = useState('')
+  const [subjectFilter, setSubjectFilter] = useState('')
+  const [tzFilter, setTzFilter] = useState('')
 
   // PL-223: retire is access-aware — the server checks whether the person
   // still teaches classes, and the confirm says plainly what will happen to
@@ -97,7 +103,20 @@ export default function TutorsPanel({
   // session/timecard history must keep their record). "Former" also holds
   // seeded tutors Kelsie hasn't onboarded yet; reactivate is the same flip.
   const [view, setView] = useState<'active' | 'former'>('active')
-  const shown = view === 'active' ? active : inactive
+  const matchesFilters = (t: Tutor) => {
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      if (!`${t.name ?? ''} ${t.email}`.toLowerCase().includes(q)) return false
+    }
+    if (subjectFilter) {
+      const ready = t.subjects.includes(subjectFilter)
+      const prep = (t.subjects_with_prep ?? []).includes(subjectFilter)
+      if (!ready && !prep) return false
+    }
+    if (tzFilter && tzRegion(t.timezone) !== tzFilter) return false
+    return true
+  }
+  const shown = (view === 'active' ? active : inactive).filter(matchesFilters)
 
   return (
     <div className="space-y-4 text-sm">
@@ -107,6 +126,61 @@ export default function TutorsPanel({
         keep blocking their availability in Google Calendar as always. Retiring a tutor keeps
         their whole history — reactivate any time from the Former tab.
       </p>
+      {/* PL-226: identity + profile editing consolidated in one place. */}
+      <p className="text-xs text-gray-600 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+        To add a tutor or edit their profile (name, email, phone, subjects, timezone, offer
+        windows, pay),{' '}
+        <a href="/admin?tab=contacts&section=instructors" className="text-hgl-blue underline font-semibold">
+          go to Contacts → Instructors
+        </a>
+        . This panel shows the same records and handles onboarding/retiring for 1-on-1 work.
+      </p>
+
+      {/* PL-226 C: the matching finder — "who can tutor Algebra", "who works
+          in a European timezone". Filters combine. */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name…"
+          className="border border-gray-300 rounded p-1.5 text-sm w-48"
+        />
+        <select
+          value={subjectFilter}
+          onChange={(e) => setSubjectFilter(e.target.value)}
+          className="border border-gray-300 rounded p-1.5 text-sm"
+        >
+          <option value="">any subject</option>
+          {subjects.map((s) => (
+            <option key={s.id} value={s.name}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={tzFilter}
+          onChange={(e) => setTzFilter(e.target.value)}
+          className="border border-gray-300 rounded p-1.5 text-sm"
+        >
+          <option value="">any timezone</option>
+          <option value="americas">Americas</option>
+          <option value="emea">Europe &amp; Africa</option>
+          <option value="apac">Asia-Pacific</option>
+        </select>
+        {(search || subjectFilter || tzFilter) && (
+          <button
+            onClick={() => {
+              setSearch('')
+              setSubjectFilter('')
+              setTzFilter('')
+            }}
+            className="text-xs text-hgl-blue underline"
+          >
+            clear filters
+          </button>
+        )}
+      </div>
 
       <div className="flex rounded-md overflow-hidden border border-gray-300 w-fit">
         {(['active', 'former'] as const).map((v) => (
@@ -124,7 +198,11 @@ export default function TutorsPanel({
 
       {shown.length === 0 && (
         <p className="text-gray-500 italic">
-          {view === 'active' ? 'No active tutors yet — reactivate one from the other tab.' : 'Nobody here.'}
+          {search || subjectFilter || tzFilter
+            ? 'Nobody matches these filters — try clearing one.'
+            : view === 'active'
+              ? 'No active tutors yet — reactivate one from the other tab.'
+              : 'Nobody here.'}
         </p>
       )}
       {shown.length > 0 && (
@@ -151,8 +229,23 @@ export default function TutorsPanel({
                         Salaried
                       </span>
                     )}
+                    {/* PL-226 B: BOTH flags surface coherently — a person who
+                        is instructor-inactive can never silently read as
+                        "Active" here. */}
+                    {!t.active && (
+                      <span
+                        className="ml-2 text-[10px] font-bold uppercase bg-red-100 text-red-700 rounded-full px-2 py-0.5"
+                        title="Deactivated on the Instructors page — they can't sign in regardless of tutoring status"
+                      >
+                        inactive — can&apos;t sign in
+                      </span>
+                    )}
                   </div>
-                  <div className="text-xs text-hgl-blue">{t.email}</div>
+                  <div className="text-xs">
+                    <a href={`mailto:${t.email}`} className="text-hgl-blue hover:underline">
+                      {t.email}
+                    </a>
+                  </div>
                   {t.google_calendar_id && (
                     <div className="text-xs text-gray-400">cal: {t.google_calendar_id}</div>
                   )}
@@ -186,9 +279,14 @@ export default function TutorsPanel({
                 </td>
                 {/* PL-228: no nowrap — the armed retire banner wraps in place. */}
                 <td className="px-3 py-2 text-right">
-                  <button onClick={() => setEditing(t)} className="text-xs text-hgl-blue underline mr-3">
-                    edit
-                  </button>
+                  {/* PL-226: profile edits live on Contacts→Instructors. */}
+                  <a
+                    href="/admin?tab=contacts&section=instructors"
+                    className="text-xs text-gray-500 underline mr-3"
+                    title="Name, email, phone, subjects, and the rest of the profile edit on Contacts → Instructors"
+                  >
+                    edit in Contacts
+                  </a>
                   {armedRetire?.id === t.id ? (
                     <span className="inline-flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-1 max-w-md whitespace-normal text-left align-top text-xs">
                       <span className="text-amber-900">
@@ -235,18 +333,6 @@ export default function TutorsPanel({
         </table>
       )}
 
-      {editing && (
-        <TutorEditor
-          tutor={editing}
-          subjects={subjects}
-          canEditTitles={isAdmin}
-          initialNotes={notes[editing.id] ?? ''}
-          onClose={(changed) => {
-            setEditing(null)
-            if (changed) onChange()
-          }}
-        />
-      )}
 
       {message && (
         <div
@@ -257,326 +343,6 @@ export default function TutorsPanel({
           {message}
         </div>
       )}
-    </div>
-  )
-}
-
-function TutorEditor({
-  tutor,
-  subjects,
-  canEditTitles,
-  initialNotes,
-  onClose,
-}: {
-  tutor: Tutor
-  subjects: Subject[]
-  /** PL-104: admin-only — managers get the read-only rendering. */
-  canEditTitles: boolean
-  initialNotes: string
-  onClose: (changed: boolean) => void
-}) {
-  const [picked, setPicked] = useState<string[]>(tutor.subjects)
-  const [pickedPrep, setPickedPrep] = useState<string[]>(tutor.subjects_with_prep ?? [])
-  const [timezone, setTimezone] = useState(tutor.timezone)
-  const [calendarId, setCalendarId] = useState(tutor.google_calendar_id ?? '')
-  const [location, setLocation] = useState(tutor.default_meeting_link ?? '')
-  const [windows, setWindows] = useState<OfferWindowUI[]>(tutor.offer_windows ?? [])
-  const [payTitles, setPayTitles] = useState<string[]>(tutor.pay_type_titles ?? [])
-  const [newTitle, setNewTitle] = useState('')
-  // PL-212: hourly vs salaried — admin-only, same boundary as titles.
-  const [payType, setPayType] = useState<'hourly' | 'salaried'>(tutor.pay_type ?? 'hourly')
-  const [notes, setNotes] = useState(initialNotes)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  async function save() {
-    if (windows.some((w) => !w.start_time || !w.end_time || w.end_time <= w.start_time)) {
-      setError('Each offer window needs a start time before its end time.')
-      return
-    }
-    setSaving(true)
-    setError('')
-    const { error: e1 } = await supabase
-      .from('instructors')
-      .update({
-        subjects: picked,
-        subjects_with_prep: pickedPrep,
-        timezone: timezone || 'America/Denver',
-        google_calendar_id: calendarId.trim() || null,
-        default_meeting_link: location.trim() || null,
-        offer_windows: windows,
-        // Managers must not touch titles or the pay-type flag (the DB trigger
-        // would refuse the whole update) — only include when the caller may edit.
-        ...(canEditTitles ? { pay_type_titles: payTitles, pay_type: payType } : {}),
-      })
-      .eq('id', tutor.id)
-    const { error: e2 } = await supabase
-      .from('tutor_notes')
-      .upsert({ instructor_id: tutor.id, notes: notes.trim() || null, updated_at: new Date().toISOString() })
-    if (e1 || e2) {
-      setError('Error: ' + (e1?.message ?? e2?.message))
-      setSaving(false)
-      return
-    }
-    onClose(true)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-        <h3 className="text-lg font-bold text-hgl-slate">
-          {tutor.name ?? tutor.email} — tutoring profile
-        </h3>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Subjects{' '}
-            <span className="font-normal text-gray-400">
-              — click to cycle: <span className="font-semibold text-hgl-slate">ready</span> →{' '}
-              <span className="font-semibold text-amber-700">with prep, confirm first</span>{' '}→ off.
-              Ready subjects auto-match in the wizard; with-prep ones never do.
-            </span>
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {subjects.map((s) => {
-              const state = picked.includes(s.name) ? 'ready' : pickedPrep.includes(s.name) ? 'prep' : 'off'
-              const cycle = () => {
-                if (state === 'ready') {
-                  setPicked((p) => p.filter((x) => x !== s.name))
-                  setPickedPrep((p) => [...p, s.name])
-                } else if (state === 'prep') {
-                  setPickedPrep((p) => p.filter((x) => x !== s.name))
-                } else {
-                  setPicked((p) => [...p, s.name])
-                }
-              }
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={cycle}
-                  className={`px-2 py-1 rounded border cursor-pointer text-xs ${
-                    state === 'ready'
-                      ? 'bg-hgl-slate text-white border-hgl-slate'
-                      : state === 'prep'
-                        ? 'bg-amber-50 text-amber-800 border-amber-400'
-                        : 'bg-white text-gray-600 border-gray-300'
-                  }`}
-                  title={
-                    state === 'ready'
-                      ? 'Ready — auto-matchable'
-                      : state === 'prep'
-                        ? 'Capable with prep — confirm with the tutor first, never auto-suggested'
-                        : 'Not offered'
-                  }
-                >
-                  {s.name}
-                  {state === 'prep' ? ' *' : ''}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">Timezone</label>
-          <TimezoneSelect value={timezone} onChange={setTimezone} />
-        </div>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Google calendar id (blank = their primary calendar, i.e. their email)
-          </label>
-          <input
-            type="text"
-            value={calendarId}
-            onChange={(e) => setCalendarId(e.target.value)}
-            placeholder={tutor.email}
-            className="w-full border border-gray-300 rounded-md p-2"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Offer windows — when the portal may offer this tutor&apos;s open times to families
-            rescheduling a session themselves (their local time). Leave empty to default to their
-            existing session hours ±2 hours. Families only ever see the 2–3 offered times, never
-            the calendar.
-          </label>
-          <div className="space-y-1.5">
-            {windows.map((w, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <select
-                  value={w.weekday}
-                  onChange={(e) =>
-                    setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, weekday: Number(e.target.value) } : x)))
-                  }
-                  className="border border-gray-300 rounded p-1.5 text-sm"
-                >
-                  {WEEKDAYS.map((d, di) => (
-                    <option key={d} value={di + 1}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="time"
-                  step={300}
-                  value={w.start_time}
-                  onChange={(e) =>
-                    setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, start_time: e.target.value } : x)))
-                  }
-                  className="border border-gray-300 rounded p-1.5 text-sm"
-                />
-                <span className="text-gray-400 text-sm">to</span>
-                <input
-                  type="time"
-                  step={300}
-                  value={w.end_time}
-                  onChange={(e) =>
-                    setWindows((ws) => ws.map((x, j) => (j === i ? { ...x, end_time: e.target.value } : x)))
-                  }
-                  className="border border-gray-300 rounded p-1.5 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setWindows((ws) => ws.filter((_, j) => j !== i))}
-                  className="text-xs text-gray-500 underline"
-                >
-                  remove
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setWindows((ws) => [...ws, { weekday: 1, start_time: '15:00', end_time: '19:00' }])
-              }
-              className="text-xs text-hgl-blue underline"
-            >
-              + add window
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Default Zoom link (PL-175: one field with the Instructors page — prefills online schedules and online classes)
-          </label>
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="https://meet.google.com/… or the SLC office"
-            className="w-full border border-gray-300 rounded-md p-2"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">
-            QBO pay-type titles — the named additional pay types this tutor has in QBO Payroll
-            (e.g. Class/Workshop, chem prep). Titles only: rates and dollar amounts live in QBO
-            and never enter the portal. Base pay (1-on-1 / Test Prep) is implicit — don&apos;t list it.
-          </label>
-          <div className="flex flex-wrap gap-1.5 items-center">
-            {payTitles.map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 bg-gray-100 border border-gray-300 rounded px-2 py-0.5 text-xs">
-                {t}
-                {canEditTitles && (
-                  <button
-                    type="button"
-                    onClick={() => setPayTitles((p) => p.filter((x) => x !== t))}
-                    className="text-gray-400 hover:text-red-600"
-                    title="Remove this title"
-                  >
-                    ×
-                  </button>
-                )}
-              </span>
-            ))}
-            {payTitles.length === 0 && !canEditTitles && (
-              <span className="text-xs text-gray-400 italic">none listed</span>
-            )}
-            {canEditTitles ? (
-              <input
-                type="text"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    const t = newTitle.trim()
-                    if (t && !payTitles.includes(t)) setPayTitles((p) => [...p, t])
-                    setNewTitle('')
-                  }
-                }}
-                placeholder="Add a title, press Enter"
-                className="border border-gray-300 rounded p-1.5 text-xs w-44"
-              />
-            ) : (
-              <span className="text-xs text-gray-400">— edited by the admin only</span>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Pay type — salaried tutors&apos; sessions and timecards are tracked exactly the same,
-            but their timecards are labeled &ldquo;not paid hourly&rdquo; and the payroll export
-            separates them. Salary amounts never enter the portal.
-          </label>
-          {canEditTitles ? (
-            <div className="flex gap-2">
-              {(['hourly', 'salaried'] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setPayType(v)}
-                  className={`px-3 py-1.5 rounded border text-xs font-semibold ${
-                    payType === v
-                      ? 'bg-hgl-slate text-white border-hgl-slate'
-                      : 'bg-white text-gray-600 border-gray-300'
-                  }`}
-                >
-                  {v === 'hourly' ? 'Paid hourly' : 'Salaried — hours tracked for records'}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-gray-500">
-              {payType === 'salaried' ? 'Salaried — hours tracked for records; not paid hourly' : 'Paid hourly'}{' '}
-              <span className="text-gray-400">— changed by the admin only</span>
-            </p>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-xs text-gray-600 font-semibold mb-1">
-            Matching notes (staff-only — personality, style, who they click with; tutors never see this)
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            className="w-full border border-gray-300 rounded-md p-2"
-          />
-        </div>
-
-        {error && <div className="p-2 rounded bg-red-100 text-red-700 text-sm font-semibold">{error}</div>}
-
-        <div className="flex justify-end gap-2">
-          <button onClick={() => onClose(false)} className="py-2 px-4 rounded border border-gray-300 text-gray-600">
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="bg-hgl-slate text-white py-2 px-4 rounded hover:opacity-90 disabled:opacity-60"
-          >
-            Save
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
