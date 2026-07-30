@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { CollapsibleSection, DateHint } from '../ui'
 import { ConfirmAction } from '../tutoring/confirm'
+import { SidebarNav, CONTACTS_SIDEBAR } from '../sidebar'
 
 // Policy agreements admin (Phase 7e, docs/PHASE7_SPEC.md §12): per-family
 // acceptance status (accepted vX on date + PDF snapshot, or not accepted +
@@ -439,7 +440,10 @@ export default function AgreementsAdmin() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-10">
-      <div className="max-w-6xl mx-auto space-y-6">
+      {/* PL-229: Contacts sidebar chrome — navigation never disappears. */}
+      <div className="max-w-[88rem] mx-auto md:flex md:gap-6 md:items-start">
+        <SidebarNav entries={CONTACTS_SIDEBAR} active="agreements" />
+        <div className="flex-1 min-w-0 space-y-6">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-bold text-hgl-slate">Policy agreements</h1>
@@ -517,6 +521,7 @@ export default function AgreementsAdmin() {
             </CollapsibleSection>
           </>
         )}
+        </div>
       </div>
     </div>
   )

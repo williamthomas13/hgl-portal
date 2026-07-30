@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { templateLabel } from '../../utils/comms'
 import { FamilyCommsList, type FamilyCommsItem } from '../family-comms'
+import { SidebarNav, CONTACTS_SIDEBAR } from '../sidebar'
 
 // Feature A3 — communications dashboard (docs/COMMS_ATTENDANCE_PARENT_SPEC.md).
 // Upcoming = scheduled/held rows (materialized by the sweep's projector);
@@ -280,7 +281,11 @@ export default function CommunicationsDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-10">
-      <div className="max-w-7xl mx-auto space-y-4">
+      {/* PL-229: this page wears the Contacts sidebar chrome — arriving here
+          (deep link or sidebar click) never loses the left-hand navigation. */}
+      <div className="max-w-[96rem] mx-auto md:flex md:gap-6 md:items-start">
+        <SidebarNav entries={CONTACTS_SIDEBAR} active="communications" />
+        <div className="flex-1 min-w-0 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-bold text-hgl-slate">Communications</h1>
           <div className="flex items-center gap-4 text-sm">
@@ -620,6 +625,7 @@ export default function CommunicationsDashboard() {
           Times shown in each class&apos;s school timezone. Open tracking is approximate — absence of an
           open never proves non-delivery; &ldquo;delivered&rdquo; is the strong claim.
         </p>
+        </div>
       </div>
 
       {/* Preview modal */}

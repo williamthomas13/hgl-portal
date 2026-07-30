@@ -1643,9 +1643,11 @@ export default function AdminDashboard() {
         </div>
 
         <div className={activeSection === 'contacts' ? '' : 'hidden'}>
+        {/* PL-229: selecting the section IS the intent to open it. */}
         <CollapsibleSection
           title="School contacts"
           subtitle="The person + their school affiliation — portal access and digests follow active affiliations"
+          defaultOpen
         >
           <CounselorsPanel schools={schools} onChange={fetchAllCounselors} />
         </CollapsibleSection>
@@ -1653,9 +1655,11 @@ export default function AdminDashboard() {
         </div>
 
         <div className={activeSection === 'instructors' ? '' : 'hidden'}>
+        {/* PL-229: selecting the section IS the intent to open it. */}
         <CollapsibleSection
           title="Instructors"
           subtitle="Default meeting links auto-fill online classes; instructors sign in with their email"
+          defaultOpen
         >
           <InstructorsPanel instructors={instructors} onChange={fetchInstructors} />
         </CollapsibleSection>

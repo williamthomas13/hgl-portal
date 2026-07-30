@@ -17,6 +17,21 @@ import type { ReactNode } from 'react'
 
 export type SidebarEntry = { id: string; label: string; href?: string }
 
+// PL-229: the Contacts group's entries, shared by /admin (button sections)
+// and by the standalone pages that wear this chrome (Communications /
+// Campaigns / Agreements render their own copy with themselves selected, so
+// arriving by deep link never loses the left-hand navigation). The hrefs
+// into /admin land on the exact section via ?section=.
+export const CONTACTS_SIDEBAR: SidebarEntry[] = [
+  { id: 'students', label: 'Students', href: '/admin?tab=contacts&section=students' },
+  { id: 'parents', label: 'Parents', href: '/admin?tab=contacts&section=parents' },
+  { id: 'instructors', label: 'Instructors', href: '/admin?tab=contacts&section=instructors' },
+  { id: 'contacts', label: 'School contacts', href: '/admin?tab=contacts&section=contacts' },
+  { id: 'communications', label: 'Communications', href: '/admin/communications' },
+  { id: 'campaigns', label: 'Campaigns', href: '/admin/campaigns' },
+  { id: 'agreements', label: 'Agreements', href: '/admin/agreements' },
+]
+
 export function SidebarNav({
   entries,
   active,
