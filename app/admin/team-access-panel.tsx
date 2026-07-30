@@ -84,7 +84,8 @@ export default function TeamAccessPanel() {
       <div>
         <h3 className="text-sm font-bold text-hgl-slate mb-1">Admins</h3>
         <p className="text-xs text-gray-500 mb-2">
-          Admin access comes from the <code>ADMIN_EMAILS</code> environment allowlist (changed in
+          {/* PL-221: {' '} — the compiler eats a bare inline-boundary space (PL-215 rule). */}
+          Admin access comes from the <code>ADMIN_EMAILS</code>{' '}environment allowlist (changed in
           Vercel, not here) — read-only by design, so there&apos;s no way to escalate access from
           inside the portal.
         </p>

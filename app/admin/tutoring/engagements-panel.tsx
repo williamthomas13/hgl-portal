@@ -266,7 +266,7 @@ export default function EngagementsPanel({
               authoritative hours record, no rate lookups. */}
           {(conversions?.[famId] ?? []).map((cv, i) => (
             <p key={i} className="text-xs font-semibold text-emerald-700 mb-1">
-              Converted from {cv.label} cancellation: <strong>{cv.hours} hours</strong> (paid $
+              Converted from {cv.label} cancellation: <strong>{cv.hours} hours</strong>{' '}(paid $
               {cv.paid.toLocaleString()})
             </p>
           ))}

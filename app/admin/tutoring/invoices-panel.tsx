@@ -223,7 +223,7 @@ export default function InvoicesPanel() {
 
                   {r.change_requested_at && (
                     <div className="mt-2 text-xs bg-amber-50 border border-amber-200 rounded p-2 text-amber-900">
-                      <strong>Change requested</strong> — auto-confirm is paused:
+                      <strong>Change requested</strong>{' '}— auto-confirm is paused:
                       <pre className="whitespace-pre-wrap font-sans mt-1">{r.change_request_note}</pre>
                       <button
                         disabled={busy}
