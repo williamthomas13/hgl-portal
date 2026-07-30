@@ -37,7 +37,7 @@ type SendRow = {
   cancelled_by: string | null
   created_at: string
   enrollments: {
-    students: { first_name: string; last_name: string } | null
+    students: { first_name: string; last_name: string; family_id: string | null } | null
   } | null
   classes: {
     class_type: string
@@ -63,7 +63,7 @@ const SELECT = `
   sent_at, delivered_at, first_opened_at, first_clicked_at, bounced_at,
   open_count, click_count, subject_rendered, hold_reason, cancel_reason,
   cancelled_by, created_at,
-  enrollments ( students ( first_name, last_name ) ),
+  enrollments ( students ( first_name, last_name, family_id ) ),
   classes ( class_type, schools ( nickname, timezone ) )
 `
 
@@ -512,7 +512,19 @@ export default function CommunicationsDashboard() {
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        {studentName(r) && <span className="block text-gray-800">{studentName(r)}</span>}
+                        {/* PL-230: names are doors — into the family profile,
+                            landing on the comms history. */}
+                        {studentName(r) &&
+                          (r.enrollments?.students?.family_id ? (
+                            <a
+                              href={`/admin/families/${r.enrollments.students.family_id}?section=comms`}
+                              className="block text-gray-800 hover:text-hgl-blue hover:underline"
+                            >
+                              {studentName(r)}
+                            </a>
+                          ) : (
+                            <span className="block text-gray-800">{studentName(r)}</span>
+                          ))}
                         <span className="text-xs text-gray-500">
                           {r.recipient_email} · {r.recipient_role}
                         </span>

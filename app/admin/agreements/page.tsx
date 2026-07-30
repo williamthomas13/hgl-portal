@@ -114,7 +114,13 @@ function FamilyRowView({
       className={`border-b border-gray-100 align-top ${highlighted ? 'bg-amber-50' : ''}`}
     >
       <td className="py-2 pr-3">
-        <span className="font-semibold text-hgl-slate">{family.name}</span>
+        {/* PL-230: names are doors — into the family profile (household). */}
+        <a
+          href={`/admin/families/${family.id}`}
+          className="font-semibold text-hgl-slate hover:text-hgl-blue hover:underline"
+        >
+          {family.name}
+        </a>
         {family.email && <span className="block text-xs text-gray-400">{family.email}</span>}
       </td>
       <td className="py-2 pr-3 text-sm">

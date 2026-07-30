@@ -223,7 +223,17 @@ export default function EngagementsPanel({
       {[...byFamily.entries()].map(([famId, group]) => (
         <div key={famId} id={`family-${famId}`} className="border border-gray-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="font-bold text-hgl-slate">{group.label}</span>
+            {/* PL-230: names are doors — into the family profile. */}
+            {famId !== 'unknown' ? (
+              <a
+                href={`/admin/families/${famId}`}
+                className="font-bold text-hgl-slate hover:text-hgl-blue hover:underline"
+              >
+                {group.label}
+              </a>
+            ) : (
+              <span className="font-bold text-hgl-slate">{group.label}</span>
+            )}
             <span className="text-xs text-gray-400">
               {group.rows[0]?.students?.families?.parent_email}
             </span>

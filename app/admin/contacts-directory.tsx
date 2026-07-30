@@ -136,7 +136,12 @@ export default function ContactsDirectory({ mode }: { mode: 'students' | 'parent
             const sibs = (s.family_id ? siblingsByFamily[s.family_id] ?? [] : []).filter((x) => x.id !== s.id)
             return (
               <li key={s.id} className="py-2.5 text-sm">
-                <a href={`/admin/students/${s.id}`} className="font-semibold text-hgl-blue underline">
+                {/* PL-230: both lenses resolve into the FAMILY profile — a
+                    student result lands on that student's section. */}
+                <a
+                  href={s.family_id ? `/admin/families/${s.family_id}?student=${s.id}` : `/admin/students/${s.id}`}
+                  className="font-semibold text-hgl-blue underline"
+                >
                   {s.first_name} {s.last_name}
                 </a>
                 {s.grade_level && <span className="text-xs text-gray-500 ml-2">Grade {s.grade_level}</span>}
@@ -155,7 +160,10 @@ export default function ContactsDirectory({ mode }: { mode: 'students' | 'parent
                     {sibs.map((x, i) => (
                       <span key={x.id}>
                         {i > 0 && ', '}
-                        <a href={`/admin/students/${x.id}`} className="text-hgl-blue underline">
+                        <a
+                          href={s.family_id ? `/admin/families/${s.family_id}?student=${x.id}` : `/admin/students/${x.id}`}
+                          className="text-hgl-blue underline"
+                        >
                           {x.name}
                         </a>
                       </span>
@@ -173,9 +181,10 @@ export default function ContactsDirectory({ mode }: { mode: 'students' | 'parent
         <ul className="divide-y divide-gray-100">
           {[...families.values()].map(({ family: fam, students: kids }) => (
             <li key={fam.id} className="py-2.5 text-sm">
-              <span className="font-semibold text-hgl-slate">
+              {/* PL-230: a parent result lands on the Household section. */}
+              <a href={`/admin/families/${fam.id}`} className="font-semibold text-hgl-blue underline">
                 {`${fam.parent_first_name ?? ''} ${fam.parent_last_name ?? ''}`.trim() || '—'}
-              </span>
+              </a>
               <p className="text-xs text-gray-600 mt-0.5">
                 {[fam.parent_email, fam.parent_phone].filter(Boolean).join(' · ') || 'no contact info'}
                 {fam.guardian2_name &&
@@ -187,7 +196,7 @@ export default function ContactsDirectory({ mode }: { mode: 'students' | 'parent
                   (x, i) => (
                     <span key={x.id}>
                       {i > 0 && ', '}
-                      <a href={`/admin/students/${x.id}`} className="text-hgl-blue underline">
+                      <a href={`/admin/families/${fam.id}?student=${x.id}`} className="text-hgl-blue underline">
                         {x.name}
                       </a>
                     </span>

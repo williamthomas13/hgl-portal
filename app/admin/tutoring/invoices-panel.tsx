@@ -200,9 +200,13 @@ export default function InvoicesPanel() {
               .map((r) => (
                 <div key={r.id} id={`invoice-${r.id}`} className={`rounded p-3 ${r.status === 'void' ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="font-semibold text-hgl-slate">
+                    {/* PL-230: names are doors — into the family profile. */}
+                    <a
+                      href={`/admin/families/${r.family_id}?section=billing`}
+                      className="font-semibold text-hgl-slate hover:text-hgl-blue hover:underline"
+                    >
                       {r.families?.parent_first_name} {r.families?.parent_last_name ?? ''}
-                    </span>
+                    </a>
                     <span className="text-xs text-gray-400">{r.families?.parent_email}</span>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[r.status]}`}>
                       {STATUS_LABELS[r.status]}
