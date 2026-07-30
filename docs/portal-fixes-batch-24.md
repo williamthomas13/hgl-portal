@@ -79,6 +79,8 @@ Three failures in one create flow:
 
 Same PL-228 defect class, missed in the sweep: the School contacts section under Classes overflows its card. Fix with the same wrap/min-width-0 treatment and re-check the remaining Classes-tab sections at desktop widths while in there.
 
+**✅ SHIPPED (Jul 30).** The widener was the actions cell's `whitespace-nowrap` (three buttons forced onto one line) — dropped so the actions wrap (PL-228 treatment), plus both affiliation tables gained `overflow-x-auto` wrappers as the belt-and-braces (wide content scrolls inside its card, never past it). Probed ALL four Classes-tab sections at 1280px with a scripted scrollWidth check: School contacts had been 52px past the card; after the fix, zero card-level overflows anywhere on the tab (the only remaining probe hit is a native `<select>`'s internal option width — invisible, not the defect class). Screenshot-verified: table fully inside the card, actions stacked cleanly.
+
 ## PL-241 — Classes → "Add a new class" opens collapsed (reported Jul 30)
 
 Same PL-229A rule, missed on this section: selecting "Add a new class" in the Classes sidebar lands on a collapsed card needing a chevron click. Selecting the sidebar item IS the intent — open it expanded and ready. Audit any other sidebar sections still rendering the collapsed-card layer (all tabs), so this class of complaint can't recur section by section.

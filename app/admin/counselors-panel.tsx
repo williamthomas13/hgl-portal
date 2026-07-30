@@ -258,7 +258,8 @@ export default function CounselorsPanel({
       </p>
 
       {active.length > 0 && (
-        <table className="min-w-full divide-y divide-gray-200 mb-6">
+        <div className="overflow-x-auto mb-6">
+        <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
               {['School', 'Name', 'Email', 'Since', 'Digest', ''].map((h) => (
@@ -300,7 +301,9 @@ export default function CounselorsPanel({
                     ))}
                   </select>
                 </td>
-                <td className="px-4 py-2 text-right whitespace-nowrap">
+                {/* PL-240 (PL-228 defect class): no nowrap — action links wrap
+                    to a second line instead of pushing the table past the card. */}
+                <td className="px-4 py-2 text-right">
                   <button onClick={() => handleEditContact(a)} className="text-gray-500 text-xs hover:underline mr-3">
                     Edit
                   </button>
@@ -321,6 +324,7 @@ export default function CounselorsPanel({
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {ended.length > 0 && (
@@ -331,7 +335,8 @@ export default function CounselorsPanel({
         </p>
       )}
       {showEnded && ended.length > 0 && (
-        <table className="min-w-full divide-y divide-gray-200 mb-6 opacity-60">
+        <div className="overflow-x-auto mb-6">
+        <table className="min-w-full divide-y divide-gray-200 opacity-60">
           <tbody className="divide-y divide-gray-200">
             {ended.map((a) => (
               <tr key={a.id} className="text-sm">
@@ -353,6 +358,7 @@ export default function CounselorsPanel({
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       <form onSubmit={handleAdd} className="grid grid-cols-5 gap-2 items-end text-sm">
