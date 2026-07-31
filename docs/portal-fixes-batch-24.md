@@ -1,6 +1,6 @@
-# Portal fixes — batch 24 (READY — handed to Code Jul 30; 9 items, PL-234…242)
+# Portal fixes — batch 24 (✅ ALL 9 SHIPPED July 30 — PL-234…242; per-item notes below)
 
-Closed and handed off July 30 (9 items). If this doc is extended after you've pulled it, wait for an explicit re-read ask.
+Closed and handed off July 30 (9 items); **all 9 shipped + pushed the same day** — per-item ✅ notes under each heading. Gate battery green at close: `tsc` · `next build` · `smoke:public` · `regress:links` · `regress:pronouns` · `regress:cancel-class` · `regress:resume-addon` · `regress:alert-pins`. Migrations `20260822000001` (collateral reminder) applied via the Management API. Templates published live: SV v2 (draft as before), T8 v4, E0 v6, T_SCHEDULE_SET v4, **CS_COLLATERAL_FOLLOWUP v1 (new)**. Real data fixed along the way: "ASF – ASF" renamed to "American School Foundation" through the new Schools editor. QA fixtures pristine (throwaway wizard-test class fully deleted).
 
 **Suggested order:** quick tier (234 T8 location-line conditional · 236 Team access copy · 240 School-contacts overflow · 241 Add-a-new-class opens expanded + collapsed-card audit) → 235 copy edits (SV v2 · T8 v4 · E0 next · T_SCHEDULE_SET v4 — new registry versions via anchor-guard + code twins, exact strings below) → 238 timezone aliases → 239 wizard validation (practice tests DEFAULT 2, editable; plain-English error sweep) → 242 Schools entity (before 237 — the wizard's Branding & Collateral step reads the same school records) → 237 wizard restructure + the two new CS-variant emails (no-collateral welcome w/ warning; collateral-only follow-up).
 
