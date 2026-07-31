@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CALENDAR_COLORS, type CalendarStatus } from '../../utils/calendar-colors'
+import { ConfirmAction } from '../tutoring/confirm'
 
 // PL-160: a REAL calendar — GCal-style week/month, one combined view of
 // 1-on-1 sessions, class sessions, and PL-159 proposed holds, in Kelsie's
@@ -68,6 +69,8 @@ type FitResult = {
   classId: string
   inPerson: boolean
   sessionCount: number
+  spanStart?: string
+  spanEnd?: string
   googleUp: boolean
   note?: string
   candidates: FitCandidate[]
@@ -85,10 +88,19 @@ export default function AdminCalendarPage() {
   // class blocks so Kelsie sees exactly what the ranking saw. Advisory only;
   // assignment stays on the class page.
   const [suggestClassId, setSuggestClassId] = useState('')
+  // PL-246: the panel minimizes (and restores) instead of closing for good.
+  const [suggestMinimized, setSuggestMinimized] = useState(false)
   const [fit, setFit] = useState<FitResult | null>(null)
   const [fitLoading, setFitLoading] = useState(false)
+  const [fitNonce, setFitNonce] = useState(0)
   const [overlayTutor, setOverlayTutor] = useState('')
   const [overlayBusy, setOverlayBusy] = useState<{ start: string; end: string; title: string | null }[]>([])
+  // PL-249: assign the suggested instructor right here.
+  const [assignBusyId, setAssignBusyId] = useState('')
+  const [assignError, setAssignError] = useState('')
+  const [assignedName, setAssignedName] = useState('')
+  // PL-248: jump the view to the class's first session once per class.
+  const jumpedForRef = useRef('')
   useEffect(() => {
     const c = new URLSearchParams(window.location.search).get('suggest')
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -105,7 +117,15 @@ export default function AdminCalendarPage() {
       try {
         const res = await fetch(`/api/admin/instructor-fit?classId=${suggestClassId}`)
         const json = await res.json().catch(() => ({}))
-        if (!stale) setFit(res.ok ? json : null)
+        if (!stale) {
+          setFit(res.ok ? json : null)
+          // PL-248: arriving from a class context, land on the week the class
+          // actually runs — not whatever week today happens to be.
+          if (res.ok && json?.spanStart && jumpedForRef.current !== suggestClassId) {
+            jumpedForRef.current = suggestClassId
+            setAnchor(denverDay(json.spanStart))
+          }
+        }
       } catch {
         if (!stale) setFit(null)
       }
@@ -114,7 +134,7 @@ export default function AdminCalendarPage() {
     return () => {
       stale = true
     }
-  }, [suggestClassId])
+  }, [suggestClassId, fitNonce])
 
   // Filters (compose): person, school/class, status.
   const [personFilter, setPersonFilter] = useState('')
@@ -145,6 +165,31 @@ export default function AdminCalendarPage() {
     load()
   }, [load])
 
+  // PL-249: assignment no longer requires a round-trip back to the class page.
+  const assign = async (candidateId: string, name: string) => {
+    setAssignBusyId(candidateId)
+    setAssignError('')
+    setAssignedName('')
+    try {
+      const res = await fetch('/api/admin/assign-instructor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ classId: suggestClassId, instructorId: candidateId }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) setAssignError(json.error ?? `The server returned ${res.status}.`)
+      else {
+        setAssignedName(json.instructorName ?? name)
+        setFitNonce((n) => n + 1) // re-rank so the "currently assigned" badge moves
+        load() // class blocks carry the instructor name in their tooltips
+      }
+    } catch {
+      setAssignError("Couldn't reach the server — try again.")
+    } finally {
+      setAssignBusyId('')
+    }
+  }
+
   // PL-161: the picked candidate's Google busy for the visible range.
   useEffect(() => {
     if (!overlayTutor) {
@@ -152,6 +197,10 @@ export default function AdminCalendarPage() {
       return
     }
     let stale = false
+    // PL-247: blank the previous instructor's bands immediately — without this
+    // the old selection's events linger under the new name until the fetch
+    // resolves (and across week steps).
+    setOverlayBusy([])
     ;(async () => {
       try {
         const from = new Date(rangeStartIso + 'T00:00:00-07:00').toISOString()
@@ -268,9 +317,21 @@ export default function AdminCalendarPage() {
               open its record.
             </p>
           </div>
-          <a href="/admin" className="text-sm text-gray-500 underline hover:text-hgl-slate">
-            ← Back to admin
-          </a>
+          <div className="flex items-center gap-3">
+            {/* PL-253: drilled in from a class roster — the way back returns
+                there, one step, not to the top of admin. */}
+            {suggestClassId && (
+              <a
+                href={`/admin?class=${suggestClassId}`}
+                className="text-sm text-purple-700 underline font-semibold hover:text-purple-900"
+              >
+                ← Back to {fit?.classLabel ? `the ${fit.classLabel} roster` : 'the class roster'}
+              </a>
+            )}
+            <a href="/admin" className="text-sm text-gray-500 underline hover:text-hgl-slate">
+              ← Back to admin
+            </a>
+          </div>
         </div>
 
         {/* Controls */}
@@ -344,8 +405,21 @@ export default function AdminCalendarPage() {
           ))}
         </div>
 
-        {/* PL-161: instructor-fit suggester panel (advisory only) */}
-        {suggestClassId && (
+        {/* PL-246: minimized, the suggestions stay one click away — closing
+            for good used to lose them until you left the page. */}
+        {suggestClassId && suggestMinimized && (
+          <div className="bg-white border border-purple-200 rounded-lg px-4 py-2 text-sm flex items-center justify-between flex-wrap gap-2">
+            <span className="text-gray-600">
+              Suggestions for <span className="font-semibold text-hgl-slate">{fit?.classLabel ?? 'this class'}</span> are minimized.
+            </span>
+            <button onClick={() => setSuggestMinimized(false)} className="text-xs text-purple-700 font-semibold underline">
+              show suggestions
+            </button>
+          </div>
+        )}
+
+        {/* PL-161: instructor-fit suggester panel */}
+        {suggestClassId && !suggestMinimized && (
           <div className="bg-white border border-purple-200 rounded-lg p-4 text-sm">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
               <h2 className="font-bold text-hgl-slate">
@@ -353,21 +427,38 @@ export default function AdminCalendarPage() {
                 {fit ? ` · ${fit.sessionCount} session${fit.sessionCount === 1 ? '' : 's'}` : ''}
                 {fit?.inPerson ? ' · in person (travel window applies)' : ''}
               </h2>
-              <button
-                onClick={() => {
-                  setSuggestClassId('')
-                  setOverlayTutor('')
-                }}
-                className="text-xs text-gray-500 underline"
-              >
-                close suggestions
-              </button>
+              <div className="flex items-center gap-3">
+                {/* PL-248: get back to the class's dates from anywhere. */}
+                {fit?.spanStart && (
+                  <button
+                    onClick={() => setAnchor(denverDay(fit.spanStart!))}
+                    className="text-xs text-purple-700 underline"
+                    title="Move the calendar to the week of the class's first upcoming session"
+                  >
+                    jump to class dates
+                  </button>
+                )}
+                <button onClick={() => setSuggestMinimized(true)} className="text-xs text-gray-500 underline">
+                  minimize suggestions
+                </button>
+              </div>
             </div>
             {fitLoading && <p className="text-xs text-gray-400 animate-pulse">Checking every active instructor…</p>}
             {fit?.note && <p className="text-xs text-gray-500 italic">{fit.note}</p>}
             {fit && !fit.googleUp && (
               <p className="text-xs text-amber-700 mb-2">
                 Google availability is unreachable right now — rankings below use portal commitments only.
+              </p>
+            )}
+            {assignError && (
+              <p className="text-xs text-red-700 font-semibold mb-2">{assignError}</p>
+            )}
+            {assignedName && (
+              <p className="text-xs text-green-700 font-semibold mb-2">
+                {assignedName} is now the instructor for this class.{' '}
+                <a href={`/admin?class=${suggestClassId}`} className="underline">
+                  Back to the class roster
+                </a>
               </p>
             )}
             {fit && (
@@ -385,6 +476,19 @@ export default function AdminCalendarPage() {
                     </button>
                     <span className="font-semibold text-hgl-slate">{c.name}</span>
                     {c.current && <span className="text-[10px] uppercase font-bold bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">currently assigned</span>}
+                    {/* PL-249: act on a good fit right here instead of
+                        retracing steps to the class page. */}
+                    {!c.current && (
+                      <ConfirmAction
+                        label={assignBusyId === c.id ? 'assigning…' : 'assign to class'}
+                        message={`Assign ${c.name} as the instructor for ${fit.classLabel}?${c.available ? '' : ' They have conflicts listed below.'}`}
+                        confirmLabel="Yes, assign"
+                        className="text-xs text-green-700 underline"
+                        confirmClassName="text-xs text-green-700 font-semibold underline"
+                        disabled={assignBusyId !== ''}
+                        onConfirm={() => assign(c.id, c.name)}
+                      />
+                    )}
                     {c.available ? (
                       <span className="text-xs text-green-700 font-semibold">
                         free for every session{c.googleChecked ? '' : ' (portal data only — Google not checked)'}
@@ -410,7 +514,7 @@ export default function AdminCalendarPage() {
               </ul>
             )}
             <p className="text-xs text-gray-400 mt-2">
-              Suggestions are advisory — assignment stays your explicit choice on the class page.
+              Suggestions are advisory — assigning always takes your explicit confirmation, here or on the class page.
               Class sessions are outlined in purple below{overlayTutor ? '; the selected instructor’s busy time is shaded gray' : ''}.
             </p>
           </div>
