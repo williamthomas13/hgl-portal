@@ -315,18 +315,19 @@ export function studentPronounSet(
  *  when the enrollment actually has an add-on — never for class-only. It
  *  de-urgents deliberately (hours are most valuable after class) and links —
  *  inline, not a button — to the family's availability page for early
- *  starters. Shared by the code render and the registry's
- *  {addonTutoringBlock} variable so both stay one source of truth. */
+ *  starters. The registry's {addonTutoringBlock} variable in
+ *  comms-variables.ts carries this same copy (whitespace aside) — any
+ *  wording change lands in BOTH places (PL-245 lesson). */
 export function addonTutoringBlockHtml(ctx: EnrollmentEmailContext): string {
   const hours = ctx.addons.reduce((sum, a) => sum + a.hours, 0)
   if (hours <= 0) return ''
   return `<p><strong>Your 1-on-1 tutoring hours.</strong> Your registration includes ${hours} hours
       of 1-on-1 tutoring. In our experience they're most valuable <em>after</em> the class ends —
       that's when a tutor can zero in on exactly what your student needs next. When the class
-      wraps up, we'll reach out to get ${ctx.studentFirstName} scheduled. Want to start earlier
-      instead? <a href="${ctx.availabilityUrl}" style="color:#00AEEE">Share your availability</a>
-      and we'll propose times. Not sure yet? No problem — we'll ask again once the class is
-      done.</p>`
+      wraps up, we'll reach out to get ${ctx.studentFirstName} scheduled. If you want to start
+      earlier instead, just <a href="${ctx.availabilityUrl}" style="color:#00AEEE">share your
+      availability</a> and we'll propose times. It's no problem if you're not sure yet; we'll ask
+      you again once the class is done.</p>`
 }
 
 export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {

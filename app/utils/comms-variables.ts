@@ -595,7 +595,7 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (c) => {
       const hours = c.addons.reduce((sum, a) => sum + a.hours, 0)
       if (hours <= 0) return ''
-      return `<p><strong>Your 1-on-1 tutoring hours.</strong> Your registration includes ${hours} hours of 1-on-1 tutoring. In our experience they're most valuable <em>after</em> the class ends — that's when a tutor can zero in on exactly what your student needs next. When the class wraps up, we'll reach out to get ${c.studentFirstName} scheduled. Want to start earlier instead? <a href="${c.availabilityUrl}" style="color:#00AEEE">Share your availability</a> and we'll propose times. Not sure yet? No problem — we'll ask again once the class is done.</p>`
+      return `<p><strong>Your 1-on-1 tutoring hours.</strong> Your registration includes ${hours} hours of 1-on-1 tutoring. In our experience they're most valuable <em>after</em> the class ends — that's when a tutor can zero in on exactly what your student needs next. When the class wraps up, we'll reach out to get ${c.studentFirstName} scheduled. If you want to start earlier instead, just <a href="${c.availabilityUrl}" style="color:#00AEEE">share your availability</a> and we'll propose times. It's no problem if you're not sure yet; we'll ask you again once the class is done.</p>`
     },
   },
   hoursRemaining: {
