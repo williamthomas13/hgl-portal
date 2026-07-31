@@ -24,6 +24,11 @@ export type School = {
   name: string
   nickname: string
   timezone: string
+  /** PL-237: branding lives on the school record; the wizard's Branding &
+   *  Collateral step edits it in place (same rows as Classes → Schools). */
+  logo_url?: string | null
+  accent_color?: string | null
+  collateral_language?: string | null
 }
 
 export type ContactAtSchool = {
@@ -115,12 +120,12 @@ export default function ClassWizard({
   onInstructorsChange: () => void
   onCreated: () => void
 }) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   // PL-239: when an error names a fixable field, the message carries the
   // step to jump to — one click lands on the field, no decoding required.
-  const [messageStep, setMessageStep] = useState<1 | 2 | 3 | null>(null)
+  const [messageStep, setMessageStep] = useState<1 | 2 | 3 | 4 | null>(null)
 
   // -- step 1: details ------------------------------------------------------
   const [schoolId, setSchoolId] = useState(initial?.schoolId ?? '')
@@ -147,6 +152,22 @@ export default function ClassWizard({
     initial?.collateral?.practice_test_count != null ? String(initial.collateral.practice_test_count) : '2'
   )
   const [flyerBlurb, setFlyerBlurb] = useState(initial?.collateral?.flyer_blurb ?? '')
+  // PL-237: the rest of the collateral card's fields live on the wizard's
+  // Branding & Collateral step now (letter paragraphs + the promo trio).
+  const [letterBlurb, setLetterBlurb] = useState(initial?.collateral?.letter_blurb ?? '')
+  const [letterBlurbEs, setLetterBlurbEs] = useState(initial?.collateral?.letter_blurb_es ?? '')
+  const [promoCode, setPromoCode] = useState(initial?.collateral?.promo_code ?? '')
+  const [promoAmount, setPromoAmount] = useState(
+    initial?.collateral?.promo_amount != null ? String(initial.collateral.promo_amount) : ''
+  )
+  const [promoDeadline, setPromoDeadline] = useState(initial?.collateral?.promo_deadline ?? '')
+  // 'Skip for now (remind me later)' stamps collateral_reminder_at on the
+  // class -> the state-driven Needs Attention row.
+  const [skipForNow, setSkipForNow] = useState(false)
+  // School branding edits at the B&C step write the schools row directly.
+  const [schoolAccent, setSchoolAccent] = useState('')
+  const [schoolLanguage, setSchoolLanguage] = useState('en')
+  const [brandingMsg, setBrandingMsg] = useState('')
   const [defaultLocation, setDefaultLocation] = useState(initial?.defaultLocation ?? '')
 
   // -- step 2: sessions ------------------------------------------------------
@@ -174,6 +195,13 @@ export default function ClassWizard({
   // travel. Default it once sessions give us a start date; online classes can
   // close near the start, so no default. Editable either way — a manual edit
   // stops the auto-fill.
+  // PL-237: seed the school-branding editors from the picked school.
+  useEffect(() => {
+    setSchoolAccent(school?.accent_color ?? '')
+    setSchoolLanguage(school?.collateral_language ?? 'en')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schoolId])
+
   useEffect(() => {
     if (deadlineEdited) return
     if (deliveryMode === 'in_person' && startDate) {
@@ -408,7 +436,13 @@ export default function ClassWizard({
     !classType.trim() && 'class type',
     !price && 'price',
     !capacity && 'capacity',
+  ].filter(Boolean) as string[]
+  // PL-237/239: the collateral step validates its own fields.
+  const promoPartial =
+    [promoCode.trim(), promoAmount.trim(), promoDeadline].filter(Boolean).length % 3 !== 0
+  const collateralNeeds = [
     !practiceTestsValid && 'the number of practice tests (0 or more — it defaults to 2)',
+    promoPartial && 'the promo needs its code, amount, and deadline together (or clear all three)',
   ].filter(Boolean) as string[]
   const detailsComplete = detailsNeeds.length === 0
   const stepNeeds: string[] =
@@ -423,18 +457,20 @@ export default function ClassWizard({
               sessions.length === 0 && 'at least one session',
               sessions.length > 0 && !allDated && 'a date on every copied session',
             ].filter(Boolean) as string[])
-          : []
+          : step === 4
+            ? collateralNeeds
+            : []
 
   // PL-239: no raw DB/constraint text reaches the admin — known failures get
   // plain English plus the step to fix them on; unknown ones lead with a
   // plain summary and tuck the technical detail at the end.
   function explainCreateError(error: { code?: string; message?: string } | null): {
     text: string
-    step: 1 | 2 | 3 | null
+    step: 1 | 2 | 3 | 4 | null
   } {
     const msg = error?.message ?? 'unknown'
-    const FIELDS: Record<string, { text: string; step: 1 | 2 | 3 }> = {
-      practice_test_count: { text: 'The number of practice tests is missing', step: 2 },
+    const FIELDS: Record<string, { text: string; step: 1 | 2 | 3 | 4 }> = {
+      practice_test_count: { text: 'The number of practice tests is missing', step: 4 },
       price: { text: 'The price is missing', step: 2 },
       capacity: { text: 'The student capacity is missing', step: 2 },
       class_type: { text: 'The class type is missing', step: 2 },
@@ -506,6 +542,14 @@ export default function ClassWizard({
       ...(initial?.collateral ?? {}),
       short_link: shortLink.trim() || null,
       collateral_language: collateralLang || null,
+      letter_blurb: letterBlurb.trim() || null,
+      letter_blurb_es: letterBlurbEs.trim() || null,
+      promo_code: promoCode.trim() || null,
+      promo_amount: promoAmount.trim() === '' ? null : Number(promoAmount),
+      promo_deadline: promoDeadline || null,
+      // PL-237: skip-for-now stamps the reminder; the Needs Attention row is
+      // state-driven (shows while stamped AND no short link) — no bookkeeping.
+      collateral_reminder_at: skipForNow ? new Date().toISOString() : null,
       // PL-239: never null — the field defaults to 2 and validates at its
       // step, and this belt catches any path that skips both.
       practice_test_count: practiceTestCount.trim() === '' ? 2 : Math.trunc(Number(practiceTestCount)),
@@ -574,8 +618,14 @@ export default function ClassWizard({
     setSynapGroup('')
     setShortLink('')
     setCollateralLang('')
-    setPracticeTestCount('')
+    setPracticeTestCount('2')
     setFlyerBlurb('')
+    setLetterBlurb('')
+    setLetterBlurbEs('')
+    setPromoCode('')
+    setPromoAmount('')
+    setPromoDeadline('')
+    setSkipForNow(false)
     setDefaultLocation('')
     setSessions([])
     setDraft({ session_date: '', start_time: '', end_time: '', location: '' })
@@ -594,7 +644,7 @@ export default function ClassWizard({
       ? `Below the usual minimum for ${deliveryMode === 'online' ? 'online' : 'in-person'} classes (${usualMin}) — you can save, but double-check it's intentional.`
       : null
 
-  const steps = ['School', 'Details', 'Sessions', 'Review'] as const
+  const steps = ['School', 'Details', 'Sessions', 'Branding & Collateral', 'Review'] as const
 
   return (
     <div>
@@ -707,49 +757,9 @@ export default function ClassWizard({
                     className="border border-gray-300 rounded-md p-2"
                   />
                 </div>
-                <p className="text-xs text-gray-500 pt-1">
-                  Collateral branding (used on the generated flyer &amp; parent letter — set once
-                  here, edit later in the School branding panel):
-                </p>
-                <div className="grid grid-cols-3 gap-2 items-center">
-                  <label className="text-xs text-gray-600 col-span-3 -mb-1">School logo (flyer top-right; optional)</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setNewSchoolLogo(e.target.files?.[0] ?? null)}
-                    className="col-span-3 text-xs"
-                  />
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-xs text-gray-600">Accent</label>
-                    <input
-                      type="color"
-                      value={newSchool.accentColor || '#00AEEE'}
-                      onChange={(e) => setNewSchool({ ...newSchool, accentColor: e.target.value })}
-                      className="h-7 w-9 border border-gray-300 rounded cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={newSchool.accentColor}
-                      onChange={(e) => setNewSchool({ ...newSchool, accentColor: e.target.value })}
-                      placeholder="HGL blue"
-                      className="w-20 border border-gray-300 rounded p-1 text-xs"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5 col-span-2">
-                    <label className="text-xs text-gray-600">Collateral language</label>
-                    <select
-                      value={newSchool.collateralLanguage}
-                      onChange={(e) =>
-                        setNewSchool({ ...newSchool, collateralLanguage: e.target.value })
-                      }
-                      className="border border-gray-300 rounded p-1 text-xs bg-white"
-                    >
-                      <option value="en">English</option>
-                      <option value="es">Spanish</option>
-                      <option value="both">Both</option>
-                    </select>
-                  </div>
-                </div>
+                {/* PL-237: branding (logo / accent / language) moved to the
+                    wizard's Branding & Collateral step — the school record
+                    exists by then, so the logo upload works there too. */}
                 <button
                   type="button"
                   onClick={saveNewSchool}
@@ -1006,68 +1016,8 @@ export default function ClassWizard({
             <input type="url" value={synapGroup} onChange={(e) => setSynapGroup(e.target.value)} placeholder="https://…" className={inputCls} />
           </div>
 
-          {/* PL-106: collateral basics captured while creating the class.
-              Full editing, promo fields, and flyer/letter regeneration stay
-              on the class card's Collateral section. */}
-          <fieldset className="col-span-2 border border-gray-200 rounded-lg p-4">
-            <legend className="text-sm font-semibold text-hgl-slate px-1">
-              Collateral (flyer &amp; parent letter)
-            </legend>
-            <p className="text-xs text-gray-500 mb-3">
-              These drive the flyer and parent letter. You can leave them blank and finish later
-              from the class card, where downloads and the promo fields live.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Short link</label>
-                <input
-                  type="text"
-                  value={shortLink}
-                  onChange={(e) => setShortLink(e.target.value)}
-                  placeholder="hgl.link/…"
-                  className={inputCls}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Collateral language</label>
-                <select
-                  value={collateralLang}
-                  onChange={(e) => setCollateralLang(e.target.value)}
-                  className={selectCls}
-                >
-                  <option value="">School default</option>
-                  <option value="en">English only</option>
-                  <option value="es">Spanish only</option>
-                  <option value="both">Both (separate EN + ES files)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Practice tests included <span className="text-red-500" title="Required">*</span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={practiceTestCount}
-                  onChange={(e) => setPracticeTestCount(e.target.value)}
-                  placeholder="e.g. 2"
-                  className={inputCls}
-                />
-                {/* PL-239: defaulted so the create can never fail on it. */}
-                <p className="text-xs text-gray-500 mt-1">Defaults to 2 — change it any time here or on the collateral card.</p>
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Flyer blurb</label>
-                <textarea
-                  value={flyerBlurb}
-                  onChange={(e) => setFlyerBlurb(e.target.value)}
-                  rows={2}
-                  placeholder="One or two sentences families see on the flyer"
-                  className={inputCls}
-                />
-              </div>
-            </div>
-          </fieldset>
+          {/* PL-237: collateral moved to its own step (Sessions → Branding &
+              Collateral → Review). */}
         </div>
       )}
 
@@ -1176,7 +1126,219 @@ export default function ClassWizard({
         </div>
       )}
 
-      {step === 4 && school && (
+      {/* PL-237: Branding & Collateral — its own step between Sessions and
+          Review, mirroring the class card's collateral panel. Skippable:
+          "Skip" just moves on; "Skip for now" also queues a state-driven
+          Needs Attention reminder. */}
+      {step === 4 && (
+        <div className="space-y-5">
+          <p className="text-xs text-gray-500">
+            Everything here drives the generated flyer and parent letter (downloads unlock once
+            the class is created). Finish it now, or skip and complete it later under Classes →
+            Branding &amp; collateral.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">hgl.co short link</label>
+              <input
+                type="text"
+                value={shortLink}
+                onChange={(e) => setShortLink(e.target.value)}
+                placeholder="hgl.link/…"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Language of generated files</label>
+              <select value={collateralLang} onChange={(e) => setCollateralLang(e.target.value)} className={selectCls}>
+                <option value="">School default</option>
+                <option value="en">English only</option>
+                <option value="es">Spanish only</option>
+                <option value="both">Both (separate EN + ES files)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Practice tests included <span className="text-red-500" title="Required">*</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={practiceTestCount}
+                onChange={(e) => setPracticeTestCount(e.target.value)}
+                placeholder="e.g. 2"
+                className={inputCls}
+              />
+              {/* PL-239: defaulted so the create can never fail on it. */}
+              <p className="text-xs text-gray-500 mt-1">
+                Defaults to 2 — change it any time here or on the collateral card.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Flyer intro sentence</label>
+              <textarea
+                value={flyerBlurb}
+                onChange={(e) => setFlyerBlurb(e.target.value)}
+                rows={2}
+                placeholder="Blank = the standard default sentence"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Extra letter paragraph (English)</label>
+              <textarea
+                value={letterBlurb}
+                onChange={(e) => setLetterBlurb(e.target.value)}
+                rows={2}
+                placeholder="Optional — added to the parent letter"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Extra letter paragraph (Spanish)</label>
+              <textarea
+                value={letterBlurbEs}
+                onChange={(e) => setLetterBlurbEs(e.target.value)}
+                rows={2}
+                placeholder="Optional — used on the Spanish letter"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <fieldset className="border border-gray-200 rounded-lg p-4">
+            <legend className="text-sm font-semibold text-hgl-slate px-1">Promo (optional)</legend>
+            <p className="text-xs text-gray-500 mb-3">
+              All three together or none. The flyer prints the code and savings; remember the
+              matching Stripe promotion code is set up separately in Stripe.
+            </p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Promo code</label>
+                <input type="text" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} placeholder="EARLY50" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Savings (USD)</label>
+                <input type="number" value={promoAmount} onChange={(e) => setPromoAmount(e.target.value)} placeholder="50" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Promo deadline</label>
+                <input type="date" value={promoDeadline} onChange={(e) => setPromoDeadline(e.target.value)} className={inputCls} />
+                <DateHint value={promoDeadline} />
+              </div>
+            </div>
+          </fieldset>
+
+          {school && (
+            <fieldset className="border border-gray-200 rounded-lg p-4">
+              <legend className="text-sm font-semibold text-hgl-slate px-1">
+                {school.nickname} branding
+              </legend>
+              <p className="text-xs text-gray-500 mb-3">
+                School-level defaults on the school record itself (also editable under Classes →
+                Schools) — the flyer&apos;s logo and accent, and the school&apos;s default language.
+                Saved separately from the class.
+              </p>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="text-xs text-hgl-blue underline cursor-pointer">
+                  upload / replace logo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      e.target.value = ''
+                      if (!file) return
+                      setBrandingMsg('')
+                      const body = new FormData()
+                      body.set('schoolId', school.id)
+                      body.set('file', file)
+                      const res = await fetch('/api/admin/school-logo', { method: 'POST', body })
+                      setBrandingMsg(res.ok ? 'Logo updated (background removed automatically).' : 'Error uploading the logo.')
+                      if (res.ok) onSchoolsChange()
+                    }}
+                  />
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-gray-600">Accent</label>
+                  <input
+                    type="color"
+                    value={schoolAccent || '#00AEEE'}
+                    onChange={(e) => setSchoolAccent(e.target.value)}
+                    className="h-7 w-9 border border-gray-300 rounded cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-gray-600">School default language</label>
+                  <select
+                    value={schoolLanguage}
+                    onChange={(e) => setSchoolLanguage(e.target.value)}
+                    className="border rounded p-1 text-xs bg-white"
+                  >
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="both">Both</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setBrandingMsg('')
+                    const { error } = await supabase
+                      .from('schools')
+                      .update({ accent_color: schoolAccent || null, collateral_language: schoolLanguage })
+                      .eq('id', school.id)
+                    setBrandingMsg(error ? 'Error: ' + error.message : 'School branding saved.')
+                    if (!error) onSchoolsChange()
+                  }}
+                  className="bg-hgl-slate text-white text-xs font-bold px-3 py-1.5 rounded hover:opacity-90"
+                >
+                  Save school branding
+                </button>
+                {brandingMsg && (
+                  <span className={`text-xs font-semibold ${brandingMsg.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>
+                    {brandingMsg}
+                  </span>
+                )}
+              </div>
+            </fieldset>
+          )}
+
+          <div className="flex gap-3 text-sm">
+            <button
+              type="button"
+              onClick={() => {
+                setSkipForNow(false)
+                setStep(5)
+              }}
+              className="text-gray-500 underline"
+            >
+              Skip
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSkipForNow(true)
+                setStep(5)
+              }}
+              className="text-amber-700 underline font-semibold"
+              title="Creates a Needs Attention reminder that clears itself once the collateral is completed"
+            >
+              Skip for now (remind me later)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 5 && school && skipForNow && (
+        <p className="mb-4 p-2.5 rounded bg-amber-50 border border-amber-200 text-xs text-amber-800">
+          Collateral skipped for now — after the class is created, a &quot;Collateral not set
+          up&quot; reminder will sit on the dashboard until the fields are completed under
+          Classes → Branding &amp; collateral.
+        </p>
+      )}
+      {step === 5 && school && (
         <div className="grid grid-cols-2 gap-8">
           <div className="text-sm space-y-1.5">
             <h3 className="font-bold text-hgl-slate text-base mb-2">
@@ -1236,17 +1398,17 @@ export default function ClassWizard({
       <div className="flex items-center justify-between mt-6">
         <button
           type="button"
-          onClick={() => setStep((s) => (s === 1 ? s : ((s - 1) as 1 | 2 | 3)))}
+          onClick={() => setStep((s) => (s === 1 ? s : ((s - 1) as 1 | 2 | 3 | 4)))}
           disabled={step === 1}
           className="text-sm text-gray-500 underline hover:text-hgl-slate disabled:opacity-0"
         >
           ← Back
         </button>
-        {step < 4 ? (
+        {step < 5 ? (
           <div className="text-right">
             <button
               type="button"
-              onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4)}
+              onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4 | 5)}
               disabled={stepNeeds.length > 0}
               className="bg-hgl-blue text-white font-bold py-2.5 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
             >

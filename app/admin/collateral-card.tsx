@@ -68,8 +68,14 @@ export default function CollateralCard({
     include: boolean
     canSuppress: boolean
     previews: { include: string; exclude: string } | null
+    // PL-237: the collateral fork — attachments on/off + the explicit
+    // second confirm the no-collateral send requires.
+    includeCollateral: boolean
+    confirmNoCollateral: boolean
+    ncSendOnRecord: boolean
     error?: string
   }>(null)
+  const [sendingFollowup, setSendingFollowup] = useState(false)
   // Cache-buster so reopened previews reflect saved edits.
   const [previewNonce, setPreviewNonce] = useState(0)
 
@@ -198,6 +204,9 @@ export default function CollateralCard({
               include: true,
               canSuppress: false,
               previews: null,
+              includeCollateral: true,
+              confirmNoCollateral: false,
+              ncSendOnRecord: false,
             })
             try {
               const res = await fetch(`/api/admin/class-confirmed?class_id=${classId}`)
@@ -214,6 +223,9 @@ export default function CollateralCard({
                 include: !!json.defaultInclude,
                 canSuppress: !!json.canSuppress,
                 previews: json.previews ?? null,
+                includeCollateral: json.defaultIncludeCollateral !== false,
+                confirmNoCollateral: false,
+                ncSendOnRecord: !!json.ncSendOnRecord,
               })
             } catch {
               setCsDialog((d) =>
@@ -271,6 +283,47 @@ export default function CollateralCard({
                   announcement goes out.
                 </p>
               )}
+              {/* PL-237: the collateral fork — some schools don't want the docs. */}
+              <label className="flex items-start gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={csDialog.includeCollateral}
+                  onChange={(e) =>
+                    setCsDialog((d) =>
+                      d ? { ...d, includeCollateral: e.target.checked, confirmNoCollateral: false } : d
+                    )
+                  }
+                  className="mt-0.5"
+                />
+                <span>
+                  <strong>Attach the letter + flyer</strong> (generated fresh at send time).
+                  {!csDialog.includeCollateral && (
+                    <span className="text-gray-500">
+                      {' '}Leaving them off sends the same welcome — sales link, deadline, portal
+                      intro — with no attachments and no &quot;I&apos;ve attached the materials&quot;
+                      paragraph. You can send the materials later with the letter + flyer
+                      follow-up from this card.
+                    </span>
+                  )}
+                </span>
+              </label>
+              {!csDialog.includeCollateral && (
+                <label className="flex items-start gap-2 text-xs cursor-pointer bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={csDialog.confirmNoCollateral}
+                    onChange={(e) =>
+                      setCsDialog((d) => (d ? { ...d, confirmNoCollateral: e.target.checked } : d))
+                    }
+                    className="mt-0.5"
+                  />
+                  <span className="text-amber-900">
+                    <strong>Yes — send it without the letter and flyer.</strong> The school gets
+                    the &quot;everything&apos;s ready&quot; welcome and the sales link, but NO
+                    printable materials in this email.
+                  </span>
+                </label>
+              )}
               {csDialog.previews && (
                 <details>
                   <summary className="cursor-pointer text-xs text-hgl-blue underline">
@@ -286,7 +339,12 @@ export default function CollateralCard({
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  disabled={sendingCs}
+                  disabled={sendingCs || (!csDialog.includeCollateral && !csDialog.confirmNoCollateral)}
+                  title={
+                    !csDialog.includeCollateral && !csDialog.confirmNoCollateral
+                      ? 'Tick the confirmation above — this send has no letter or flyer'
+                      : undefined
+                  }
                   onClick={async () => {
                     setSendingCs(true)
                     setMessage('')
@@ -294,7 +352,11 @@ export default function CollateralCard({
                       const res = await fetch('/api/admin/class-confirmed', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ class_id: classId, include_announcement: csDialog.include }),
+                        body: JSON.stringify({
+                          class_id: classId,
+                          include_announcement: csDialog.include,
+                          include_collateral: csDialog.includeCollateral,
+                        }),
                       })
                       const json = await res.json().catch(() => ({}))
                       setMessage(res.ok ? json.message : 'Error: ' + json.error)
@@ -317,6 +379,43 @@ export default function CollateralCard({
                   cancel
                 </button>
               </div>
+              {/* PL-237: the collateral-only follow-up — the welcome already
+                  went out without the materials; this delivers JUST the
+                  letter + flyer, no class-is-ready repeat. */}
+              {csDialog.ncSendOnRecord && (
+                <div className="pt-2 border-t border-gray-200">
+                  <p className="text-xs text-gray-600 mb-1.5">
+                    This class&apos;s welcome went out <strong>without</strong> the letter and
+                    flyer. When the school wants the materials, send just those — no repeat of
+                    the welcome:
+                  </p>
+                  <button
+                    type="button"
+                    disabled={sendingFollowup}
+                    onClick={async () => {
+                      setSendingFollowup(true)
+                      setMessage('')
+                      try {
+                        const res = await fetch('/api/admin/class-confirmed', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ class_id: classId, mode: 'collateral_followup' }),
+                        })
+                        const json = await res.json().catch(() => ({}))
+                        setMessage(res.ok ? json.message : 'Error: ' + json.error)
+                        if (res.ok) setCsDialog(null)
+                      } catch {
+                        setMessage("Error: couldn't reach the server — nothing was sent.")
+                      } finally {
+                        setSendingFollowup(false)
+                      }
+                    }}
+                    className="text-xs font-bold bg-hgl-slate text-white rounded px-3 py-1.5 disabled:opacity-50"
+                  >
+                    {sendingFollowup ? 'Sending…' : 'Send the letter + flyer follow-up'}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

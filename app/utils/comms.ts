@@ -95,6 +95,10 @@ export function templateMetaFor(
     // PL-214: admin-initiated class-confirmed welcome (button, not automation).
     case 'counselor_class_confirmed':
       return { key: 'CS_CLASS_CONFIRMED', role: 'counselor' }
+    // PL-237: the collateral-only follow-up — delivers the letter + flyer
+    // after a no-collateral welcome went out, without repeating it.
+    case 'counselor_collateral_followup':
+      return { key: 'CS_COLLATERAL_FOLLOWUP', role: 'counselor' }
     // PL-219 v1.5: the post-class survey ask (+ its one reminder).
     case 'class_survey':
       return { key: 'SV_CLASS_SURVEY', role: 'student' }
@@ -227,6 +231,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   LR_WELCOME: 'LR — Late-registration welcome',
   CD_COUNSELOR_DIGEST: 'CD — Counselor digest',
   CS_CLASS_CONFIRMED: 'CS — Counselor class-confirmed welcome',
+  CS_COLLATERAL_FOLLOWUP: 'CS-F — Letter + flyer follow-up (counselor)',
   SV_CLASS_SURVEY: 'SV — Post-class survey ask',
   CR_CLASSROOM_REQUEST: 'CR — Classroom request',
   FP_DEADLINE_PUSH: 'FP — Final-days push',

@@ -1152,6 +1152,32 @@ The course runs {courseDatesPhrase}, with all sessions held outside of school ho
 If you have questions about the course, feel free to reach out to Higher Ground directly at [info@highergroundlearning.com](mailto:info@highergroundlearning.com).`,
   },
   {
+    // PL-237: the collateral-only follow-up — for a school that got the
+    // no-collateral welcome and later wants the materials. Delivers + explains
+    // the letter and flyer WITHOUT repeating the class-is-ready text.
+    template_key: 'CS_COLLATERAL_FOLLOWUP',
+    display_name: 'CS-F — Letter + flyer follow-up (counselor)',
+    sequence_number: 'CS',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'transactional',
+    subject: 'The {className} letter and flyer',
+    preheader: 'The parent letter and student flyer, attached and ready to share.',
+    footer_note: null,
+    body_markdown: `Hi {counselorFirstName},
+
+Following up on {className} — here are the materials, attached and ready to share:
+
+- A **letter** meant to be shared with parents (forward it in your parent communications, or print it)
+- A **flyer** meant for students — it works well on bulletin boards, hallway screens, and in student newsletters
+
+Fresh copies in every format{collateralLanguagesPhrase} are always waiting in your school portal, reflecting the latest class details — you never have to worry about a stale copy. If you'd like any changes, just reply. I'm happy to help however I can.
+
+Best,
+
+William Thomas`,
+  },
+  {
     template_key: 'CD_COUNSELOR_DIGEST',
     display_name: 'CD — Counselor enrollment digest',
     sequence_number: 'CD',

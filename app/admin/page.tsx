@@ -101,6 +101,9 @@ type ClassRow = {
   min_enrollment: number | null
   enrollment_deadline: string | null
   follow_on_class_id: string | null
+  /** PL-237: skip-for-now stamp — the Needs Attention reminder shows while
+   *  set AND short_link is still empty. */
+  collateral_reminder_at: string | null
   schools: { name: string; nickname: string; timezone: string } | null
   instructors: { name: string | null; email: string } | null
   enrollments: Enrollment[] | null
@@ -285,6 +288,8 @@ export default function AdminDashboard() {
   // them always MOUNTED (hidden, not unmounted) so deep-link focus polling
   // and data loads behave exactly as before (the PL-99 late-mount lesson).
   const [activeSection, setActiveSection] = useState<string>('dashboard')
+  // PL-237: which class the Branding & collateral tab's collateral card shows.
+  const [collateralClassId, setCollateralClassId] = useState('')
   // PL-190: which topline tab's sub-nav is showing. Changes only via the
   // topline (a real navigation with ?tab=) or a deep-link param.
   const [activeGroup, setActiveGroup] = useState<string>('dashboard')
@@ -315,6 +320,14 @@ export default function AdminDashboard() {
     if (schoolCard) {
       setActiveGroup('classes')
       setActiveSection('contacts')
+    }
+    // PL-237: the skip-for-now reminder deep-links ?collateral={classId} —
+    // land on the Branding & collateral section with that class picked.
+    const collateralClass = q.get('collateral')
+    if (collateralClass) {
+      setActiveGroup('classes')
+      setActiveSection('branding')
+      setCollateralClassId(collateralClass)
     }
     const qboRow = q.get('qbo')
     if (qboRow) {
@@ -1330,17 +1343,9 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        {/* COLLATERAL — with the class setup fields, not the roster: flyer +
-            parent letter downloads and the fields that drive them */}
-        <CollateralCard
-          classId={c.id}
-          classType={c.class_type}
-          inPerson={c.delivery_mode !== 'online'}
-          sessionDates={sortedSessions.map((s) => s.session_date)}
-          fields={c}
-          school={schools.find((s) => s.id === c.school_id) ?? null}
-          onSaved={fetchRosters}
-        />
+        {/* PL-237: the collateral panel moved OUT of the roster view — its
+            homes are the wizard's Branding & Collateral step and Classes →
+            Branding & collateral (class picker there). */}
 
         {/* SESSIONS — same visual calendar as the public registration page */}
         <div className="p-6 border-b border-gray-200">
@@ -1705,6 +1710,50 @@ export default function AdminDashboard() {
 
         {/* Out-of-flow branding edits — setup happens in the new-school wizard branch. */}
         <div className={activeSection === 'branding' ? '' : 'hidden'}>
+        {/* PL-237 D: the per-class collateral panel's home outside the wizard
+            — pick a class, get the full card (fields, downloads, previews,
+            CS send). The skip-for-now Needs Attention row deep-links here. */}
+        <CollapsibleSection
+          title="Class collateral"
+          subtitle="Pick a class — flyer & parent-letter fields, downloads, and the school welcome"
+          accent="border-hgl-blue"
+          defaultOpen
+        >
+          <select
+            value={collateralClassId}
+            onChange={(e) => setCollateralClassId(e.target.value)}
+            className="border border-gray-300 rounded-md p-2 bg-white text-sm mb-4"
+          >
+            <option value="">Pick a class…</option>
+            {rosters
+              .filter((c) => c.status !== 'cancelled')
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.schools?.nickname ?? '—'} {c.class_type} · starts {c.start_date}
+                  {c.collateral_reminder_at && !c.short_link ? ' — collateral not set up' : ''}
+                </option>
+              ))}
+          </select>
+          {(() => {
+            const c = rosters.find((x) => x.id === collateralClassId)
+            if (!c) return <p className="text-sm text-gray-500 italic">No class picked yet.</p>
+            const sortedSessions = [...(c.sessions ?? [])].sort((a, b) =>
+              a.session_date.localeCompare(b.session_date)
+            )
+            return (
+              <CollateralCard
+                classId={c.id}
+                classType={c.class_type}
+                inPerson={c.delivery_mode !== 'online'}
+                sessionDates={sortedSessions.map((s) => s.session_date)}
+                fields={c}
+                school={schools.find((s) => s.id === c.school_id) ?? null}
+                onSaved={fetchRosters}
+              />
+            )
+          })()}
+        </CollapsibleSection>
+
         {/* PL-241 (PL-229A rule): selecting the section IS the intent. */}
         <CollapsibleSection
           title="School branding &amp; collateral defaults"

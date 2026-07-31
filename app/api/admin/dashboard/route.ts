@@ -96,6 +96,7 @@ export async function GET() {
       .from('classes')
       .select(
         `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, default_location, delivery_mode, start_date, created_at,
+         collateral_reminder_at, short_link,
          schools ( nickname ), sessions ( session_date ), enrollments ( payment_status )`
       )
       .neq('status', 'cancelled'),
@@ -194,6 +195,19 @@ export async function GET() {
       text: `${label(c)} (starts ${c.start_date}) has no instructor assigned.`,
       href: `/admin?class=${c.id}`,
       since: c.created_at, // PL-135: since the class was created
+    })
+  }
+  // PL-237: skip-for-now on the wizard's Branding & Collateral step — the
+  // row is STATE-DRIVEN: it shows while the stamp is set and the class still
+  // has no short link, and clears itself the moment the collateral is
+  // completed (from the deep-linked panel or anywhere else).
+  for (const c of liveClasses.filter((c) => c.collateral_reminder_at && !c.short_link)) {
+    attention.push({
+      id: `collateral-${c.id}`,
+      kind: 'Collateral not set up',
+      text: `${label(c)} was created without its flyer & letter setup — finish the collateral fields when ready.`,
+      href: `/admin?collateral=${c.id}`,
+      since: c.collateral_reminder_at,
     })
   }
   const in3d = new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10)
