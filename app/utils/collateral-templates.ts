@@ -449,6 +449,7 @@ export function letterHtml(m: CollateralModel, lang: CollateralLanguage, assets:
     ${paragraphs}
     ${summaryBox(m, lang)}
     <p>${letterClosing(m, lang)}</p>
+    <p>${lang === 'es' ? '¡Gracias!' : 'Thanks!'}</p>
     <div class="sig">
       ${assets.signatureDataUrl ? `<img src="${assets.signatureDataUrl}" alt="">` : '<div style="height:14mm"></div>'}
       <div class="name">William Thomas</div>
