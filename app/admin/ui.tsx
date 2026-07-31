@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { formatDateAdmin } from '../utils/dates'
+import { tzKeywords, utcOffsetLabel } from '../utils/timezone-aliases'
 
 // Small shared admin UI pieces (admin UX addendum): collapsible sections and
 // the 24-hour / 5-minute time picker used everywhere a session time is set.
@@ -103,7 +104,10 @@ export function SearchCombobox({
   required = false,
 }: {
   value: string
-  options: { value: string; label: string }[]
+  /** PL-238: `keywords` are searched but never displayed — country/city
+   *  aliases for the timezone picker, and anything else a consumer wants
+   *  findable without cluttering the label. */
+  options: { value: string; label: string; keywords?: string }[]
   onChange: (v: string) => void
   placeholder: string
   required?: boolean
@@ -114,7 +118,11 @@ export function SearchCombobox({
   const selected = options.find((o) => o.value === value) ?? null
   const display = query !== null ? query : (selected?.label ?? '')
   const q = (query ?? '').trim().toLowerCase()
-  const matches = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options
+  const matches = q
+    ? options.filter(
+        (o) => o.label.toLowerCase().includes(q) || (o.keywords ?? '').toLowerCase().includes(q)
+      )
+    : options
   const visible = matches.slice(0, 30)
   const pick = (o: { value: string; label: string }) => {
     onChange(o.value)
@@ -213,13 +221,28 @@ export function TimezoneSelect({
         : TZ_FALLBACK,
     []
   )
+  // PL-238: findable by country and major city, not just the IANA name —
+  // "Italy"/"Milan" reach Europe/Rome. The label carries the CURRENT UTC
+  // offset so the choice is verifiable at a glance.
+  const options = useMemo(
+    () =>
+      all.map((tz) => {
+        const offset = utcOffsetLabel(tz)
+        return {
+          value: tz,
+          label: offset ? `${tz} (${offset})` : tz,
+          keywords: tzKeywords(tz),
+        }
+      }),
+    [all]
+  )
   return (
     <SearchCombobox
       value={value}
       onChange={onChange}
       required={required}
-      options={all.map((tz) => ({ value: tz, label: tz }))}
-      placeholder='Type to search timezones — e.g. "Berlin" or "Denver"'
+      options={options}
+      placeholder='Type to search timezones — a country or city works, e.g. "Italy" or "Denver"'
     />
   )
 }

@@ -70,6 +70,8 @@ Scarlett's redesign of the Add-a-New-Class flow:
 
 Scarlett couldn't find Italy's timezone by typing "Italy" or "Milan" — only "Rome" works (IANA Europe/Rome). Make the picker foolproof: match on country names and major-city aliases (e.g. Italy/Milan/Turin → Europe/Rome; Germany/Munich → Europe/Berlin; China/Shanghai/Beijing → Asia/Shanghai), showing the resolved zone with its current UTC offset so the choice is verifiable. A maintained alias map (country → zone, top cities → zone) is enough — no need for a geocoder. Apply everywhere a timezone is picked (school create/edit, tutor profile, class wizard).
 
+**✅ SHIPPED (Jul 30).** New leaf map `app/utils/timezone-aliases.ts` (~90 zones: countries + major non-IANA cities across the Americas, Europe, Africa & Middle East, Asia-Pacific — maintained by hand, extend as schools appear) + `utcOffsetLabel()` computing the zone's CURRENT offset via Intl. `SearchCombobox` options gained a `keywords` field — searched, never displayed — and `TimezoneSelect` labels every option "{zone} ({UTC±X})" with the aliases as keywords, placeholder updated to say a country or city works. One component, so every picker got it at once (instructor profile, class wizard incl. school create, availability grid). Verified live in the instructor editor: "Italy" and "Milan" → Europe/Rome (UTC+2), "Munich" → Europe/Berlin (UTC+2), "Beijing" → Asia/Shanghai (UTC+8).
+
 ## PL-239 — Class wizard validation: show what's required, validate at the step, and speak plain English (reported Jul 30, error screenshot on file)
 
 Three failures in one create flow:
