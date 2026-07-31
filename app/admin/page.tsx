@@ -232,7 +232,7 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
     entries: [
       { id: 'rosters', label: 'Live class rosters' },
       { id: 'add-class', label: 'Add a new class' },
-      { id: 'contacts', label: 'School contacts' },
+      { id: 'contacts', label: 'Schools' },
       { id: 'branding', label: 'Branding & collateral' },
     ],
   },
@@ -243,7 +243,7 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'students', label: 'Students' },
       { id: 'parents', label: 'Parents' },
       { id: 'instructors', label: 'Instructors' },
-      { id: 'contacts', label: 'School contacts' },
+      { id: 'contacts', label: 'Schools' },
       { id: 'communications', label: 'Communications', href: '/admin/communications' },
       // PL-201: offers live beside the comms machinery they ride on.
       { id: 'campaigns', label: 'Campaigns', href: '/admin/campaigns' },
@@ -308,6 +308,13 @@ export default function AdminDashboard() {
       setActiveTab(classId)
       setActiveGroup('classes')
       setActiveSection('rosters')
+    }
+    // PL-242: names are doors — ?school={id} lands on that school's card
+    // (the panel scrolls to and highlights it).
+    const schoolCard = q.get('school')
+    if (schoolCard) {
+      setActiveGroup('classes')
+      setActiveSection('contacts')
     }
     const qboRow = q.get('qbo')
     if (qboRow) {
@@ -1645,13 +1652,22 @@ export default function AdminDashboard() {
         </div>
 
         <div className={activeSection === 'contacts' ? '' : 'hidden'}>
-        {/* PL-229: selecting the section IS the intent to open it. */}
+        {/* PL-229: selecting the section IS the intent to open it.
+            PL-242: the section is SCHOOLS — real editable records; contacts
+            are an attribute on each school's card. */}
         <CollapsibleSection
-          title="School contacts"
-          subtitle="The person + their school affiliation — portal access and digests follow active affiliations"
+          title="Schools"
+          subtitle="Each school's identity, branding, and contacts — portal access and digests follow active affiliations"
           defaultOpen
         >
-          <CounselorsPanel schools={schools} onChange={fetchAllCounselors} />
+          {/* PL-242: school edits change the schools list itself — refresh both. */}
+          <CounselorsPanel
+            schools={schools}
+            onChange={() => {
+              fetchSchools()
+              fetchAllCounselors()
+            }}
+          />
         </CollapsibleSection>
 
         </div>

@@ -26,7 +26,7 @@ export const CONTACTS_SIDEBAR: SidebarEntry[] = [
   { id: 'students', label: 'Students', href: '/admin?tab=contacts&section=students' },
   { id: 'parents', label: 'Parents', href: '/admin?tab=contacts&section=parents' },
   { id: 'instructors', label: 'Instructors', href: '/admin?tab=contacts&section=instructors' },
-  { id: 'contacts', label: 'School contacts', href: '/admin?tab=contacts&section=contacts' },
+  { id: 'contacts', label: 'Schools', href: '/admin?tab=contacts&section=contacts' },
   { id: 'communications', label: 'Communications', href: '/admin/communications' },
   { id: 'campaigns', label: 'Campaigns', href: '/admin/campaigns' },
   { id: 'agreements', label: 'Agreements', href: '/admin/agreements' },

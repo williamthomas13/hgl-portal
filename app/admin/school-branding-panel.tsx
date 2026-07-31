@@ -75,7 +75,13 @@ function SchoolRow({ school, onChange }: { school: SchoolBranding; onChange: () 
   return (
     <li className="flex items-center gap-4 px-4 py-3 text-sm flex-wrap">
       <div className="w-56">
-        <span className="font-semibold text-hgl-slate">{school.nickname}</span>
+        {/* PL-242: names are doors — into the school's card. */}
+        <a
+          href={`/admin?tab=classes&section=contacts&school=${school.id}`}
+          className="font-semibold text-hgl-slate hover:text-hgl-blue hover:underline"
+        >
+          {school.nickname}
+        </a>
         <span className="block text-xs text-gray-500 truncate" title={school.name}>
           {school.name}
         </span>
