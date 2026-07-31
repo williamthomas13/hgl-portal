@@ -209,7 +209,15 @@ export default function ScoresEntry({
       >
         {open ? '▾' : '▸'} Scores ({rows.length}) — record a milestone
       </button>
-      {open && (
+      {/* PL-252: scores attach to students, so an empty roster has nothing to
+          record against — say so plainly instead of offering a dead form. */}
+      {open && students.length === 0 && (
+        <p className="mt-3 text-xs text-gray-500 italic">
+          No students are enrolled yet — scores are recorded per student, so this unlocks as soon as
+          the first student is enrolled.
+        </p>
+      )}
+      {open && students.length > 0 && (
         <div className="mt-3 space-y-3">
           {rows.length > 0 && (
             <ul className="space-y-1">

@@ -168,7 +168,9 @@ function AddSessionForm({
   }
 
   return (
-    <div className="grid grid-cols-4 gap-2 items-end text-sm">
+    // PL-251: items-start, not items-end — bottom-aligning let the DateHint
+    // under the date input push that input a line above Start/End.
+    <div className="grid grid-cols-4 gap-2 items-start text-sm">
       {error && (
         <p className="col-span-4 text-sm text-red-600 font-semibold">{error}</p>
       )}
@@ -215,6 +217,81 @@ function AddSessionForm({
         </button>
       </div>
     </div>
+  )
+}
+
+// PL-250: one small inline editor for the roster header's free-text class
+// fields (Synap group, location) — view with an edit link, flipping to an
+// input + save/cancel. No window.prompt (it loses context and can't cancel
+// cleanly on mobile).
+function InlineEditableText({
+  label,
+  value,
+  emptyText,
+  title,
+  onSave,
+}: {
+  label: string
+  value: string | null
+  emptyText: string
+  title?: string
+  onSave: (next: string | null) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  if (!editing) {
+    return (
+      <p className="text-sm text-gray-600 flex items-center gap-2 flex-wrap" title={title}>
+        <span className="font-semibold">{label}:</span>
+        {value ? (
+          <span className="break-all">{value}</span>
+        ) : (
+          <span className="italic text-gray-400">{emptyText}</span>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(value ?? '')
+            setEditing(true)
+          }}
+          className="text-xs text-gray-500 underline hover:text-hgl-blue"
+        >
+          edit
+        </button>
+      </p>
+    )
+  }
+  return (
+    <p className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+      <span className="font-semibold">{label}:</span>
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        className="border border-gray-300 rounded p-1 text-xs w-72 max-w-full"
+        autoFocus
+      />
+      <button
+        type="button"
+        disabled={saving}
+        onClick={async () => {
+          setSaving(true)
+          try {
+            await onSave(draft.trim() || null)
+            setEditing(false)
+          } finally {
+            setSaving(false)
+          }
+        }}
+        className="text-xs bg-hgl-slate text-white rounded px-2 py-0.5 disabled:opacity-50"
+      >
+        {saving ? 'saving…' : 'save'}
+      </button>
+      <button type="button" onClick={() => setEditing(false)} className="text-xs text-gray-500 underline">
+        cancel
+      </button>
+    </p>
   )
 }
 
@@ -688,6 +765,39 @@ export default function AdminDashboard() {
     fetchRosters()
   }
 
+  // PL-250: assign/change the instructor from the roster — we often don't
+  // know who's teaching until well after creation, and the wizard was the
+  // only surface that could set it. Goes through the assign-instructor API
+  // (shared with the calendar's PL-249 button) so the International Classes
+  // calendar resyncs on the fast path.
+  async function handleAssignInstructor(c: ClassRow, instructorId: string) {
+    const label = `${c.schools?.nickname ?? '—'} ${c.class_type}`
+    const name = instructors.find((i) => i.id === instructorId)?.name
+      ?? instructors.find((i) => i.id === instructorId)?.email
+    const msg = instructorId
+      ? `Assign ${name} as the instructor for ${label}?`
+      : `Clear the instructor for ${label}? It goes back to "not yet assigned".`
+    if (!confirm(msg)) return
+    const res = await fetch('/api/admin/assign-instructor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classId: c.id, instructorId: instructorId || null }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) alert(json.error ?? 'Assignment failed — try again.')
+    fetchRosters()
+  }
+
+  // PL-250: Synap group and location become editable where they're read.
+  async function handleClassField(c: ClassRow, field: 'synap_group' | 'default_location', value: string | null) {
+    const { error } = await supabase
+      .from('classes')
+      .update({ [field]: value })
+      .eq('id', c.id)
+    if (error) alert('Error saving: ' + error.message)
+    else fetchRosters()
+  }
+
   // PL-69: the Ops Director sets pronouns when she learns them (on a call,
   // in a reply). Optional; unset keeps the neutral they/them email copy.
   async function handlePronouns(studentId: string, value: string) {
@@ -941,16 +1051,27 @@ export default function AdminDashboard() {
                 </span>
               )}
             </h3>
-            <p className="text-sm text-gray-600">
-              Instructor:{' '}
-              {c.instructors ? (
-                <>
-                  {c.instructors.name ?? c.instructors.email}
-                  {c.instructors.name ? ` (${c.instructors.email})` : ''}
-                </>
-              ) : (
-                <span className="italic text-amber-700">Not yet assigned</span>
-              )}{' '}
+            <p className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">Instructor:</span>
+              {/* PL-250: assignable right here — the wizard used to be the
+                  only surface that could set it. */}
+              <select
+                value={c.instructor_id ?? ''}
+                onChange={(e) => handleAssignInstructor(c, e.target.value)}
+                disabled={isCancelled}
+                className={`border border-gray-300 rounded p-0.5 text-xs bg-white max-w-64 ${
+                  c.instructor_id ? '' : 'italic text-amber-700'
+                }`}
+              >
+                <option value="">not yet assigned</option>
+                {instructors
+                  .filter((i) => i.active || i.id === c.instructor_id)
+                  .map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name ? `${i.name} (${i.email})` : i.email}
+                    </option>
+                  ))}
+              </select>
               {/* PL-161: the fit suggester — advisory, overlaid on the calendar */}
               <a
                 href={`/admin/calendar?suggest=${c.id}`}
@@ -958,8 +1079,8 @@ export default function AdminDashboard() {
                 title="Rank every active instructor against this class's session times — Google busy, portal commitments, and travel windows, shown on the calendar"
               >
                 who&apos;s free to teach it?
-              </a>{' '}
-              · Starts: {formatDateAdmin(effectiveStartDate(c.start_date, sortedSessions))}
+              </a>
+              <span>· Starts: {formatDateAdmin(effectiveStartDate(c.start_date, sortedSessions))}</span>
             </p>
             {sortedSessions.length > 0 && sortedSessions[0].session_date !== c.start_date && (
               <p className="text-xs mt-0.5">
@@ -994,9 +1115,15 @@ export default function AdminDashboard() {
               Timezone: {c.schools?.timezone ?? '—'}{' '}
               <span className="text-xs text-gray-400">(from the school record)</span>
             </p>
-            {c.default_location && (
-              <p className="text-sm text-gray-600">Location: {c.default_location}</p>
-            )}
+            {/* PL-250: visible and editable even when unset — counselors
+                often skip the form and just reply by email with the room. */}
+            <InlineEditableText
+              label="Location"
+              value={c.default_location}
+              emptyText="not set"
+              title="The class's default location — sessions without their own location fall back to this"
+              onSave={(v) => handleClassField(c, 'default_location', v)}
+            />
             {c.counselor_id && (() => {
               const contact = allCounselors.find((x) => x.id === c.counselor_id)
               return contact ? (
@@ -1027,9 +1154,12 @@ export default function AdminDashboard() {
                 </p>
               )
             })()}
-            {c.synap_group && (
-              <p className="text-sm text-gray-600">Synap group: {c.synap_group}</p>
-            )}
+            <InlineEditableText
+              label="Synap group"
+              value={c.synap_group}
+              emptyText="not set"
+              onSave={(v) => handleClassField(c, 'synap_group', v)}
+            />
             <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
               <span className="font-semibold">Registration link:</span>
               <code className="bg-gray-100 rounded px-2 py-0.5 text-xs">

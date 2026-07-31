@@ -1077,7 +1077,9 @@ export default function ClassWizard({
           {sessionError && (
             <p className="text-sm text-red-600 font-semibold mb-2">{sessionError}</p>
           )}
-          <div className="border border-gray-200 rounded-md p-4 grid grid-cols-4 gap-3 items-end text-sm">
+          {/* PL-251: items-start, not items-end — bottom-aligning let the
+              DateHint under the date input push that input above Start/End. */}
+          <div className="border border-gray-200 rounded-md p-4 grid grid-cols-4 gap-3 items-start text-sm">
             <div>
               <label className="block text-xs text-gray-600">Date</label>
               <input
@@ -1114,7 +1116,7 @@ export default function ClassWizard({
               type="button"
               onClick={addSession}
               disabled={!draft.session_date}
-              className="bg-hgl-slate text-white py-1.5 px-3 rounded hover:opacity-90 disabled:opacity-50"
+              className="self-end bg-hgl-slate text-white py-1.5 px-3 rounded hover:opacity-90 disabled:opacity-50"
             >
               Add session
             </button>
