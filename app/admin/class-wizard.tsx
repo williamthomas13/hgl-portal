@@ -118,6 +118,9 @@ export default function ClassWizard({
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  // PL-239: when an error names a fixable field, the message carries the
+  // step to jump to — one click lands on the field, no decoding required.
+  const [messageStep, setMessageStep] = useState<1 | 2 | 3 | null>(null)
 
   // -- step 1: details ------------------------------------------------------
   const [schoolId, setSchoolId] = useState(initial?.schoolId ?? '')
@@ -138,8 +141,10 @@ export default function ClassWizard({
   // afterthought on the card — the card keeps full editing + regeneration.
   const [shortLink, setShortLink] = useState(initial?.collateral?.short_link ?? '')
   const [collateralLang, setCollateralLang] = useState(initial?.collateral?.collateral_language ?? '')
+  // PL-239 (Scarlett, Jul 30): practice tests DEFAULT to 2, editable — the
+  // create can never hit the DB's not-null constraint from an untouched field.
   const [practiceTestCount, setPracticeTestCount] = useState(
-    initial?.collateral?.practice_test_count != null ? String(initial.collateral.practice_test_count) : ''
+    initial?.collateral?.practice_test_count != null ? String(initial.collateral.practice_test_count) : '2'
   )
   const [flyerBlurb, setFlyerBlurb] = useState(initial?.collateral?.flyer_blurb ?? '')
   const [defaultLocation, setDefaultLocation] = useState(initial?.defaultLocation ?? '')
@@ -393,12 +398,74 @@ export default function ClassWizard({
   // Instructor is OPTIONAL (addendum §7.3) — classes are frequently created
   // before an instructor is confirmed. The scheduling nudge + #4's
   // hold-and-alert are the safety nets.
-  const detailsComplete = Boolean(classType.trim() && price && capacity)
+  // PL-239: a disabled Next must SAY why — one needs-list drives the button
+  // state, the live list under it, and the field markers.
+  const practiceTestsValid =
+    practiceTestCount.trim() !== '' &&
+    Number.isFinite(Number(practiceTestCount)) &&
+    Math.trunc(Number(practiceTestCount)) >= 0
+  const detailsNeeds = [
+    !classType.trim() && 'class type',
+    !price && 'price',
+    !capacity && 'capacity',
+    !practiceTestsValid && 'the number of practice tests (0 or more — it defaults to 2)',
+  ].filter(Boolean) as string[]
+  const detailsComplete = detailsNeeds.length === 0
+  const stepNeeds: string[] =
+    step === 1
+      ? schoolId
+        ? []
+        : ['a school — pick one or add it']
+      : step === 2
+        ? detailsNeeds
+        : step === 3
+          ? ([
+              sessions.length === 0 && 'at least one session',
+              sessions.length > 0 && !allDated && 'a date on every copied session',
+            ].filter(Boolean) as string[])
+          : []
+
+  // PL-239: no raw DB/constraint text reaches the admin — known failures get
+  // plain English plus the step to fix them on; unknown ones lead with a
+  // plain summary and tuck the technical detail at the end.
+  function explainCreateError(error: { code?: string; message?: string } | null): {
+    text: string
+    step: 1 | 2 | 3 | null
+  } {
+    const msg = error?.message ?? 'unknown'
+    const FIELDS: Record<string, { text: string; step: 1 | 2 | 3 }> = {
+      practice_test_count: { text: 'The number of practice tests is missing', step: 2 },
+      price: { text: 'The price is missing', step: 2 },
+      capacity: { text: 'The student capacity is missing', step: 2 },
+      class_type: { text: 'The class type is missing', step: 2 },
+      school_id: { text: 'The school is missing', step: 1 },
+      min_enrollment: { text: 'The minimum enrollment is missing', step: 2 },
+      start_date: { text: 'The start date is missing — it comes from the first session', step: 3 },
+    }
+    const nullCol = msg.match(/null value in column "([^"]+)"/)?.[1]
+    if (nullCol && FIELDS[nullCol]) {
+      return { text: `Error: ${FIELDS[nullCol].text} — fill it in and create again.`, step: FIELDS[nullCol].step }
+    }
+    if (nullCol) {
+      return {
+        text: `Error: the "${nullCol.replace(/_/g, ' ')}" field is missing a value — fill it in and create again.`,
+        step: null,
+      }
+    }
+    if (error?.code === '23503') {
+      return { text: 'Error: the class points at a school or instructor that no longer exists — re-pick them.', step: 1 }
+    }
+    return {
+      text: `Error: the class couldn't be saved — nothing was created. (Technical detail: ${msg})`,
+      step: null,
+    }
+  }
 
   async function handleCreate() {
     if (!school || sessions.length === 0 || !allDated) return
     setSaving(true)
     setMessage('')
+    setMessageStep(null)
 
     // Online classes with no explicit location auto-fill the instructor's
     // default meeting link (PHASE4_SPEC §5). In-person classes left blank get
@@ -439,14 +506,14 @@ export default function ClassWizard({
       ...(initial?.collateral ?? {}),
       short_link: shortLink.trim() || null,
       collateral_language: collateralLang || null,
-      practice_test_count: practiceTestCount.trim() === '' ? null : Math.trunc(Number(practiceTestCount)),
+      // PL-239: never null — the field defaults to 2 and validates at its
+      // step, and this belt catches any path that skips both.
+      practice_test_count: practiceTestCount.trim() === '' ? 2 : Math.trunc(Number(practiceTestCount)),
       flyer_blurb: flyerBlurb.trim() || null,
     }
-    if (
-      newClass.practice_test_count != null &&
-      (!Number.isFinite(newClass.practice_test_count) || newClass.practice_test_count < 0)
-    ) {
-      setMessage('Error: practice test count must be a whole number (0 or more).')
+    if (!Number.isFinite(newClass.practice_test_count) || newClass.practice_test_count < 0) {
+      setMessage('Error: the number of practice tests must be a whole number (0 or more).')
+      setMessageStep(2)
       setSaving(false)
       return
     }
@@ -465,7 +532,9 @@ export default function ClassWizard({
         .single())
     }
     if (error || !created) {
-      setMessage('Error creating class: ' + (error?.message ?? 'unknown'))
+      const explained = explainCreateError(error)
+      setMessage(explained.text)
+      setMessageStep(explained.step)
       setSaving(false)
       return
     }
@@ -482,7 +551,10 @@ export default function ClassWizard({
     if (sessErr) {
       // A class with zero sessions must not exist — roll the class back.
       await supabase.from('classes').delete().eq('id', created.id)
-      setMessage('Error saving sessions (class not created): ' + sessErr.message)
+      setMessage(
+        `Error: the sessions couldn't be saved, so the class was NOT created — nothing half-made to clean up. Check each session's date and times, then create again. (Technical detail: ${sessErr.message})`
+      )
+      setMessageStep(3)
       setSaving(false)
       return
     }
@@ -763,7 +835,9 @@ export default function ClassWizard({
       {step === 2 && (
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Class type</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Class type <span className="text-red-500" title="Required">*</span>
+            </label>
             <input
               type="text"
               value={classType}
@@ -846,12 +920,16 @@ export default function ClassWizard({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Price (USD)</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Price (USD) <span className="text-red-500" title="Required">*</span>
+            </label>
             <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="750" className={inputCls} />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Student capacity</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Student capacity <span className="text-red-500" title="Required">*</span>
+            </label>
             <input type="number" value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="20" className={inputCls} />
           </div>
 
@@ -964,7 +1042,9 @@ export default function ClassWizard({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Practice tests included</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Practice tests included <span className="text-red-500" title="Required">*</span>
+                </label>
                 <input
                   type="number"
                   min={0}
@@ -973,6 +1053,8 @@ export default function ClassWizard({
                   placeholder="e.g. 2"
                   className={inputCls}
                 />
+                {/* PL-239: defaulted so the create can never fail on it. */}
+                <p className="text-xs text-gray-500 mt-1">Defaults to 2 — change it any time here or on the collateral card.</p>
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700">Flyer blurb</label>
@@ -1161,31 +1243,22 @@ export default function ClassWizard({
           ← Back
         </button>
         {step < 4 ? (
-          <button
-            type="button"
-            onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4)}
-            disabled={
-              step === 1
-                ? !schoolId
-                : step === 2
-                  ? !detailsComplete
-                  : sessions.length === 0 || !allDated
-            }
-            title={
-              step === 1 && !schoolId
-                ? 'Pick (or add) the school first — everything else hangs off it'
-                : step === 2 && !detailsComplete
-                  ? 'Class type, price, and capacity are required'
-                  : step === 3 && sessions.length === 0
-                    ? 'Add at least one session'
-                    : step === 3 && !allDated
-                      ? 'Every copied session needs a date first'
-                      : undefined
-            }
-            className="bg-hgl-blue text-white font-bold py-2.5 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
-          >
-            Next →
-          </button>
+          <div className="text-right">
+            <button
+              type="button"
+              onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4)}
+              disabled={stepNeeds.length > 0}
+              className="bg-hgl-blue text-white font-bold py-2.5 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
+            >
+              Next →
+            </button>
+            {/* PL-239: a greyed-out Next says WHY, live, right under it. */}
+            {stepNeeds.length > 0 && (
+              <p className="text-xs text-amber-700 mt-1.5 max-w-sm">
+                Next needs: {stepNeeds.join(' · ')}
+              </p>
+            )}
+          </div>
         ) : (
           <button
             type="button"
@@ -1205,6 +1278,21 @@ export default function ClassWizard({
           }`}
         >
           {message}
+          {/* PL-239: when the error names a fixable field, one click lands
+              on its step. */}
+          {messageStep != null && (
+            <button
+              type="button"
+              onClick={() => {
+                setStep(messageStep)
+                setMessage('')
+                setMessageStep(null)
+              }}
+              className="block mx-auto mt-1.5 text-sm underline font-semibold"
+            >
+              Go to the {steps[messageStep - 1]} step to fix it →
+            </button>
+          )}
         </div>
       )}
     </div>
