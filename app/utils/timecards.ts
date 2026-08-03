@@ -306,8 +306,8 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
              <p>Hi ${tutorFirst},</p>
              <p>Your sessions for the pay period are in: <strong>${total ?? 0} hours</strong>.
              The portal built this from the schedule, so usually there is nothing to fill out —
-             just glance over it, correct any exception (a no-show, a session that ran a
-             different length), and hit <strong>Confirm timecard</strong>.</p>
+             just glance over it, correct any exception (a no-show), and hit
+             <strong>Confirm timecard</strong>.</p>
              <p><a href="${base}/portal?view=tutor">Review and confirm your timecard →</a></p>
              <p style="color:#64748b;font-size:13px">Sessions cancelled inside 24 hours and
              no-shows are on the card on purpose — you're paid for reserved time.</p>`,

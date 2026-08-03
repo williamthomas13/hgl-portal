@@ -60,13 +60,12 @@ const CARD_STATUS_STYLES: Record<TimecardData['status'], string> = {
   exported: 'bg-gray-200 text-gray-600',
 }
 
-const DURATIONS = [30, 45, 60, 75, 90, 105, 120, 150, 180]
-
 export default function TimecardPanel({
   timecards,
   actionableId,
   sessions,
   classSessions = [],
+  notedSessionIds = [],
   workTypes = [],
   timezone,
   salaried = false,
@@ -75,6 +74,8 @@ export default function TimecardPanel({
   actionableId: string | null
   sessions: TimecardSession[]
   classSessions?: TimecardClassSession[]
+  /** PL-257: session ids on this card that already have a session note. */
+  notedSessionIds?: string[]
   /** The tutor's selectable work types: the standard six + own pay-type titles. */
   workTypes?: string[]
   timezone: string
@@ -84,7 +85,6 @@ export default function TimecardPanel({
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const [adjusting, setAdjusting] = useState('') // session id
   const [noShowArming, setNoShowArming] = useState('') // session id
 
   const actionable = timecards.find((t) => t.id === actionableId) ?? null
@@ -99,7 +99,6 @@ export default function TimecardPanel({
     })
     const json = await res.json().catch(() => ({}))
     setBusy(false)
-    setAdjusting('')
     setNoShowArming('')
     setMessage(res.ok ? done : 'Error: ' + json.error)
     if (res.ok) router.refresh()
@@ -194,37 +193,12 @@ export default function TimecardPanel({
                             cancel
                           </button>
                         </span>
-                      ) : adjusting === s.id ? (
-                        <span className="inline-flex items-center gap-1">
-                          ran
-                          <select
-                            defaultValue={s.duration_minutes}
-                            disabled={busy}
-                            onChange={(e) =>
-                              call(
-                                { action: 'adjust_duration', session_id: s.id, duration_minutes: Number(e.target.value) },
-                                'Duration corrected.'
-                              )
-                            }
-                            className="border border-gray-300 rounded p-1 bg-white"
-                          >
-                            {DURATIONS.map((m) => (
-                              <option key={m} value={m}>{m} min</option>
-                            ))}
-                          </select>
-                          <button onClick={() => setAdjusting('')} className="text-gray-500 underline">
-                            cancel
-                          </button>
-                        </span>
                       ) : (
-                        <>
-                          <button onClick={() => setNoShowArming(s.id)} className="text-red-600 underline">
-                            no-show…
-                          </button>
-                          <button onClick={() => setAdjusting(s.id)} className="text-hgl-blue underline">
-                            ran shorter/longer…
-                          </button>
-                        </>
+                        // PL-261: no "ran shorter/longer" — sessions bill and
+                        // pay at their scheduled length, always.
+                        <button onClick={() => setNoShowArming(s.id)} className="text-red-600 underline">
+                          no-show…
+                        </button>
                       )}
                     </span>
                   )}
@@ -291,17 +265,57 @@ export default function TimecardPanel({
             )
           })()}
 
-          {actionable.status === 'open' && (
-            <button
-              disabled={busy}
-              onClick={() =>
-                call({ action: 'confirm_timecard', timecard_id: actionable.id }, 'Timecard confirmed — thank you!')
-              }
-              className="bg-hgl-slate text-white py-2 px-5 rounded hover:opacity-90 disabled:opacity-50"
-            >
-              Confirm timecard ({Number(actionable.total_hours)} h)
-            </button>
-          )}
+          {/* PL-257: the tutor sees the SAME missing-notes state the admin
+              approval gate enforces, and confirm fails closed until it's
+              clear (the server re-checks regardless). */}
+          {(() => {
+            const noted = new Set(notedSessionIds)
+            const missingNotes = sessions.filter((s) => s.status === 'completed' && !noted.has(s.id))
+            return (
+              <>
+                {actionable.status === 'open' && missingNotes.length > 0 && (
+                  <div className="mb-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-sm">
+                    {/* PL-113 lesson: explicit {' '} at line-broken inline
+                        boundaries — JSX eats the newline-adjacent space. */}
+                    <p className="font-semibold text-amber-900">
+                      {missingNotes.length} session{missingNotes.length === 1 ? '' : 's'} on this
+                      timecard {missingNotes.length === 1 ? 'is' : 'are'}{' '}
+                      missing notes — your timecard can&apos;t be confirmed (or approved) until
+                      every session has one:
+                    </p>
+                    <ul className="mt-1 ml-5 list-disc text-amber-900">
+                      {missingNotes.map((s) => (
+                        <li key={s.id}>
+                          {fmt(s.starts_at, { weekday: 'short', month: 'short', day: 'numeric' })} —{' '}
+                          {s.studentName}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-amber-800">
+                      Add each note in the <span className="font-semibold">Session notes</span>{' '}
+                      section above — a couple of sentences is plenty.
+                    </p>
+                  </div>
+                )}
+                {actionable.status === 'open' && (
+                  <button
+                    disabled={busy || missingNotes.length > 0}
+                    title={
+                      missingNotes.length > 0
+                        ? 'Every session needs a note before the timecard can be confirmed.'
+                        : undefined
+                    }
+                    onClick={() =>
+                      call({ action: 'confirm_timecard', timecard_id: actionable.id }, 'Timecard confirmed — thank you!')
+                    }
+                    className="bg-hgl-slate text-white py-2 px-5 rounded hover:opacity-90 disabled:opacity-50"
+                  >
+                    Confirm timecard ({Number(actionable.total_hours)} h)
+                  </button>
+                )}
+              </>
+            )
+          })()}
           {actionable.status === 'tutor_confirmed' && (
             <p className="text-sm text-green-700">
               ✓ Confirmed{actionable.tutor_confirmed_at ? ` on ${fmt(actionable.tutor_confirmed_at, { month: 'short', day: 'numeric' })}` : ''} — awaiting office approval.

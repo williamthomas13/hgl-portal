@@ -19,7 +19,6 @@ import {
 
 type Body =
   | { action: 'no_show'; session_id: string; note?: string }
-  | { action: 'adjust_duration'; session_id: string; duration_minutes: number }
   | { action: 'confirm_timecard'; timecard_id: string }
   | { action: 'set_work_type'; session_id: string; work_type: string }
   | { action: 'add_note'; session_id: string; note: string; next_time?: string }
@@ -28,9 +27,6 @@ type Body =
   | { action: 'respond_coverage'; request_id: string; response: 'accept' | 'decline' }
   | { action: 'cancel_coverage'; request_id: string }
   | { action: 'student_notes'; student_id: string }
-
-const MIN_MINUTES = 15
-const MAX_MINUTES = 240
 
 async function timecardLocked(timecardId: string | null): Promise<boolean> {
   if (!timecardId) return false
@@ -50,7 +46,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    if (body.action === 'no_show' || body.action === 'adjust_duration') {
+    // PL-261: adjust_duration is GONE — a session bills and pays at its
+    // scheduled length, so nothing may rewrite ends_at after the fact
+    // (variable actuals made billing and payroll drift apart).
+    if (body.action === 'no_show') {
       const { data: session } = await supabase
         .from('tutoring_sessions')
         .select('id, tutor_id, status, starts_at, ends_at, timecard_id')
@@ -66,41 +65,22 @@ export async function POST(req: Request) {
         )
       }
 
-      if (body.action === 'no_show') {
-        if (session.status !== 'completed' && session.status !== 'confirmed') {
-          return NextResponse.json({ error: `A ${session.status} session cannot be marked no-show.` }, { status: 400 })
-        }
-        const { error } = await supabase
-          .from('tutoring_sessions')
-          .update({
-            status: 'no_show',
-            cancelled_at: new Date().toISOString(),
-            cancelled_by: 'tutor',
-            cancel_note: body.note ?? null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', session.id)
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        await enqueueGcalSync(session.id, 'tutor marked no-show — XCL')
-        after(() => processGcalQueue())
-      } else {
-        const minutes = Math.round(body.duration_minutes)
-        if (!(minutes >= MIN_MINUTES && minutes <= MAX_MINUTES)) {
-          return NextResponse.json(
-            { error: `Duration must be between ${MIN_MINUTES} and ${MAX_MINUTES} minutes.` },
-            { status: 400 }
-          )
-        }
-        if (session.status !== 'completed') {
-          return NextResponse.json({ error: 'Only completed sessions can have their duration corrected.' }, { status: 400 })
-        }
-        const endsAt = new Date(new Date(session.starts_at).getTime() + minutes * 60_000).toISOString()
-        const { error } = await supabase
-          .from('tutoring_sessions')
-          .update({ ends_at: endsAt, updated_at: new Date().toISOString() })
-          .eq('id', session.id)
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (session.status !== 'completed' && session.status !== 'confirmed') {
+        return NextResponse.json({ error: `A ${session.status} session cannot be marked no-show.` }, { status: 400 })
       }
+      const { error } = await supabase
+        .from('tutoring_sessions')
+        .update({
+          status: 'no_show',
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: 'tutor',
+          cancel_note: body.note ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', session.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      await enqueueGcalSync(session.id, 'tutor marked no-show — XCL')
+      after(() => processGcalQueue())
 
       if (session.timecard_id) await recomputeTimecard(session.timecard_id)
       return NextResponse.json({ ok: true })
@@ -260,6 +240,36 @@ export async function POST(req: Request) {
       }
       if (tc.status !== 'open') {
         return NextResponse.json({ error: `Timecard is already ${tc.status.replace('_', ' ')}.` }, { status: 400 })
+      }
+      // PL-257b: fail closed on missing session notes — the SAME anti-join
+      // the admin approval gate runs (admin/tutoring/timecard). Confirming
+      // with notes missing just moved the block one desk over.
+      const { data: cardSessions } = await supabase
+        .from('tutoring_sessions')
+        .select('id, starts_at, students ( first_name, last_name )')
+        .eq('timecard_id', tc.id)
+        .eq('status', 'completed')
+      const sessionIds = (cardSessions ?? []).map((s: any) => s.id)
+      const { data: notes } = sessionIds.length
+        ? await supabase.from('session_notes').select('session_id').in('session_id', sessionIds)
+        : { data: [] }
+      const noted = new Set((notes ?? []).map((n: any) => n.session_id))
+      const missing = (cardSessions ?? []).filter((s: any) => !noted.has(s.id))
+      if (missing.length > 0) {
+        const names = missing
+          .slice(0, 5)
+          .map((s: any) => {
+            const st = Array.isArray(s.students) ? s.students[0] : s.students
+            return `${st?.first_name ?? ''} ${st?.last_name ?? ''}`.trim() || 'a student'
+          })
+          .join(', ')
+        return NextResponse.json(
+          {
+            error: `${missing.length} session${missing.length === 1 ? '' : 's'} on this timecard ${missing.length === 1 ? 'is' : 'are'} missing notes (${names}${missing.length > 5 ? ', …' : ''}). Add each note in the Session notes section, then confirm.`,
+            missingNotes: missing.map((s: any) => s.id),
+          },
+          { status: 400 }
+        )
       }
       const total = await recomputeTimecard(tc.id)
       const { error } = await supabase
