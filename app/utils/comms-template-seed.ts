@@ -749,6 +749,27 @@ If this doesn't look right, just say so and we'll fix it.
 {contactBlock}`,
   },
   {
+    // PL-262: sent by the admin's Acknowledge button on a session with a
+    // pending reschedule request — confirms a human saw it; the actual
+    // change still arrives as its own T3 once made.
+    template_key: 'T3_RESCHEDULE_ACK',
+    display_name: 'T3-A — Reschedule request received',
+    sequence_number: 'T3',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Got it — we're on {studentFirstName}'s reschedule request",
+    footer_note: null,
+    preheader: 'Your reschedule request for {studentFirstName} is with us.',
+    body_markdown: `Hi {parentFirstName},
+
+Just confirming your request to move {studentFirstName}'s {subjectName} session on **{sessionWhenPhrase}** reached a real person — we're looking at the schedule now and you'll get a confirmation email as soon as the new time is set.
+
+{lateFeeNoteBlock}
+
+{contactBlock}`,
+  },
+  {
     template_key: 'T4_PAYMENT_FAILED',
     display_name: 'T4 — Payment failed',
     sequence_number: 'T4',
@@ -1133,7 +1154,7 @@ One more thing that makes your life easier: **we set up a school portal for you*
 
 Below is a sample email you could use to introduce the course to students and parents. And as always — if you'd like any changes to the schedule or anything else, just reply. I'm happy to help however I can.
 
-Best,
+Thanks!
 
 William Thomas
 
@@ -1173,7 +1194,7 @@ Following up on {className} — here are the materials, attached and ready to sh
 
 Fresh copies in every format{collateralLanguagesPhrase} are always waiting in your school portal, reflecting the latest class details — you never have to worry about a stale copy. If you'd like any changes, just reply. I'm happy to help however I can.
 
-Best,
+Thanks!
 
 William Thomas`,
   },
@@ -1189,15 +1210,11 @@ William Thomas`,
     footer_note: null,
     body_markdown: `Hi {counselorFirstName},
 
-Here's where enrollment stands for the upcoming Higher Ground Learning classes at {schoolName}:
+Here's where enrollment stands for the upcoming Higher Ground Learning {digestClassNoun} at {schoolName}:
 
 {digestClassListBlock}
 
-See live counts and scores any time — sign in at [{portalLink}]({portalLink}) with this email.
-
-Know a student who's still on the fence? Forwarding them (or their parents) the registration link is the single most helpful thing you can do — everything after the click is automatic.
-
-Questions about any student or class? Just reply to this email.
+If you know a student who's still on the fence, forwarding them (or their parents) the registration link is the single most helpful thing you can do.
 
 Higher Ground Learning
 
@@ -1353,7 +1370,7 @@ Higher Ground Learning`,
 
 Hi {tutorFirstName},
 
-Your sessions for the pay period are in: **{timecardHours} hours**. The portal built this from the schedule, so usually there is nothing to fill out — just glance over it, correct any exception (a no-show, a session that ran a different length), and hit **Confirm timecard**.
+Your sessions for the pay period are in: **{timecardHours} hours**. The portal built this from the schedule, so usually there is nothing to fill out — just glance over it, correct any exception (a no-show), and hit **Confirm timecard**.
 
 [Review and confirm your timecard →]({timecardLink})
 
@@ -1577,7 +1594,7 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     from_identity: 'info',
     category: 'transactional',
     // PL-89: anchored to the families' email deadline, not the class start.
-    subject: 'Missing details — {className} class-details email goes out {classDetailsSendDate}',
+    subject: 'Missing details — {className} class-details email {classDetailsSendPhrase}',
     preheader: 'Three days of runway before families are supposed to hear.',
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,

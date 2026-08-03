@@ -108,6 +108,8 @@ export type ExtraVars = {
   counselorFirstName?: string
   /** CS digest subject count, e.g. "12 students enrolled" or "2 classes, 17 students enrolled". */
   digestCountSummary?: string
+  /** PL-265: "class" or "classes" — agrees with the digest's class count. */
+  digestClassNoun?: string
   /** CS digest per-class cards (pre-rendered). */
   digestClassListBlock?: string
   /** CS digest frequency-choice links line (pre-rendered). */
@@ -185,6 +187,15 @@ export type ExtraVars = {
   /** PL-89: when #4 (class details) goes to families, written out — derived
    *  from the SEQUENCE offset at compose time. */
   classDetailsSendDate?: string
+  /** PL-264: the same fact as a tense-aware phrase — "goes out {date}" or
+   *  "is overdue" once the date has passed. */
+  classDetailsSendPhrase?: string
+  /** PL-262: the requested session's local time, written out — "Wed, Aug 5, 4:00 PM". */
+  sessionWhenPhrase?: string
+  /** PL-262: the session's subject, e.g. "French". */
+  subjectName?: string
+  /** PL-262: the inside-24h fee caveat, or empty when 24h+ notice. */
+  lateFeeNoteBlock?: string
 
   // --- PL-76: cancelled-class → tutoring conversion --------------------------
   /** "$899.00" — the cancelled class's paid amount, now a tutoring credit. */
@@ -621,6 +632,8 @@ export const VARIABLES: Record<string, VariableDef> = {
   // --- PL-66: counselor / tutor / internal-alert registrations ---------------
   counselorFirstName: { description: "Counselor's first name (CS set)", resolve: (_c, _a, e) => e.counselorFirstName ?? 'there' },
   digestCountSummary: { description: 'CS digest count, e.g. "12 students enrolled"', resolve: (_c, _a, e) => e.digestCountSummary ?? '—' },
+  // PL-265: "class" or "classes" to match how many the digest actually covers.
+  digestClassNoun: { description: 'PL-265: "class" or "classes", agreeing with the digest\'s actual class count', resolve: (_c, _a, e) => e.digestClassNoun ?? 'classes' },
   digestClassListBlock: { description: 'CS digest per-class cards', block: true, resolve: (_c, _a, e) => e.digestClassListBlock ?? '' },
   digestFrequencyBlock: { description: 'CS digest frequency-choice links', block: true, resolve: (_c, _a, e) => e.digestFrequencyBlock ?? '' },
   deadlineCountdown: { description: '"3 days left" / "Last day" (CS push subject)', resolve: (_c, _a, e) => e.deadlineCountdown ?? '—' },
@@ -745,6 +758,27 @@ export const VARIABLES: Record<string, VariableDef> = {
   classDetailsSendDate: {
     description: "When the families' class-details email (#4) goes out — derived from the sequence, e.g. \"Tuesday, September 1, 2026\"",
     resolve: (_c, _a, e) => e.classDetailsSendDate ?? '—',
+  },
+  // PL-264: the same fact as a whole tense-aware phrase — "goes out Tuesday,
+  // September 1, 2026" before the date, "is overdue (should have gone out
+  // Tuesday, September 1, 2026)" after it.
+  classDetailsSendPhrase: {
+    description: 'PL-264: subject-safe, tense-aware send phrase for the class-details email — "goes out {date}" before the date, "is overdue" after',
+    resolve: (_c, _a, e) => e.classDetailsSendPhrase ?? e.classDetailsSendDate ?? '—',
+  },
+  // PL-262: reschedule-request ack.
+  sessionWhenPhrase: {
+    description: 'PL-262: the requested session\'s local time, e.g. "Wed, Aug 5, 4:00 PM"',
+    resolve: (_c, _a, e) => e.sessionWhenPhrase ?? '—',
+  },
+  subjectName: {
+    description: 'The session\'s subject, e.g. "French"',
+    resolve: (_c, _a, e) => e.subjectName ?? 'tutoring',
+  },
+  lateFeeNoteBlock: {
+    description: 'PL-262: the inside-24h $40/hour caveat paragraph — EMPTY when the request came with 24h+ notice',
+    block: true,
+    resolve: (_c, _a, e) => e.lateFeeNoteBlock ?? '',
   },
   creditAmount: {
     description: 'PL-76: the cancelled class\'s paid amount as tutoring credit, e.g. "$899.00"',
@@ -1092,6 +1126,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
   // real send, never as a bug) ------------------------------------------------
   counselorFirstName: 'Marisol',
   digestCountSummary: '12 students enrolled',
+  digestClassNoun: 'classes',
   digestClassListBlock:
     '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0"><p style="margin:0 0 4px"><strong>SAT Prep — starts September 5, 2026</strong></p><p style="margin:0;color:#475569">Enrolled: <strong>12 of 15</strong> (2 new since last update) · Waitlist: 1</p><p style="margin:6px 0 0;font-size:13px">Registration link to share: <a href="https://hgl-portal.vercel.app/register/sis-sat-prep-fall26">https://hgl-portal.vercel.app/register/sis-sat-prep-fall26</a></p></div>',
   digestFrequencyBlock:
@@ -1219,7 +1254,7 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   // sweepAdminRosterReport (cron/reminders): under-min warning + class card.
   AL_ROSTER_REPORT: {
     alertDetailsBlock:
-      '<p><strong style="color:#b45309">⚠ In-person classes under minimum</strong> (travel booking waits on these):</p><ul><li><strong>SIS SAT Prep</strong> — 6 paid / 8 min, starts 2026-09-05</li></ul><p><strong>Open classes — full rosters:</strong></p><div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0"><p style="margin:0"><strong>SIS SAT Prep</strong> — starts 2026-09-05 · 6 paid / 1 pending / 0 waitlisted · 8 min / 15 cap · <span style="color:#b45309;font-weight:bold">below minimum — needs 2 more paid</span></p><ul style="margin:6px 0 0"><li>Ana García — Paid <span style="color:#0284c7;font-weight:bold">(new this week)</span></li><li>Sam Lee — Paid</li><li>Maya Ortiz — Pending</li></ul></div>',
+      '<p><strong style="color:#b45309">⚠ In-person classes under minimum</strong>:</p><ul><li><strong>SIS SAT Prep</strong> — 6 paid / 8 min, starts 2026-09-05</li></ul><p><strong>Enrollment for open classes:</strong></p><div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0"><p style="margin:0"><strong>SIS SAT Prep</strong> — starts 2026-09-05 · 6 paid / 1 pending / 0 waitlisted · 8 min / 15 cap · <span style="color:#b45309;font-weight:bold">below minimum — needs 2 more paid</span></p><ul style="margin:6px 0 0"><li>Ana García — Paid <span style="color:#0284c7;font-weight:bold">(new this week)</span></li><li>Sam Lee — Paid</li><li>Maya Ortiz — Pending</li></ul></div>',
   },
   // hold-and-alert (cron/reminders, PL-89 tone): the email is OVERDUE to
   // families — location-blank case per the doc.
@@ -1232,6 +1267,7 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   // hold explanation.
   AL_MISSING_DETAILS: {
     classDetailsSendDate: 'Tuesday, September 1, 2026',
+    classDetailsSendPhrase: 'goes out Tuesday, September 1, 2026',
     alertDetailsBlock:
       '<p><strong>SIS SAT Prep</strong> — first session <strong>Saturday, September 5, 2026</strong> (in 1 week).</p><p>The "class details" email to families goes out <strong>Tuesday, September 1, 2026</strong> (in 3 days), and it can\'t send while these are blank:</p><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:4px 0"><strong>Location</strong> — blank. Classroom request status: asked the counselor Aug 22, 2026 (opened Aug 22, 2026) · nudged Aug 27, 2026 (not yet opened) · last call not yet sent.</li><li style="margin:4px 0"><strong>Instructor</strong> — blank. Assign one on the class page.</li></ul><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p><p>If the room comes through, filling it in releases everything automatically — nothing else to do. If it\'s still blank when the email is due, the send holds and families wait; that\'s the next alert you\'d get.</p>',
   },

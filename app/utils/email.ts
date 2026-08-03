@@ -1321,10 +1321,9 @@ export function digestClassListHtml(classes: DigestClassInfo[]): string {
         }
         ${
           c.materialsUrl && !c.materialsUpdated
-            ? `<p style="margin:6px 0 0;font-size:13px">Class materials (flyer for
-        bulletin boards &amp; screens, parent letter to forward) are in
-        <a href="${c.materialsUrl}">your portal</a> — always current, so
-        re-download rather than reusing saved copies.</p>`
+            ? `<p style="margin:6px 0 0;font-size:13px">Current class materials (flyer for
+        bulletin boards &amp; screens, parent letter to forward) are always available in
+        <a href="${c.materialsUrl}">your portal</a>.</p>`
             : ''
         }
       </div>`
@@ -1372,13 +1371,8 @@ export function counselorDigestEmail(opts: {
       <p>Here's where enrollment stands for the upcoming Higher Ground Learning
       class${plEs(opts.classes.length)} at ${opts.schoolName}:</p>
       ${classListBlock}
-      <p>See live counts and scores any time — sign in at
-      <a href="${emailBaseUrl()}/portal" style="color:#00AEEE">${emailBaseUrl()}/portal</a> with
-      this email.</p>
-      <p>Know a student who's still on the fence? Forwarding them (or their parents) the
-      registration link is the single most helpful thing you can do — everything after the
-      click is automatic.</p>
-      <p>Questions about any student or class? Just reply to this email.</p>
+      <p>If you know a student who's still on the fence, forwarding them (or their parents)
+      the registration link is the single most helpful thing you can do.</p>
       <p>Higher Ground Learning</p>
     `,
       {
