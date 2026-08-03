@@ -45,15 +45,30 @@ export default function TutoringAdmin() {
   const [wizardOpenSignal, setWizardOpenSignal] = useState(0)
   const [focusElement, setFocusElement] = useState<string | null>(null)
   const [wizardPreload, setWizardPreload] = useState<string | null>(null)
-  // PL-227: the five lower tiles are sidebar sections now — deep links must
+  // PL-227: the five lower tiles are sidebar sections — deep links must
   // land with the RIGHT section selected (hidden panels stay mounted, but a
   // scroll-into-view inside a hidden panel would be invisible).
-  const [activeSection, setActiveSection] = useState<string>('activity')
+  // PL-254: the wizard + schedules are a section too ('schedule', the
+  // default landing) so the sidebar wraps the WHOLE page — pinning them
+  // above the SidebarLayout pushed the menu ~1100px down, which read as
+  // "the side menu fell to the bottom of the page".
+  const [activeSection, setActiveSection] = useState<string>('schedule')
+  // PL-262: the reschedule-request alert deep-links a specific session —
+  // ?session={id} (+ &ack=1 or &reschedule=1) opens its dialog ready to act.
+  const [focusSessionId, setFocusSessionId] = useState<string | null>(null)
+  const [focusSessionAction, setFocusSessionAction] = useState<'ack' | 'reschedule' | null>(null)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
     const family = q.get('family')
     const schedule = q.get('schedule')
+    const session = q.get('session')
+    if (session) {
+      setActiveSection('schedule')
+      setFocusSessionId(session)
+      setFocusSessionAction(q.get('ack') ? 'ack' : q.get('reschedule') ? 'reschedule' : null)
+      return
+    }
     if (invoice) {
       setActiveSection('billing')
       setBillingOpenSignal((n) => n + 1)
@@ -62,6 +77,7 @@ export default function TutoringAdmin() {
       setActiveSection('students')
       setFocusElement(`family-${family}`)
     } else if (schedule) {
+      setActiveSection('schedule')
       setWizardOpenSignal((n) => n + 1)
       setWizardPreload(schedule)
     }
@@ -205,37 +221,14 @@ export default function TutoringAdmin() {
             {/* PL-180: calendar-side edits surface FIRST — a decision is
                 pending and everything below may be affected by it. */}
             <DriftBanner />
-            {/* PL-20: the wizard sits above the calendars — it's the "start
-                here" action when a family calls. */}
-            <CollapsibleSection
-              title="New student schedule"
-              subtitle="Student → subject → tutor → weekly slots → rate → go"
-              accent="border-hgl-blue"
-              openSignal={wizardOpenSignal}
-            >
-              <EngagementWizard
-                students={students}
-                subjects={subjects}
-                tutors={tutors}
-                tutorNotes={tutorNotes}
-                preloadStudentId={wizardPreload}
-                onCreated={refresh}
-              />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              title="Current Student Schedules"
-              subtitle="Per-tutor week (with Google busy shading) and all-tutors day"
-              defaultOpen
-            >
-              <ScheduleView tutors={tutors} refreshSignal={refreshSignal} />
-            </CollapsibleSection>
-
-            {/* PL-227: the five lower tiles are left-sidebar sections (one
-                visible at a time, Contacts-style); every section opens ready
-                to work. Panels stay mounted-hidden — the PL-99 lesson. */}
+            {/* PL-227/PL-254: every section, scheduling included, lives in
+                ONE page-level sidebar layout (one visible at a time,
+                Contacts-style) — the menu is a real sidebar again instead of
+                landing below two tall pinned sections. Panels stay
+                mounted-hidden — the PL-99 lesson. */}
             <SidebarLayout
               entries={[
+                { id: 'schedule', label: 'Scheduling' },
                 { id: 'activity', label: 'Recent parent activity' },
                 { id: 'students', label: 'Students' },
                 { id: 'billing', label: 'Billing' },
@@ -245,6 +238,41 @@ export default function TutoringAdmin() {
               active={activeSection}
               onSelect={setActiveSection}
             >
+              <SidebarPanel id="schedule" active={activeSection}>
+                {/* PL-20: the wizard sits above the calendars — it's the
+                    "start here" action when a family calls. */}
+                <CollapsibleSection
+                  title="New student schedule"
+                  subtitle="Student → subject → tutor → weekly slots → rate → go"
+                  accent="border-hgl-blue"
+                  openSignal={wizardOpenSignal}
+                >
+                  <EngagementWizard
+                    students={students}
+                    subjects={subjects}
+                    tutors={tutors}
+                    tutorNotes={tutorNotes}
+                    preloadStudentId={wizardPreload}
+                    onCreated={refresh}
+                  />
+                </CollapsibleSection>
+
+                <div className="mt-6">
+                  <CollapsibleSection
+                    title="Current Student Schedules"
+                    subtitle="Per-tutor week (with Google busy shading) and all-tutors day"
+                    defaultOpen
+                  >
+                    <ScheduleView
+                      tutors={tutors}
+                      refreshSignal={refreshSignal}
+                      focusSessionId={focusSessionId}
+                      focusAction={focusSessionAction}
+                    />
+                  </CollapsibleSection>
+                </div>
+              </SidebarPanel>
+
               <SidebarPanel id="activity" active={activeSection}>
                 <CollapsibleSection
                   title="Recent parent activity"
