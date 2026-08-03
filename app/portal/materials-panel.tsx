@@ -3,17 +3,20 @@
 import { useCallback, useEffect, useState } from 'react'
 
 // PL-203: shared materials, both sides of the glass. ShareMaterialsPanel is
-// the tutor/instructor side (attach files or links + a note, per student);
-// FamilyMaterialsSection is the family portal's read side ("Materials from
-// {tutor first name}", newest first). All reads/writes go through
+// the tutor/instructor side (attach files or links + a note, per student —
+// or, PL-260, for a WHOLE class at once); FamilyMaterialsSection is the
+// family portal's read side ("Materials from {tutor first name}", newest
+// first, class-wide items labeled). All reads/writes go through
 // /api/portal/materials — role checks live there, files are private-bucket
-// with signed URLs, and a family only ever sees their own student's items.
+// with signed URLs, and a family only ever sees their own students' items
+// plus what was shared with their students' classes.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 type Material = {
   id: string
-  student_id: string
+  student_id: string | null
+  class_id: string | null
   instructor_email: string
   instructor_name: string | null
   kind: 'file' | 'link'
@@ -26,8 +29,23 @@ type Material = {
 const fmtDay = (iso: string) =>
   new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
-export function ShareMaterialsPanel({ students }: { students: { id: string; name: string }[] }) {
-  const [studentId, setStudentId] = useState(students.length === 1 ? students[0].id : '')
+export function ShareMaterialsPanel({
+  students,
+  classes = [],
+}: {
+  students: { id: string; name: string }[]
+  /** PL-260: classes this instructor teaches — sharing with one reaches
+   *  every family in it. */
+  classes?: { id: string; name: string }[]
+}) {
+  // Target encoding: "s:{studentId}" | "c:{classId}".
+  const only =
+    students.length === 1 && classes.length === 0
+      ? `s:${students[0].id}`
+      : students.length === 0 && classes.length === 1
+        ? `c:${classes[0].id}`
+        : ''
+  const [target, setTarget] = useState(only)
   const [materials, setMaterials] = useState<Material[] | null>(null)
   const [title, setTitle] = useState('')
   const [note, setNote] = useState('')
@@ -35,24 +53,28 @@ export function ShareMaterialsPanel({ students }: { students: { id: string; name
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [removeArming, setRemoveArming] = useState('') // material id
+
+  const isClass = target.startsWith('c:')
+  const targetId = target.slice(2)
 
   const load = useCallback(async () => {
-    if (!studentId) return setMaterials(null)
-    const res = await fetch(`/api/portal/materials?studentId=${studentId}`)
+    if (!targetId) return setMaterials(null)
+    const res = await fetch(`/api/portal/materials?${isClass ? 'classId' : 'studentId'}=${targetId}`)
     const json = await res.json().catch(() => ({}))
     setMaterials(res.ok ? json.materials : [])
-  }, [studentId])
+  }, [targetId, isClass])
 
   useEffect(() => {
     load()
   }, [load])
 
   async function share() {
-    if (!studentId || (!file && !link.trim())) return
+    if (!targetId || (!file && !link.trim())) return
     setBusy(true)
     setMessage('')
     const form = new FormData()
-    form.set('studentId', studentId)
+    form.set(isClass ? 'classId' : 'studentId', targetId)
     form.set('title', title)
     form.set('note', note)
     if (file) form.set('file', file)
@@ -61,7 +83,11 @@ export function ShareMaterialsPanel({ students }: { students: { id: string; name
     const json = await res.json().catch(() => ({}))
     if (!res.ok) setMessage('Error: ' + (json.error ?? 'could not share'))
     else {
-      setMessage('Shared — the family sees it in their portal right away.')
+      setMessage(
+        isClass
+          ? 'Shared — every family in the class sees it in their portal right away.'
+          : 'Shared — the family sees it in their portal right away.'
+      )
       setTitle('')
       setNote('')
       setLink('')
@@ -71,32 +97,49 @@ export function ShareMaterialsPanel({ students }: { students: { id: string; name
     setBusy(false)
   }
 
+  // PL-268 standing rule: inline arm-then-confirm, never a native confirm().
   async function remove(id: string) {
-    if (!confirm('Remove this from the family portal?')) return
+    setRemoveArming('')
     await fetch(`/api/portal/materials?id=${id}`, { method: 'DELETE' })
     load()
   }
 
-  if (students.length === 0) return null
+  if (students.length === 0 && classes.length === 0) return null
 
   return (
     <div className="bg-white rounded-lg shadow-md p-5">
       <h2 className="text-lg font-bold text-hgl-slate mb-1">Share materials</h2>
       <p className="text-xs text-gray-500 mb-3">
-        Practice packets, links, &quot;do this before Thursday&quot; — the family sees them in their portal.
+        Practice packets, links, &quot;do this before Thursday&quot; — families see them in their
+        portal{classes.length > 0 ? '. Pick a whole class to reach every family in it at once' : ''}.
       </p>
       <div className="space-y-2 text-sm">
         <select
-          value={studentId}
-          onChange={(e) => setStudentId(e.target.value)}
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
           className="border border-gray-300 rounded p-1.5 bg-white"
         >
-          <option value="">Student…</option>
-          {students.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
+          <option value="">Share with…</option>
+          {classes.length > 0 && (
+            <optgroup label="Whole class">
+              {classes.map((c) => (
+                <option key={c.id} value={`c:${c.id}`}>
+                  {c.name} (everyone)
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {students.length > 0 && (
+            <optgroup label="One student">
+              {students.map((s) => (
+                <option key={s.id} value={`s:${s.id}`}>
+                  {s.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
-        {studentId && (
+        {targetId && (
           <>
             {materials && materials.length > 0 && (
               <ul className="space-y-1 text-xs border border-gray-100 rounded p-2 bg-gray-50">
@@ -111,9 +154,23 @@ export function ShareMaterialsPanel({ students }: { students: { id: string; name
                     )}
                     {m.note && <span className="text-gray-500">— {m.note}</span>}
                     <span className="text-gray-500">{fmtDay(m.created_at)}</span>
-                    <button onClick={() => remove(m.id)} className="text-red-600 underline ml-auto">
-                      remove
-                    </button>
+                    {removeArming === m.id ? (
+                      <span className="ml-auto inline-flex items-center gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                        <span className="text-amber-900">
+                          Remove from {m.class_id ? "every family's portal" : 'the family portal'}?
+                        </span>
+                        <button onClick={() => remove(m.id)} className="text-red-700 font-semibold underline">
+                          Yes, remove
+                        </button>
+                        <button onClick={() => setRemoveArming('')} className="text-gray-500 underline">
+                          cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button onClick={() => setRemoveArming(m.id)} className="text-red-600 underline ml-auto">
+                        remove
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -182,21 +239,28 @@ export function FamilyMaterialsSection({ studentNames }: { studentNames: Record<
 
   if (!materials || materials.length === 0) return null // nothing shared → no empty section
 
-  const byStudent = new Map<string, Material[]>()
+  // PL-260: class-wide items group under a 'class' bucket, labeled.
+  const byGroup = new Map<string, Material[]>()
   for (const m of materials) {
-    ;(byStudent.get(m.student_id) ?? byStudent.set(m.student_id, []).get(m.student_id))!.push(m)
+    const key = m.student_id ?? '__class'
+    ;(byGroup.get(key) ?? byGroup.set(key, []).get(key))!.push(m)
   }
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      {[...byStudent.entries()].map(([sid, items]) => {
+      {[...byGroup.entries()].map(([sid, items]) => {
         const tutorFirsts = [...new Set(items.map((m) => (m.instructor_name ?? m.instructor_email).split(' ')[0]))]
         return (
           <div key={sid} className="mb-4 last:mb-0">
             <h2 className="text-lg font-bold text-hgl-slate mb-1">
               Materials from {tutorFirsts.join(' & ')}
-              {byStudent.size > 1 && studentNames[sid] && (
-                <span className="text-sm font-normal text-gray-500 ml-2">for {studentNames[sid]}</span>
+              {sid === '__class' ? (
+                <span className="text-sm font-normal text-gray-500 ml-2">for the whole class</span>
+              ) : (
+                byGroup.size > 1 &&
+                studentNames[sid] && (
+                  <span className="text-sm font-normal text-gray-500 ml-2">for {studentNames[sid]}</span>
+                )
               )}
             </h2>
             <ul className="space-y-1.5 text-sm">

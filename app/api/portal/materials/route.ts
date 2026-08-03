@@ -79,6 +79,17 @@ async function instructorTeaches(email: string, studentId: string): Promise<bool
   })
 }
 
+/** PL-260: does this instructor teach this class? */
+async function instructorOwnsClass(email: string, classId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('classes')
+    .select('id, instructors ( email )')
+    .eq('id', classId)
+    .maybeSingle()
+  const i = data && (Array.isArray(data.instructors) ? data.instructors[0] : data.instructors)
+  return (i as any)?.email?.toLowerCase() === email
+}
+
 async function withSignedUrls(rows: any[]): Promise<any[]> {
   return Promise.all(
     rows.map(async (r) => {
@@ -94,22 +105,40 @@ export async function GET(req: Request) {
   if (!caller) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   const { searchParams } = new URL(req.url)
   const studentId = searchParams.get('studentId')
+  const classId = searchParams.get('classId')
 
   let q = supabase
     .from('student_materials')
-    .select('id, student_id, instructor_email, instructor_name, kind, title, url, storage_path, note, created_at')
+    .select('id, student_id, class_id, instructor_email, instructor_name, kind, title, url, storage_path, note, created_at')
     .order('created_at', { ascending: false })
 
   if (caller.kind === 'parent') {
     if (caller.studentIds.length === 0) return NextResponse.json({ materials: [] })
-    q = q.in('student_id', studentId ? [studentId].filter((s) => caller.studentIds.includes(s)) : caller.studentIds)
+    // PL-260: families see their students' items AND anything shared with a
+    // class those students are enrolled in.
+    const sids = studentId ? [studentId].filter((s) => caller.studentIds.includes(s)) : caller.studentIds
+    const { data: enr } = sids.length
+      ? await supabase.from('enrollments').select('class_id').in('student_id', sids)
+      : { data: [] }
+    const classIds = [...new Set(((enr as any[]) ?? []).map((e) => e.class_id).filter(Boolean))]
+    const parts: string[] = []
+    if (sids.length) parts.push(`student_id.in.(${sids.join(',')})`)
+    if (classIds.length) parts.push(`class_id.in.(${classIds.join(',')})`)
+    if (parts.length === 0) return NextResponse.json({ materials: [] })
+    q = q.or(parts.join(','))
+  } else if (classId) {
+    // PL-260: an instructor's class-wide materials list.
+    if (caller.kind === 'instructor' && !(await instructorOwnsClass(caller.email, classId))) {
+      return NextResponse.json({ error: 'Not your class.' }, { status: 403 })
+    }
+    q = q.eq('class_id', classId)
   } else if (studentId) {
     if (caller.kind === 'instructor' && !(await instructorTeaches(caller.email, studentId))) {
       return NextResponse.json({ error: 'Not your student.' }, { status: 403 })
     }
     q = q.eq('student_id', studentId)
   } else if (caller.kind === 'instructor') {
-    return NextResponse.json({ error: 'studentId required.' }, { status: 400 })
+    return NextResponse.json({ error: 'studentId or classId required.' }, { status: 400 })
   }
 
   const { data, error } = await q
@@ -126,13 +155,20 @@ export async function POST(req: Request) {
   const form = await req.formData().catch(() => null)
   if (!form) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
   const studentId = String(form.get('studentId') ?? '')
+  // PL-260: class-wide share — exactly one target.
+  const classId = String(form.get('classId') ?? '')
   const title = String(form.get('title') ?? '').trim()
   const note = String(form.get('note') ?? '').trim() || null
   const link = String(form.get('link') ?? '').trim()
   const file = form.get('file') as File | null
 
-  if (!studentId) return NextResponse.json({ error: 'Missing student.' }, { status: 400 })
-  if (caller.kind === 'instructor' && !(await instructorTeaches(caller.email, studentId))) {
+  if (!studentId && !classId) return NextResponse.json({ error: 'Missing student or class.' }, { status: 400 })
+  if (studentId && classId) return NextResponse.json({ error: 'Share with a student OR a class, not both.' }, { status: 400 })
+  if (classId) {
+    if (caller.kind === 'instructor' && !(await instructorOwnsClass(caller.email, classId))) {
+      return NextResponse.json({ error: 'Not your class.' }, { status: 403 })
+    }
+  } else if (caller.kind === 'instructor' && !(await instructorTeaches(caller.email, studentId))) {
     return NextResponse.json({ error: 'Not your student.' }, { status: 403 })
   }
   if (!link && !file) return NextResponse.json({ error: 'Attach a file or paste a link.' }, { status: 400 })
@@ -156,7 +192,7 @@ export async function POST(req: Request) {
         { status: 400 }
       )
     }
-    storagePath = `${studentId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    storagePath = `${classId ? `class/${classId}` : studentId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
     const { error: upErr } = await supabase.storage
       .from('student-materials')
       .upload(storagePath, Buffer.from(await file.arrayBuffer()), { contentType: ALLOWED_EXT[ext] })
@@ -171,7 +207,8 @@ export async function POST(req: Request) {
   const { data, error } = await supabase
     .from('student_materials')
     .insert({
-      student_id: studentId,
+      student_id: studentId || null,
+      class_id: classId || null,
       instructor_email: caller.email,
       instructor_name: caller.name,
       kind,

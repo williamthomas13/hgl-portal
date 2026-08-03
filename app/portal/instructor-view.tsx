@@ -144,7 +144,8 @@ export default async function InstructorView({
 
   return (
     <div className="space-y-6">
-      {/* PL-203: share materials with the families on my rosters. */}
+      {/* PL-203: share materials with the families on my rosters —
+          PL-260: or with a whole class at once. */}
       <ShareMaterialsPanel
         students={[
           ...new Map(
@@ -156,6 +157,12 @@ export default async function InstructorView({
               .map((st: any) => [st.id, { id: st.id, name: `${st.first_name} ${st.last_name}` }])
           ).values(),
         ] as { id: string; name: string }[]}
+        classes={(classes as any[])
+          .filter((c) => c.status !== 'cancelled')
+          .map((c) => ({
+            id: c.id,
+            name: `${one<any>(c.schools)?.nickname ?? 'HGL'} ${c.class_type}`,
+          }))}
       />
       {(classes as any[]).map((c) => {
         const school = one<any>(c.schools)
