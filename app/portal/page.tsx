@@ -13,6 +13,16 @@ import { escapeLike } from '../utils/like-escape'
 // holds in the data. RLS scopes every query by the JWT email claim, so a
 // multi-role user sees the union of their scopes regardless of which view is
 // active: the switcher is pure navigation, not privilege.
+//
+// PL-259: tutor = instructor — same people. One "Teaching" view renders a
+// "My classes" section (if they teach classes) and a "My tutoring" section
+// (if they do 1-on-1s), either alone or both. ?view=tutor stays a working
+// alias — T5/T6 emails link it.
+//
+// PL-258: the parent pill used to read "My students", which a tutor read as
+// THEIR students and then took the (correctly RLS-scoped, own-family-only)
+// parent billing view for a role bleed. It's "My family" now; the tutor's
+// student roster lives in the Teaching view.
 export const dynamic = 'force-dynamic'
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>
@@ -21,12 +31,11 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v
 }
 
-type ViewName = 'parent' | 'counselor' | 'instructor' | 'tutor'
+type ViewName = 'parent' | 'counselor' | 'instructor'
 const VIEW_LABELS: Record<ViewName, string> = {
-  parent: 'My students',
+  parent: 'My family',
   counselor: 'My school',
-  instructor: 'My classes',
-  tutor: 'My tutoring',
+  instructor: 'Teaching',
 }
 
 export default async function PortalPage({ searchParams }: { searchParams: SearchParams }) {
@@ -69,9 +78,10 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
     supabase.from('profiles').select('role').eq('id', user.id).single(),
   ])
 
+  const teachesClasses = Boolean(taughtClasses.data?.length)
+  const doesTutoring = Boolean(tutorRows.data?.length)
   const views: ViewName[] = []
-  if (taughtClasses.data?.length) views.push('instructor')
-  if (tutorRows.data?.length) views.push('tutor')
+  if (teachesClasses || doesTutoring) views.push('instructor')
   if (counselorRows.data?.length) views.push('counselor')
   if (families.data?.length) views.push('parent')
   const isStaff = profile.data?.role === 'admin' || profile.data?.role === 'manager'
@@ -80,7 +90,10 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
   if (views.length === 0 && isStaff) redirect('/admin')
 
   const highlightEnrollment = first(sp.enrollment)
-  const requested = first(sp.view) as ViewName | undefined
+  const requestedRaw = first(sp.view)
+  // PL-259: 'tutor' is an alias for the merged instructor view — emails in
+  // the wild link /portal?view=tutor.
+  const requested = (requestedRaw === 'tutor' ? 'instructor' : requestedRaw) as ViewName | undefined
   // A #0 deep link always means the parent view.
   const active: ViewName | undefined =
     requested && views.includes(requested)
@@ -130,8 +143,24 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
           <ParentView supabase={supabase} email={email} highlightEnrollment={highlightEnrollment} />
         )}
         {active === 'counselor' && <CounselorView supabase={supabase} email={email} />}
-        {active === 'instructor' && <InstructorView supabase={supabase} email={email} />}
-        {active === 'tutor' && <TutorView supabase={supabase} email={email} />}
+        {/* PL-259: one Teaching view — classes and 1-on-1 tutoring as
+            sections, whichever apply. */}
+        {active === 'instructor' && (
+          <div className="space-y-10">
+            {teachesClasses && (
+              <section>
+                <h2 className="text-xl font-bold text-hgl-slate mb-4">My classes</h2>
+                <InstructorView supabase={supabase} email={email} />
+              </section>
+            )}
+            {doesTutoring && (
+              <section>
+                <h2 className="text-xl font-bold text-hgl-slate mb-4">My tutoring</h2>
+                <TutorView supabase={supabase} email={email} />
+              </section>
+            )}
+          </div>
+        )}
         {!active && (
           <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-8 text-center">
             <h2 className="text-lg font-bold text-hgl-slate mb-2">Nothing here yet</h2>

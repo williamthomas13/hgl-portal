@@ -8,6 +8,7 @@ import { one } from './shared'
 import { zonedToUtc } from '../utils/tutoring'
 import { workTypeOptions } from '../utils/work-types'
 import SessionNotesPanel, { type NoteSession } from './session-notes-panel'
+import MyStudentsPanel from './my-students-panel'
 import { ShareMaterialsPanel } from './materials-panel'
 import UpcomingSessions, { type UpcomingRow } from './upcoming-sessions'
 import CoveragePanel, {
@@ -83,6 +84,7 @@ export default async function TutorView({
   const actionable = (timecards ?? []).find((t: any) => t.status === 'open' || t.status === 'tutor_confirmed')
   let cardSessions: TimecardSession[] = []
   let cardClassSessions: TimecardClassSession[] = []
+  let cardNotedIds: string[] = []
   if (actionable) {
     const [{ data }, { data: classData }] = await Promise.all([
       supabase
@@ -127,6 +129,16 @@ export default async function TutorView({
         className: [one<any>(cls?.schools)?.nickname, cls?.class_type].filter(Boolean).join(' ') || 'Class',
       }
     })
+    // PL-257a: note coverage for THIS card's completed sessions — the tutor
+    // sees the same missing-notes list the approval gates enforce.
+    const completedIds = cardSessions.filter((s) => s.status === 'completed').map((s) => s.id)
+    if (completedIds.length) {
+      const { data: noted } = await supabase
+        .from('session_notes')
+        .select('session_id')
+        .in('session_id', completedIds)
+      cardNotedIds = ((noted as any[]) ?? []).map((n) => n.session_id)
+    }
   }
 
   // PL-111: recent completed sessions and their note state — the write
@@ -352,6 +364,10 @@ export default async function TutorView({
         managerLine={managerLine}
       />
 
+      {/* PL-258: the tutor's own student roster — contacts, schedules,
+          subjects, recent notes. No finances anywhere. */}
+      <MyStudentsPanel tutorId={tutor.id} timezone={tz} />
+
       <SessionNotesPanel sessions={noteSessions} timezone={tz} />
 
       {/* PL-203: share materials with the families of students I tutor. */}
@@ -371,6 +387,7 @@ export default async function TutorView({
         actionableId={actionable?.id ?? null}
         sessions={cardSessions}
         classSessions={cardClassSessions}
+        notedSessionIds={cardNotedIds}
         workTypes={workTypeOptions(tutor.pay_type_titles)}
         timezone={tz}
         salaried={tutor.pay_type === 'salaried'}
