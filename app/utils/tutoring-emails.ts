@@ -282,6 +282,103 @@ function one7c<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? ((v[0] as T) ?? null) : v
 }
 
+/** PL-262: the "got your message" ack for a reschedule request — the code
+ *  twin for T3_RESCHEDULE_ACK. Confirms a human saw it; the actual change
+ *  still arrives as its own email once it's made. */
+export function t3RescheduleAckEmail(opts: {
+  parentFirst: string
+  studentFirst: string
+  subject: string
+  when: string
+  notice: 'ok' | 'late'
+  contact: ContactInfo
+}): { subject: string; html: string } {
+  const subject = `Got it — we're on ${opts.studentFirst}'s reschedule request`
+  const html = wrap(
+    `<p>Hi ${opts.parentFirst},</p>
+     <p>Just confirming your request to move ${opts.studentFirst}'s ${opts.subject} session on
+     <strong>${opts.when}</strong> reached a real person — we're looking at the schedule now and
+     you'll get a confirmation email as soon as the new time is set.</p>
+     ${
+       opts.notice === 'late'
+         ? `<p style="color:#64748b;font-size:13px">Because the request came inside 24 hours of the
+     session, the $40/hour late-reschedule fee from our scheduling policy may apply — we'll confirm
+     either way when we reply.</p>`
+         : ''
+     }
+     ${contactBlockHtml(opts.contact)}`,
+    { preheader: `Your reschedule request for ${opts.studentFirst} is with us.`, footer: footerT() }
+  )
+  return { subject, html }
+}
+
+/** PL-262: send the ack — dedupe is per request stamp, so a NEW request on
+ *  the same session can be acknowledged again, but double-clicking the
+ *  button can't double-send. */
+export async function sendRescheduleAck(sessionId: string): Promise<'sent' | 'already' | 'no_request'> {
+  const { data: s } = await supabase
+    .from('tutoring_sessions')
+    .select(
+      `id, starts_at, reschedule_requested_at,
+       students ( id, first_name, families ( parent_first_name, parent_email, billing_cc_emails, timezone ) ),
+       tutoring_engagements ( subjects ( name ) ),
+       instructors ( timezone )`
+    )
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (!s || !s.reschedule_requested_at) return 'no_request'
+  const student = one7c<any>(s.students)
+  const family = one7c<any>(student?.families)
+  if (!student || !family?.parent_email) return 'no_request'
+  const subject = one7c<any>(one7c<any>(s.tutoring_engagements)?.subjects)?.name ?? 'tutoring'
+  const tz = family.timezone ?? one7c<any>(s.instructors)?.timezone ?? 'America/Denver'
+  const when = new Date(s.starts_at).toLocaleString('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const notice: 'ok' | 'late' =
+    new Date(s.starts_at).getTime() - new Date(s.reschedule_requested_at).getTime() >= 24 * 3600_000
+      ? 'ok'
+      : 'late'
+  const contact = await loadContactInfo()
+  const email = await renderRegistered(
+    'T3_RESCHEDULE_ACK',
+    { parentFirstName: family.parent_first_name ?? 'there', parentEmail: family.parent_email, studentFirstName: student.first_name },
+    {
+      sessionWhenPhrase: when,
+      subjectName: subject,
+      lateFeeNoteBlock:
+        notice === 'late'
+          ? `<p style="color:#64748b;font-size:13px">Because the request came inside 24 hours of the session, the $40/hour late-reschedule fee from our scheduling policy may apply — we'll confirm either way when we reply.</p>`
+          : '',
+      contactBlock: contactBlockHtml(contact),
+    },
+    () =>
+      t3RescheduleAckEmail({
+        parentFirst: family.parent_first_name ?? 'there',
+        studentFirst: student.first_name,
+        subject,
+        when,
+        notice,
+        contact,
+      })
+  )
+  const status = await sendOnce({
+    dedupeKey: `t3_resched_ack:${sessionId}:${s.reschedule_requested_at}`,
+    emailType: 'T3_RESCHEDULE_ACK',
+    templateKey: 'T3_RESCHEDULE_ACK',
+    to: [family.parent_email],
+    cc: family.billing_cc_emails?.length ? family.billing_cc_emails : undefined,
+    subject: email.subject,
+    html: email.html,
+  })
+  return status === 'sent' ? 'sent' : 'already'
+}
+
 export async function sendScheduleChangeNotices(opts: {
   sessionId: string
   kind: 'reschedule' | 'forfeited' | 'no_show'

@@ -155,6 +155,9 @@ export function templateMetaFor(
       return { key: 'T2_INVOICE', role: 'parent' }
     case 'T3_SCHEDULE_CHANGE':
       return { key: 'T3_SCHEDULE_CHANGE', role: 'parent' }
+    // PL-262: the admin's "got your message" ack for a reschedule request.
+    case 'T3_RESCHEDULE_ACK':
+      return { key: 'T3_RESCHEDULE_ACK', role: 'parent' }
     case 'T4_PAYMENT_FAILED':
       return { key: 'T4_PAYMENT_FAILED', role: 'parent' }
     // Phase 7e intake & onboarding (spec §11)

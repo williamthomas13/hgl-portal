@@ -4,7 +4,7 @@ import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
 import { deleteGcalEvent, loadGcalConnection } from '../../../../utils/gcal'
 import { rescheduleSession } from '../../../../utils/reschedule'
-import { sendScheduleChangeNotices } from '../../../../utils/tutoring-emails'
+import { sendRescheduleAck, sendScheduleChangeNotices } from '../../../../utils/tutoring-emails'
 
 // Session actions (Phase 7a §5): one-off create, time edit, reschedule
 // (creates the replacement; auto-classifies ok/late by the 24h line,
@@ -33,6 +33,8 @@ type Body =
       requested_by?: 'parent' | 'tutor' | 'staff'
     }
   | { action: 'delete'; id: string }
+  // PL-262: email the family that their reschedule request reached a human.
+  | { action: 'ack_reschedule'; id: string }
 
 function validSpan(startsAt: string, endsAt: string): boolean {
   const s = new Date(startsAt).getTime()
@@ -52,6 +54,19 @@ export async function POST(req: Request) {
   }
 
   try {
+    // PL-262: the "got your message" reply — idempotent per request stamp
+    // (sendOnce dedupes), so double clicks can't double-send.
+    if (body.action === 'ack_reschedule') {
+      const status = await sendRescheduleAck(body.id)
+      if (status === 'no_request') {
+        return NextResponse.json(
+          { error: 'No pending reschedule request on this session (or no parent email on file).' },
+          { status: 400 }
+        )
+      }
+      return NextResponse.json({ ok: true, already: status === 'already' })
+    }
+
     if (body.action === 'create') {
       if (!body.engagement_id || !validSpan(body.starts_at, body.ends_at)) {
         return NextResponse.json({ error: 'Missing engagement or invalid times.' }, { status: 400 })

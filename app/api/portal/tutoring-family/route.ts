@@ -261,6 +261,10 @@ export async function POST(req: Request) {
 
   const subj = subjectOf(session)
   const when = fmtDenver(session.starts_at)
+  // PL-262: the alert ACTS — both links open this exact session's dialog in
+  // the tutoring admin (authed surface; the buttons there confirm before
+  // anything sends — never a state change straight off an email GET).
+  const sessionUrl = `${emailBaseUrl()}/admin/tutoring?session=${session.id}`
   await sendAdminAlert({
     dedupeKey: `reschedule_request:${session.id}:${Date.now()}`,
     adminEmail: ADMIN_EMAIL,
@@ -268,9 +272,11 @@ export async function POST(req: Request) {
     body: `<p><strong>${student.first_name} ${student.last_name}</strong>'s family asked to move the
       ${subj ?? 'tutoring'} session on <strong>${when}</strong> (Denver).</p>
       ${note ? `<blockquote style="border-left:3px solid #cbd5e1;margin:8px 0;padding:4px 12px;color:#334155">${note.replace(/</g, '&lt;')}</blockquote>` : ''}
-      <p>Notice: <strong>${notice === 'ok' ? '24h+ — free reschedule' : 'inside 24h — $40/hour late-reschedule policy (your discretion)'}</strong>.
-      Use Reschedule on the session in /admin/tutoring — the family and tutor get T3 automatically
-      and the calendar moves.</p>`,
+      <p>Notice: <strong>${notice === 'ok' ? '24h+ — free reschedule' : 'inside 24h — $40/hour late-reschedule policy (your discretion)'}</strong>.</p>
+      <p style="margin:20px 0"><a href="${sessionUrl}&reschedule=1" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Reschedule this session</a></p>
+      <p><a href="${sessionUrl}&ack=1" style="color:#00AEEE;font-weight:bold">Acknowledge — email the family "got your message, we're on it"</a>
+      (one more click to confirm once the session opens). The reschedule itself sends the family and
+      tutor their change emails automatically and moves the calendar.</p>`,
   }).catch((e) => console.error('reschedule-request alert failed:', e))
 
   return NextResponse.json({ ok: true, notice })

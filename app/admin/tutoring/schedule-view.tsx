@@ -67,7 +67,19 @@ function normalize(rows: any[]): SessionRow[] {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[]; refreshSignal: number }) {
+export default function ScheduleView({
+  tutors,
+  refreshSignal,
+  focusSessionId = null,
+  focusAction = null,
+}: {
+  tutors: Tutor[]
+  refreshSignal: number
+  /** PL-262: the reschedule-request alert deep-links a session — jump to its
+   *  tutor + week and open its dialog. */
+  focusSessionId?: string | null
+  focusAction?: 'ack' | 'reschedule' | null
+}) {
   const activeTutors = useMemo(() => tutors.filter((t) => t.tutoring_active), [tutors])
   const [mode, setMode] = useState<'week' | 'day'>('week')
   const [tutorId, setTutorId] = useState('')
@@ -76,6 +88,28 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
   const [busy, setBusy] = useState<{ start: string; end: string; title: string | null; private: boolean }[]>([])
   const [selected, setSelected] = useState<SessionRow | null>(null)
   const [message, setMessage] = useState('')
+  // PL-262: the deep-linked session's dialog opens with the right action
+  // ready — consumed once so closing the dialog behaves normally after.
+  const [pendingFocusAction, setPendingFocusAction] = useState(focusAction)
+  useEffect(() => {
+    if (!focusSessionId) return
+    let stale = false
+    ;(async () => {
+      const { data } = await supabase.from('tutoring_sessions').select(SELECT).eq('id', focusSessionId).maybeSingle()
+      if (stale || !data) return
+      const [row] = normalize([data])
+      if (!row) return
+      // Land on the session's tutor + week so the grid behind the dialog
+      // shows its context, then open the dialog itself.
+      setTutorId(row.tutor_id)
+      setAnchor(new Date(row.starts_at))
+      setSelected(row)
+    })()
+    return () => {
+      stale = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSessionId])
   // PL-17: hidden tutor calendars in day mode (Google-style show/hide).
   const [hiddenTutorIds, setHiddenTutorIds] = useState<Set<string>>(new Set())
   // PL-18: open the 24h scroller at a sane morning hour.
@@ -335,8 +369,11 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
         <SessionDialog
           session={selected}
           tz={tz}
+          initialAction={pendingFocusAction === 'reschedule' ? 'reschedule' : 'none'}
+          ackFocus={pendingFocusAction === 'ack'}
           onClose={(msg) => {
             setSelected(null)
+            setPendingFocusAction(null)
             if (msg) {
               setMessage(msg)
               load()
@@ -348,16 +385,80 @@ export default function ScheduleView({ tutors, refreshSignal }: { tutors: Tutor[
   )
 }
 
+/** PL-262: "got your message" one-clicker on the pending-request banner —
+ *  sends the parent the T3 ack (idempotent per request stamp server-side). */
+function AckButton({ sessionId, preArmed = false }: { sessionId: string; preArmed?: boolean }) {
+  const [armed, setArmed] = useState(preArmed)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState('')
+  if (result) {
+    return (
+      <p className={`mt-1 font-semibold ${result.startsWith('Error') ? 'text-red-700' : 'text-green-700'}`}>
+        {result}
+      </p>
+    )
+  }
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setArmed(true)}
+        className="mt-1 text-amber-900 font-semibold underline"
+      >
+        Acknowledge — email the family we got it
+      </button>
+    )
+  }
+  return (
+    <span className="mt-1 inline-flex flex-wrap items-center gap-2">
+      <span>Send the family a &ldquo;got your message, we&apos;re on it&rdquo; email?</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true)
+          try {
+            const res = await fetch('/api/admin/tutoring/session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'ack_reschedule', id: sessionId }),
+            })
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok) setResult('Error: ' + (json.error ?? 'could not send'))
+            else setResult(json.already ? 'Already acknowledged — no second email sent.' : '✓ Acknowledgment sent to the family.')
+          } catch {
+            setResult('Error: could not reach the server.')
+          } finally {
+            setBusy(false)
+          }
+        }}
+        className="text-green-700 font-semibold underline disabled:opacity-50"
+      >
+        {busy ? 'sending…' : 'Yes, send it'}
+      </button>
+      <button type="button" onClick={() => setArmed(false)} className="text-gray-500 underline">
+        cancel
+      </button>
+    </span>
+  )
+}
+
 function SessionDialog({
   session,
   tz,
   onClose,
+  initialAction = 'none',
+  ackFocus = false,
 }: {
   session: SessionRow
   tz: string
   onClose: (message?: string) => void
+  /** PL-262: the alert email's deep link can open straight into Reschedule. */
+  initialAction?: 'none' | 'reschedule'
+  /** PL-262: the alert email's ack link pre-arms the Acknowledge confirm. */
+  ackFocus?: boolean
 }) {
-  const [action, setAction] = useState<'none' | 'reschedule' | 'edit_time' | 'forfeit' | 'no_show' | 'delete'>('none')
+  const [action, setAction] = useState<'none' | 'reschedule' | 'edit_time' | 'forfeit' | 'no_show' | 'delete'>(initialAction)
   const [newDate, setNewDate] = useState('')
   const [newTime, setNewTime] = useState('')
   const [duration, setDuration] = useState(session.duration_minutes)
@@ -410,12 +511,17 @@ function SessionDialog({
             {session.cancel_note && ` · note: ${session.cancel_note}`}
           </p>
           {session.reschedule_requested_at && (
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
-              <span className="font-bold">Family asked to move this session</span> (
-              {new Date(session.reschedule_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              ){session.reschedule_request_note ? ` — “${session.reschedule_request_note}”` : ''}. Use
-              Reschedule below; they and the tutor get the change email automatically.
-            </p>
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
+              <p>
+                <span className="font-bold">Family asked to move this session</span> (
+                {new Date(session.reschedule_requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                ){session.reschedule_request_note ? ` — “${session.reschedule_request_note}”` : ''}. Use
+                Reschedule below; they and the tutor get the change email automatically.
+              </p>
+              {/* PL-262: tell the family a human saw it, without waiting for
+                  the actual reschedule. Inline arm-then-confirm. */}
+              <AckButton sessionId={session.id} preArmed={ackFocus} />
+            </div>
           )}
         </div>
 
