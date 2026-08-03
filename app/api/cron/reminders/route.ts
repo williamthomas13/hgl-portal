@@ -12,7 +12,7 @@ import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
 import { sweepConversionFollowups } from '../../../utils/convert-tutoring'
-import { classroomChaseLine } from '../../../utils/classroom-chase'
+import { chaseLine, classroomChaseRounds } from '../../../utils/classroom-chase'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
 import {
@@ -937,9 +937,20 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     const daysToSend = Math.round((Date.parse(fourSend) - Date.parse(today)) / 86_400_000)
     const weeksPhrase = daysToFirst >= 7 ? `in ${Math.round(daysToFirst / 7)} week${Math.round(daysToFirst / 7) === 1 ? '' : 's'}` : `in ${daysToFirst} day${daysToFirst === 1 ? '' : 's'}`
     const sendPhrase = daysToSend > 0 ? `in ${daysToSend} day${daysToSend === 1 ? '' : 's'}` : daysToSend === 0 ? 'today' : `${-daysToSend} day${daysToSend === -1 ? '' : 's'} ago`
+    // PL-264b: past the send date, "goes out (1 day ago)" read like a plan on
+    // track — say plainly that it's overdue and held.
+    const overdue = daysToSend < 0
     const bullets: string[] = []
     if (!bundle.defaultLocation) {
-      const chase = await classroomChaseLine(bundle.id)
+      // PL-264a: a class created inside the request window with CR1 never
+      // sent must not read like a chase on schedule — name the real state.
+      const rounds = await classroomChaseRounds(bundle.id)
+      const insideCrWindow =
+        Date.parse(today) >= Date.parse(bundle.firstSession) - CLASSROOM_REQUEST_LEAD_DAYS * 86_400_000
+      const chase =
+        !rounds[0].sentAt && insideCrWindow && bundle.deliveryMode === 'in_person'
+          ? 'never asked — the class was created inside the request window (the accelerated ask goes out on the next sweep)'
+          : chaseLine(rounds)
       bullets.push(
         `<li style="margin:4px 0"><strong>Location</strong> — blank. Classroom request status: ${chase}.</li>`
       )
@@ -957,16 +968,27 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
         schoolName: bundle.schoolName,
         firstSession: bundle.firstSession,
         classDetailsSendDate: formatDate(fourSend),
+        classDetailsSendPhrase: overdue ? 'is overdue' : `goes out ${formatDate(fourSend)}`,
       },
-      subject: `Missing details — ${label} class-details email goes out ${formatDate(fourSend)}`,
+      subject: `Missing details — ${label} class-details email ${overdue ? 'is OVERDUE' : `goes out ${formatDate(fourSend)}`}`,
       body: `<p><strong>${label}</strong> — first session <strong>${formatDate(bundle.firstSession)}</strong> (${weeksPhrase}).</p>
-        <p>The "class details" email to families goes out <strong>${formatDate(fourSend)}</strong>
-        (${sendPhrase}), and it can't send while these are blank:</p>
+        ${
+          overdue
+            ? `<p>The "class details" email to families should have gone out <strong>${formatDate(fourSend)}</strong>
+        (${sendPhrase}) — <strong>it is now overdue</strong>, held because these are blank:</p>`
+            : `<p>The "class details" email to families goes out <strong>${formatDate(fourSend)}</strong>
+        (${sendPhrase}), and it can't send while these are blank:</p>`
+        }
         <ul style="margin:0;padding-left:20px;color:#334155">${bullets.join('')}</ul>
         <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin?class=${bundle.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p>
-        <p>If the room comes through, filling it in releases everything automatically — nothing
+        ${
+          overdue
+            ? `<p>Families are waiting on it — filling in the blanks releases it on the next hourly
+        sweep, nothing else to do.</p>`
+            : `<p>If the room comes through, filling it in releases everything automatically — nothing
         else to do. If it's still blank when the email is due, the send holds and families wait;
-        that's the next alert you'd get.</p>`,
+        that's the next alert you'd get.</p>`
+        }`,
     })
     if (status === 'sent') bump(c, 'admin_alert')
   }
@@ -1220,14 +1242,14 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
     )
   }
   // Travel decisions first: in-person classes that don't run yet.
+  // PL-267: no "(travel booking waits on these)" parenthetical.
   if (underMinInPerson.length > 0) {
     sections.push(
-      `<p><strong style="color:#b45309">⚠ In-person classes under minimum</strong>
-       (travel booking waits on these):</p><ul>${underMinInPerson.join('')}</ul>`
+      `<p><strong style="color:#b45309">⚠ In-person classes under minimum</strong>:</p><ul>${underMinInPerson.join('')}</ul>`
     )
   }
   if (classBlocks.length > 0) {
-    sections.push(`<p><strong>Open classes — full rosters:</strong></p>${classBlocks.join('')}`)
+    sections.push(`<p><strong>Enrollment for open classes:</strong></p>${classBlocks.join('')}`)
   }
 
   // Feature B3 abuse guard: instructor class messages sent this week, so the
@@ -1489,6 +1511,9 @@ async function sweepCounselorDigests(
         {
           counselorFirstName: counselor.first_name,
           digestCountSummary: digestSubjectCount(infos),
+          // PL-265: the stored body says "the upcoming … {digestClassNoun}" —
+          // singular/plural agrees with the real count.
+          digestClassNoun: `class${infos.length === 1 ? '' : 'es'}`,
           digestClassListBlock: digestClassListHtml(infos),
           digestFrequencyBlock: digestFrequencyHtml(frequencyUrls),
         },
@@ -1651,7 +1676,7 @@ async function sweepClassroomRequests(
 
   const { data: existing } = await supabase
     .from('classroom_requests')
-    .select('id, status, nudge_count')
+    .select('id, status, nudge_count, created_at')
     .eq('class_id', bundle.id)
     .maybeSingle()
 
@@ -1725,9 +1750,22 @@ async function sweepClassroomRequests(
   }
 
   if (existing.status !== 'pending') return
+  // PL-263: for a class created INSIDE the normal lead window, the absolute
+  // −11/−8 day thresholds are already past the moment CR1 goes out — the
+  // hourly sweep would then fire CR2 and CR3 on the next two sweeps, three
+  // asks in three hours. Anchor each nudge to the LATER of its normal
+  // absolute day and "CR1 + a gap scaled to the remaining runway", so late
+  // classes still get all three asks, compressed but with real gaps
+  // (≥1 day) between them.
+  const askedIso = (existing.created_at ?? new Date().toISOString()).slice(0, 10)
+  const runwayAtAsk = Math.round((Date.parse(bundle.firstSession) - Date.parse(askedIso)) / 86_400_000)
+  const gapDays = Math.min(3, Math.max(1, Math.floor(runwayAtAsk / 3)))
   for (const [i, days] of CLASSROOM_NUDGE_DAYS.entries()) {
     const nudgeNumber = i + 1
-    if (existing.nudge_count < nudgeNumber && today >= addDaysISO(bundle.firstSession, -days)) {
+    const normalDue = addDaysISO(bundle.firstSession, -days)
+    const scaledDue = addDaysISO(askedIso, gapDays * nudgeNumber)
+    const due = normalDue > scaledDue ? normalDue : scaledDue
+    if (existing.nudge_count < nudgeNumber && today >= due) {
       await sendAsk(nudgeNumber)
       await supabase
         .from('classroom_requests')
