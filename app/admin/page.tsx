@@ -16,6 +16,7 @@ import ContactSettingsPanel from './contact-settings-panel'
 import TeamAccessPanel from './team-access-panel'
 import DashboardPanel from './dashboard-panel'
 import AttendancePanel from '../portal/attendance-panel'
+import { ConfirmAction } from './tutoring/confirm'
 import ScoresEntry from '../components/ScoresEntry'
 import ClassScoresGrid from '../components/ClassScoresGrid'
 import ContactsDirectory from './contacts-directory'
@@ -160,7 +161,8 @@ function AddSessionForm({
     ])
     setSaving(false)
     if (error) {
-      alert('Error adding session: ' + error.message)
+      // PL-268: inline error, no native alert().
+      setError('Error adding session: ' + error.message)
       return
     }
     setDate(addDays(date, 7)) // pre-fill the next one: same values, a week on
@@ -462,20 +464,32 @@ export default function AdminDashboard() {
     loadInterest()
   }, [loadInterest])
   const [notifying, setNotifying] = useState('')
-  async function notifyInterest(classId: string, count: number, shortLink: string | null) {
-    // PL-54 amendment: the NW button targets the class's hgl.co marketing
-    // page. A blank field means the button would deep-link the portal
-    // registration page — warn so the Ops Director fills it in first or
-    // knowingly accepts the direct link.
+  // PL-268: outcomes surface in ONE inline banner (bottom-right toast) —
+  // native alert()/confirm() freeze the browser automation bridge and are
+  // banned by the standing rule. Confirms are per-button ConfirmAction.
+  const [actionNotice, setActionNotice] = useState('')
+  // PL-268: the waitlist over-cap override asks INLINE (it used to be a
+  // nested native confirm) — state carries the 409 payload until answered.
+  const [overCapAsk, setOverCapAsk] = useState<{
+    en: Enrollment
+    studentName: string
+    action: 'add_back' | 're_offer'
+    position?: number
+    taken: number
+    capacity: number
+  } | null>(null)
+  // PL-54 amendment: the NW button targets the class's hgl.co marketing
+  // page. A blank field means the button would deep-link the portal
+  // registration page — warn so the Ops Director fills it in first or
+  // knowingly accepts the direct link. PL-268: the warning lives in the
+  // button's inline ConfirmAction message, not a native confirm().
+  function notifyInterestMsg(count: number, shortLink: string | null): string {
     const linkNote = (shortLink ?? '').trim()
       ? `The button points at ${shortLink!.trim()}.`
       : `⚠ No hgl.co link on this class — the button will point at the portal registration page. Add the short link on the collateral card first if families should see the sales page.`
-    if (
-      !window.confirm(
-        `Email ${count} waiting famil${count === 1 ? 'y' : 'ies'} that this class is open? Each gets the "next class open" note.\n\n${linkNote}`
-      )
-    )
-      return
+    return `Email ${count} waiting famil${count === 1 ? 'y' : 'ies'} that this class is open? Each gets the "next class open" note. ${linkNote}`
+  }
+  async function notifyInterest(classId: string) {
     setNotifying(classId)
     try {
       const res = await fetch('/api/admin/notify-interest', {
@@ -484,8 +498,8 @@ export default function AdminDashboard() {
         body: JSON.stringify({ classId }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) alert('Problem: ' + (json.error ?? res.status))
-      else alert(`Done — ${json.notified} notified.`)
+      if (!res.ok) setActionNotice('Problem: ' + (json.error ?? res.status))
+      else setActionNotice(`Done — ${json.notified} notified.`)
     } finally {
       setNotifying('')
       loadInterest()
@@ -648,7 +662,7 @@ export default function AdminDashboard() {
     if (next == null) return
     const trimmed = next.trim()
     if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      alert('Use YYYY-MM-DD format, or leave blank for the default.')
+      setActionNotice('Use YYYY-MM-DD format, or leave blank for the default.')
       return
     }
     const { error } = await supabase
@@ -656,7 +670,7 @@ export default function AdminDashboard() {
       .update({ registration_close_date: trimmed || null })
       .eq('id', c.id)
     if (error) {
-      alert('Error updating close date: ' + error.message)
+      setActionNotice('Error updating close date: ' + error.message)
       return
     }
     fetchRosters()
@@ -670,7 +684,7 @@ export default function AdminDashboard() {
       .update({ follow_on_class_id: followOnId || null })
       .eq('id', c.id)
     if (error) {
-      alert('Error setting follow-on class: ' + error.message)
+      setActionNotice('Error setting follow-on class: ' + error.message)
       return
     }
     fetchRosters()
@@ -687,12 +701,12 @@ export default function AdminDashboard() {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
     if (!cleaned) {
-      alert('Slug cannot be empty.')
+      setActionNotice('Slug cannot be empty.')
       return
     }
     const { error } = await supabase.from('classes').update({ slug: cleaned }).eq('id', c.id)
     if (error) {
-      alert(
+      setActionNotice(
         error.code === '23505'
           ? 'That slug is already used by another class.'
           : 'Error updating slug: ' + error.message
@@ -708,23 +722,15 @@ export default function AdminDashboard() {
   // drops the enrollment out of paid counts and post-class emails #7/#8, and
   // stops any still-pending scheduled sends. stripe_payment_intent_id and
   // payment history stay on the row (audit trail for Phase 6 / QuickBooks).
-  async function handleMarkRefunded(enrollmentId: string, studentName: string) {
-    if (
-      !confirm(
-        `Mark ${studentName}'s enrollment as Refunded?\n\n` +
-          'This records the refund and frees the spot (waitlist offers go out ' +
-          'automatically). Issue the actual refund in the Stripe dashboard — ' +
-          'the portal moves no money.'
-      )
-    )
-      return
+  // PL-268: the confirm lives on the button (ConfirmAction); this just acts.
+  async function handleMarkRefunded(enrollmentId: string) {
     const { error } = await supabase
       .from('enrollments')
       .update({ payment_status: 'Refunded' })
       .eq('id', enrollmentId)
       .in('payment_status', ['Paid', 'Completed']) // guard: only paid rows
     if (error) {
-      alert('Error marking refunded: ' + error.message)
+      setActionNotice('Error marking refunded: ' + error.message)
       return
     }
     fetchRosters()
@@ -739,29 +745,32 @@ export default function AdminDashboard() {
   // package via the add-on machinery — the promised hours are the record,
   // not a dollar balance that can run dry early. Dollar Stripe credit only
   // when no hours were offered. Idempotent; a second click offers resend.
-  async function handleConvertToTutoring(en: Enrollment, studentName: string) {
+  // PL-268: the consequence copy renders in the button's inline ConfirmAction.
+  function convertToTutoringMsg(en: Enrollment, studentName: string): string {
     const already = Boolean(en.converted_to_tutoring_at)
     const offered = Number(en.cancellation_offer_hours ?? 0)
     const who =
       en.converted_by === 'family'
         ? `self-serve, ${en.converted_to_tutoring_at ? new Date(en.converted_to_tutoring_at).toLocaleDateString() : ''}`
         : `by ${en.converted_by ?? 'the Ops Director'}`
-    const msg = already
+    return already
       ? offered > 0
         ? `${studentName} was already converted (${offered}-hour tutoring package — ${who}). Re-send the availability email?`
         : `${studentName} was already converted ($${Number(en.tutoring_credit_amount ?? 0).toLocaleString()} credit — ${who}). Re-send the availability email?`
       : offered > 0
         ? `Convert ${studentName} to 1-on-1 tutoring? The family gets the ${offered} hours offered at cancellation as a tutoring package (paid $${Number(en.amount_paid ?? 0).toLocaleString()}), plus the availability request email.`
         : `Convert ${studentName} to 1-on-1 tutoring? No hours offer is on the cancellation record, so the paid amount becomes a Stripe credit toward tutoring invoices, and the family gets the availability request email.`
-    if (!confirm(msg)) return
+  }
+  async function handleConvertToTutoring(en: Enrollment) {
+    const already = Boolean(en.converted_to_tutoring_at)
     const res = await fetch('/api/admin/convert-to-tutoring', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enrollmentId: en.id, resend: already }),
     })
     const json = await res.json().catch(() => ({}))
-    if (!res.ok) alert(json.error ?? 'Conversion failed.')
-    else if (json.already && !already) alert('Already converted — nothing re-credited.')
+    if (!res.ok) setActionNotice(json.error ?? 'Conversion failed.')
+    else if (json.already && !already) setActionNotice('Already converted — nothing re-credited.')
     fetchRosters()
   }
 
@@ -770,21 +779,33 @@ export default function AdminDashboard() {
   // only surface that could set it. Goes through the assign-instructor API
   // (shared with the calendar's PL-249 button) so the International Classes
   // calendar resyncs on the fast path.
-  async function handleAssignInstructor(c: ClassRow, instructorId: string) {
+  // PL-268: a select can't wear ConfirmAction, so the change parks in
+  // pendingAssign and an inline banner right under the row asks — the select
+  // itself snaps back to the saved value until confirmed.
+  const [pendingAssign, setPendingAssign] = useState<{
+    classId: string
+    instructorId: string
+    msg: string
+  } | null>(null)
+  function requestAssignInstructor(c: ClassRow, instructorId: string) {
+    if ((c.instructor_id ?? '') === instructorId) return
     const label = `${c.schools?.nickname ?? '—'} ${c.class_type}`
-    const name = instructors.find((i) => i.id === instructorId)?.name
-      ?? instructors.find((i) => i.id === instructorId)?.email
+    const inst = instructors.find((i) => i.id === instructorId)
     const msg = instructorId
-      ? `Assign ${name} as the instructor for ${label}?`
+      ? `Assign ${inst?.name ?? inst?.email} as the instructor for ${label}?`
       : `Clear the instructor for ${label}? It goes back to "not yet assigned".`
-    if (!confirm(msg)) return
+    setPendingAssign({ classId: c.id, instructorId, msg })
+  }
+  async function confirmAssignInstructor() {
+    if (!pendingAssign) return
     const res = await fetch('/api/admin/assign-instructor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ classId: c.id, instructorId: instructorId || null }),
+      body: JSON.stringify({ classId: pendingAssign.classId, instructorId: pendingAssign.instructorId || null }),
     })
     const json = await res.json().catch(() => ({}))
-    if (!res.ok) alert(json.error ?? 'Assignment failed — try again.')
+    if (!res.ok) setActionNotice(json.error ?? 'Assignment failed — try again.')
+    setPendingAssign(null)
     fetchRosters()
   }
 
@@ -794,7 +815,7 @@ export default function AdminDashboard() {
       .from('classes')
       .update({ [field]: value })
       .eq('id', c.id)
-    if (error) alert('Error saving: ' + error.message)
+    if (error) setActionNotice('Error saving: ' + error.message)
     else fetchRosters()
   }
 
@@ -805,46 +826,47 @@ export default function AdminDashboard() {
       .from('students')
       .update({ pronouns: value || null })
       .eq('id', studentId)
-    if (error) alert('Error saving pronouns: ' + error.message)
+    if (error) setActionNotice('Error saving pronouns: ' + error.message)
     else fetchRosters()
   }
 
   // PL-94: waitlist rescue — the hour-49 phone call. Both actions are
   // admin-authed one-clicks; the rollover alert only deep-links here.
-  async function handleWaitlistRescue(en: Enrollment, studentName: string, action: 'add_back' | 're_offer') {
-    let position: number | undefined
-    if (action === 'add_back') {
+  // PL-268: the re-offer confirm is the button's ConfirmAction; the over-cap
+  // override asks in the inline banner (it used to be a NESTED native
+  // confirm). The add-back position prompt stays for now (it needs a number,
+  // not a yes/no — flagged as follow-up debt, it doesn't freeze automation
+  // the way confirm() chains did).
+  async function handleWaitlistRescue(
+    en: Enrollment,
+    studentName: string,
+    action: 'add_back' | 're_offer',
+    opts: { position?: number; confirmOverCap?: boolean } = {}
+  ) {
+    let position = opts.position
+    if (action === 'add_back' && position === undefined) {
       const raw = prompt(
         `Add ${studentName} back to the waitlist at which position?\n\n#1 = next in line (a live 48h offer already out to another family is never revoked — they'd be next after it resolves).`,
         '1'
       )
       if (raw == null) return
       position = Math.max(1, Number(raw) || 1)
-    } else if (!confirm(`Re-offer the spot to ${studentName} now? They get a fresh 48-hour claim window.`)) {
+    }
+    const res = await fetch('/api/admin/waitlist-rescue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, enrollmentId: en.id, position, confirmOverCap: opts.confirmOverCap ?? false }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (res.status === 409 && json.needsOverCapConfirm) {
+      // The explicit, logged over-cap confirm — informed override, never
+      // silent. Renders in the banner; confirming re-sends with the flag.
+      setOverCapAsk({ en, studentName, action, position, taken: json.taken, capacity: json.capacity })
       return
     }
-    const send = (confirmOverCap = false) =>
-      fetch('/api/admin/waitlist-rescue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, enrollmentId: en.id, position, confirmOverCap }),
-      })
-    let res = await send()
-    let json = await res.json().catch(() => ({}))
-    if (res.status === 409 && json.needsOverCapConfirm) {
-      // The explicit, logged over-cap confirm — informed override, never silent.
-      if (
-        !confirm(
-          `The class is at ${json.taken}/${json.capacity}. Re-offering enrolls ${studentName} at ${json.taken + 1}/${json.capacity} — sure?\n\nThis is logged as an Ops override.`
-        )
-      )
-        return
-      res = await send(true)
-      json = await res.json().catch(() => ({}))
-    }
-    if (!res.ok) alert(json.error ?? 'Rescue failed.')
-    else if (action === 'add_back') alert(`${studentName} is back on the waitlist at #${json.position} — confirmation email sent.`)
-    else alert(`Fresh 48-hour offer sent to ${studentName}${json.overCap ? ' (over-cap override logged)' : ''}.`)
+    if (!res.ok) setActionNotice(json.error ?? 'Rescue failed.')
+    else if (action === 'add_back') setActionNotice(`${studentName} is back on the waitlist at #${json.position} — confirmation email sent.`)
+    else setActionNotice(`Fresh 48-hour offer sent to ${studentName}${json.overCap ? ' (over-cap override logged)' : ''}.`)
     fetchRosters()
   }
 
@@ -854,7 +876,7 @@ export default function AdminDashboard() {
       .update({ cancellation_outcome: outcome || null })
       .eq('id', enrollmentId)
     if (error) {
-      alert('Error recording outcome: ' + error.message)
+      setActionNotice('Error recording outcome: ' + error.message)
       return
     }
     fetchRosters()
@@ -935,11 +957,11 @@ export default function AdminDashboard() {
     setWizardMode('blank')
   }
 
+  // PL-268: the confirm is the button's ConfirmAction.
   async function handleDeleteSession(sessionId: string) {
-    if (!confirm('Remove this session?')) return
     const { error } = await supabase.from('sessions').delete().eq('id', sessionId)
     if (error) {
-      alert('Error removing session: ' + error.message)
+      setActionNotice('Error removing session: ' + error.message)
       return
     }
     fetchRosters()
@@ -1057,7 +1079,7 @@ export default function AdminDashboard() {
                   only surface that could set it. */}
               <select
                 value={c.instructor_id ?? ''}
-                onChange={(e) => handleAssignInstructor(c, e.target.value)}
+                onChange={(e) => requestAssignInstructor(c, e.target.value)}
                 disabled={isCancelled}
                 className={`border border-gray-300 rounded p-0.5 text-xs bg-white max-w-64 ${
                   c.instructor_id ? '' : 'italic text-amber-700'
@@ -1072,6 +1094,19 @@ export default function AdminDashboard() {
                     </option>
                   ))}
               </select>
+              {/* PL-268: the change parks here until confirmed — the select
+                  above snaps back to the saved value meanwhile. */}
+              {pendingAssign?.classId === c.id && (
+                <span className="inline-flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs max-w-md whitespace-normal">
+                  <span className="text-amber-900">{pendingAssign.msg}</span>
+                  <button onClick={confirmAssignInstructor} className="text-green-700 font-semibold underline">
+                    Yes, do it
+                  </button>
+                  <button onClick={() => setPendingAssign(null)} className="text-gray-500 underline">
+                    cancel
+                  </button>
+                </span>
+              )}
               {/* PL-161: the fit suggester — advisory, overlaid on the calendar */}
               <a
                 href={`/admin/calendar?suggest=${c.id}`}
@@ -1101,13 +1136,18 @@ export default function AdminDashboard() {
                       {interestCounts[`${c.school_id}|${c.class_type}`] === 1 ? 'y is' : 'ies are'}{' '}
                       waiting to hear about this class
                     </span>
-                    <button
-                      onClick={() => notifyInterest(c.id, interestCounts[`${c.school_id}|${c.class_type}`] ?? 0, c.short_link)}
-                      disabled={notifying === c.id}
-                      className="text-hgl-blue underline font-semibold disabled:opacity-50"
-                    >
-                      {notifying === c.id ? 'notifying…' : 'notify them?'}
-                    </button>
+    {notifying === c.id ? (
+                      <span className="text-hgl-blue font-semibold">notifying…</span>
+                    ) : (
+                      <ConfirmAction
+                        label="notify them?"
+                        message={notifyInterestMsg(interestCounts[`${c.school_id}|${c.class_type}`] ?? 0, c.short_link)}
+                        confirmLabel="Yes, email them"
+                        className="text-hgl-blue underline font-semibold"
+                        confirmClassName="text-hgl-blue font-semibold underline"
+                        onConfirm={() => notifyInterest(c.id)}
+                      />
+                    )}
                   </span>
                 </p>
               )}
@@ -1362,19 +1402,22 @@ export default function AdminDashboard() {
                           en.waitlist_offer_expires_at &&
                           new Date(en.waitlist_offer_expires_at).getTime() <= Date.now())) && (
                         <>
-                          <button
-                            onClick={() =>
-                              handleWaitlistRescue(
-                                en,
-                                `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
-                                're_offer'
-                              )
-                            }
-                            title="Send a fresh 48-hour claim offer now (over-cap asks first, and is logged)"
-                            className="ml-2 text-xs text-hgl-blue underline hover:text-hgl-slate"
-                          >
-                            re-offer the spot
-                          </button>
+                          <span className="ml-2">
+                            <ConfirmAction
+                              label="re-offer the spot"
+                              message={`Re-offer the spot to ${`${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()} now? They get a fresh 48-hour claim window. (Over-cap asks separately, and is logged.)`}
+                              confirmLabel="Yes, re-offer"
+                              className="text-xs text-hgl-blue underline hover:text-hgl-slate"
+                              confirmClassName="text-xs text-hgl-blue font-semibold underline"
+                              onConfirm={() =>
+                                handleWaitlistRescue(
+                                  en,
+                                  `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim(),
+                                  're_offer'
+                                )
+                              }
+                            />
+                          </span>
                           <button
                             onClick={() =>
                               handleWaitlistRescue(
@@ -1393,28 +1436,21 @@ export default function AdminDashboard() {
                       {qboBadge(en)}
                       {(en.payment_status === 'Paid' ||
                         en.payment_status === 'Completed') && (
-                        <button
-                          onClick={() =>
-                            handleMarkRefunded(
-                              en.id,
-                              `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()
-                            )
-                          }
-                          title="Records the refund and frees the spot — issue the actual refund in the Stripe dashboard"
-                          className="ml-2 text-xs text-red-600 underline hover:text-red-800"
-                        >
-                          mark refunded
-                        </button>
+                        <span className="ml-2" title="Records the refund and frees the spot — issue the actual refund in the Stripe dashboard">
+                          <ConfirmAction
+                            label="mark refunded"
+                            message={`Mark ${`${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()}'s enrollment as Refunded? This records the refund and frees the spot (waitlist offers go out automatically). Issue the actual refund in the Stripe dashboard — the portal moves no money.`}
+                            confirmLabel="Yes, mark refunded"
+                            className="text-xs text-red-600 underline hover:text-red-800"
+                            confirmClassName="text-xs text-red-700 font-semibold underline"
+                            onConfirm={() => handleMarkRefunded(en.id)}
+                          />
+                        </span>
                       )}
                       {en.class_cancelled &&
                         ['Paid', 'Completed'].includes(en.payment_status) && (
-                          <button
-                            onClick={() =>
-                              handleConvertToTutoring(
-                                en,
-                                `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()
-                              )
-                            }
+                          <span
+                            className="ml-2"
                             title={
                               en.converted_to_tutoring_at
                                 ? Number(en.cancellation_offer_hours ?? 0) > 0
@@ -1424,14 +1460,22 @@ export default function AdminDashboard() {
                                   ? `Convert the ${en.cancellation_offer_hours} hours offered at cancellation into a tutoring package and send the availability request`
                                   : 'No hours offer on record — credit the paid amount toward tutoring and send the availability request'
                             }
-                            className={`ml-2 text-xs underline ${en.converted_to_tutoring_at ? 'text-emerald-700' : 'text-hgl-blue hover:text-hgl-slate'}`}
                           >
-                            {en.converted_to_tutoring_at
-                              ? Number(en.cancellation_offer_hours ?? 0) > 0
-                                ? `✓ ${en.cancellation_offer_hours}h tutoring package${en.converted_by === 'family' ? ' (self-serve)' : ''}`
-                                : `✓ tutoring credit $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()}${en.converted_by === 'family' ? ' (self-serve)' : ''}`
-                              : 'convert to 1-on-1 tutoring'}
-                          </button>
+                            <ConfirmAction
+                              label={
+                                en.converted_to_tutoring_at
+                                  ? Number(en.cancellation_offer_hours ?? 0) > 0
+                                    ? `✓ ${en.cancellation_offer_hours}h tutoring package${en.converted_by === 'family' ? ' (self-serve)' : ''}`
+                                    : `✓ tutoring credit $${Number(en.tutoring_credit_amount ?? 0).toLocaleString()}${en.converted_by === 'family' ? ' (self-serve)' : ''}`
+                                  : 'convert to 1-on-1 tutoring'
+                              }
+                              message={convertToTutoringMsg(en, `${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim())}
+                              confirmLabel={en.converted_to_tutoring_at ? 'Yes, re-send it' : 'Yes, convert'}
+                              className={`text-xs underline ${en.converted_to_tutoring_at ? 'text-emerald-700' : 'text-hgl-blue hover:text-hgl-slate'}`}
+                              confirmClassName="text-xs text-hgl-blue font-semibold underline"
+                              onConfirm={() => handleConvertToTutoring(en)}
+                            />
+                          </span>
                         )}
                       {en.class_cancelled &&
                         (en.payment_status === 'Paid' ||
@@ -1505,12 +1549,14 @@ export default function AdminDashboard() {
                       {s.end_time && ` – ${to24h(s.end_time)}`}
                       {s.location && ` · ${s.location}`}
                     </span>
-                    <button
-                      onClick={() => handleDeleteSession(s.id)}
+                    <ConfirmAction
+                      label="Remove"
+                      message="Remove this session?"
+                      confirmLabel="Yes, remove"
                       className="text-red-600 text-xs hover:underline"
-                    >
-                      Remove
-                    </button>
+                      confirmClassName="text-xs text-red-700 font-semibold underline"
+                      onConfirm={() => handleDeleteSession(s.id)}
+                    />
                   </li>
                 ))}
               </ul>
@@ -1577,6 +1623,51 @@ export default function AdminDashboard() {
   // ---------------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-gray-50 p-10">
+      {/* PL-268: the one inline outcome banner — every action result that
+          used to be a native alert() lands here, dismissible, never modal. */}
+      {actionNotice && (
+        <div
+          className={`fixed bottom-4 right-4 z-50 max-w-md rounded-lg shadow-lg border p-3 text-sm flex items-start gap-3 ${
+            /^(Error|Problem|Use |Slug |That slug)/.test(actionNotice)
+              ? 'bg-red-50 border-red-200 text-red-800'
+              : 'bg-green-50 border-green-200 text-green-800'
+          }`}
+        >
+          <span className="flex-1">{actionNotice}</span>
+          <button onClick={() => setActionNotice('')} className="font-bold" aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
+      {/* PL-268: the waitlist over-cap override — an informed, logged
+          yes/no that used to be a nested native confirm(). */}
+      {overCapAsk && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg shadow-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+          <p>
+            The class is at {overCapAsk.taken}/{overCapAsk.capacity}. Re-offering enrolls{' '}
+            <strong>{overCapAsk.studentName}</strong> at {overCapAsk.taken + 1}/{overCapAsk.capacity} —
+            sure? This is logged as an Ops override.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                const ask = overCapAsk
+                setOverCapAsk(null)
+                handleWaitlistRescue(ask.en, ask.studentName, ask.action, {
+                  position: ask.position,
+                  confirmOverCap: true,
+                })
+              }}
+              className="text-red-700 font-semibold underline"
+            >
+              Yes, go over cap
+            </button>
+            <button onClick={() => setOverCapAsk(null)} className="text-gray-600 underline">
+              cancel
+            </button>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-start justify-between">
           <h1 className="text-2xl font-bold text-hgl-slate">HGL Admin</h1>
