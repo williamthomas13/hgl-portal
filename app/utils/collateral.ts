@@ -79,7 +79,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
       short_link, collateral_language, letter_blurb, letter_blurb_es,
       flyer_blurb, practice_test_count, promo_code, promo_amount, promo_deadline,
       enrollment_deadline, registration_close_date,
-      schools ( name, nickname, logo_url, accent_color, collateral_language ),
+      schools ( name, nickname, logo_url, accent_color, collateral_language, timezone ),
       sessions ( session_date, start_time, end_time )
     `
     )
@@ -97,7 +97,16 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
   const registerUrl = `${base}/register/${slug}?src=flyer`
   const shortLink = (c.short_link ?? '').trim() || null
 
-  const promoComplete = c.promo_code && c.promo_amount != null && c.promo_deadline
+  // PL-266: "always current" includes promotions — a promo whose deadline
+  // has passed (school-local calendar date) renders as if it never existed,
+  // so a flyer downloaded the day after expiry carries no burst. Every
+  // artifact renders from this model, so the gate lives here, not per
+  // template.
+  const todayLocal = new Date().toLocaleDateString('en-CA', {
+    timeZone: school?.timezone || 'America/Denver',
+  })
+  const promoComplete =
+    c.promo_code && c.promo_amount != null && c.promo_deadline && c.promo_deadline >= todayLocal
   const languageSetting = (c.collateral_language ??
     school?.collateral_language ??
     'en') as CollateralModel['languageSetting']
