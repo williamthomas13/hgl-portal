@@ -125,11 +125,14 @@ export default function LoginForm({
                 If this email is associated with Higher Ground Learning, a login link and code
                 are on their way — check your inbox and spam folder.
               </p>
+              {/* PL-256: not everyone signing in registered for a class —
+                  tutoring-only families and staff sign in here too. */}
               <p className="text-gray-600">
-                Not receiving anything? Make sure you&apos;re using the exact email address you
-                used when registering for a class. Parents sometimes register with an alternate
-                or work email — the login email must match the one on the registration. Still
-                stuck? Reply to any of our emails or write{' '}
+                Not receiving anything? Make sure you&apos;re using the email address we have on
+                file for you — the one on your class registration, your tutoring setup, or your
+                staff account. Families sometimes sign up with an alternate or work email, and
+                the login email must match the one we have. Still stuck? Reply to any of our
+                emails or write{' '}
                 <a href="mailto:info@highergroundlearning.com" className="text-hgl-blue underline">
                   info@highergroundlearning.com
                 </a>{' '}
