@@ -70,6 +70,18 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 
 const HGL_BLUE = '#00AEEE'
 
+/** The accent color fills the flyer's burst and CTA circles behind WHITE
+ *  text, so a near-white school color (SLS stores #ffffff) renders the text
+ *  invisible. Colors too light to carry white text — or unparseable ones —
+ *  fall back to HGL blue exactly like an unset color. */
+function usableAccent(hex: string | null | undefined): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim())
+  if (!m) return HGL_BLUE
+  const n = parseInt(m[1], 16)
+  const luminance = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 0xff) + 0.114 * (n & 0xff)
+  return luminance > 200 ? HGL_BLUE : `#${m[1]}`
+}
+
 export async function loadCollateralModel(classId: string): Promise<CollateralModel | null> {
   const { data: c, error } = await supabaseAdmin
     .from('classes')
@@ -122,7 +134,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
     schoolName: school?.name ?? 'your school',
     schoolNickname: school?.nickname ?? school?.name ?? 'Your school',
     schoolLogoUrl: school?.logo_url || null,
-    accentColor: school?.accent_color || HGL_BLUE,
+    accentColor: usableAccent(school?.accent_color),
     languageSetting,
     shortLink,
     registerUrl,
