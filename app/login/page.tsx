@@ -29,11 +29,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   }
   const prefillEmail = pe && pt && verifyLoginPrefillToken(pe, pt) ? pe : ''
 
+  const err = first(sp.error)
   return (
     <LoginForm
       prefillEmail={prefillEmail}
       next={next ?? undefined}
-      linkError={first(sp.error) === 'link'}
+      linkError={err === 'link'}
+      ssoError={err === 'sso' || err === 'sso_denied' ? err : undefined}
     />
   )
 }

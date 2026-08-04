@@ -18,18 +18,28 @@ export default function LoginForm({
   prefillEmail,
   next,
   linkError,
+  ssoError,
 }: {
   prefillEmail: string
   next?: string
   linkError: boolean
+  /** PL-272: the Google callback bounced — 'sso' (flow broke) or 'sso_denied' (not a staff account). */
+  ssoError?: 'sso' | 'sso_denied'
 }) {
   const [email, setEmail] = useState(prefillEmail)
   const [sent, setSent] = useState(false)
   const [code, setCode] = useState('')
-  const [staffMode, setStaffMode] = useState(false)
+  // PL-272: an SSO bounce reopens the staff panel so the retry is one click.
+  const [staffMode, setStaffMode] = useState(Boolean(ssoError))
   const [password, setPassword] = useState('')
   const [error, setError] = useState(
-    linkError ? `That sign-in link has expired or was already used — request a new one, or use the ${OTP_LENGTH}-digit code from the same email.` : ''
+    linkError
+      ? `That sign-in link has expired or was already used — request a new one, or use the ${OTP_LENGTH}-digit code from the same email.`
+      : ssoError === 'sso_denied'
+        ? "That Google account isn't a Higher Ground staff account. Staff sign in with their @highergroundlearning.com Google account; families and school contacts use the email link above."
+        : ssoError === 'sso'
+          ? "Google sign-in didn't complete — try again, or use the email link above."
+          : ''
   )
   const [loading, setLoading] = useState(false)
 
@@ -80,6 +90,50 @@ export default function LoginForm({
     window.location.assign(next ?? '/portal')
   }
 
+  // PL-272: Google Workspace SSO — the primary staff path. The real gate is
+  // server-side in /auth/callback (Workspace domain + staff/instructor
+  // record); this just starts the OAuth dance. `hd` pre-filters the account
+  // picker to Workspace accounts (a hint, not security).
+  async function googleSignIn() {
+    setLoading(true)
+    setError('')
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback${next ? `?next=${encodeURIComponent(next)}` : ''}`,
+        queryParams: { hd: 'highergroundlearning.com', prompt: 'select_account' },
+        // Probe before leaving: with the provider not yet enabled, Supabase's
+        // authorize endpoint serves a raw 400 JSON page — stranding the user
+        // there is worse than an inline message.
+        skipBrowserRedirect: true,
+      },
+    })
+    if (error || !data?.url) {
+      setError(
+        "Google sign-in isn't available right now — the office may still be finishing its setup. Use the email link above, or your password below."
+      )
+      setLoading(false)
+      return
+    }
+    try {
+      const probe = await fetch(data.url, { redirect: 'manual' })
+      // Provider enabled → the endpoint 302s toward Google (opaqueredirect).
+      // Provider disabled → a CORS-readable 400.
+      if (probe.type === 'opaqueredirect' || (probe.status >= 300 && probe.status < 400)) {
+        window.location.assign(data.url)
+        return
+      }
+      setError(
+        "Google sign-in isn't switched on yet — the office still has a setup step to finish. Use the email link above, or your password below."
+      )
+      setLoading(false)
+    } catch {
+      // Probe blocked (unexpected CORS change) — proceed; the callback's own
+      // error path lands back here with a message either way.
+      window.location.assign(data.url)
+    }
+  }
+
   async function staffSignIn(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
@@ -105,19 +159,38 @@ export default function LoginForm({
         <p className="text-sm text-gray-500 mb-6">Higher Ground Learning portal</p>
 
         {staffMode ? (
-          <form onSubmit={staffSignIn} className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-600">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600">Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" className={inputClass} />
-            </div>
-            <button type="submit" disabled={loading} className={buttonClass}>
-              {loading ? 'Signing in...' : 'Sign in'}
+          <div className="space-y-4">
+            {/* PL-272: Google Workspace is the staff front door — one click,
+                no password, and Workspace offboarding closes it. */}
+            <button type="button" onClick={googleSignIn} disabled={loading} className={buttonClass}>
+              {loading ? 'Opening Google…' : 'Sign in with Google'}
             </button>
-          </form>
+            <p className="text-xs text-gray-500 text-center">
+              Use your @highergroundlearning.com Google account.
+            </p>
+            <div className="flex items-center gap-3 text-xs text-gray-400">
+              <span className="flex-1 border-t border-gray-200" />
+              or with a password
+              <span className="flex-1 border-t border-gray-200" />
+            </div>
+            <form onSubmit={staffSignIn} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-600">Email</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" className={inputClass} />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full border border-gray-300 text-gray-700 font-bold py-3 px-4 rounded-md hover:bg-gray-50 transition disabled:opacity-60"
+              >
+                {loading ? 'Signing in...' : 'Sign in with password'}
+              </button>
+            </form>
+          </div>
         ) : sent ? (
           <>
             <div className="mb-6 p-3 rounded-md text-sm bg-blue-50 text-hgl-slate space-y-2">
@@ -195,7 +268,7 @@ export default function LoginForm({
                 : 'mt-6 w-full text-xs text-gray-400 hover:text-hgl-blue transition'
             }
           >
-            {staffMode ? '← Back — sign in with an email link instead' : 'Staff sign-in with password'}
+            {staffMode ? '← Back — sign in with an email link instead' : 'Staff sign-in (Google or password)'}
           </button>
         )}
       </div>
