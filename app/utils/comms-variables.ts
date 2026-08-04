@@ -120,6 +120,10 @@ export type ExtraVars = {
   spotsLeftPhrase?: string
   /** "12 of 15 enrolled" (CS deadline push). */
   enrolledCountLine?: string
+  /** PL-270: "7 students" / "1 student" — paid enrollment as a phrase. */
+  enrolledCountPhrase?: string
+  /** PL-270: "3 students" / "1 student" — the class minimum as a phrase. */
+  minStudentsPhrase?: string
   /** Waitlist depth as text, e.g. "2" (CS class-full). */
   waitlistDepth?: string
   /** Signed tell-us-the-room form link (CS classroom request). */
@@ -639,6 +643,10 @@ export const VARIABLES: Record<string, VariableDef> = {
   deadlineCountdown: { description: '"3 days left" / "Last day" (CS push subject)', resolve: (_c, _a, e) => e.deadlineCountdown ?? '—' },
   spotsLeftPhrase: { description: '"3 spots" (CS push)', resolve: (_c, _a, e) => e.spotsLeftPhrase ?? '—' },
   enrolledCountLine: { description: '"12 of 15 enrolled" (CS push)', resolve: (_c, _a, e) => e.enrolledCountLine ?? '—' },
+  // PL-270: the FP rewrite's last paragraph — enrolled count and the class
+  // minimum, both plural-safe phrases.
+  enrolledCountPhrase: { description: 'PL-270: "7 students" / "1 student" — paid enrollment (FP push)', resolve: (_c, _a, e) => e.enrolledCountPhrase ?? '—' },
+  minStudentsPhrase: { description: 'PL-270: "3 students" / "1 student" — the class minimum (FP push)', resolve: (_c, _a, e) => e.minStudentsPhrase ?? '—' },
   waitlistDepth: { description: 'Waitlist depth (CS class-full)', resolve: (_c, _a, e) => e.waitlistDepth ?? '0' },
   classroomFormLink: {
     description: 'Signed tell-us-the-room form link (CS classroom request)',
@@ -1134,6 +1142,8 @@ export const SAMPLE_EXTRA: ExtraVars = {
   deadlineCountdown: '3 days left',
   spotsLeftPhrase: '3 spots',
   enrolledCountLine: '12 of 15 enrolled',
+  enrolledCountPhrase: '12 students',
+  minStudentsPhrase: '8 students',
   waitlistDepth: '2',
   classroomFormLink: 'https://hgl-portal.vercel.app/test-link',
   payPeriodRange: 'September 1 – September 15',

@@ -1630,6 +1630,10 @@ async function sweepDeadlinePush(
           deadlineCountdown: daysToDeadline === 1 ? 'Last day' : `${daysToDeadline} days left`,
           spotsLeftPhrase: `${spotsLeft} spot${spotsLeft === 1 ? '' : 's'}`,
           enrolledCountLine: `${paid} of ${bundle.capacity} enrolled`,
+          // PL-270: the rewrite's last paragraph — enrolled + class minimum,
+          // plural-safe (minEnrollment is always a sane number, PL-61).
+          enrolledCountPhrase: `${paid} student${paid === 1 ? '' : 's'}`,
+          minStudentsPhrase: `${bundle.minEnrollment} student${bundle.minEnrollment === 1 ? '' : 's'}`,
           registrationLink: registrationUrlFor(bundle),
         },
         () =>
@@ -1639,7 +1643,7 @@ async function sweepDeadlinePush(
             spotsLeft,
             daysToDeadline,
             paidCount: paid,
-            capacity: bundle.capacity,
+            minEnrollment: bundle.minEnrollment,
             regUrl: registrationUrlFor(bundle),
           })
       )

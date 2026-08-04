@@ -1232,7 +1232,7 @@ Higher Ground Learning
     footer_note: null,
     body_markdown: `Hi {counselorFirstName},
 
-Quick heads-up: registration for the {className} class closes soon ({deadlineCountdown}), and there are still **{spotsLeftPhrase}** open.
+Quick heads-up: registration for the {className} class closes soon ({deadlineCountdown}), and there are still {spotsLeftPhrase} open.
 
 This is the window where a nudge from the school makes the difference — parents who've been meaning to register usually just need one reminder, and one from you carries real weight.
 
@@ -1240,7 +1240,7 @@ Here's the link, ready to forward:
 
 [{registrationLink}]({registrationLink})
 
-Current count: {enrolledCountLine}. After the deadline, late registrations may still be possible while spots remain, but the class calendar and materials go out on schedule — so sooner really is better.
+Current count: {enrolledCountPhrase} enrolled. The course requires a minimum of {minStudentsPhrase} to run. After the minimum is reached, late registrations may still be possible while spots remain.
 
 Thanks for the assist!
 

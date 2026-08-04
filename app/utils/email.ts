@@ -1389,13 +1389,16 @@ export function counselorDigestEmail(opts: {
 // info@ · T. Replaced by FP-alt when paid count reaches capacity.
 // ---------------------------------------------------------------------------
 
+// PL-270 (Scarlett, Aug 3): full body rewrite — softer close, and the last
+// paragraph states the enrolled count against the class MINIMUM (what has to
+// happen for the class to run), not against capacity.
 export function deadlinePushEmail(opts: {
   counselorFirst: string
   label: string
   spotsLeft: number
   daysToDeadline: number
   paidCount: number
-  capacity: number
+  minEnrollment: number
   regUrl: string
 }): Rendered {
   const d = opts.daysToDeadline
@@ -1405,17 +1408,18 @@ export function deadlinePushEmail(opts: {
     html: wrap(
       `
       <p>Hi ${opts.counselorFirst},</p>
-      <p>Quick heads-up: registration for the ${opts.label} class closes in
-      <strong>${d} day${plS(d)}</strong>, and there ${isAre(n)} still
-      <strong>${n} spot${plS(n)}</strong> open.</p>
+      <p>Quick heads-up: registration for the ${opts.label} class closes soon
+      (${d === 1 ? 'Last day' : `${d} days left`}), and there ${isAre(n)} still
+      ${n} spot${plS(n)} open.</p>
       <p>This is the window where a nudge from the school makes the difference — parents who've
       been meaning to register usually just need one reminder, and one from you carries real
       weight.</p>
       <p>Here's the link, ready to forward:</p>
       <p><a href="${opts.regUrl}">${opts.regUrl}</a></p>
-      <p>Current count: ${opts.paidCount} of ${opts.capacity} enrolled. After the deadline,
-      late registrations may still be possible while spots remain, but the class calendar and
-      materials go out on schedule — so sooner really is better.</p>
+      <p>Current count: ${opts.paidCount} student${plS(opts.paidCount)} enrolled. The course
+      requires a minimum of ${opts.minEnrollment} student${plS(opts.minEnrollment)} to run.
+      After the minimum is reached, late registrations may still be possible while spots
+      remain.</p>
       <p>Thanks for the assist!</p>
       <p>Higher Ground Learning</p>
     `,
