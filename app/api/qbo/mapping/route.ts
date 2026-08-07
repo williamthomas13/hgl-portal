@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 
-const KEYS = new Set(['group_class', 'tutoring_addon', 'deposit_account'])
+const KEYS = new Set(['group_class', 'tutoring_addon', 'deposit_account', 'tutoring_test_prep', 'tutoring_subject'])
 
 // Save one item-map entry (spec §3). Admin-only — this decides which income
 // accounts revenue posts to (via the QBO Items' own account assignment).

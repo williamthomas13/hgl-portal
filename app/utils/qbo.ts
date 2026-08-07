@@ -465,6 +465,42 @@ export async function listBankAccounts(): Promise<{ id: string; name: string }[]
   return (qr.Account ?? []).map((a: any) => ({ id: String(a.Id), name: a.Name }))
 }
 
+/** PL-281: active Employees for the tutor-matching dropdown. Match-only —
+ *  the portal NEVER creates QBO employees (payroll identities are the
+ *  bookkeeper's to make). */
+export async function listEmployees(): Promise<{ id: string; name: string }[]> {
+  const qr = await qboQuery(
+    'select Id, DisplayName from Employee where Active = true maxresults 200'
+  )
+  return (qr.Employee ?? []).map((e: any) => ({ id: String(e.Id), name: e.DisplayName }))
+}
+
+/** PL-281: one TimeActivity per approved timecard — per-employee hours QBO
+ *  Payroll pulls into a pay run as timesheet data (there is no payroll-run
+ *  API; the final "run payroll" click stays human). Description carries the
+ *  by-work-type breakdown the payroll summary already shows. */
+export async function createTimeActivity(opts: {
+  employeeId: string
+  txnDate: string // YYYY-MM-DD (the period end)
+  hours: number // decimal hours, converted to QBO's Hours + Minutes
+  description: string
+}): Promise<{ id: string }> {
+  const whole = Math.floor(opts.hours)
+  const minutes = Math.round((opts.hours - whole) * 60)
+  const created = await qboRequest<any>('/timeactivity', {
+    method: 'POST',
+    body: JSON.stringify({
+      NameOf: 'Employee',
+      EmployeeRef: { value: opts.employeeId },
+      TxnDate: opts.txnDate,
+      Hours: minutes === 60 ? whole + 1 : whole,
+      Minutes: minutes === 60 ? 0 : minutes,
+      Description: opts.description.slice(0, 4000),
+    }),
+  })
+  return { id: String(created.TimeActivity.Id) }
+}
+
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Phase 7c adds the two tutoring revenue items (§6.4): test prep → 408-1,

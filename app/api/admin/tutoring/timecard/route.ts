@@ -1,16 +1,21 @@
 import { NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { recomputeTimecard } from '../../../../utils/timecards'
+import { processQboQueue } from '../../../../utils/qbo-sync'
 
 // Staff timecard actions (Phase 7b §7.3): approve (freezes the number),
 // mark exported after the CSV lands in QBO Payroll, reopen for corrections.
 // Approval recomputes first so the frozen total reflects every correction.
+// PL-281 adds push_qbo: approved hourly cards enqueue as TimeActivity rows
+// on the existing sync rails (drained right behind the response + hourly).
 
 type Body =
   | { action: 'approve'; ids: string[] }
   | { action: 'mark_exported'; ids: string[] }
   | { action: 'reopen'; ids: string[] }
+  | { action: 'push_qbo'; ids: string[] }
 
 export async function POST(req: Request) {
   const caller = await sessionRole('staff')
@@ -108,6 +113,59 @@ export async function POST(req: Request) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       for (const row of data ?? []) await recomputeTimecard(row.id)
       return NextResponse.json({ ok: true, updated: data?.length ?? 0 })
+    }
+
+    if (body.action === 'push_qbo') {
+      // PL-281: matching failures fail LOUD at the button, before anything
+      // enqueues — the response names each tutor who can't be pushed and
+      // why; matched hourly cards enqueue and drain immediately.
+      const { data: cards } = await supabase
+        .from('timecards')
+        .select(
+          `id, status, total_hours, period_start, period_end,
+           instructors ( name, email, pay_type, qbo_employee_id )`
+        )
+        .in('id', body.ids)
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const problems: string[] = []
+      const pushable: string[] = []
+      for (const c of (cards as any[]) ?? []) {
+        const tutor = Array.isArray(c.instructors) ? c.instructors[0] : c.instructors
+        const name = tutor?.name ?? tutor?.email ?? 'Unknown tutor'
+        if (c.status !== 'approved') {
+          problems.push(
+            c.status === 'exported'
+              ? `${name}: already exported (CSV or an earlier push) — pushing again would double their hours in QuickBooks, so it's skipped.`
+              : `${name}: the card isn't approved yet (it reads "${c.status}").`
+          )
+        } else if (tutor?.pay_type === 'salaried') {
+          problems.push(`${name}: salaried — hours are tracked for records and never pushed as hourly time.`)
+        } else if (!tutor?.qbo_employee_id) {
+          problems.push(
+            `${name}: not matched to a QuickBooks employee yet — open Settings → QuickBooks → Employee matching, then push again.`
+          )
+        } else {
+          pushable.push(c.id)
+        }
+      }
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      let queued = 0
+      for (const id of pushable) {
+        const { error } = await supabase
+          .from('qbo_sync_log')
+          .insert([{ timecard_id: id, kind: 'timecard_time' }])
+        if (error) {
+          if (error.code === '23505') {
+            problems.push('One card was already queued or pushed — left alone.')
+          } else {
+            return NextResponse.json({ error: error.message }, { status: 500 })
+          }
+        } else {
+          queued++
+        }
+      }
+      if (queued > 0) after(() => processQboQueue())
+      return NextResponse.json({ ok: true, queued, problems })
     }
 
     return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })

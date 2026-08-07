@@ -255,6 +255,36 @@ export default function TimecardsPanel() {
     )
   }
 
+  // PL-281: push a period's approved timecards to QuickBooks as time
+  // entries. Salaried and unmatched tutors are refused BY NAME in the
+  // response (never a silent skip); CSV export stays the fallback.
+  const [pushArmed, setPushArmed] = useState<string | null>(null)
+  async function pushPeriod(periodStart: string) {
+    const periodRows = rows.filter((r) => r.period_start === periodStart && r.status === 'approved')
+    if (periodRows.length === 0) return
+    setPushArmed(null)
+    setBusy(true)
+    const res = await fetch('/api/admin/tutoring/timecard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'push_qbo', ids: periodRows.map((r) => r.id) }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setBusy(false)
+    if (!res.ok) {
+      setMessage('Error: ' + (json.error ?? res.status))
+    } else {
+      const parts = []
+      if (json.queued > 0)
+        parts.push(
+          `Queued ${json.queued} timecard${json.queued === 1 ? '' : 's'} for QuickBooks — cards flip to exported as each push lands (watch Settings → QuickBooks → Sync log).`
+        )
+      if (Array.isArray(json.problems) && json.problems.length > 0) parts.push(...json.problems)
+      setMessage(parts.join(' · ') || 'Nothing to push.')
+    }
+    load()
+  }
+
   // Group by period for display.
   const periods = [...new Set(rows.map((r) => r.period_start))]
 
@@ -282,13 +312,42 @@ export default function TimecardsPanel() {
                 payday the {Number(p.slice(8, 10)) === 1 ? '20th' : '5th'}
               </span>
               {approvedCount > 0 && (
-                <button
-                  disabled={busy}
-                  onClick={() => exportPeriod(p)}
-                  className="ml-auto text-xs font-semibold text-hgl-blue underline"
-                >
-                  Export CSV + mark exported ({approvedCount})
-                </button>
+                <span className="ml-auto flex items-center gap-3">
+                  {/* PL-281: the QBO push, beside the CSV it may replace. */}
+                  {pushArmed === p ? (
+                    <span className="text-xs bg-blue-50 border border-blue-200 rounded px-2 py-1 flex items-center gap-2">
+                      <span>
+                        Push {approvedCount} approved hourly timecard{approvedCount === 1 ? '' : 's'} to
+                        QuickBooks as time entries? Salaried and unmatched tutors are refused by name.
+                      </span>
+                      <button
+                        disabled={busy}
+                        onClick={() => pushPeriod(p)}
+                        className="font-bold text-hgl-blue underline"
+                      >
+                        Yes, push
+                      </button>
+                      <button onClick={() => setPushArmed(null)} className="text-gray-500 underline">
+                        cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      disabled={busy}
+                      onClick={() => setPushArmed(p)}
+                      className="text-xs font-semibold text-hgl-blue underline"
+                    >
+                      Push to QuickBooks ({approvedCount})
+                    </button>
+                  )}
+                  <button
+                    disabled={busy}
+                    onClick={() => exportPeriod(p)}
+                    className="text-xs font-semibold text-hgl-blue underline"
+                  >
+                    Export CSV + mark exported ({approvedCount})
+                  </button>
+                </span>
               )}
             </div>
             <table className="min-w-full">

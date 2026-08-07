@@ -19,7 +19,10 @@ export type QboStatus = {
   connectedBy: string | null
   connectedAt: string | null
   itemMap: Partial<
-    Record<'group_class' | 'tutoring_addon' | 'deposit_account', { value: string; name?: string }>
+    Record<
+      'group_class' | 'tutoring_addon' | 'deposit_account' | 'tutoring_test_prep' | 'tutoring_subject',
+      { value: string; name?: string }
+    >
   >
   pendingCount: number
   failedCount: number
@@ -28,19 +31,22 @@ export type QboStatus = {
 
 export function qboDocLink(status: QboStatus | null, kind: string, docId: string | null) {
   if (!status || !docId) return null
+  // PL-281: TimeActivity has no per-transaction page — the id renders as
+  // plain text and the bookkeeper finds it on QBO's time screens.
+  if (kind === 'timecard_time') return null
   return `${status.appHost}/app/${kind === 'sale' ? 'salesreceipt' : 'refundreceipt'}?txnId=${docId}`
 }
 
 type SyncLogRow = {
   id: string
-  kind: 'sale' | 'refund'
+  kind: 'sale' | 'refund' | 'tutoring_sale' | 'timecard_time'
   status: 'pending' | 'synced' | 'failed'
   amount: number | null
   attempts: number
   last_error: string | null
   qbo_doc_id: string | null
   qbo_doc_number: string | null
-  stripe_payment_intent_id: string
+  stripe_payment_intent_id: string | null
   created_at: string
   synced_at: string | null
   enrollments: {
@@ -50,11 +56,41 @@ type SyncLogRow = {
     } | null
     classes: { class_type: string; schools: { nickname: string } | null } | null
   } | null
+  // PL-281: timecard pushes carry the tutor + period instead of a student.
+  timecards: {
+    period_start: string
+    period_end: string
+    instructors: { name: string | null; email: string } | null
+  } | null
+}
+
+/** PL-281: plain-English kind labels (no internal shorthand on screens). */
+const KIND_LABELS: Record<string, string> = {
+  sale: 'sale',
+  refund: 'refund',
+  tutoring_sale: 'tutoring sale',
+  timecard_time: 'timecard hours',
+}
+
+// PL-281: the tutor rows for Employee matching.
+type TutorRow = {
+  id: string
+  name: string | null
+  email: string
+  pay_type: 'hourly' | 'salaried'
+  tutoring_active: boolean
+  active: boolean
+  qbo_employee_id: string | null
 }
 
 type CatalogEntry = { id: string; name: string; account?: string | null }
 
-const MAPPING_ROWS: { key: 'group_class' | 'tutoring_addon' | 'deposit_account'; label: string; hint: string; source: 'items' | 'accounts' }[] = [
+const MAPPING_ROWS: {
+  key: 'group_class' | 'tutoring_addon' | 'deposit_account' | 'tutoring_test_prep' | 'tutoring_subject'
+  label: string
+  hint: string
+  source: 'items' | 'accounts'
+}[] = [
   {
     key: 'group_class',
     label: 'Group class → QBO Item',
@@ -65,6 +101,18 @@ const MAPPING_ROWS: { key: 'group_class' | 'tutoring_addon' | 'deposit_account';
     key: 'tutoring_addon',
     label: 'Tutoring add-on → QBO Item',
     hint: 'the Item should post to 408-5 International Online Prep',
+    source: 'items',
+  },
+  {
+    key: 'tutoring_test_prep',
+    label: 'Tutoring — test prep → QBO Item',
+    hint: 'the Item should post to 408-1 (1-on-1 SAT/ACT/GRE/GMAT test prep)',
+    source: 'items',
+  },
+  {
+    key: 'tutoring_subject',
+    label: 'Tutoring — subject → QBO Item',
+    hint: 'the Item should post to 401 (ongoing subject help)',
     source: 'items',
   },
   {
@@ -86,9 +134,16 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
   const [logFilter, setLogFilter] = useState('')
   const [busy, setBusy] = useState(false)
   const [banner, setBanner] = useState('')
-  const [catalog, setCatalog] = useState<{ items: CatalogEntry[]; accounts: CatalogEntry[] } | null>(null)
+  const [catalog, setCatalog] = useState<{
+    items: CatalogEntry[]
+    accounts: CatalogEntry[]
+    employees?: CatalogEntry[]
+  } | null>(null)
   const [catalogError, setCatalogError] = useState('')
   const [pendingMap, setPendingMap] = useState<Record<string, string>>({})
+  // PL-281: Employee matching state.
+  const [tutors, setTutors] = useState<TutorRow[]>([])
+  const [pendingEmp, setPendingEmp] = useState<Record<string, string>>({})
 
   const fetchLog = useCallback(async () => {
     const since = new Date(Date.now() - 90 * 24 * 3_600_000).toISOString()
@@ -99,13 +154,20 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
         id, kind, status, amount, attempts, last_error, qbo_doc_id, qbo_doc_number,
         stripe_payment_intent_id, created_at, synced_at,
         enrollments ( students ( first_name, last_name ),
-          classes ( class_type, schools ( nickname ) ) )
+          classes ( class_type, schools ( nickname ) ) ),
+        timecards ( period_start, period_end, instructors ( name, email ) )
       `
       )
       .gte('created_at', since)
       .order('created_at', { ascending: false })
       .limit(200)
     if (data) setLog(data as unknown as SyncLogRow[])
+    // PL-281: tutors for the Employee-matching card (staff RLS read).
+    const { data: tutorRows } = await supabase
+      .from('instructors')
+      .select('id, name, email, pay_type, tutoring_active, active, qbo_employee_id')
+      .order('name')
+    if (tutorRows) setTutors(tutorRows as unknown as TutorRow[])
   }, [])
 
   useEffect(() => {
@@ -173,6 +235,24 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
       return
     }
     onStatusChange()
+  }
+
+  // PL-281: write (or clear) a tutor's QBO employee match.
+  async function saveEmployeeMatch(instructorId: string, qboEmployeeId: string | null) {
+    setBusy(true)
+    const res = await fetch('/api/qbo/employee-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instructorId, qboEmployeeId }),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setBanner('Error saving the employee match: ' + (body.error ?? res.status))
+      return
+    }
+    setPendingEmp((m) => ({ ...m, [instructorId]: '' }))
+    fetchLog()
   }
 
   async function retry(ids: string[] | null) {
@@ -342,6 +422,97 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
         </div>
       )}
 
+      {/* PL-281: Employee matching — admin-only, match-ONLY (the portal
+          never creates QBO employees). Hourly + active tutors matter for
+          timecard pushes; salaried are listed as excluded so nobody wonders. */}
+      {isAdmin && (
+        <div className="border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-1">
+            <h4 className="font-semibold text-hgl-slate">Employee matching (payroll time)</h4>
+            <button
+              onClick={loadCatalog}
+              disabled={busy || status?.status !== 'connected'}
+              className="text-xs text-hgl-blue underline hover:text-hgl-slate disabled:opacity-50"
+              title={status?.status !== 'connected' ? 'Connect QuickBooks first' : ''}
+            >
+              Load options from QuickBooks
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            Approved hourly timecards push to QuickBooks as time entries against the matched
+            employee. Matching only — the portal never creates QuickBooks employees; add new
+            employees in QBO Payroll first, then match here. Unmatched tutors can&apos;t be pushed
+            (the push button says so by name).
+          </p>
+          <div className="space-y-2">
+            {tutors
+              .filter((t) => t.active)
+              .map((t) => {
+                const employees = catalog?.employees ?? null
+                const matched = t.qbo_employee_id
+                  ? (catalog?.employees?.find((e) => e.id === t.qbo_employee_id)?.name ??
+                    `id ${t.qbo_employee_id}`)
+                  : null
+                return (
+                  <div key={t.id} className="grid grid-cols-3 gap-3 items-center text-sm">
+                    <p className="font-medium text-gray-700">
+                      {t.name ?? t.email}
+                      {t.pay_type === 'salaried' && (
+                        <span className="ml-2 text-xs text-gray-400">
+                          salaried — never pushed as hourly time
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-gray-600">
+                      {matched ? (
+                        <>QBO employee: {matched}</>
+                      ) : t.pay_type === 'salaried' ? (
+                        <span className="text-xs text-gray-400 italic">no match needed</span>
+                      ) : (
+                        <span className="italic text-amber-700">not matched — pushes refuse</span>
+                      )}
+                    </p>
+                    {employees ? (
+                      <div className="flex gap-2">
+                        <select
+                          value={pendingEmp[t.id] ?? ''}
+                          onChange={(e) => setPendingEmp((m) => ({ ...m, [t.id]: e.target.value }))}
+                          className="border border-gray-300 rounded p-1 text-sm flex-1"
+                        >
+                          <option value="">choose…</option>
+                          {employees.map((e) => (
+                            <option key={e.id} value={e.id}>
+                              {e.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => saveEmployeeMatch(t.id, pendingEmp[t.id] ?? '')}
+                          disabled={busy || !pendingEmp[t.id]}
+                          className="bg-hgl-slate text-white text-xs font-bold px-3 py-1 rounded hover:opacity-90 disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                        {t.qbo_employee_id && (
+                          <button
+                            onClick={() => saveEmployeeMatch(t.id, null)}
+                            disabled={busy}
+                            className="text-xs text-gray-500 underline disabled:opacity-50"
+                          >
+                            clear
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">load options to change</span>
+                    )}
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
+
       {/* Sync log — staff (spec §8) */}
       <div className="border border-gray-200 rounded-lg p-4">
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
@@ -391,6 +562,7 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
                 const badge = SYNC_BADGES[r.status]
                 const student = r.enrollments?.students
                 const cls = r.enrollments?.classes
+                const tc = r.timecards
                 const docLink = qboDocLink(status, r.kind, r.qbo_doc_id)
                 return (
                   <tr key={r.id} id={`qbo-${r.id}`} className="hover:bg-gray-50">
@@ -398,13 +570,26 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
                       {formatTimestampAdmin(r.created_at)}
                     </td>
                     <td className="px-3 py-2">
-                      {student ? `${student.first_name} ${student.last_name}` : '—'}
-                      <span className="text-gray-400">
-                        {' '}
-                        · {cls?.schools?.nickname ?? ''} {cls?.class_type ?? ''}
-                      </span>
+                      {/* PL-281: timecard rows name the tutor + pay period. */}
+                      {tc ? (
+                        <>
+                          {tc.instructors?.name ?? tc.instructors?.email ?? '—'}
+                          <span className="text-gray-400">
+                            {' '}
+                            · timecard {tc.period_start} → {tc.period_end}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {student ? `${student.first_name} ${student.last_name}` : '—'}
+                          <span className="text-gray-400">
+                            {' '}
+                            · {cls?.schools?.nickname ?? ''} {cls?.class_type ?? ''}
+                          </span>
+                        </>
+                      )}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">{r.kind}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{KIND_LABELS[r.kind] ?? r.kind}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {r.amount != null ? `$${Number(r.amount).toFixed(2)}` : '—'}
                     </td>
@@ -439,6 +624,11 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
                         >
                           {r.qbo_doc_number ?? r.qbo_doc_id}
                         </a>
+                      ) : r.qbo_doc_id ? (
+                        // PL-281: TimeActivity has no per-txn page — plain id.
+                        <span className="text-gray-500" title="QuickBooks time entry id">
+                          {r.qbo_doc_id}
+                        </span>
                       ) : (
                         '—'
                       )}

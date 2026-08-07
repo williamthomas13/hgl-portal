@@ -4,6 +4,7 @@ import {
   QboApiError,
   createRefundReceipt,
   createSalesReceipt,
+  createTimeActivity,
   findOrCreateCustomer,
   loadConnection,
   loadItemMap,
@@ -14,6 +15,7 @@ import {
 import { sendAdminAlert } from './email'
 import { stripeDashboardUrl } from './checkout-paid'
 import { ADMIN_EMAIL, DEFAULT_TIMEZONE, localDate } from './lifecycle'
+import { CLASS_WORK_TYPE, DEFAULT_TUTORING_WORK_TYPE, hoursByWorkType, sessionMinutes } from './work-types'
 
 // Phase 6 sync worker (spec §4/§5): drains pending qbo_sync_log rows into QBO
 // Sales/Refund Receipts. Runs from two places — an after() trigger right
@@ -23,13 +25,19 @@ import { ADMIN_EMAIL, DEFAULT_TIMEZONE, localDate } from './lifecycle'
 
 const MAX_ATTEMPTS = 5
 
+// PL-281: a configuration problem retrying can never fix (unmatched
+// employee, salaried card in the queue). The worker fails the row and alerts
+// IMMEDIATELY instead of burning two hours of backoff on it.
+export class PermanentSyncError extends Error {}
+
 type SyncRow = {
   id: string
   enrollment_id: string | null // null for tutoring rows (Phase 7c)
   enrollment_addon_id: string | null
   tutoring_invoice_id: string | null
-  stripe_payment_intent_id: string
-  kind: 'sale' | 'refund' | 'tutoring_sale'
+  timecard_id: string | null // PL-281: timecard → TimeActivity rows
+  stripe_payment_intent_id: string | null // null for timecard rows
+  kind: 'sale' | 'refund' | 'tutoring_sale' | 'timecard_time'
   amount: number | null
   attempts: number
 }
@@ -197,6 +205,7 @@ async function syncTutoringRow(row: SyncRow, items: ItemMap): Promise<{ id: stri
     throw new Error('tutoring item mapping incomplete (map tutoring_test_prep + tutoring_subject in the QuickBooks panel)')
   }
 
+  if (!row.stripe_payment_intent_id) throw new Error('tutoring row has no payment intent')
   const docNumber = docNumberFor('sale', row.stripe_payment_intent_id)
   const existing = await findExistingDoc('sale', docNumber)
   if (existing) return existing
@@ -246,7 +255,94 @@ async function syncTutoringRow(row: SyncRow, items: ItemMap): Promise<{ id: stri
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// PL-281: one approved hourly timecard → ONE TimeActivity (total hours; the
+// description carries the by-work-type breakdown the payroll summary shows,
+// plus the timecard id for crash-recovery adoption — TimeActivity has no
+// DocNumber, so provenance rides the description).
+async function syncTimecardRow(row: SyncRow): Promise<{ id: string; docNumber: string | null }> {
+  if (!row.timecard_id) throw new Error('timecard row has no timecard id')
+  const { data: tc } = await supabase
+    .from('timecards')
+    .select(
+      `id, tutor_id, period_start, period_end, status, total_hours,
+       instructors ( name, email, pay_type, qbo_employee_id )`
+    )
+    .eq('id', row.timecard_id)
+    .maybeSingle()
+  if (!tc) throw new Error('timecard no longer loadable')
+  const tutor: any = Array.isArray(tc.instructors) ? tc.instructors[0] : tc.instructors
+  const tutorName = tutor?.name ?? tutor?.email ?? 'this tutor'
+  // PL-212 rails, restated at the last gate: salaried hours are tracked for
+  // records and NEVER pushed as payable time. The enqueue filters these out;
+  // this guard survives a mapping edit between enqueue and drain.
+  if (tutor?.pay_type === 'salaried') {
+    throw new PermanentSyncError(
+      `${tutorName} is salaried — salaried tutors' hours are tracked for records and never pushed to QuickBooks as hourly time.`
+    )
+  }
+  if (!tutor?.qbo_employee_id) {
+    throw new PermanentSyncError(
+      `${tutorName} isn't matched to a QuickBooks employee yet. Open Settings → QuickBooks → Employee matching, pick their QBO employee, then retry this row. (The portal never creates QBO employees.)`
+    )
+  }
+  // 'approved' is the normal case; 'exported' covers a crash after the
+  // status flip on a retryable path. Anything else means the card was
+  // reopened after the push was queued — stop and say so.
+  if (tc.status !== 'approved' && tc.status !== 'exported') {
+    throw new PermanentSyncError(
+      `This timecard is no longer approved (it reads "${tc.status}") — it was reopened after the push was queued. Re-approve it and push again.`
+    )
+  }
+
+  // Crash-recovery idempotency: adopt a TimeActivity a previous attempt
+  // created (marker = the timecard id in the description).
+  const marker = `HGL timecard ${tc.id}`
+  const existingQ = await qboQuery(
+    `select Id, Description from TimeActivity where TxnDate = '${tc.period_end}' maxresults 1000`
+  )
+  const existing = (existingQ.TimeActivity ?? []).find((t: any) =>
+    String(t.Description ?? '').includes(marker)
+  )
+  if (existing) return { id: String(existing.Id), docNumber: null }
+
+  // By-work-type breakdown from the card's stamped sessions — the same
+  // numbers the payroll-summary clipboard shows.
+  const [{ data: tSessions }, { data: cSessions }] = await Promise.all([
+    supabase.from('tutoring_sessions').select('duration_minutes, work_type').eq('timecard_id', tc.id),
+    supabase.from('sessions').select('start_time, end_time').eq('timecard_id', tc.id),
+  ])
+  const breakdown = hoursByWorkType([
+    ...((tSessions as any[]) ?? []).map((s) => ({
+      workType: s.work_type ?? DEFAULT_TUTORING_WORK_TYPE,
+      hours: Number(s.duration_minutes ?? 0) / 60,
+    })),
+    ...((cSessions as any[]) ?? []).map((s) => ({
+      workType: CLASS_WORK_TYPE,
+      hours: sessionMinutes(s.start_time, s.end_time) / 60,
+    })),
+  ])
+  const breakdownText = breakdown.map((b) => `${b.workType} ${b.hours.toFixed(2)}h`).join(' · ')
+
+  const created = await createTimeActivity({
+    employeeId: tutor.qbo_employee_id,
+    txnDate: tc.period_end,
+    hours: Number(tc.total_hours),
+    description: `HGL hours ${tc.period_start} to ${tc.period_end}: ${Number(tc.total_hours).toFixed(2)} total${breakdownText ? ` (${breakdownText})` : ''} · ${marker}`,
+  })
+  // Pushed to payroll = the same milestone the CSV click marks. Guarded so a
+  // card already exported (via CSV, or a prior attempt) just stays exported.
+  await supabase
+    .from('timecards')
+    .update({ status: 'exported', updated_at: new Date().toISOString() })
+    .eq('id', tc.id)
+    .eq('status', 'approved')
+  return { id: created.id, docNumber: null }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 async function syncRow(row: SyncRow, items: ItemMap): Promise<{ id: string; docNumber: string | null }> {
+  if (row.kind === 'timecard_time') return syncTimecardRow(row)
   if (row.kind === 'tutoring_sale') return syncTutoringRow(row, items)
   if (!row.enrollment_id) throw new Error('class row has no enrollment id')
   const detail = await loadEnrollmentDetail(row.enrollment_id)
@@ -260,6 +356,7 @@ async function syncRow(row: SyncRow, items: ItemMap): Promise<{ id: string; docN
   const tz = school?.timezone ?? DEFAULT_TIMEZONE
   const student = `${detail.students?.first_name ?? ''} ${detail.students?.last_name ?? ''}`.trim()
   const classLabel = `${school?.nickname ?? 'HGL'} ${detail.classes.class_type}`
+  if (!row.stripe_payment_intent_id) throw new Error('payment row has no payment intent')
   const docNumber = docNumberFor(row.kind, row.stripe_payment_intent_id)
 
   // Crash-recovery idempotency: adopt a receipt a previous attempt created.
@@ -403,7 +500,7 @@ export async function processQboQueue(): Promise<QboQueueResult> {
 
     const { data: rows } = await supabase
       .from('qbo_sync_log')
-      .select('id, enrollment_id, enrollment_addon_id, tutoring_invoice_id, stripe_payment_intent_id, kind, amount, attempts')
+      .select('id, enrollment_id, enrollment_addon_id, tutoring_invoice_id, timecard_id, stripe_payment_intent_id, kind, amount, attempts')
       .eq('status', 'pending')
       .lte('next_attempt_at', new Date().toISOString())
       .order('created_at')
@@ -449,21 +546,22 @@ export async function processQboQueue(): Promise<QboQueueResult> {
         }
         const message = e instanceof Error ? e.message : String(e)
         console.error(`QBO sync failed for row ${row.id} (attempt ${row.attempts + 1}):`, message)
-        const exhausted = row.attempts + 1 >= MAX_ATTEMPTS
+        // PL-281: a PermanentSyncError is a configuration problem — retrying
+        // can't fix it, so fail loud NOW instead of after 2h of backoff.
+        const exhausted = e instanceof PermanentSyncError || row.attempts + 1 >= MAX_ATTEMPTS
         await supabase
           .from('qbo_sync_log')
           .update({ last_error: message.slice(0, 1000), ...(exhausted ? { status: 'failed' } : {}) })
           .eq('id', row.id)
         if (exhausted) {
           result.failed++
-          await sendAdminAlert({
-            dedupeKey: `qbo_sync_failed:${row.id}`,
-            adminEmail: ADMIN_EMAIL,
-            templateKey: 'AL_QBO_FAILURE',
-            subject: `QuickBooks sync FAILED — ${row.kind} for payment ${row.stripe_payment_intent_id}`,
-            // PL-92: deep-link THIS failed row with its Retry control in
-            // view — never the panel root. Error text stays verbatim.
-            body: `<p>After ${MAX_ATTEMPTS} attempts, the ${row.kind === 'refund' ? 'Refund Receipt' : 'Sales Receipt'}
+          const alertBody =
+            row.kind === 'timecard_time'
+              ? `<p>The timecard push to QuickBooks <strong>did not go through</strong> — no time was recorded, nothing was silently skipped.</p>
+              <p>Why: ${message.slice(0, 500)}</p>
+              <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin?qbo=${row.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fix &amp; retry this sync</a></p>
+              <p><a href="${emailBaseUrl()}/admin/tutoring" style="color:#00AEEE">The timecards panel</a> — the card stays approved (not exported) until the push lands or you export the CSV instead.</p>`
+              : `<p>After ${MAX_ATTEMPTS} attempts, the ${row.kind === 'refund' ? 'Refund Receipt' : 'Sales Receipt'}
               for Stripe payment <code>${row.stripe_payment_intent_id}</code>
               (${row.tutoring_invoice_id ? `tutoring invoice <code>${row.tutoring_invoice_id}</code>` : `enrollment <code>${row.enrollment_id}</code>`})
               could not be created in QuickBooks.</p>
@@ -476,7 +574,18 @@ export async function processQboQueue(): Promise<QboQueueResult> {
                   : row.tutoring_invoice_id
                     ? ` · <a href="${emailBaseUrl()}/admin/tutoring?invoice=${row.tutoring_invoice_id}" style="color:#00AEEE">the invoice</a>`
                     : ''
-              }</p>`,
+              }</p>`
+          await sendAdminAlert({
+            dedupeKey: `qbo_sync_failed:${row.id}`,
+            adminEmail: ADMIN_EMAIL,
+            templateKey: 'AL_QBO_FAILURE',
+            subject:
+              row.kind === 'timecard_time'
+                ? `QuickBooks payroll push FAILED — a timecard didn't land`
+                : `QuickBooks sync FAILED — ${row.kind} for payment ${row.stripe_payment_intent_id}`,
+            // PL-92: deep-link THIS failed row with its Retry control in
+            // view — never the panel root. Error text stays verbatim.
+            body: alertBody,
             enrollmentId: row.enrollment_id ?? undefined,
           }).catch((err) => console.error('QBO failure alert failed:', err))
         } else {
