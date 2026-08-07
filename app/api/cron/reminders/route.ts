@@ -1,5 +1,5 @@
 import { emailBaseUrl } from '../../../utils/base-url'
-import { resumePausedCampaigns } from '../../../utils/campaign-send'
+import { dispatchScheduledCampaigns, resumePausedCampaigns } from '../../../utils/campaign-send'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
@@ -2035,6 +2035,13 @@ export async function GET(req: Request) {
     if (resumed > 0) counters.campaigns_resumed = resumed
   } catch (e) {
     console.error('campaign resume sweep failed:', e)
+  }
+  // PL-280: one-shot scheduled campaigns whose time has come.
+  try {
+    const dispatched = await dispatchScheduledCampaigns()
+    if (dispatched > 0) counters.campaigns_dispatched = dispatched
+  } catch (e) {
+    console.error('scheduled-campaign dispatch failed:', e)
   }
 
   // PL-111: session-note reminders — end-of-day list per tutor (only when

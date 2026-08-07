@@ -114,6 +114,9 @@ export async function POST(request: Request) {
       const discounted = Math.max(0, price - verdict.amount);
       className = `${className} (${verdict.code} — $${verdict.amount.toFixed(0)} off)`;
       price = discounted;
+      // PL-280: record the code used — the "used a promo code" segment chip
+      // reads this (Stripe-page promotion codes are invisible to us).
+      await supabase.from('enrollments').update({ promo_code_used: verdict.code }).in('id', ids);
     }
 
     // Base URL for redirects. Set NEXT_PUBLIC_APP_URL in env

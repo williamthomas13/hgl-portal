@@ -39,6 +39,9 @@ emailMod.sendOnce = async (opts) => { sendLog.push(opts); return 'sent' }
 emailMod.sendAdminAlert = async () => 'sent'
 const camp = require(path.join(out, 'campaigns.js'))
 const engine = require(path.join(out, 'campaign-send.js'))
+// PL-280: the firewall assertions read the vocabulary + stub context.
+const vars = require(path.join(out, 'comms-variables.js'))
+const registered = require(path.join(out, 'comms-registered.js'))
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 let failures = 0
 const check = (n, ok, d = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${d ? ` — ${d}` : ''}`); if (!ok) failures++ }
@@ -61,6 +64,7 @@ async function destroy() {
     await db.from('enrollment_addons').delete().eq('enrollment_id', id)
     await db.from('enrollments').delete().eq('id', id)
   }
+  for (const id of cleanup.invoices ?? []) await db.from('tutoring_invoices').delete().eq('id', id)
   for (const id of cleanup.students) await db.from('students').delete().eq('id', id)
   for (const id of cleanup.families) await db.from('families').delete().eq('id', id)
   for (const id of cleanup.classes) await db.from('classes').delete().eq('id', id)
@@ -143,8 +147,17 @@ try {
 
   await camp.suppressEmail(em('a'), 'qa')
   cleanup.supp.push(em('a'))
+  // PL-280 (Scarlett's per-person rule): a suppressed PARENT email no longer
+  // hides the family — the row stays listed, flagged, so student legs can
+  // still run; the parent leg itself is refused by sendOnce (check 9).
   const afterSupp = await camp.resolveSegment({ classType: 'QA-PL201 SAT Prep' })
-  check('8. suppressed address drops out of every segment', !emails(afterSupp).includes(em('a')), '')
+  const suppRow = afterSupp.find((r) => r.email === em('a'))
+  check('8. per-person: suppressed parent stays listed, flagged (leg-level, not family-level)',
+    Boolean(suppRow && suppRow.parentSuppressed === true), JSON.stringify(suppRow ?? null))
+  // The whole-family opt-out (legacy path) still excludes everyone.
+  check('8b. suppressEmail no longer flips the family flag',
+    !(await db.from('families').select('marketing_opt_out').eq('id', cleanup.families[0]).maybeSingle()).data
+      ?.marketing_opt_out, '')
 
   const marketingResult = await realSendOnce({
     marketing: true, dedupeKey: `qa-pl201-m-${rand}`, emailType: 'CAMPAIGN',
@@ -189,6 +202,56 @@ try {
   const { data: recAfter } = await db.from('campaign_recipients').select('status').eq('campaign_id', campaign.id)
   check('13. the sweep resumes it to done', resumed === 1 && campAfter.status === 'done', campAfter.status)
   check('14. per-recipient log complete (all sent)', (recAfter ?? []).every((r) => r.status === 'sent'), '')
+
+  // --- PL-280: family-history chips + the financial firewall -----------------
+  // A's history: one $500 paid class (price fallback — no snapshot), active
+  // tutoring, no invoices. B: waitlisted only, no tutoring.
+  const spentLow = await camp.resolveSegment({ classType: 'QA-PL201 SAT Prep', spentAtLeast: 400 })
+  const spentHigh = await camp.resolveSegment({ classType: 'QA-PL201 SAT Prep', spentAtLeast: 600 })
+  check('15. spent-$X chip uses the term-report money rule',
+    emails(spentLow).includes(em('a')) && !emails(spentHigh).includes(em('a')),
+    JSON.stringify({ low: emails(spentLow), high: emails(spentHigh) }))
+
+  const neverTut = await camp.resolveSegment({ tutoringStatus: 'never' })
+  check('16. never-bought-tutoring chip', emails(neverTut).includes(em('b')) && !emails(neverTut).includes(em('a')), '')
+
+  const purch = await camp.resolveSegment({ classType: 'QA-PL201 SAT Prep', purchasesAtLeast: 2 })
+  check('17. purchases-count chip', !emails(purch).includes(em('a')), '')
+
+  const noBal = await camp.resolveSegment({ classType: 'QA-PL201 SAT Prep', balance: 'none_outstanding' })
+  check('18. no-outstanding-balance chip (A has no invoices)', emails(noBal).includes(em('a')), '')
+  const { data: qaInv, error: invErr } = await db.from('tutoring_invoices').insert([{
+    family_id: A.famId, period: '2036-01-01', status: 'past_due', total: 100,
+  }]).select('id').single()
+  if (invErr) throw new Error('invoice fixture: ' + invErr.message)
+  cleanup.invoices = [qaInv.id]
+  const pastDue = await camp.resolveSegment({ balance: 'past_due' })
+  const noBal2 = await camp.resolveSegment({ classType: 'QA-PL201 SAT Prep', balance: 'none_outstanding' })
+  check('19. past-due chip flips both ways', emails(pastDue).includes(em('a')) && !emails(noBal2).includes(em('a')), '')
+
+  const wlOnly = await camp.resolveSegment({ classType: 'QA-PL201 SAT Prep', classOutcome: 'waitlisted_only' })
+  check('20. waitlisted-never-enrolled outcome', emails(wlOnly).includes(em('b')) && !emails(wlOnly).includes(em('a')), '')
+
+  check('21. recipients carry student records for paired sends',
+    tookQa.every((r) => Array.isArray(r.studentRecords) && r.studentRecords.every((s) => typeof s.firstName === 'string')), '')
+
+  // The financial firewall, asserted structurally: (a) no composer variable
+  // is named after family financial history, so money facts can't be typed
+  // into a template; (b) the campaign stub context carries no money values.
+  // (amountPaid/invoiceTotal are TRANSACTIONAL per-payment variables —
+  // receipts and invoices render them legitimately; on a campaign stub they
+  // must resolve empty, asserted in 23. The firewall bans HISTORY
+  // aggregates: lifetime spend, balances, past-due, purchase counts.)
+  const varNames = Object.keys(vars.VARIABLES)
+  const dollarShaped = varNames.filter((n) => /spend|spent|balance|outstanding|pastdue|lifetime|purchases/i.test(n))
+  check('22. firewall: no family-financial-HISTORY composer variables', dollarShaped.length === 0, dollarShaped.join(', '))
+  const stubCtx = registered.tutoringStubContext({ parentFirstName: 'QA' })
+  const stubResolved = vars.resolveVariables(stubCtx, 'parent', {})
+  const moneyLeaks = ['amountPaid', 'invoiceTotal']
+    .filter((n) => n in stubResolved)
+    .filter((n) => /\$\s*[1-9]/.test(String(stubResolved[n].value ?? '')))
+  check('23. firewall: campaign stub context carries no money',
+    stubCtx.amountPaid === null && stubCtx.price === 0 && moneyLeaks.length === 0, moneyLeaks.join(', '))
 } finally {
   await destroy()
   rmSync(out, { recursive: true, force: true })

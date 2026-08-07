@@ -14,7 +14,16 @@ import { SidebarNav, CONTACTS_SIDEBAR } from '../sidebar'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-type Recipient = { familyId: string; email: string; name: string; students: string[]; why: string[] }
+type Recipient = {
+  familyId: string
+  email: string
+  name: string
+  students: string[]
+  studentRecords: { id: string; firstName: string; email: string | null }[]
+  why: string[]
+  parentSuppressed: boolean
+  suppressedStudentEmails: string[]
+}
 
 const chipCls = (on: boolean) =>
   `px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
@@ -34,6 +43,12 @@ export default function CampaignsPage() {
   const [templateKey, setTemplateKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  // PL-280: pairs mode + one-shot scheduling + saved segments.
+  const [savedSegments, setSavedSegments] = useState<any[]>([])
+  const [audienceMode, setAudienceMode] = useState<'parents' | 'pairs'>('parents')
+  const [studentTemplateKey, setStudentTemplateKey] = useState('')
+  const [scheduledFor, setScheduledFor] = useState('')
+  const [saveSegName, setSaveSegName] = useState('')
 
   const loadLists = useCallback(async () => {
     const [schoolRes, typeRes, apiRes] = await Promise.all([
@@ -46,6 +61,7 @@ export default function CampaignsPage() {
     setTemplates(apiRes.templates ?? [])
     setCampaigns(apiRes.campaigns ?? [])
     setQuota(apiRes.quota ?? null)
+    setSavedSegments(apiRes.savedSegments ?? [])
   }, [])
 
   useEffect(() => {
@@ -85,10 +101,19 @@ export default function CampaignsPage() {
 
   async function send() {
     if (!preview) return
+    const studentLegCount =
+      audienceMode === 'pairs'
+        ? preview.recipients
+            .filter((r) => !excluded.has(r.email))
+            .reduce((n, r) => n + r.studentRecords.filter((s) => s.email).length, 0)
+        : 0
     if (
       !window.confirm(
-        `Send "${name.trim()}" to ${finalCount} famil${finalCount === 1 ? 'y' : 'ies'} (${preview.summary})? ` +
-          `Marketing sends pause automatically if they'd crowd out regular emails.`
+        `Send "${name.trim()}" to ${finalCount} famil${finalCount === 1 ? 'y' : 'ies'}` +
+          (audienceMode === 'pairs' ? ` (+ ${studentLegCount} student email${studentLegCount === 1 ? '' : 's'})` : '') +
+          ` (${preview.summary})?` +
+          (scheduledFor ? ` It sends at ${new Date(scheduledFor).toLocaleString()}.` : '') +
+          ` Marketing sends pause automatically if they'd crowd out regular emails.`
       )
     )
       return
@@ -104,18 +129,24 @@ export default function CampaignsPage() {
         templateKey,
         excludeEmails: [...excluded],
         expectedCount: finalCount,
+        audienceMode,
+        studentTemplateKey: audienceMode === 'pairs' ? studentTemplateKey : undefined,
+        scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
       }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) setMessage('Error: ' + (json.error ?? 'send failed'))
     else {
       setMessage(
-        json.status === 'paused'
-          ? `Sent ${json.sent} — paused at the daily cap; the remaining ${json.pendingLeft} go out automatically when the quota resets.`
-          : `Done — ${json.sent} sent${json.suppressed ? `, ${json.suppressed} suppressed (unsubscribed)` : ''}${json.failed ? `, ${json.failed} failed` : ''}.`
+        json.scheduled
+          ? `Scheduled — it sends on the first hourly sweep after ${new Date(json.scheduledFor).toLocaleString()}.`
+          : json.status === 'paused'
+            ? `Sent ${json.sent} — paused at the daily cap; the remaining ${json.pendingLeft} go out automatically when the quota resets.`
+            : `Done — ${json.sent} sent${json.suppressed ? `, ${json.suppressed} suppressed (unsubscribed)` : ''}${json.failed ? `, ${json.failed} failed` : ''}.`
       )
       setPreview(null)
       setName('')
+      setScheduledFor('')
       loadLists()
     }
     setBusy(false)
@@ -204,6 +235,147 @@ export default function CampaignsPage() {
               </button>
             </div>
 
+            {/* PL-280: the full family-history record — class outcomes and
+                dates, tutoring history, financial history. Financial facts
+                SEGMENT only; they never render into the email. */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-[11px] uppercase tracking-wide font-bold text-gray-400">History</span>
+              <select
+                value={segment.classOutcome ?? ''}
+                onChange={(e) => set('classOutcome', e.target.value || undefined)}
+                className="border border-gray-300 rounded-full px-3 py-1.5 text-xs bg-white"
+              >
+                <option value="">Any class outcome…</option>
+                <option value="completed">finished the class</option>
+                <option value="cancelled">their class was cancelled</option>
+                <option value="refunded">was refunded</option>
+                <option value="waitlisted_only">waitlisted, never enrolled</option>
+              </select>
+              <label className="text-xs text-gray-500 flex items-center gap-1">
+                started on/after
+                <input
+                  type="date"
+                  value={segment.tookSince ?? ''}
+                  onChange={(e) => set('tookSince', e.target.value || undefined)}
+                  className="border border-gray-300 rounded px-2 py-1 text-xs"
+                />
+              </label>
+              <label className="text-xs text-gray-500 flex items-center gap-1">
+                before
+                <input
+                  type="date"
+                  value={segment.tookBefore ?? ''}
+                  onChange={(e) => set('tookBefore', e.target.value || undefined)}
+                  className="border border-gray-300 rounded px-2 py-1 text-xs"
+                />
+              </label>
+              <button className={chipCls(segment.tutoringStatus === 'never')} onClick={() => set('tutoringStatus', 'never')}>
+                Never bought tutoring
+              </button>
+              <button className={chipCls(segment.tutoringStatus === 'active')} onClick={() => set('tutoringStatus', 'active')}>
+                Active tutoring
+              </button>
+              <button className={chipCls(segment.tutoringStatus === 'lapsed')} onClick={() => set('tutoringStatus', 'lapsed')}>
+                Tutoring lapsed 6+ months
+              </button>
+              <label className="text-xs text-gray-500 flex items-center gap-1">
+                under
+                <input
+                  type="number"
+                  min={1}
+                  value={segment.hoursRemainingUnder ?? ''}
+                  onChange={(e) => set('hoursRemainingUnder', e.target.value ? Number(e.target.value) : undefined)}
+                  className="border border-gray-300 rounded px-2 py-1 text-xs w-14"
+                />
+                h remaining
+              </label>
+              <label className="text-xs text-gray-500 flex items-center gap-1">
+                spent $
+                <input
+                  type="number"
+                  min={1}
+                  value={segment.spentAtLeast ?? ''}
+                  onChange={(e) => set('spentAtLeast', e.target.value ? Number(e.target.value) : undefined)}
+                  className="border border-gray-300 rounded px-2 py-1 text-xs w-20"
+                />
+                +
+              </label>
+              <label className="text-xs text-gray-500 flex items-center gap-1">
+                across
+                <input
+                  type="number"
+                  min={1}
+                  value={segment.purchasesAtLeast ?? ''}
+                  onChange={(e) => set('purchasesAtLeast', e.target.value ? Number(e.target.value) : undefined)}
+                  className="border border-gray-300 rounded px-2 py-1 text-xs w-14"
+                />
+                + purchases
+              </label>
+              <button className={chipCls(segment.balance === 'none_outstanding')} onClick={() => set('balance', 'none_outstanding')}>
+                No outstanding balance
+              </button>
+              <button className={chipCls(segment.balance === 'past_due')} onClick={() => set('balance', 'past_due')}>
+                Has a past-due invoice
+              </button>
+              <button className={chipCls(!!segment.usedPromoCode)} onClick={() => set('usedPromoCode', true)}>
+                Used a promo code
+              </button>
+              <button className={chipCls(!!segment.refunded)} onClick={() => set('refunded', true)}>
+                Was refunded before
+              </button>
+            </div>
+
+            {/* PL-280: saved segments — live membership (the definition
+                re-resolves every time it's used). */}
+            <div className="flex flex-wrap gap-2 items-center text-xs">
+              <span className="text-[11px] uppercase tracking-wide font-bold text-gray-400">Saved segments</span>
+              <select
+                value=""
+                onChange={(e) => {
+                  const s = savedSegments.find((x) => x.id === e.target.value)
+                  if (s) {
+                    setSegment(s.definition ?? {})
+                    setPreview(null)
+                    setExcluded(new Set())
+                  }
+                }}
+                className="border border-gray-300 rounded-full px-3 py-1.5 text-xs bg-white"
+              >
+                <option value="">Load a saved segment…</option>
+                {savedSegments.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {s.summary}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                placeholder="Save current chips as…"
+                value={saveSegName}
+                onChange={(e) => setSaveSegName(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-xs w-44"
+              />
+              <button
+                disabled={busy || !saveSegName.trim() || Object.keys(segment).length === 0}
+                onClick={async () => {
+                  setBusy(true)
+                  const res = await fetch('/api/admin/campaigns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'save_segment', name: saveSegName.trim(), segment }),
+                  })
+                  setBusy(false)
+                  const json = await res.json().catch(() => ({}))
+                  setMessage(res.ok ? `Saved segment "${saveSegName.trim()}" — membership stays live.` : 'Error: ' + json.error)
+                  setSaveSegName('')
+                  loadLists()
+                }}
+                className="text-hgl-blue underline disabled:opacity-40"
+              >
+                Save
+              </button>
+            </div>
+
             <div className="flex items-center gap-3">
               <button
                 onClick={runPreview}
@@ -259,7 +431,27 @@ export default function CampaignsPage() {
                               <span className="text-gray-400 font-normal"> ({r.students.join(', ')})</span>
                             )}
                           </td>
-                          <td className="p-2">{r.email}</td>
+                          <td className="p-2">
+                            {r.email}
+                            {/* PL-280 per-person unsubscribe: a suppressed
+                                parent no longer hides the family — the other
+                                leg still runs. */}
+                            {r.parentSuppressed && (
+                              <span className="block text-amber-700">
+                                parent unsubscribed — {audienceMode === 'pairs' ? 'student leg only' : 'nothing will send'}
+                              </span>
+                            )}
+                            {audienceMode === 'pairs' && (
+                              <span className="block text-gray-400">
+                                {(() => {
+                                  const withEmail = r.studentRecords.filter((s) => s.email)
+                                  if (withEmail.length === 0) return 'no student email on record'
+                                  const supp = r.suppressedStudentEmails.length
+                                  return `${withEmail.length} student email${withEmail.length === 1 ? '' : 's'}${supp > 0 ? ` (${supp} unsubscribed)` : ''}`
+                                })()}
+                              </span>
+                            )}
+                          </td>
                           <td className="p-2 text-gray-600">{r.why.join(' · ')}</td>
                         </tr>
                       ))}
@@ -288,12 +480,46 @@ export default function CampaignsPage() {
                       <option key={t.template_key} value={t.template_key}>{t.display_name}</option>
                     ))}
                   </select>
+                  {/* PL-280: parent+student pairs — each leg gets its own
+                      template and its OWN unsubscribe. */}
+                  <select
+                    value={audienceMode}
+                    onChange={(e) => setAudienceMode(e.target.value as 'parents' | 'pairs')}
+                    className="border border-gray-300 rounded p-2 text-sm bg-white"
+                    title="Pairs: students with an email on record get their own leg, with their own unsubscribe"
+                  >
+                    <option value="parents">Parents only</option>
+                    <option value="pairs">Parents + students</option>
+                  </select>
+                  {audienceMode === 'pairs' && (
+                    <select
+                      value={studentTemplateKey}
+                      onChange={(e) => setStudentTemplateKey(e.target.value)}
+                      className="border border-gray-300 rounded p-2 text-sm bg-white"
+                    >
+                      <option value="">Student template…</option>
+                      {templates.map((t) => (
+                        <option key={t.template_key} value={t.template_key}>{t.display_name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {/* PL-280: one-shot scheduling (blank = send now). */}
+                  <label className="text-xs text-gray-500 flex items-center gap-1">
+                    send at
+                    <input
+                      type="datetime-local"
+                      value={scheduledFor}
+                      onChange={(e) => setScheduledFor(e.target.value)}
+                      className="border border-gray-300 rounded p-1.5 text-xs"
+                      title="Blank = send now. Scheduled campaigns go out on the first hourly sweep after this time."
+                    />
+                  </label>
                   <button
                     onClick={send}
-                    disabled={busy || finalCount === 0 || !name.trim() || !templateKey}
+                    disabled={busy || finalCount === 0 || !name.trim() || !templateKey || (audienceMode === 'pairs' && !studentTemplateKey)}
                     className="bg-hgl-blue text-white font-bold rounded px-4 py-2 text-sm disabled:opacity-40"
                   >
-                    Send to {finalCount}
+                    {scheduledFor ? `Schedule for ${finalCount}` : `Send to ${finalCount}`}
                   </button>
                 </div>
                 <p className="text-[11px] text-gray-400">
@@ -325,15 +551,28 @@ export default function CampaignsPage() {
                         : c.status === 'cancelled' ? 'bg-gray-100 text-gray-500'
                           : 'bg-blue-100 text-blue-700'
                   }`}>
-                    {c.status === 'paused' ? 'paused at the cap' : c.status}
+                    {c.status === 'paused'
+                      ? 'paused at the cap'
+                      : c.status === 'scheduled'
+                        ? `sends ${c.scheduledFor ? new Date(c.scheduledFor).toLocaleString() : 'soon'}`
+                        : c.status}
                   </span>
                   <span className="text-xs text-gray-500">
                     {c.counts.sent} sent
+                    {/* PL-280: opens ride the Resend webhook's engagement
+                        columns — surfaced per campaign here. */}
+                    {c.counts.sent > 0 && ` · ${c.counts.opened} opened`}
+                    {c.counts.studentLegs > 0 && ` · ${c.counts.studentLegs} student leg${c.counts.studentLegs === 1 ? '' : 's'}`}
                     {c.counts.pending > 0 && ` · ${c.counts.pending} waiting`}
                     {c.counts.suppressed > 0 && ` · ${c.counts.suppressed} unsubscribed`}
                     {c.counts.failed > 0 && ` · ${c.counts.failed} failed`}
                     {c.counts.excluded > 0 && ` · ${c.counts.excluded} unticked`}
                   </span>
+                  {c.status === 'scheduled' && (
+                    <button onClick={() => act(c.id, 'cancel')} disabled={busy} className="text-xs text-red-600 underline">
+                      cancel before it sends
+                    </button>
+                  )}
                   {c.status === 'paused' && (
                     <>
                       <button onClick={() => act(c.id, 'resume')} disabled={busy} className="text-xs text-hgl-blue underline">
