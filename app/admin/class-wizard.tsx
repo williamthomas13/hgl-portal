@@ -1014,7 +1014,9 @@ export default function ClassWizard({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Enrollment deadline</label>
+            {/* PL-287: one name everywhere — "Registration deadline" is what
+                the flyer prints and what the roster surfaces. */}
+            <label className="block text-sm font-medium text-gray-700">Registration deadline</label>
             <input
               type="date"
               value={enrollmentDeadline}
@@ -1033,10 +1035,14 @@ export default function ClassWizard({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Registration closes</label>
+            <label className="block text-sm font-medium text-gray-700">Registration closes (sign-up cutoff)</label>
             <input type="date" value={registrationClose} onChange={(e) => setRegistrationClose(e.target.value)} className={inputCls} />
             <DateHint value={registrationClose} />
-            <p className="text-xs text-gray-500 mt-1">Blank = first session. Set later to allow mid-class joins.</p>
+            <p className="text-xs text-gray-500 mt-1">
+              The automatic cutoff — the register page stops taking sign-ups after this. Blank =
+              first session. Set later to allow mid-class joins. Decisions run on the registration
+              deadline above.
+            </p>
           </div>
 
           <div>
@@ -1476,8 +1482,8 @@ export default function ClassWizard({
                     ? 'blank — set it before the class-details email'
                     : 'blank — counselor gets asked 14 days out')}
             </p>
-            <p><span className="text-gray-500">Enrollment deadline:</span> {enrollmentDeadline ? formatDateAdmin(enrollmentDeadline) : 'default (registration close, or the first session)'}</p>
-            <p><span className="text-gray-500">Registration closes:</span> {registrationClose ? formatDateAdmin(registrationClose) : 'first session (default)'}</p>
+            <p><span className="text-gray-500">Registration deadline:</span> {enrollmentDeadline ? formatDateAdmin(enrollmentDeadline) : 'default (registration close, or the first session)'}</p>
+            <p><span className="text-gray-500">Registration closes (sign-up cutoff):</span> {registrationClose ? formatDateAdmin(registrationClose) : 'first session (default)'}</p>
             {synapGroup && <p><span className="text-gray-500">Synap group:</span> {synapGroup}</p>}
           </div>
           <div>

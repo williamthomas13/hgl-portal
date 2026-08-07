@@ -320,6 +320,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'add-class', label: 'Add a new class' },
       { id: 'contacts', label: 'Schools' },
       { id: 'branding', label: 'Branding & collateral' },
+      // PL-284: the calendar files here now (was the PL-198 topline tab).
+      { id: 'calendar', label: 'Calendar', href: '/admin/calendar' },
     ],
   },
   contacts: {
@@ -660,7 +662,7 @@ export default function AdminDashboard() {
 
   async function handleEditRegistrationClose(c: ClassRow) {
     const next = prompt(
-      'Registration close date (YYYY-MM-DD). Blank = default (first session):',
+      'Registration close date — the automatic sign-up cutoff (YYYY-MM-DD). Blank = default (first session):',
       c.registration_close_date ?? ''
     )
     if (next == null) return
@@ -675,6 +677,32 @@ export default function AdminDashboard() {
       .eq('id', c.id)
     if (error) {
       setActionNotice('Error updating close date: ' + error.message)
+      return
+    }
+    fetchRosters()
+  }
+
+  // PL-287: the registration DEADLINE (the commit-by decision date the flyer
+  // prints) finally gets a post-wizard edit control — the min-enrollment
+  // decision brief has been telling people to "set it on the class page" all
+  // along.
+  async function handleEditEnrollmentDeadline(c: ClassRow) {
+    const next = prompt(
+      'Registration deadline — the commit-by date decisions run on; the flyer prints this (YYYY-MM-DD). Blank = default (registration close, or the first session):',
+      c.enrollment_deadline ?? ''
+    )
+    if (next == null) return
+    const trimmed = next.trim()
+    if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      setActionNotice('Use YYYY-MM-DD format, or leave blank for the default.')
+      return
+    }
+    const { error } = await supabase
+      .from('classes')
+      .update({ enrollment_deadline: trimmed || null })
+      .eq('id', c.id)
+    if (error) {
+      setActionNotice('Error updating the registration deadline: ' + error.message)
       return
     }
     fetchRosters()
@@ -1300,14 +1328,40 @@ export default function AdminDashboard() {
                 edit slug
               </button>
             </p>
+            {/* PL-287: the DEADLINE (commit-by, what run/travel/re-promote
+                decisions run on — the flyer prints it) is the surfaced date;
+                the automatic sign-up cutoff demotes to a small setup line. */}
             <p className="text-sm text-gray-600 flex items-center gap-2">
-              <span className="font-semibold">Registration closes:</span>
-              {c.registration_close_date
-                ? formatDateAdmin(c.registration_close_date)
-                : 'first session (default)'}
+              <span
+                className="font-semibold"
+                title="The commit-by date decisions run on — run or cancel, book travel, ask the counselor to re-promote. The flyer prints this date."
+              >
+                Registration deadline:
+              </span>
+              {c.enrollment_deadline ? (
+                formatDateAdmin(c.enrollment_deadline)
+              ) : (
+                <span className="italic text-gray-500">
+                  not set — falls back to registration close{c.registration_close_date ? '' : ' (first session)'}
+                </span>
+              )}
+              <button
+                onClick={() => handleEditEnrollmentDeadline(c)}
+                className="text-xs text-gray-500 underline hover:text-hgl-blue"
+              >
+                edit
+              </button>
+            </p>
+            <p className="text-xs text-gray-500 flex items-center gap-2">
+              <span title="The automatic cutoff — the register page stops taking sign-ups after this date. A setup detail; decisions run on the deadline above.">
+                Registration closes (sign-up cutoff):{' '}
+                {c.registration_close_date
+                  ? formatDateAdmin(c.registration_close_date)
+                  : 'first session (default)'}
+              </span>
               <button
                 onClick={() => handleEditRegistrationClose(c)}
-                className="text-xs text-gray-500 underline hover:text-hgl-blue"
+                className="underline hover:text-hgl-blue"
               >
                 edit
               </button>

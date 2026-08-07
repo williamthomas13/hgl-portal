@@ -2,7 +2,14 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../utils/supabase'
-import { EXAM_SECTIONS, computedTotal, outOfRangeSections } from './ScoresEntry'
+import {
+  EXAM_OPTIONAL_SECTIONS,
+  EXAM_SECTIONS,
+  computedStem,
+  computedTotal,
+  outOfRangeSections,
+  requiredSections,
+} from './ScoresEntry'
 
 // PL-181: the GROUP read/entry for a class's two diagnostics — students as
 // rows, Diag 1 / Diag 2 as column groups, exactly the "enter a column of
@@ -114,8 +121,13 @@ export default function ClassScoresGrid({
     for (const key of dirty) {
       const [studentId, slot] = key.split('|')
       const scores = cellScores(key)
-      if (sections.some((s) => scores[s] == null)) {
-        problems.push(`${students.find((s) => s.id === studentId)?.name ?? '?'} (${slot}): every section needs a number`)
+      // PL-286: only the required sections gate the save (ACT Science may
+      // stay blank — it's optional now).
+      if (requiredSections(exam).some((s) => scores[s] == null)) {
+        const optional = EXAM_OPTIONAL_SECTIONS[exam] ?? []
+        problems.push(
+          `${students.find((s) => s.id === studentId)?.name ?? '?'} (${slot}): every section needs a number${optional.length > 0 ? ` (${optional.join(', ')} is optional)` : ''}`
+        )
         continue
       }
       const bad = outOfRangeSections(exam, scores)
@@ -186,6 +198,13 @@ export default function ClassScoresGrid({
                   {sections.map((s) => (
                     <th key={`${slot}-${s}`} className="px-2 py-1 text-left font-semibold first:border-l first:border-gray-200">
                       {s}
+                      {/* PL-286 */}
+                      {(EXAM_OPTIONAL_SECTIONS[exam] ?? []).includes(s) && (
+                        <span className="font-normal text-gray-400" title="Optional — leave blank if not taken">
+                          {' '}
+                          (opt)
+                        </span>
+                      )}
                     </th>
                   ))}
                   <th className="px-2 py-1 text-left font-semibold">Total</th>
@@ -216,8 +235,18 @@ export default function ClassScoresGrid({
                             />
                           </td>
                         ))}
-                        <td className="px-2 py-1 font-bold text-hgl-slate">
+                        <td className="px-2 py-1 font-bold text-hgl-slate whitespace-nowrap">
                           {computedTotal(exam, cellScores(key)) ?? '—'}
+                          {/* PL-286: STEM only when Science was entered. */}
+                          {exam === 'ACT' && computedStem(cellScores(key)) != null && (
+                            <span
+                              className="font-normal text-gray-500"
+                              title="ACT STEM: rounded average of Math and Science"
+                            >
+                              {' '}
+                              · STEM {computedStem(cellScores(key))}
+                            </span>
+                          )}
                         </td>
                       </Fragment>
                     )

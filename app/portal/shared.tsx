@@ -37,6 +37,19 @@ export type ScoreRow = {
   student_id?: string
 }
 
+/** PL-286 twin of computedStem in components/ScoresEntry.tsx — kept local
+ * because this file renders in server contexts and must not pull in the
+ * browser supabase client that ScoresEntry imports. ACT STEM = rounded
+ * average of Math + Science, only when Science exists on the row (an SAT row
+ * has no Science key, so nothing shows for SAT). */
+function stemOf(scores: Record<string, string | number> | null | undefined): number | null {
+  if (!scores) return null
+  const math = Number(scores['Math'])
+  const science = Number(scores['Science'])
+  if (!('Science' in scores) || !Number.isFinite(math) || !Number.isFinite(science)) return null
+  return Math.round((math + science) / 2)
+}
+
 /** Diagnostic-score table (§6 display layer). Renders nothing when empty —
  * the feature ships dark until score ingestion exists. */
 export function ScoresTable({ scores }: { scores: ScoreRow[] }) {
@@ -62,7 +75,9 @@ export function ScoresTable({ scores }: { scores: ScoreRow[] }) {
                 {s.section_scores
                   ? Object.entries(s.section_scores)
                       .map(([k, v]) => `${k}: ${v}`)
-                      .join(' · ')
+                      .join(' · ') +
+                    // PL-286: STEM shows only when Science was taken.
+                    (stemOf(s.section_scores) != null ? ` · STEM: ${stemOf(s.section_scores)}` : '')
                   : '—'}
               </td>
               <td className="px-2 py-1.5 font-bold text-hgl-slate">{s.total ?? '—'}</td>

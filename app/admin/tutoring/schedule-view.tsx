@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../utils/supabase'
+import { autoTutorColor } from '../../utils/calendar-colors'
 import { classifyNotice, zonedToUtc } from '../../utils/tutoring'
 import { DateHint } from '../ui'
 import { fmtTime, wallClock, type SessionRow, type Tutor } from './types'
@@ -82,7 +83,24 @@ export default function ScheduleView({
 }) {
   const activeTutors = useMemo(() => tutors.filter((t) => t.tutoring_active), [tutors])
   const [mode, setMode] = useState<'week' | 'day'>('week')
-  const [tutorId, setTutorId] = useState('')
+  // PL-285: the week view is multi-select now — null = "all tutors" (the
+  // default), a Set = an explicit pick. Kept as null rather than a filled Set
+  // so the default survives the tutors list arriving async.
+  const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
+
+  // PL-283: per-tutor color — assigned wins, else a stable palette pick
+  // computed against every assigned color (all instructors, not just active).
+  const tutorColor = useMemo(() => {
+    const assigned = new Map(
+      tutors.filter((t) => t.calendar_color).map((t) => [t.id, t.calendar_color as string])
+    )
+    const taken = Array.from(assigned.values())
+    return (id: string) => assigned.get(id) ?? autoTutorColor(id, taken)
+  }, [tutors])
+  const tutorNameFor = useMemo(() => {
+    const m = new Map(tutors.map((t) => [t.id, t.name ?? t.email]))
+    return (id: string) => m.get(id) ?? null
+  }, [tutors])
   const [anchor, setAnchor] = useState(() => new Date())
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [busy, setBusy] = useState<{ start: string; end: string; title: string | null; private: boolean }[]>([])
@@ -101,7 +119,7 @@ export default function ScheduleView({
       if (!row) return
       // Land on the session's tutor + week so the grid behind the dialog
       // shows its context, then open the dialog itself.
-      setTutorId(row.tutor_id)
+      setSelectedIds(new Set([row.tutor_id]))
       setAnchor(new Date(row.starts_at))
       setSelected(row)
     })()
@@ -118,8 +136,16 @@ export default function ScheduleView({
     if (scrollerRef.current) scrollerRef.current.scrollTop = SCROLL_TO * HOUR_PX
   }, [])
 
-  const tutor = activeTutors.find((t) => t.id === tutorId) ?? activeTutors[0] ?? null
-  const tz = mode === 'week' ? (tutor?.timezone ?? 'America/Denver') : 'America/Denver'
+  // PL-285: the effective week-mode selection (null = everyone).
+  const selectedTutors = useMemo(
+    () => (selectedIds === null ? activeTutors : activeTutors.filter((t) => selectedIds.has(t.id))),
+    [selectedIds, activeTutors]
+  )
+  // Exactly one tutor selected keeps the old single-tutor behaviors: their
+  // timezone and their Google freebusy shading. More than one → Denver (no
+  // single wall clock exists) and no shading.
+  const tutor = selectedTutors.length === 1 ? selectedTutors[0] : null
+  const tz = mode === 'week' && tutor ? (tutor.timezone ?? 'America/Denver') : 'America/Denver'
 
   // Visible range: Mon–Sun of the anchor week, or the anchor day.
   const range = useMemo(() => {
@@ -142,19 +168,32 @@ export default function ScheduleView({
   // PL-180: sessions whose calendar event was edited outside the portal —
   // the grid marks them so the pending decision is visible in place.
   const [driftIds, setDriftIds] = useState<Set<string>>(new Set())
+  // Stable dependency for the selection (a Set is a fresh object per render).
+  const selectedKey = useMemo(
+    () => (selectedIds === null ? 'all' : [...selectedIds].sort().join(',')),
+    [selectedIds]
+  )
   const load = useCallback(async () => {
+    // PL-285: nothing selected = nothing to fetch (and .in() with an empty
+    // list is a PostgREST error, not an empty result).
+    if (mode === 'week' && selectedTutors.length === 0) {
+      setSessions([])
+      return
+    }
     let q = supabase
       .from('tutoring_sessions')
       .select(SELECT)
       .gte('starts_at', new Date(rangeStart).toISOString())
       .lte('starts_at', new Date(rangeEnd).toISOString())
       .order('starts_at')
-    if (mode === 'week' && tutor) q = q.eq('tutor_id', tutor.id)
+    if (mode === 'week' && selectedIds !== null)
+      q = q.in('tutor_id', selectedTutors.map((t) => t.id))
     const { data, error } = await q
     if (!error) setSessions(normalize(data ?? []))
     const { data: drift } = await supabase.from('calendar_drift').select('session_id')
     setDriftIds(new Set(((drift ?? []) as { session_id: string }[]).map((d) => d.session_id)))
-  }, [mode, tutor, rangeStart, rangeEnd])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selectedKey, selectedTutors.length, rangeStart, rangeEnd])
 
   useEffect(() => {
     load()
@@ -213,6 +252,17 @@ export default function ScheduleView({
     })
   }
 
+  // PL-285: toggle one tutor in the week-mode multi-select ("all" expands to
+  // an explicit set the first time someone narrows it).
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const base = prev === null ? new Set(activeTutors.map((t) => t.id)) : new Set(prev)
+      if (base.has(id)) base.delete(id)
+      else base.add(id)
+      return base
+    })
+  }
+
   return (
     <div className="space-y-3 text-sm">
       <div className="flex flex-wrap items-center gap-3">
@@ -229,16 +279,47 @@ export default function ScheduleView({
             </button>
           ))}
         </div>
+        {/* PL-285: multi-select tutor chips (PL-283 colors double as the
+            legend) with Select all / Deselect all. */}
         {mode === 'week' && (
-          <select
-            value={tutor?.id ?? ''}
-            onChange={(e) => setTutorId(e.target.value)}
-            className="border border-gray-300 rounded-md p-1.5 bg-white"
-          >
-            {activeTutors.map((t) => (
-              <option key={t.id} value={t.id}>{t.name ?? t.email}</option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {activeTutors.map((t) => {
+              const on = selectedIds === null || selectedIds.has(t.id)
+              const color = tutorColor(t.id)
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggleSelected(t.id)}
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-semibold ${
+                    on ? 'bg-white text-gray-800' : 'bg-gray-100 text-gray-400 border-gray-200'
+                  }`}
+                  style={on ? { borderColor: color } : {}}
+                  title={on ? 'Shown — click to hide' : 'Hidden — click to show'}
+                >
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-full"
+                    style={{ background: color, opacity: on ? 1 : 0.35 }}
+                  />
+                  {t.name ?? t.email}
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              onClick={() => setSelectedIds(null)}
+              className="text-xs text-hgl-blue underline ml-1"
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-gray-500 underline"
+            >
+              Deselect all
+            </button>
+          </div>
         )}
         <div className="flex items-center gap-1">
           <button onClick={() => shift(mode === 'week' ? -7 : -1)} className="px-2 py-1 border rounded">‹</button>
@@ -250,11 +331,18 @@ export default function ScheduleView({
             ? `${range.days[0]} → ${range.days[6]} · times in ${tz}`
             : `${range.days[0]} · times in ${tz}`}
           {mode === 'week' && busy.length > 0 && ' · gray = busy per Google Calendar'}
+          {mode === 'week' &&
+            selectedTutors.length > 1 &&
+            ' · Google busy shading shows when exactly one tutor is selected'}
         </span>
       </div>
 
       {activeTutors.length === 0 ? (
         <p className="text-gray-500 italic">No active tutors yet — enable tutoring on an instructor below.</p>
+      ) : mode === 'week' && selectedTutors.length === 0 ? (
+        <p className="text-gray-500 italic">
+          No tutors selected — click a tutor above, or use Select all.
+        </p>
       ) : (
         <div className="flex gap-3">
           {/* PL-17: Google-style show/hide rail (day mode, where each tutor
@@ -268,6 +356,11 @@ export default function ScheduleView({
                     type="checkbox"
                     checked={!hiddenTutorIds.has(t.id)}
                     onChange={() => toggleTutorVisible(t.id)}
+                  />
+                  {/* PL-283 */}
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ background: tutorColor(t.id) }}
                   />
                   <span className="truncate">{t.name ?? t.email}</span>
                 </label>
@@ -296,14 +389,23 @@ export default function ScheduleView({
               return (
                 <div key={col} className="flex-1 min-w-32 border-l border-gray-200">
                   <div className="h-8 text-center text-xs font-semibold text-hgl-slate truncate px-1 sticky top-0 bg-gray-50 z-10">
-                    {mode === 'week'
-                      ? new Date(dayIso + 'T12:00:00Z').toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                          timeZone: 'UTC',
-                        })
-                      : colTutor?.name ?? colTutor?.email}
+                    {mode === 'week' ? (
+                      new Date(dayIso + 'T12:00:00Z').toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        timeZone: 'UTC',
+                      })
+                    ) : (
+                      <>
+                        {/* PL-283 */}
+                        <span
+                          className="inline-block w-2.5 h-2.5 rounded-full mr-1"
+                          style={{ background: colTutor ? tutorColor(colTutor.id) : '#9CA3AF' }}
+                        />
+                        {colTutor?.name ?? colTutor?.email}
+                      </>
+                    )}
                   </div>
                   <div className="relative bg-white" style={{ height: (DAY_END - DAY_START) * HOUR_PX }}>
                     {Array.from({ length: DAY_END - DAY_START }, (_, i) => (
@@ -325,15 +427,31 @@ export default function ScheduleView({
                       const start = wallClock(s.starts_at, tz)
                       const top = (start.hour + start.minute / 60 - DAY_START) * HOUR_PX
                       const height = Math.max(18, (s.duration_minutes / 60) * HOUR_PX)
+                      // PL-283: live chips (proposed/confirmed) wear the
+                      // tutor's color — tint + border, dashed = proposed.
+                      // Terminal states (completed/rescheduled/XCL) keep the
+                      // status styling; the 4px left bar still names the
+                      // tutor at a glance.
+                      const color = tutorColor(s.tutor_id)
+                      const terminal = ['completed', 'rescheduled', 'forfeited', 'no_show'].includes(s.status)
+                      const sTutorName = tutorNameFor(s.tutor_id)
                       return (
                         <button
                           key={s.id}
                           onClick={() => setSelected(s)}
                           className={`absolute inset-x-0.5 rounded border px-1 py-0.5 text-left text-[11px] leading-tight overflow-hidden ${
-                            STATUS_STYLES[s.status] ?? 'bg-gray-100 border-gray-300'
+                            terminal
+                              ? (STATUS_STYLES[s.status] ?? 'bg-gray-100 border-gray-300')
+                              : `text-gray-900 ${s.status === 'proposed' ? 'border-dashed' : ''}`
                           }`}
-                          style={{ top, height }}
-                          title={`${s.students?.first_name ?? ''} ${s.students?.last_name ?? ''} · ${s.status}${driftIds.has(s.id) ? ' · calendar edited outside the portal — decide on the banner above' : ''}`}
+                          style={{
+                            top,
+                            height,
+                            ...(terminal
+                              ? { borderLeftColor: color, borderLeftWidth: 4, borderLeftStyle: 'solid' }
+                              : { background: `${color}26`, borderColor: color, borderLeftWidth: 4 }),
+                          }}
+                          title={`${s.students?.first_name ?? ''} ${s.students?.last_name ?? ''} · ${s.status}${sTutorName ? ` · ${sTutorName}` : ''}${driftIds.has(s.id) ? ' · calendar edited outside the portal — decide on the banner above' : ''}`}
                         >
                           <span className="font-semibold">
                             {fmtTime(s.starts_at, tz)} {s.students?.first_name}

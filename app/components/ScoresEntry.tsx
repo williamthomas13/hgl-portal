@@ -11,11 +11,17 @@ import { formatDateShort } from '../utils/dates'
 // PL-105 rework (Scarlett's review):
 //   · sections are FIXED per exam type — SAT/PSAT: EBRW + Math · ACT:
 //     English, Math, Reading, Science. No freeform add-a-section.
-//   · the total is CALCULATED, never typed — SAT total = EBRW + Math;
-//     ACT composite = rounded average of the four sections (ACT rules).
+//   · the total is CALCULATED, never typed — SAT total = EBRW + Math.
 //   · two named diagnostic slots per student — First diagnostic and Second
 //     diagnostic (the #2 and #6 sequence moments) — entering one that
 //     already exists replaces it after a confirm, so each slot stays single.
+//
+// PL-286 (the ACT changed): Science is OPTIONAL now. The composite is the
+// rounded average of English + Math + Reading — Science never counts toward
+// it. When Science IS taken the student also gets a STEM score (rounded
+// average of Math + Science), computed at render so historical rows get it
+// too. Historical totals stay as recorded (they were right under the old
+// rules when they were entered).
 
 type StudentRef = { id: string; name: string }
 
@@ -34,6 +40,17 @@ export const EXAM_SECTIONS: Record<string, string[]> = {
   SAT: ['EBRW', 'Math'],
   PSAT: ['EBRW', 'Math'],
   ACT: ['English', 'Math', 'Reading', 'Science'],
+}
+
+/** PL-286: sections that may be left blank (the ACT made Science optional). */
+export const EXAM_OPTIONAL_SECTIONS: Record<string, string[]> = {
+  ACT: ['Science'],
+}
+
+/** The sections a score entry must have to save. */
+export function requiredSections(exam: string): string[] {
+  const optional = EXAM_OPTIONAL_SECTIONS[exam] ?? []
+  return (EXAM_SECTIONS[exam] ?? []).filter((s) => !optional.includes(s))
 }
 
 /** PL-153b: the real per-exam score range. A typo (a 780 entered as 7800, or
@@ -55,13 +72,27 @@ export function outOfRangeSections(exam: string, scores: Record<string, number>)
     .map(([section]) => section)
 }
 
-/** SAT/PSAT: sum. ACT: rounded average of the four sections (composite). */
+/** SAT/PSAT: sum. ACT (PL-286): rounded average of English + Math + Reading —
+ *  Science is optional and never counts toward the composite. */
 export function computedTotal(exam: string, scores: Record<string, number>): number | null {
-  const sections = EXAM_SECTIONS[exam]
-  if (!sections || !sections.every((s) => Number.isFinite(scores[s]))) return null
+  const sections = requiredSections(exam)
+  if (sections.length === 0 || !sections.every((s) => Number.isFinite(scores[s]))) return null
   const values = sections.map((s) => scores[s])
   if (exam === 'ACT') return Math.round(values.reduce((a, b) => a + b, 0) / values.length)
   return values.reduce((a, b) => a + b, 0)
+}
+
+/** PL-286: ACT STEM score — rounded average of Math + Science, only when
+ *  Science was actually taken. Works from stored section_scores too, so
+ *  historical rows show it without a data migration. */
+export function computedStem(scores: Record<string, number> | null | undefined): number | null {
+  if (!scores) return null
+  const math = scores['Math']
+  const science = scores['Science']
+  // Math + Science both present AND the row is ACT-shaped (an SAT row has
+  // EBRW/Math only, so a Science key is the ACT tell).
+  if (!Number.isFinite(math) || !Number.isFinite(science)) return null
+  return Math.round((math + science) / 2)
 }
 
 const MILESTONES = ['First diagnostic', 'Second diagnostic', 'Practice test', 'Official test'] as const
@@ -124,7 +155,9 @@ export default function ScoresEntry({
     return out
   }, [sections, sectionValues])
   const liveTotal = computedTotal(exam, parsedSections)
-  const allSectionsFilled = sections.every((s) => s in parsedSections)
+  const liveStem = exam === 'ACT' ? computedStem(parsedSections) : null
+  // PL-286: only the required sections gate the save (ACT Science may be blank).
+  const allSectionsFilled = requiredSections(exam).every((s) => s in parsedSections)
   // PL-153b: bounds checked as you type, named in plain English.
   const outOfRange = outOfRangeSections(exam, parsedSections)
   const range = EXAM_SECTION_RANGE[exam]
@@ -234,6 +267,12 @@ export default function ScoresEntry({
                       </span>
                     ))}
                   {r.total != null && <span className="font-semibold">total {r.total}</span>}
+                  {/* PL-286: STEM only when Science exists on the row. */}
+                  {computedStem(r.section_scores) != null && (
+                    <span className="text-gray-600" title="ACT STEM: rounded average of Math and Science">
+                      STEM {computedStem(r.section_scores)}
+                    </span>
+                  )}
                   {r.taken_at && <span className="text-gray-400">{formatDateShort(r.taken_at)}</span>}
                   {!inScope(r) && (
                     <span
@@ -301,7 +340,19 @@ export default function ScoresEntry({
             )}
             {sections.map((s) => (
               <span key={s} className="inline-flex items-center gap-1">
-                <label className="text-gray-500">{s}</label>
+                <label
+                  className="text-gray-500"
+                  title={
+                    (EXAM_OPTIONAL_SECTIONS[exam] ?? []).includes(s)
+                      ? 'Optional — the ACT made Science optional; leave blank if not taken'
+                      : undefined
+                  }
+                >
+                  {s}
+                  {(EXAM_OPTIONAL_SECTIONS[exam] ?? []).includes(s) && (
+                    <span className="text-gray-400"> (optional)</span>
+                  )}
+                </label>
                 <input
                   type="number"
                   min={range?.min}
@@ -317,13 +368,29 @@ export default function ScoresEntry({
             {/* PL-105: calculated, read-only — never typed. */}
             <span
               className="inline-flex items-center gap-1 text-gray-600"
-              title={exam === 'ACT' ? 'ACT composite: rounded average of the four sections' : 'Total = sum of the sections'}
+              title={
+                exam === 'ACT'
+                  ? 'ACT composite: rounded average of English, Math, and Reading — Science does not count toward it (PL-286)'
+                  : 'Total = sum of the sections'
+              }
             >
               <label className="text-gray-500">{exam === 'ACT' ? 'composite' : 'total'}</label>
               <span className="border border-gray-200 bg-gray-100 rounded p-1.5 w-20 text-center font-semibold">
                 {liveTotal ?? '—'}
               </span>
             </span>
+            {/* PL-286: STEM appears only when Science was taken. */}
+            {liveStem != null && (
+              <span
+                className="inline-flex items-center gap-1 text-gray-600"
+                title="ACT STEM score: rounded average of Math and Science"
+              >
+                <label className="text-gray-500">STEM</label>
+                <span className="border border-gray-200 bg-gray-100 rounded p-1.5 w-14 text-center font-semibold">
+                  {liveStem}
+                </span>
+              </span>
+            )}
             <input
               type="date"
               value={takenAt}

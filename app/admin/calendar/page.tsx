@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CALENDAR_COLORS, type CalendarStatus } from '../../utils/calendar-colors'
+import { CALENDAR_COLORS, textOnColor, type CalendarStatus } from '../../utils/calendar-colors'
 import { ConfirmAction } from '../tutoring/confirm'
+import { SidebarNav, CLASSES_SIDEBAR } from '../sidebar'
 
 // PL-160: a REAL calendar — GCal-style week/month, one combined view of
 // 1-on-1 sessions, class sessions, and PL-159 proposed holds, in Kelsie's
@@ -23,6 +24,7 @@ type Block = {
   portalStatus: string
   tutorId: string | null
   tutorName: string | null
+  tutorColor: string | null
   classId: string | null
   schoolId: string | null
   schoolName: string | null
@@ -223,9 +225,11 @@ export default function AdminCalendarPage() {
   }, [overlayTutor, rangeStartIso, days])
 
   const people = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const b of blocks) if (b.tutorId && b.tutorName) m.set(b.tutorId, b.tutorName)
-    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+    // PL-283: carry each tutor's color for the legend chips.
+    const m = new Map<string, { name: string; color: string | null }>()
+    for (const b of blocks)
+      if (b.tutorId && b.tutorName) m.set(b.tutorId, { name: b.tutorName, color: b.tutorColor })
+    return [...m.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))
   }, [blocks])
   const places = useMemo(() => {
     const m = new Map<string, string>()
@@ -274,6 +278,14 @@ export default function AdminCalendarPage() {
 
   const blockChip = (b: Block, compact = false) => {
     const c = CALENDAR_COLORS[b.status]
+    // PL-283: 1-on-1 blocks wear the tutor's color (Kelsie's Google scheme);
+    // status stays readable through the treatment, not the hue — dashed
+    // border = proposed, struck + faded = cancelled. Class blocks keep the
+    // established status color language (that legend IS about classes) and
+    // get a small tutor dot instead.
+    const tutorColored = b.kind === 'tutoring' && b.tutorColor
+    const bg = tutorColored ? b.tutorColor! : c.bg
+    const text = tutorColored ? textOnColor(bg) : c.text
     return (
       <a
         key={b.id}
@@ -281,8 +293,10 @@ export default function AdminCalendarPage() {
         title={`${b.title} · ${fmtTime(b.startsAt)}–${fmtTime(b.endsAt)} · ${b.portalStatus}${b.tutorName ? ` · ${b.tutorName}` : ''}`}
         className="block rounded px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden hover:opacity-85"
         style={{
-          background: c.bg,
-          color: c.text,
+          background: bg,
+          color: text,
+          ...(tutorColored && b.status === 'proposed' ? { border: `2px dashed ${text}`, opacity: 0.9 } : {}),
+          ...(tutorColored && b.status === 'cancelled' ? { textDecoration: 'line-through', opacity: 0.55 } : {}),
           // PL-161: the suggested-for class's blocks are outlined so the
           // overlay comparison reads at a glance.
           ...(suggestClassId && b.classId === suggestClassId ? { outline: '2px solid #7C3AED', outlineOffset: '-1px' } : {}),
@@ -294,7 +308,16 @@ export default function AdminCalendarPage() {
           </span>
         ) : (
           <>
-            <span className="font-semibold block truncate">{b.title}</span>
+            <span className="font-semibold block truncate">
+              {b.kind === 'class' && b.tutorColor && (
+                <span
+                  className="inline-block w-2 h-2 rounded-full mr-1 align-middle"
+                  style={{ background: b.tutorColor, outline: '1px solid rgba(255,255,255,0.6)' }}
+                  title={b.tutorName ?? undefined}
+                />
+              )}
+              {b.title}
+            </span>
             <span className="block truncate">
               {fmtTime(b.startsAt)}–{fmtTime(b.endsAt)}
               {b.kind === 'class' ? ' · class' : ''}
@@ -307,7 +330,11 @@ export default function AdminCalendarPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-4">
+      {/* PL-284: Classes sidebar chrome — the calendar files under Classes
+          now (same pattern as Campaigns wearing the Contacts chrome). */}
+      <div className="max-w-7xl mx-auto md:flex md:gap-6 md:items-start">
+        <SidebarNav entries={CLASSES_SIDEBAR} active="calendar" />
+        <div className="flex-1 min-w-0 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-2xl font-bold text-hgl-slate">Calendar</h1>
@@ -371,9 +398,9 @@ export default function AdminCalendarPage() {
           <span className="flex-1" />
           <select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} className="border rounded p-1.5">
             <option value="">everyone</option>
-            {people.map(([id, name]) => (
+            {people.map(([id, p]) => (
               <option key={id} value={id}>
-                {name}
+                {p.name}
               </option>
             ))}
           </select>
@@ -395,8 +422,9 @@ export default function AdminCalendarPage() {
           </select>
         </div>
 
-        {/* Legend — Kelsie's color language, verbatim */}
+        {/* Legend — Kelsie's color language, verbatim (classes) */}
         <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+          <span className="font-semibold text-gray-500">Classes:</span>
           {(Object.keys(CALENDAR_COLORS) as CalendarStatus[]).map((s) => (
             <span key={s} className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded" style={{ background: CALENDAR_COLORS[s].bg }} />
@@ -404,6 +432,23 @@ export default function AdminCalendarPage() {
             </span>
           ))}
         </div>
+        {/* PL-283: 1-on-1 blocks wear each tutor's color (Kelsie's Google
+            Calendar scheme). Dashed border = proposed · struck = cancelled. */}
+        {people.length > 0 && (
+          <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+            <span className="font-semibold text-gray-500">Tutors (1-on-1):</span>
+            {people.map(([id, p]) => (
+              <span key={id} className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block w-3 h-3 rounded"
+                  style={{ background: p.color ?? '#9CA3AF' }}
+                />
+                {p.name}
+              </span>
+            ))}
+            <span className="text-gray-400">dashed = proposed · struck = cancelled</span>
+          </div>
+        )}
 
         {/* PL-246: minimized, the suggestions stay one click away — closing
             for good used to lose them until you left the page. */}
@@ -624,6 +669,7 @@ export default function AdminCalendarPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   )

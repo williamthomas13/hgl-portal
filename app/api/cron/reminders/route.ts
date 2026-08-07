@@ -1111,7 +1111,7 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
       </ul>
       <p>Nothing here is automatic — this brief informs; the decision is yours.</p>`
     const pictureHtml = `<p><strong>${paidCount} paid / ${bundle.minEnrollment} minimum / ${bundle.capacity} cap</strong>
-      · registration closes ${daysToDeadline >= 0 ? `in ${daysToDeadline} day${daysToDeadline === 1 ? '' : 's'}` : `${-daysToDeadline} day${daysToDeadline === -1 ? '' : 's'} ago`} (${formatDate(deadline)})
+      · the registration deadline is ${daysToDeadline >= 0 ? `in ${daysToDeadline} day${daysToDeadline === 1 ? '' : 's'}` : `${-daysToDeadline} day${daysToDeadline === -1 ? '' : 's'} past`} (${formatDate(deadline)})
       · first session in ${weeksToFirst} week${weeksToFirst === 1 ? '' : 's'} (${formatDate(bundle.firstSession)}).</p>
       <p>Counselor side: ${fpStatus}.</p>`
     if (today >= addDaysISO(deadline, -3) && today <= deadline) {

@@ -39,6 +39,9 @@ export type Tutor = {
   /** PL-212: salaried tutors' hours are tracked identically but not paid
    *  hourly — timecards carry a label and the payroll CSV separates them. */
   pay_type: 'hourly' | 'salaried'
+  /** PL-283: per-tutor calendar color (Google palette hex); null = a stable
+   *  auto-assigned palette color. */
+  calendar_color: string | null
 }
 
 export type FamilyRef = {

@@ -20,6 +20,16 @@ const BLUE = '#00AEEE'
 const SLATE = '#334155'
 const GRAY = '#cbd5e1'
 
+/** PL-286 twin of computedStem (components/ScoresEntry.tsx): ACT STEM =
+ *  rounded average of Math + Science, only when Science was taken. */
+function stemOf(scores: Record<string, number> | null | undefined): number | null {
+  if (!scores) return null
+  const math = scores['Math']
+  const science = scores['Science']
+  if (!Number.isFinite(math) || !Number.isFinite(science)) return null
+  return Math.round((math + science) / 2)
+}
+
 function BarChart({
   title,
   groups,
@@ -131,6 +141,11 @@ export default async function ClassReportPage({
 
   const r: ClassReport = report
   const withAnyScore = r.students.filter((s) => s.initial || s.final)
+  // PL-286: STEM columns only for an ACT class where someone actually took
+  // Science (STEM = avg of Math + Science; never shown otherwise).
+  const showStem =
+    String(r.classType ?? '').toUpperCase().includes('ACT') &&
+    r.students.some((s) => stemOf(s.initial?.sections) != null || stemOf(s.final?.sections) != null)
   const isStaff = viewer === 'admin' || viewer === 'manager'
 
   return (
@@ -188,12 +203,14 @@ export default async function ClassReportPage({
                     </th>
                   ))}
                   <th className="py-1.5 pr-3 text-right">Total (1st)</th>
+                  {showStem && <th className="py-1.5 pr-3 text-right">STEM (1st)</th>}
                   {r.sections.map((sec) => (
                     <th key={`f-${sec}`} className="py-1.5 pr-3 text-right">
                       {sec} (final)
                     </th>
                   ))}
                   <th className="py-1.5 pr-3 text-right">Total (final)</th>
+                  {showStem && <th className="py-1.5 pr-3 text-right">STEM (final)</th>}
                   <th className="py-1.5 pr-3 text-right">Gained</th>
                   <th className="py-1.5 pr-3 text-right">Superscore</th>
                   <th className="py-1.5 text-right">Attendance</th>
@@ -209,12 +226,22 @@ export default async function ClassReportPage({
                       </td>
                     ))}
                     <td className="py-1.5 pr-3 text-right text-gray-700">{s.initial?.total ?? ''}</td>
+                    {showStem && (
+                      <td className="py-1.5 pr-3 text-right text-gray-700">
+                        {stemOf(s.initial?.sections) ?? ''}
+                      </td>
+                    )}
                     {r.sections.map((sec) => (
                       <td key={`f-${sec}`} className="py-1.5 pr-3 text-right text-gray-700">
                         {s.final?.sections[sec] ?? ''}
                       </td>
                     ))}
                     <td className="py-1.5 pr-3 text-right text-gray-700">{s.final?.total ?? ''}</td>
+                    {showStem && (
+                      <td className="py-1.5 pr-3 text-right text-gray-700">
+                        {stemOf(s.final?.sections) ?? ''}
+                      </td>
+                    )}
                     <td className={`py-1.5 pr-3 text-right font-semibold ${s.gained != null && s.gained > 0 ? 'text-green-700' : 'text-gray-700'}`}>
                       {s.gained != null ? (s.gained > 0 ? `+${s.gained}` : s.gained) : ''}
                     </td>
@@ -232,12 +259,14 @@ export default async function ClassReportPage({
                     </td>
                   ))}
                   <td className="py-1.5 pr-3 text-right">{r.averages.initialTotal ?? ''}</td>
+                  {showStem && <td />}
                   {r.sections.map((sec) => (
                     <td key={`af-${sec}`} className="py-1.5 pr-3 text-right">
                       {r.averages.finalBySection[sec] ?? ''}
                     </td>
                   ))}
                   <td className="py-1.5 pr-3 text-right">{r.averages.finalTotal ?? ''}</td>
+                  {showStem && <td />}
                   <td className="py-1.5 pr-3 text-right text-green-700">
                     {r.averages.avgGain != null ? (r.averages.avgGain > 0 ? `+${r.averages.avgGain}` : r.averages.avgGain) : ''}
                   </td>

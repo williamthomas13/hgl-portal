@@ -155,16 +155,25 @@ export async function loadClassReport(classId: string): Promise<ClassReport | nu
       const tests = scoresByStudent.get(e.student_id) ?? []
       const initial = tests.length > 0 ? toScore(tests[0]) : null
       const final = tests.length > 1 ? toScore(tests[tests.length - 1]) : null
-      // Superscore: best section results across every test, summed — only
+      // Superscore: best section results across every test — summed for
+      // SAT/PSAT. For the ACT (PL-286 fix) it's the ROUNDED AVERAGE of the
+      // best English/Math/Reading — the composite sections; Science (optional
+      // now) never counts toward a composite. The old unconditional sum put a
+      // ~144-scale number next to 1–36 composites on an ACT report. Only
       // meaningful once two tests exist.
       let superscore: number | null = null
       if (tests.length > 1 && sections.length > 0) {
-        superscore = sections.reduce((sum, sec) => {
-          const best = Math.max(
-            ...tests.map((t) => Number(t.section_scores?.[sec] ?? Number.NEGATIVE_INFINITY))
+        const isACT = String(cls.class_type ?? '').toUpperCase().includes('ACT')
+        const superSections = isACT ? sections.filter((sec) => sec !== 'Science') : sections
+        const bests = superSections
+          .map((sec) =>
+            Math.max(...tests.map((t) => Number(t.section_scores?.[sec] ?? Number.NEGATIVE_INFINITY)))
           )
-          return Number.isFinite(best) ? sum + best : sum
-        }, 0)
+          .filter((n) => Number.isFinite(n))
+        if (bests.length > 0) {
+          const sum = bests.reduce((s, n) => s + n, 0)
+          superscore = isACT ? Math.round(sum / bests.length) : sum
+        }
         if (superscore === 0) superscore = null
       }
       const att = summarizeAttendance(

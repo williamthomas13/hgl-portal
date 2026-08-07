@@ -1191,7 +1191,7 @@ Good news — everything is set up for the {className} class at {schoolName}. Re
 
 [{salesPageLink}]({salesPageLink})
 
-Registration closes **{enrollmentDeadline}**, and the first session is {firstSessionDate}. I've attached the materials for you:
+The registration deadline is **{enrollmentDeadline}**, and the first session is {firstSessionDate}. I've attached the materials for you:
 
 - A **letter** meant to be shared with parents (forward it in your parent communications, or print it)
 - A **flyer** meant for students — it works well on bulletin boards, hallway screens, and in student newsletters
@@ -1214,7 +1214,7 @@ We selected Higher Ground for many reasons, including excellent references from 
 
 The course runs {courseDatesPhrase}, with all sessions held outside of school hours. As this is a partnership and not a school-offered course, registration is managed directly by Higher Ground. To provide personalized attention, the class is capped at {classCapacity} students, first come, first served.
 
-**Register here: [{salesPageLink}]({salesPageLink})** — registration closes {enrollmentDeadline}.
+**Register here: [{salesPageLink}]({salesPageLink})** — the registration deadline is {enrollmentDeadline}.
 
 If you have questions about the course, feel free to reach out to Higher Ground directly at [info@highergroundlearning.com](mailto:info@highergroundlearning.com).`,
   },

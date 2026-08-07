@@ -88,7 +88,7 @@ export default function TutoringAdmin() {
     const [tutorsRes, subjectsRes, studentsRes, engagementsRes, notesRes] = await Promise.all([
       supabase
         .from('instructors')
-        .select('id, email, name, tutoring_active, active, subjects, subjects_with_prep, timezone, google_calendar_id, default_meeting_link, offer_windows, pay_type_titles, pay_type')
+        .select('id, email, name, tutoring_active, active, subjects, subjects_with_prep, timezone, google_calendar_id, default_meeting_link, offer_windows, pay_type_titles, pay_type, calendar_color')
         .order('name'),
       supabase.from('subjects').select('*').order('category').order('name'),
       supabase

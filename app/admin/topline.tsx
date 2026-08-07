@@ -10,13 +10,14 @@ import { usePathname } from 'next/navigation'
 // alert URL) are untouched — they keep landing exactly where they always did,
 // and the bar just highlights the right tab when they do.
 
-// PL-198 (Scarlett, Jul 29, provisional): Calendar is a daily-driver surface,
-// not a filed page — seventh topline tab. View-as filed under Settings.
+// PL-198 made Calendar a provisional seventh topline tab; PL-284 (Scarlett,
+// Aug 7) files it under Classes instead — its legend is class language, so it
+// lives in the Classes sidebar. /admin/calendar still resolves (deep-link
+// rule); the bar highlights Classes when you're there. View-as under Settings.
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', href: '/admin' },
   { id: 'leads', label: 'Prospective Students', href: '/admin/leads' },
   { id: 'tutoring', label: 'Tutoring', href: '/admin/tutoring' },
-  { id: 'calendar', label: 'Calendar', href: '/admin/calendar' },
   { id: 'classes', label: 'Classes', href: '/admin?tab=classes' },
   { id: 'contacts', label: 'Contacts', href: '/admin?tab=contacts' },
   { id: 'settings', label: 'Settings', href: '/admin?tab=settings' },
@@ -28,7 +29,8 @@ export type ToplineTab = (typeof TABS)[number]['id']
 function tabForUrl(pathname: string, search: string): ToplineTab {
   if (pathname.startsWith('/admin/leads')) return 'leads'
   if (pathname.startsWith('/admin/tutoring')) return 'tutoring'
-  if (pathname.startsWith('/admin/calendar')) return 'calendar'
+  // PL-284: the calendar files under Classes now.
+  if (pathname.startsWith('/admin/calendar')) return 'classes'
   // PL-198: View-as files under Settings.
   if (pathname.startsWith('/admin/view-as')) return 'settings'
   // Filed under Contacts in Scarlett's IA (Jul 28).

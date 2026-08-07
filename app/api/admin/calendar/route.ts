@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
-import { statusFor, type CalendarStatus } from '../../../utils/calendar-colors'
+import { statusFor, autoTutorColor, type CalendarStatus } from '../../../utils/calendar-colors'
 import { holdActive } from '../../../utils/gcal-sync'
 import { zonedToUtc } from '../../../utils/tutoring'
 
@@ -21,6 +21,8 @@ export type CalendarBlock = {
   portalStatus: string
   tutorId: string | null
   tutorName: string | null
+  /** PL-283: the tutor's calendar color (assigned, or the stable auto pick). */
+  tutorColor: string | null
   classId: string | null
   schoolId: string | null
   schoolName: string | null
@@ -44,7 +46,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Range must be positive and at most ~2 months.' }, { status: 400 })
   }
 
-  const [{ data: tutoring }, { data: classSessions }] = await Promise.all([
+  const [{ data: tutoring }, { data: classSessions }, { data: allInstructors }] = await Promise.all([
     supabase
       .from('tutoring_sessions')
       .select(
@@ -61,11 +63,24 @@ export async function GET(req: Request) {
       .select(
         `id, class_id, session_date, start_time, end_time, location,
          classes ( class_type, status, delivery_mode, default_location, instructor_id, school_id,
-           schools ( name, nickname, timezone ), instructors ( name ) )`
+           timezone, schools ( name, nickname, timezone ), instructors ( name ) )`
       )
       .gte('session_date', from.slice(0, 10))
       .lte('session_date', to.slice(0, 10)),
+    // PL-283: the full color roster — auto-colors must be computed against
+    // EVERY assigned color (stable per tutor), not just the visible range.
+    supabase.from('instructors').select('id, calendar_color'),
   ])
+
+  // PL-283: assigned color wins; otherwise a stable palette pick.
+  const assignedColors = new Map<string, string>(
+    ((allInstructors as any[]) ?? [])
+      .filter((i) => i.calendar_color)
+      .map((i) => [i.id as string, i.calendar_color as string])
+  )
+  const takenHexes = Array.from(assignedColors.values())
+  const tutorColorFor = (tutorId: string | null): string | null =>
+    tutorId ? (assignedColors.get(tutorId) ?? autoTutorColor(tutorId, takenHexes)) : null
 
   const blocks: CalendarBlock[] = []
 
@@ -108,6 +123,7 @@ export async function GET(req: Request) {
       portalStatus: coveredFrom ? `${portalStatus} · covered (substitute for ${coveredFrom})` : portalStatus,
       tutorId: s.tutor_id,
       tutorName: tut?.name ?? tut?.email ?? null,
+      tutorColor: tutorColorFor(s.tutor_id),
       classId: null,
       schoolId: null,
       schoolName: null,
@@ -119,7 +135,9 @@ export async function GET(req: Request) {
     const cls = one<any>(s.classes)
     if (!cls) continue
     const school = one<any>(cls.schools)
-    const tz = school?.timezone ?? 'America/Denver'
+    // PL-274 precedence (folded in with PL-283): a class-level timezone wins
+    // over the school's — school-less classes were silently mistimed here.
+    const tz = cls.timezone ?? school?.timezone ?? 'America/Denver'
     // Class sessions store wall-clock date+time in the school's timezone.
     const startsAt = zonedToUtc(s.session_date, String(s.start_time).slice(0, 5), tz).toISOString()
     const endsAt = zonedToUtc(s.session_date, String(s.end_time).slice(0, 5), tz).toISOString()
@@ -136,6 +154,7 @@ export async function GET(req: Request) {
       portalStatus: cls.status,
       tutorId: cls.instructor_id ?? null,
       tutorName: one<any>(cls.instructors)?.name ?? null,
+      tutorColor: tutorColorFor(cls.instructor_id ?? null),
       classId: s.class_id,
       schoolId: cls.school_id ?? null,
       schoolName: school?.nickname ?? school?.name ?? null,

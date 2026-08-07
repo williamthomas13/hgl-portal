@@ -32,6 +32,18 @@ export const CONTACTS_SIDEBAR: SidebarEntry[] = [
   { id: 'agreements', label: 'Agreements', href: '/admin/agreements' },
 ]
 
+// PL-284: the Classes group's entries, for the standalone Calendar page to
+// wear the Classes chrome (same pattern as CONTACTS_SIDEBAR above — /admin
+// renders its own button-based copy from NAV_GROUPS; these hrefs land on the
+// exact section via ?section=).
+export const CLASSES_SIDEBAR: SidebarEntry[] = [
+  { id: 'rosters', label: 'Live class rosters', href: '/admin?tab=classes&section=rosters' },
+  { id: 'add-class', label: 'Add a new class', href: '/admin?tab=classes&section=add-class' },
+  { id: 'contacts', label: 'Schools', href: '/admin?tab=classes&section=contacts' },
+  { id: 'branding', label: 'Branding & collateral', href: '/admin?tab=classes&section=branding' },
+  { id: 'calendar', label: 'Calendar', href: '/admin/calendar' },
+]
+
 export function SidebarNav({
   entries,
   active,

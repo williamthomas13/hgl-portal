@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
+import { GOOGLE_CALENDAR_PALETTE, textOnColor } from '../utils/calendar-colors'
 import { TimezoneSelect } from './ui'
 import { WEEKDAYS } from './tutoring/types'
 import type { OfferWindowUI } from './tutoring/types'
@@ -40,6 +41,8 @@ export default function InstructorEditor({
   const [pickedPrep, setPickedPrep] = useState<string[]>([])
   const [timezone, setTimezone] = useState('America/Denver')
   const [calendarId, setCalendarId] = useState('')
+  // PL-283: per-tutor calendar color ('' = auto-assigned).
+  const [calendarColor, setCalendarColor] = useState('')
   const [location, setLocation] = useState('')
   const [windows, setWindows] = useState<OfferWindowUI[]>([])
   const [payTitles, setPayTitles] = useState<string[]>([])
@@ -66,7 +69,7 @@ export default function InstructorEditor({
             .from('instructors')
             .select(
               `id, email, name, phone, subjects, subjects_with_prep, timezone, google_calendar_id,
-               default_meeting_link, offer_windows, pay_type_titles, pay_type`
+               default_meeting_link, offer_windows, pay_type_titles, pay_type, calendar_color`
             )
             .eq('id', instructorId)
             .maybeSingle(),
@@ -82,6 +85,7 @@ export default function InstructorEditor({
           setPickedPrep((row.subjects_with_prep as string[]) ?? [])
           setTimezone(row.timezone ?? 'America/Denver')
           setCalendarId(row.google_calendar_id ?? '')
+          setCalendarColor((row as { calendar_color?: string | null }).calendar_color ?? '')
           setLocation(row.default_meeting_link ?? '')
           setWindows((row.offer_windows as OfferWindowUI[]) ?? [])
           setPayTitles((row.pay_type_titles as string[]) ?? [])
@@ -116,6 +120,7 @@ export default function InstructorEditor({
       subjects_with_prep: pickedPrep,
       timezone: timezone || 'America/Denver',
       google_calendar_id: calendarId.trim() || null,
+      calendar_color: calendarColor || null,
       default_meeting_link: location.trim() || null,
       offer_windows: windows,
       // Managers must not touch titles or the pay-type flag (the DB trigger
@@ -305,6 +310,51 @@ export default function InstructorEditor({
                 placeholder={email || 'their email'}
                 className="w-full border border-gray-300 rounded-md p-2"
               />
+            </div>
+
+            {/* PL-283: matches Kelsie's Google Calendar color-coding — the
+                same swatches Google offers, so portal calendars read like the
+                calendar she already runs. */}
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Calendar color — how this tutor&apos;s sessions show on portal calendars
+              </label>
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {GOOGLE_CALENDAR_PALETTE.map((p) => (
+                  <button
+                    key={p.hex}
+                    type="button"
+                    onClick={() => setCalendarColor(p.hex)}
+                    title={p.name}
+                    className={`w-6 h-6 rounded-full border-2 ${
+                      calendarColor.toUpperCase() === p.hex.toUpperCase()
+                        ? 'border-hgl-slate ring-2 ring-hgl-slate/40'
+                        : 'border-white shadow'
+                    }`}
+                    style={{ background: p.hex }}
+                  >
+                    {calendarColor.toUpperCase() === p.hex.toUpperCase() && (
+                      <span className="text-[10px] font-bold" style={{ color: textOnColor(p.hex) }}>
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setCalendarColor('')}
+                  className={`px-2 py-1 rounded border text-xs ${
+                    calendarColor === ''
+                      ? 'bg-hgl-slate text-white border-hgl-slate'
+                      : 'bg-white text-gray-600 border-gray-300'
+                  }`}
+                >
+                  Auto
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Auto picks a spare color from the same palette and keeps it stable for this tutor.
+              </p>
             </div>
 
             <div>
