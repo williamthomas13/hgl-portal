@@ -42,6 +42,19 @@ export function templateMetaFor(
     }
     case 'thank_you':
       return { key: 'E1_THANKS', role: 'parent' }
+    // PL-279: the FO follow-on stages (parent/student split by dedupe tag).
+    case 'fo_announce':
+      return student
+        ? { key: 'FO_ANNOUNCE_STUDENT', role: 'student' }
+        : { key: 'FO_ANNOUNCE_PARENT', role: 'parent' }
+    case 'fo_reminder':
+      return student
+        ? { key: 'FO_REMINDER_STUDENT', role: 'student' }
+        : { key: 'FO_REMINDER_PARENT', role: 'parent' }
+    case 'fo_extension':
+      return student
+        ? { key: 'FO_EXTENSION_STUDENT', role: 'student' }
+        : { key: 'FO_EXTENSION_PARENT', role: 'parent' }
     case 'synap_access':
       return student
         ? { key: 'E2_DIAG_STUDENT', role: 'student' }
@@ -187,6 +200,13 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   // PL-282: the returning pair was missing here (raw keys would have shown).
   E1_RETURNING_PARENT: '#1-R — Returning-family thank-you (parent)',
   E1_RETURNING_STUDENT: '#1-R — Returning-family thank-you (student)',
+  // PL-279: the FO follow-on sequence.
+  FO_ANNOUNCE_PARENT: 'FO-1P — Follow-on announcement (parent)',
+  FO_ANNOUNCE_STUDENT: 'FO-1S — Follow-on announcement (student)',
+  FO_REMINDER_PARENT: 'FO-2P — Follow-on deadline reminder (parent)',
+  FO_REMINDER_STUDENT: 'FO-2S — Follow-on deadline reminder (student)',
+  FO_EXTENSION_PARENT: 'FO-3P — Follow-on extension (parent)',
+  FO_EXTENSION_STUDENT: 'FO-3S — Follow-on extension (student)',
   E2_DIAG_PARENT: '#2-P — Diagnostic & Synap access (parent)',
   E2_DIAG_STUDENT: '#2-S — Diagnostic & Synap access (student)',
   E3_VFAQ: '#3 — VERY FAQs',
@@ -300,6 +320,8 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
   { name: 'Class sequence', match: (k) => /^E\d|^LR_|^SU_|^SV_/.test(k) && !/^E8_ADDON/.test(k) },
   { name: 'Payment reminders', match: (k) => /^PR\d/.test(k) },
   { name: 'Waitlist & interest', match: (k) => /^W\d|^NW_|^WR_/.test(k) },
+  // PL-279: the follow-on marketing sequence (three stages × parent/student).
+  { name: 'Follow-on marketing', match: (k) => /^FO_/.test(k) },
   { name: 'Cancellation', match: (k) => /^CX_/.test(k) && k !== 'CX_C_CANCELLATION' },
   { name: 'Agreements', match: (k) => /^AG_/.test(k) },
   {

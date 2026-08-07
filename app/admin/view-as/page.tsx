@@ -128,6 +128,40 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
     }
   }
 
+  // PL-279: the FO follow-on sequence samples — the sign-off surface. Same
+  // sample pipeline as the editor; each template renders for its own
+  // audience. These stay drafts until Scarlett flips them live (the send
+  // engine is registry-only, so nothing sends while they're drafts).
+  let followOnEmails: { key: string; label: string; subject: string; html: string; live: boolean }[] = []
+  if (role === 'parent') {
+    const { data: tpls } = await supabaseAdmin
+      .from('email_templates')
+      .select(
+        `template_key, display_name, from_identity, category, audience, live,
+         version:email_template_versions!email_templates_active_version_fk
+           ( subject, preheader, body_markdown, footer_note )`
+      )
+      .like('template_key', 'FO_%')
+      .order('template_key')
+    for (const t of (tpls as any[]) ?? []) {
+      const v = Array.isArray(t.version) ? t.version[0] : t.version
+      if (!v) continue
+      try {
+        const audience = t.audience === 'student' ? 'student' : 'parent'
+        const rendered = renderVersion(v, t, SAMPLE_CONTEXT, audience, sampleExtraFor(t.template_key))
+        followOnEmails.push({
+          key: t.template_key,
+          label: t.display_name ?? t.template_key,
+          subject: rendered.subject,
+          html: rendered.html,
+          live: Boolean(t.live),
+        })
+      } catch (e) {
+        console.error(`view-as FO sample render failed for ${t.template_key}:`, e)
+      }
+    }
+  }
+
   // Manager view: live pay-surface proof, computed from the same tables the
   // manager-facing panels read — hours and TITLES only, by construction.
   let managerPay: { tutor: string; period: string; lines: { workType: string; hours: number }[] }[] = []
@@ -298,6 +332,40 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
                 </details>
               ))
             )}
+          </div>
+        )}
+        {/* PL-279: the FO follow-on sequence, rendered for sign-off — the
+            send engine is registry-only, so flipping these live in the
+            template editor IS the go-live switch. */}
+        {role === 'parent' && followOnEmails.length > 0 && (
+          <div className="space-y-3">
+            <div className="bg-white rounded-lg border p-5 text-sm text-gray-700 space-y-2">
+              <h2 className="font-bold text-hgl-slate">
+                The follow-on marketing sequence (families of a finishing class)
+              </h2>
+              <p>
+                Three stages × parent + student, each rendered below with sample data through the
+                editor&apos;s own pipeline. While these are drafts, the sequence sends nothing —
+                setting them live on the templates page arms it. {'{endDate}'}{' '}renders each
+                cohort&apos;s own deadline in real sends.
+              </p>
+            </div>
+            {followOnEmails.map((e) => (
+              <details key={e.key} className="bg-white rounded-lg border">
+                <summary className="cursor-pointer p-4 text-sm">
+                  <span className="font-semibold text-hgl-slate">{e.label}</span>
+                  {!e.live && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wide font-bold bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">
+                      draft — the sequence won&apos;t send until this goes live
+                    </span>
+                  )}
+                  <span className="block text-gray-500 mt-0.5">Subject: {e.subject}</span>
+                </summary>
+                <div className="border-t border-gray-200 p-4 overflow-x-auto">
+                  <div dangerouslySetInnerHTML={{ __html: e.html }} />
+                </div>
+              </details>
+            ))}
           </div>
         )}
       </div>

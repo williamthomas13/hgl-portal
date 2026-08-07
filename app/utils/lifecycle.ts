@@ -106,6 +106,10 @@ export type ClassBundle = {
   sessions: SessionInfo[]
   firstSession: string // falls back to start_date when no sessions exist
   lastSession: string
+  /** PL-279: this class's follow-on target (drives the FO campaign). */
+  followOnClassId: string | null
+  /** PL-279: this FEEDER cohort's extended discount deadline (admin action). */
+  foExtendedUntil: string | null
   enrollments: EnrollmentRow[]
   /** Last time a collateral-visible detail changed (Phase 4.5 §8) —
    *  DB-trigger-maintained, drives the digest's "materials updated" flag. */
@@ -209,6 +213,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     collateral_changed_at, timezone, has_diagnostics, has_synap,
+    follow_on_class_id, fo_extended_until,
     schools ( name, nickname, timezone ),
     instructors ( name, email, bio ),
     sessions ( id, session_date, start_time, end_time, location ),
@@ -295,6 +300,8 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       instructorEmail: instructor?.email ?? null,
       defaultLocation: c.default_location || null,
       synapGroup: c.synap_group || null,
+      followOnClassId: c.follow_on_class_id ?? null,
+      foExtendedUntil: c.fo_extended_until ?? null,
       price: Number(c.price),
       capacity: c.capacity,
       // PL-61: a nonsensical stored minimum (Cape Town briefly had -1) must

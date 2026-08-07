@@ -110,6 +110,11 @@ try {
     // 2b. every URL-ish registry variable resolves absolute against the real
     // context (extras supplied from samples — the send paths that fill them
     // are covered by their own E2Es).
+    // PL-279: the FO offer is attached BY the FO sweep, never present on a
+    // plain enrollment context — supply the sample offer so the link
+    // variable is checked with its context present (the real attach path is
+    // covered by verify-pl279-fo.mjs).
+    ctx.followOn = SAMPLE_CONTEXT.followOn
     for (const [name, def] of Object.entries(VARIABLES)) {
       if (!/Link$|Url$/.test(name)) continue
       let value = ''

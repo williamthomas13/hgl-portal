@@ -15,6 +15,7 @@ import { sweepConversionFollowups } from '../../../utils/convert-tutoring'
 import { chaseLine, classroomChaseRounds } from '../../../utils/classroom-chase'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
+import { sweepFollowOnForBundle } from '../../../utils/follow-on'
 import {
   maybeSendInstructorFyi,
   sweepInstructorComms,
@@ -1921,6 +1922,13 @@ export async function GET(req: Request) {
     await sweepCompletion(bundle, counters)
     await sweepThankYou(bundle, counters)
     await sweepUpsell(bundle, counters, packages.pre)
+    // PL-279: the FO follow-on sequence — per-cohort windows anchored on
+    // THIS feeder's own last session; registry-only rendering means the
+    // drafts send nothing until Scarlett flips them live.
+    const foReport = await sweepFollowOnForBundle(bundle)
+    for (const a of foReport.attempts) {
+      if (a.status === 'sent') bump(counters, `fo_${a.stage}`)
+    }
     await sweepSequence(bundle, counters, packages.post)
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)

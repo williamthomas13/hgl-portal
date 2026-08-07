@@ -12,7 +12,8 @@ export type TemplateSeed = {
   from_identity: 'info' | 'billy'
   category: 'transactional' | 'relationship'
   subject: string
-  preheader: string
+  /** PL-279: null = no preheader (the FO pair ships without improvised copy). */
+  preheader: string | null
   footer_note: string | null
   body_markdown: string
 }
@@ -308,6 +309,181 @@ Here's the thing about coming back for more — it says something about you. Ple
 We'll see you in there.
 
 William`,
+  },
+  {
+    // PL-279: the FO follow-on campaign — Scarlett's proven manual sequence
+    // (batch-29 doc, transcribed verbatim + confirmed). Three stages ×
+    // parent/student. Seeded as DRAFTS: the send engine renders registry-only
+    // (no code twin), so flipping these live IS the go-live switch — the
+    // "samples before the sequence goes live" sign-off gate. Formatting
+    // adaptations only (never wording): the bare {followOnRegistrationLink}
+    // renders as a clickable link via [x](x), and the standalone italicized
+    // "Deep Dive" became *{followOnShortName}* so a future follow-on class
+    // degrades without rewriting her voice.
+    template_key: 'FO_ANNOUNCE_PARENT',
+    display_name: 'FO-1P — Follow-on announcement (parent)',
+    sequence_number: 'FO-1',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: 'SAT Advanced Math opportunity for {schoolName} students',
+    preheader: '',
+    footer_note: null,
+    body_markdown: `Dear {parentFirstName},
+
+I just wanted to let you know that we've opened up registration for our online course, *{followOnClassName}*.
+
+*{followOnShortName}* is an advanced class that is designed for students who have already taken our SAT class (as {studentFirstName} has) or who already have an SAT math score of 650 or above.
+
+In the class, our expert instructors guide students through the most challenging SAT math concepts that are often left out of regular SAT classes. With a focus on the most difficult and least frequently tested topics, this class was created to help students like {studentFirstName} learn even more strategies to solve the most challenging SAT math questions.
+
+As a special offer for {schoolName} students who recently took one of our {className} courses, **we're discounting this specialized course by USD {discountAmount}**.
+
+Since we're expecting the class to fill up, we're only leaving this discount offer open until {endDate}.
+
+To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and **use the code {discountCode} to get your discount.**
+
+We hope to see {studentFirstName} in class!
+
+To {studentFirstName}'s continued progress,
+
+William`,
+  },
+  {
+    template_key: 'FO_ANNOUNCE_STUDENT',
+    display_name: 'FO-1S — Follow-on announcement (student)',
+    sequence_number: 'FO-1',
+    audience: 'student',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: '{schoolName} {className} - Math score boost opportunity',
+    preheader: '',
+    footer_note: null,
+    body_markdown: `Hey {studentFirstName},
+
+Just a heads up that registration is open for *{followOnClassName}*.
+
+*{followOnShortName}* is an advanced class that is designed for students who have already taken our SAT class (like you!) or who already have an SAT math score of 650 or above.
+
+The class focuses on the most difficult and least frequently tested topics, and was created to help you learn even more strategies to solve the most challenging SAT math questions. We want you to make your score 🔥🔥🔥.
+
+{studentFirstName}, since you recently took the {schoolName} {className} class, **we're discounting this specialized course by USD {discountAmount}**.
+
+We're expecting the class to fill up, so we're only leaving this discount offer open until {endDate}.
+
+To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and **use the code {discountCode} to get your discount.**
+
+We hope to see you in class, {studentFirstName}!
+
+To your continued progress,
+
+William`,
+  },
+  {
+    template_key: 'FO_REMINDER_PARENT',
+    display_name: 'FO-2P — Follow-on deadline reminder (parent)',
+    sequence_number: 'FO-2',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: 'SAT Math Reminder for {schoolName} students',
+    preheader: '',
+    footer_note: null,
+    body_markdown: `Hello {parentFirstName},
+
+I'm writing just to give you a quick heads up that the USD {discountAmount} discount for our upcoming class, *{followOnClassName}*, ends on {endDate}. (That's really soon!)
+
+Since {studentFirstName} already took our {schoolName} {className} class, we wanted to make sure you received a discount, but…since we're expecting the class to be quite popular, we're only leaving this discount offer open until {endDate}.
+
+The class isn't perfect for everyone, so I understand if it may not be a good fit for {studentFirstName}.
+
+To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and use the code {discountCode} to get your discount.
+
+If you're considering enrolling {studentFirstName}, but you're wondering if the course is right for them, you can reply to this message and ask anything you'd like.
+
+To {studentFirstName}'s burgeoning confidence,
+
+William`,
+  },
+  {
+    template_key: 'FO_REMINDER_STUDENT',
+    display_name: 'FO-2S — Follow-on deadline reminder (student)',
+    sequence_number: 'FO-2',
+    audience: 'student',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: '{schoolName} {className} - Quick Reminder',
+    preheader: '',
+    footer_note: null,
+    body_markdown: `Hi {studentFirstName},
+
+I just wanted to remind you that we've got a pretty useful math class coming up.
+
+*{followOnClassName}* focuses on the most difficult SAT Math concepts. Each concept may only show up rarely, but mastering all of them adds up!
+
+**We're discounting our upcoming Advanced SAT Math course by USD {discountAmount} for students who took the {schoolName} {className} class – that's you!**
+
+We're expecting the class to fill up, so we're only leaving this discount offer open until {endDate}. That's soon!
+
+**To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and use the code {discountCode} to get your discount.**
+
+If you have any questions, just reply to this message! Easy peasy.
+
+To crushing the math section,
+
+William Thomas`,
+  },
+  {
+    template_key: 'FO_EXTENSION_PARENT',
+    display_name: 'FO-3P — Follow-on extension (parent)',
+    sequence_number: 'FO-3',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: 'Bad News, Great News for {schoolName} {className} Students',
+    preheader: '',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+A lot of parents and students reached out to us after hearing about our *{followOnClassName}* class. So many, in fact, that we weren't able to get back to everyone as quickly as we would've liked. For some, that meant missing out on the discount while they waited for answers.
+
+So, in order to ensure that every family has a fair opportunity to secure their spot in the class *and* take advantage of the discount we offered, we extended the discount.
+
+You now have until **{endDate} at midnight** to save {discountAmount} using the code {discountCode}.
+
+If you missed out earlier, this is your chance to secure a spot for {studentFirstName}. Just click the link below to sign up...
+
+[{followOnRegistrationLink}]({followOnRegistrationLink})
+
+Learning to solve these most difficult math problems is transformative – both for {studentFirstName}'s scores *and* their confidence.
+
+Let's make it happen together!
+
+William`,
+  },
+  {
+    template_key: 'FO_EXTENSION_STUDENT',
+    display_name: 'FO-3S — Follow-on extension (student)',
+    sequence_number: 'FO-3',
+    audience: 'student',
+    from_identity: 'billy',
+    category: 'relationship',
+    subject: '{schoolName} {className} – Bad News, Great News',
+    preheader: '',
+    footer_note: null,
+    body_markdown: `What's up {studentFirstName}!
+
+Bad news: some of you missed your chance to enroll in our *{followOnClassName}* class while you waited to hear back from us for more info.
+
+Great news? We extended the discount.
+
+You now have until **{endDate} at midnight** to save {discountAmount} using the code {discountCode}.
+
+Tell someone who cares to sign up here...
+
+[{followOnRegistrationLink}]({followOnRegistrationLink})
+
+See you there? See you there.`,
   },
   {
     template_key: 'E2_DIAG_PARENT',

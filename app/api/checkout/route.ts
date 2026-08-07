@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
+import { validateFollowOnDiscount } from '../../utils/follow-on'
 
 // Stripe client. We don't pin apiVersion here — the installed SDK
 // version ships with a default that matches its TypeScript types.
@@ -24,12 +25,20 @@ export async function POST(request: Request) {
       enrollmentIds,
       packageId,
       packageSelections,
+      foToken,
+      foEnrollmentId,
+      discountCode,
     }: {
       enrollmentId?: string;
       enrollmentIds?: string[];
       packageId?: string | null;
       /** enrollmentId → packageId (or null) for sibling carts. */
       packageSelections?: Record<string, string | null>;
+      /** PL-279: the emailed auto-apply token (+ its feeder enrollment). */
+      foToken?: string | null;
+      foEnrollmentId?: string | null;
+      /** PL-279: the typed-code fallback. */
+      discountCode?: string | null;
     } = body;
 
     const ids: string[] = Array.isArray(enrollmentIds) && enrollmentIds.length > 0
@@ -81,10 +90,31 @@ export async function POST(request: Request) {
     /* eslint-enable @typescript-eslint/no-explicit-any */
 
     const classId: string = cls.id;
-    const price = Number(cls.price);
+    let price = Number(cls.price);
     const customerEmail: string = family.parent_email;
     const schoolLabel = one<{ nickname?: string }>(cls.schools)?.nickname ?? 'HGL';
-    const className = `${schoolLabel} — ${cls.class_type}`;
+    let className = `${schoolLabel} — ${cls.class_type}`;
+
+    // PL-279: the follow-on discount — validated SERVER-SIDE against the
+    // registering family's own cohort (token path or typed code), never
+    // trusted from the client. Applies per student to the class component.
+    // An invalid/expired code refuses the checkout with the plain reason
+    // rather than silently charging full price.
+    if ((foToken && foEnrollmentId) || discountCode) {
+      const verdict = await validateFollowOnDiscount({
+        classId,
+        token: foToken ?? null,
+        feederEnrollmentId: foEnrollmentId ?? null,
+        code: discountCode ?? null,
+        parentEmail: customerEmail,
+      });
+      if (!verdict.ok) {
+        return NextResponse.json({ error: verdict.reason }, { status: 400 });
+      }
+      const discounted = Math.max(0, price - verdict.amount);
+      className = `${className} (${verdict.code} — $${verdict.amount.toFixed(0)} off)`;
+      price = discounted;
+    }
 
     // Base URL for redirects. Set NEXT_PUBLIC_APP_URL in env
     // (local: http://localhost:3000, production: https://hgl-portal.vercel.app

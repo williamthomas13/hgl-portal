@@ -602,6 +602,35 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: `"is" ↔ "are", agreeing with {she_he_they} ("she is / he is / they are / Ana is"; unset → are)`,
     resolve: (c) => pn(c).is,
   },
+  // PL-279: the FO follow-on campaign's offer variables. They resolve from
+  // ctx.followOn, which ONLY the FO sweep (and the sample context) attaches
+  // — per-cohort values, computed from the recipient's own feeder class.
+  // Outside an FO send they resolve empty rather than crashing every other
+  // template's render (resolveVariables evaluates the whole vocabulary).
+  followOnClassName: {
+    description: 'The follow-on class being marketed, e.g. "SAT Math Deep Dive" (FO emails only)',
+    resolve: (c) => c.followOn?.className ?? '',
+  },
+  followOnShortName: {
+    description: 'The follow-on class\'s short marketing name, e.g. "Deep Dive" (roster-editable on the open class; falls back to the full name)',
+    resolve: (c) => c.followOn?.shortName ?? '',
+  },
+  followOnRegistrationLink: {
+    description: "The recipient's own tokenized registration link — auto-applies the discount with their cohort's deadline baked in (typed code = fallback)",
+    resolve: (c) => c.followOn?.registrationLink ?? '',
+  },
+  discountAmount: {
+    description: 'The follow-on discount, formatted ("$50") — the open class\'s promo amount',
+    resolve: (c) => c.followOn?.discountAmount ?? '',
+  },
+  discountCode: {
+    description: "The shared discount code (the open class's promo code) — validated per cohort at checkout",
+    resolve: (c) => c.followOn?.discountCode ?? '',
+  },
+  endDate: {
+    description: 'THIS cohort\'s discount deadline, written out (e.g. "Friday, September 25, 2026") — computed from the recipient\'s feeder class, extension-aware',
+    resolve: (c) => c.followOn?.endDate ?? '',
+  },
   Your_or_names: {
     description: `Sentence-start "Your" ↔ "Ana's"`,
     resolve: (c, a) => (a === 'student' ? 'Your' : `${s(c)}'s`),
@@ -1055,6 +1084,16 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   lastSession: '2026-10-24',
   price: 450,
   sessions: [],
+  // PL-279: FO samples render with a realistic per-cohort offer (the editor
+  // preview + view-as sign-off page compose from here).
+  followOn: {
+    className: 'SAT Math Deep Dive',
+    shortName: 'Deep Dive',
+    registrationLink: 'https://hgl-portal.vercel.app/register/sat-math-deep-dive-fall26',
+    discountAmount: '$50',
+    discountCode: 'DEEPDIVE50',
+    endDate: 'Saturday, November 7, 2026',
+  },
 }
 
 // PL-96: the CX sample is RENDERED FROM the real composer at module load —

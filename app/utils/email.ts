@@ -138,6 +138,20 @@ export type EnrollmentEmailContext = {
   lastSession: string
   price: number
   sessions: SessionInfo[]
+  /** PL-279: the follow-on offer for THIS recipient's cohort — attached by
+   *  the FO sweep (and the sample context); absent on every other send.
+   *  All FO composer variables resolve from here, per-cohort. */
+  followOn?: {
+    className: string
+    /** The short marketing name ("Deep Dive"); falls back to className. */
+    shortName: string
+    registrationLink: string
+    /** Formatted for copy: "$50". */
+    discountAmount: string
+    discountCode: string
+    /** The cohort's own deadline, written out ("Friday, September 25, 2026"). */
+    endDate: string
+  }
 }
 
 // ---------------------------------------------------------------------------

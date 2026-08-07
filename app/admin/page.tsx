@@ -3,6 +3,7 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../utils/supabase'
 import { formatDateAdmin, formatTimestampAdmin, addDays, bySessionStart, effectiveStartDate } from '../utils/dates'
+import { cohortWindow } from '../utils/follow-on-shared'
 import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
@@ -106,6 +107,10 @@ type ClassRow = {
   min_enrollment: number | null
   enrollment_deadline: string | null
   follow_on_class_id: string | null
+  /** PL-279: short marketing name for an open class ("Deep Dive"). */
+  fo_short_name: string | null
+  /** PL-279: this FEEDER cohort's extended follow-on discount deadline. */
+  fo_extended_until: string | null
   /** PL-237: skip-for-now stamp — the Needs Attention reminder shows while
    *  set AND short_link is still empty. */
   collateral_reminder_at: string | null
@@ -230,6 +235,74 @@ function AddSessionForm({
 // fields (Synap group, location) — view with an edit link, flipping to an
 // input + save/cancel. No window.prompt (it loses context and can't cancel
 // cleanly on mobile).
+// PL-279: one feeder cohort's follow-on discount window + the deliberate
+// Extend action (stage 3 of the FO sequence sends only on this — the "we
+// extended the discount" story must be true). Inline confirm, per the rule.
+function FoExtendControl({
+  classRow,
+  followOn,
+  onChanged,
+}: {
+  classRow: { id: string; start_date: string; fo_extended_until: string | null; sessions: { session_date: string }[] | null }
+  followOn: { class_type: string; promo_code: string | null; promo_amount: number | null }
+  onChanged: () => void
+}) {
+  const [armed, setArmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  const dates = (classRow.sessions ?? []).map((s) => s.session_date).sort()
+  const window = cohortWindow({
+    lastSession: dates[dates.length - 1] ?? classRow.start_date,
+    foExtendedUntil: classRow.fo_extended_until,
+  })
+  const promoReady = Boolean(followOn.promo_code && followOn.promo_amount != null)
+  return (
+    <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+      <span title="This cohort's follow-on discount window — announce the day after the last session, deadline 14 days after; every FO email quotes THIS date as {endDate}">
+        Follow-on discount window: ends {formatDateAdmin(window.deadline)}
+        {window.extended ? ' (extended)' : ''}
+        {!promoReady && ' — set a promo code + amount on the follow-on class first'}
+      </span>
+      {promoReady &&
+        (armed ? (
+          <span className="bg-blue-50 border border-blue-200 rounded px-2 py-1 flex items-center gap-2">
+            <span>
+              Extend this cohort&apos;s discount a week and send the &ldquo;Bad News, Great
+              News&rdquo; pair on the next hourly sweep (FO templates must be live)?
+            </span>
+            <button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true)
+                const res = await fetch('/api/admin/follow-on-extend', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ classId: classRow.id }),
+                })
+                const json = await res.json().catch(() => ({}))
+                setBusy(false)
+                setArmed(false)
+                setNote(res.ok ? `Extended to ${json.untilLong}.` : 'Error: ' + (json.error ?? res.status))
+                if (res.ok) onChanged()
+              }}
+              className="font-bold text-hgl-blue underline"
+            >
+              Yes, extend
+            </button>
+            <button onClick={() => setArmed(false)} className="text-gray-500 underline">
+              cancel
+            </button>
+          </span>
+        ) : (
+          <button onClick={() => setArmed(true)} className="underline hover:text-hgl-blue">
+            extend a week
+          </button>
+        ))}
+      {note && <span className={note.startsWith('Error') ? 'text-red-600' : 'text-green-700'}>{note}</span>}
+    </p>
+  )
+}
+
 function InlineEditableText({
   label,
   value,
@@ -844,7 +917,7 @@ export default function AdminDashboard() {
   // PL-250: Synap group and location become editable where they're read.
   async function handleClassField(
     c: ClassRow,
-    field: 'synap_group' | 'default_location' | 'has_diagnostics' | 'has_synap',
+    field: 'synap_group' | 'default_location' | 'has_diagnostics' | 'has_synap' | 'fo_short_name',
     value: string | boolean | null
   ) {
     const { error } = await supabase
@@ -1386,6 +1459,27 @@ export default function AdminDashboard() {
                   ))}
               </select>
             </p>
+            {/* PL-279: the FO campaign runs when the follow-on is an OPEN
+                class with a promo — this cohort's window + the deliberate
+                Extend action live here, on the feeder. */}
+            {c.follow_on_class_id &&
+              (() => {
+                const target = rosters.find((r) => r.id === c.follow_on_class_id)
+                return target && !target.school_id ? (
+                  <FoExtendControl classRow={c} followOn={target} onChanged={fetchRosters} />
+                ) : null
+              })()}
+            {/* PL-279: the short marketing name Scarlett's FO copy italicizes
+                ("Deep Dive") — only meaningful on open classes. */}
+            {!c.school_id && (
+              <InlineEditableText
+                label="Short marketing name"
+                value={c.fo_short_name}
+                emptyText={`not set — follow-on emails say "${c.class_type}"`}
+                title='The short name the follow-on emails italicize ("Deep Dive"). Blank = the full class name.'
+                onSave={(v) => handleClassField(c, 'fo_short_name', v)}
+              />
+            )}
             {!isCancelled && (
               <div className="mt-2">
                 <CancelClassPanel

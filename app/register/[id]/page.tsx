@@ -31,6 +31,12 @@ type ClassDetails = {
   /** Cancelled classes render as full with no waitlist (PHASE4_SPEC §12). */
   cancelled?: boolean
   packages: TutoringPackage[]
+  /** PL-279: the class has a discount code configured (never the code itself). */
+  promoAvailable?: boolean
+  /** PL-279: the emailed link's auto-applied cohort discount. */
+  followOnDiscount?: { amount: number; code: string; endDate: string } | null
+  /** PL-279: plain-English note when the link's discount no longer applies. */
+  followOnDiscountNote?: string | null
 }
 
 function fmtTime(t: string | null) {
@@ -86,8 +92,16 @@ export default function RegistrationPage() {
   // window.location rather than useSearchParams to keep the page out of the
   // Suspense-boundary requirement.)
   const [cameFromExpiredLink, setCameFromExpiredLink] = useState(false)
+  // PL-279: the emailed auto-apply link (?fo=token&fe=enrollment) + the
+  // typed-code fallback — both validated server-side, never trusted here.
+  const [foParams, setFoParams] = useState<{ fo: string; fe: string } | null>(null)
+  const [typedCode, setTypedCode] = useState('')
   useEffect(() => {
-    setCameFromExpiredLink(new URLSearchParams(window.location.search).get('expired') === '1')
+    const q = new URLSearchParams(window.location.search)
+    setCameFromExpiredLink(q.get('expired') === '1')
+    const fo = q.get('fo')
+    const fe = q.get('fe')
+    if (fo && fe) setFoParams({ fo, fe })
   }, [])
   const [classDetails, setClassDetails] = useState<ClassDetails | null>(null)
   const [isFull, setIsFull] = useState(false)
@@ -109,7 +123,13 @@ export default function RegistrationPage() {
   useEffect(() => {
     async function fetchClass() {
       try {
-        const response = await fetch(`/api/class-info/${idOrSlug}`)
+        // PL-279: the fo/fe params ride along so the server can validate the
+        // auto-apply discount for this visitor's own cohort.
+        const q = new URLSearchParams(window.location.search)
+        const fo = q.get('fo')
+        const fe = q.get('fe')
+        const suffix = fo && fe ? `?fo=${encodeURIComponent(fo)}&fe=${encodeURIComponent(fe)}` : ''
+        const response = await fetch(`/api/class-info/${idOrSlug}${suffix}`)
         if (!response.ok) {
           setNotFound(true)
           return
@@ -209,11 +229,18 @@ export default function RegistrationPage() {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          enrollmentIds.length === 1
+        body: JSON.stringify({
+          ...(enrollmentIds.length === 1
             ? { enrollmentId: enrollmentIds[0], packageId: packageSelections[enrollmentIds[0]] ?? null }
-            : { enrollmentIds, packageSelections }
-        ),
+            : { enrollmentIds, packageSelections }),
+          // PL-279: the discount rides to checkout and is re-validated
+          // server-side (token path preferred; typed code as fallback).
+          ...(classDetails?.followOnDiscount && foParams
+            ? { foToken: foParams.fo, foEnrollmentId: foParams.fe }
+            : typedCode.trim()
+              ? { discountCode: typedCode.trim() }
+              : {}),
+        }),
       })
 
       const data = await response.json().catch(() => ({}))
@@ -334,8 +361,28 @@ export default function RegistrationPage() {
         {sessions.length > 1 ? ` · ${sessions.length} sessions` : ''}
         {classTime ? ` · ${classTime}` : ''}
         {' · '}
-        <span className="font-semibold">${classDetails.price} per student</span>
+        {classDetails.followOnDiscount ? (
+          <span className="font-semibold">
+            <s className="text-gray-400 font-normal">${classDetails.price}</s> $
+            {Math.max(0, classDetails.price - classDetails.followOnDiscount.amount)} per student
+          </span>
+        ) : (
+          <span className="font-semibold">${classDetails.price} per student</span>
+        )}
       </p>
+      {/* PL-279: the emailed link's cohort discount — applied automatically. */}
+      {classDetails.followOnDiscount && (
+        <p className="text-sm bg-green-50 border border-green-200 text-green-800 rounded-md px-3 py-2 mb-3">
+          Your <span className="font-bold">{classDetails.followOnDiscount.code}</span> discount ($
+          {classDetails.followOnDiscount.amount.toFixed(0)} off per student) is applied
+          automatically — good through {classDetails.followOnDiscount.endDate}.
+        </p>
+      )}
+      {classDetails.followOnDiscountNote && (
+        <p className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-md px-3 py-2 mb-3">
+          {classDetails.followOnDiscountNote}
+        </p>
+      )}
       {sessionCalendar}
     </div>
   )
@@ -614,6 +661,27 @@ export default function RegistrationPage() {
             </button>
           )}
 
+          {/* PL-279: typed-code fallback — checked server-side at checkout
+              (the emailed link applies it automatically instead). */}
+          {!isFull && classDetails.promoAvailable && !classDetails.followOnDiscount && (
+            <div>
+              <label className="block text-sm text-gray-600">
+                Discount code <span className="text-gray-500">(optional — from our email)</span>
+              </label>
+              <input
+                type="text"
+                value={typedCode}
+                onChange={(e) => setTypedCode(e.target.value)}
+                placeholder="e.g. DEEPDIVE50"
+                className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition uppercase"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                We&apos;ll check it when you continue to payment — if it doesn&apos;t apply,
+                you&apos;ll see why before anything is charged.
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading}
@@ -625,7 +693,12 @@ export default function RegistrationPage() {
                 : 'Preparing secure checkout...'
               : isFull
                 ? 'Join Waitlist (no payment now)'
-                : `Proceed to payment ($${(classDetails.price * siblingCount).toLocaleString()}${siblingCount > 1 ? ` — ${siblingCount} students` : ''})`}
+                : `Proceed to payment ($${(
+                    Math.max(
+                      0,
+                      classDetails.price - (classDetails.followOnDiscount?.amount ?? 0)
+                    ) * siblingCount
+                  ).toLocaleString()}${siblingCount > 1 ? ` — ${siblingCount} students` : ''})`}
           </button>
 
           {/* PL-124: one calm sentence on what follows payment — standing

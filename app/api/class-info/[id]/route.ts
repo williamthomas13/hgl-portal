@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
+import { validateFollowOnDiscount } from '../../../utils/follow-on'
 
 // Public class details for the registration and calendar pages. Phase 3
 // removed the browser's direct DB access (anon has no RLS policies), so the
@@ -31,7 +32,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     .select(
       `id, slug, status, class_type, price, capacity,
        start_date, default_location, registration_close_date,
-       timezone, schools ( name, nickname, timezone ),
+       timezone, promo_code, schools ( name, nickname, timezone ),
        sessions ( id, session_date, start_time, end_time, location ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )
@@ -49,9 +50,33 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     .eq('active', true)
     .order('hours')
 
-  const { enrollments, capacity, ...publicClass } = cls as typeof cls & {
+  // The promo code itself never rides the public payload — only whether a
+  // "have a discount code?" field is worth showing (PL-279).
+  const { enrollments, capacity, promo_code, ...publicClass } = cls as typeof cls & {
     enrollments: Slot[]
     capacity: number
+    promo_code: string | null
+  }
+
+  // PL-279: the emailed auto-apply link carries ?fo=<token>&fe=<enrollment>.
+  // Validation is per-cohort (the recipient's feeder class schedule); an
+  // aged-out link degrades to a plain refusal string the page can show.
+  const url = new URL(request.url)
+  const foTokenParam = url.searchParams.get('fo')
+  const feParam = url.searchParams.get('fe')
+  let followOnDiscount: { amount: number; code: string; endDate: string } | null = null
+  let followOnDiscountNote: string | null = null
+  if (foTokenParam && feParam) {
+    const verdict = await validateFollowOnDiscount({
+      classId: (cls as { id: string }).id,
+      token: foTokenParam,
+      feederEnrollmentId: feParam,
+    })
+    if (verdict.ok) {
+      followOnDiscount = { amount: verdict.amount, code: verdict.code, endDate: verdict.endDate }
+    } else {
+      followOnDiscountNote = verdict.reason
+    }
   }
 
   // Cancelled classes read as full-with-no-waitlist on the public page
@@ -63,5 +88,8 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     cancelled,
     isFull: cancelled || spotsTakenRaw(enrollments ?? []) >= capacity,
     packages: pkgs ?? [],
+    promoAvailable: Boolean(promo_code?.trim()),
+    followOnDiscount,
+    followOnDiscountNote,
   })
 }
