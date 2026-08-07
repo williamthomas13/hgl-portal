@@ -1814,9 +1814,20 @@ export default function AdminDashboard() {
         {/* SESSIONS — same visual calendar as the public registration page */}
         <div className="p-6 border-b border-gray-200">
           <h4 className="font-semibold text-hgl-slate mb-1">Sessions</h4>
+          {/* PL-296: open-enrollment classes carry their OWN timezone — the
+              PL-274 precedence (class wins over school) applies here too, and
+              the parenthetical names the real source instead of claiming a
+              school record that doesn't exist. */}
           <p className="text-xs text-gray-500 mb-3">
-            All times in <span className="font-semibold">{c.schools?.timezone ?? '—'}</span>{' '}
-            (from the school record, read-only)
+            All times in{' '}
+            <span className="font-semibold">
+              {c.timezone ?? c.schools?.timezone ?? 'America/Denver'}
+            </span>{' '}
+            {c.timezone
+              ? '(set on this class, read-only)'
+              : c.schools?.timezone
+                ? '(from the school record, read-only)'
+                : '(default)'}
           </p>
           {/* PL-277: ONE list — the card list — with Edit + Remove inside
               each card (the second, remove-only list is gone). */}
