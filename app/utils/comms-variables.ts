@@ -250,9 +250,9 @@ const s = (ctx: EnrollmentEmailContext) => ctx.studentFirstName
 function pn(ctx: EnrollmentEmailContext) {
   switch (ctx.studentPronouns) {
     case 'she_her':
-      return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't" }
+      return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't", is: 'is' }
     case 'he_him':
-      return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't" }
+      return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't", is: 'is' }
     case 'name_only':
       return {
         subj: ctx.studentFirstName,
@@ -261,9 +261,10 @@ function pn(ctx: EnrollmentEmailContext) {
         have: 'has',
         need: 'needs',
         dont: "doesn't",
+        is: 'is',
       }
     default:
-      return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't" }
+      return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't", is: 'are' }
   }
 }
 
@@ -595,6 +596,11 @@ export const VARIABLES: Record<string, VariableDef> = {
   her_his_their: {
     description: "The student's possessive: her / his / their — or \"Ana's\" for name_only (unset → their)",
     resolve: (c) => pn(c).poss,
+  },
+  // PL-282: verb agreement partner for {she_he_they} — "she is / they are".
+  is_are: {
+    description: `"is" ↔ "are", agreeing with {she_he_they} ("she is / he is / they are / Ana is"; unset → are)`,
+    resolve: (c) => pn(c).is,
   },
   Your_or_names: {
     description: `Sentence-start "Your" ↔ "Ana's"`,

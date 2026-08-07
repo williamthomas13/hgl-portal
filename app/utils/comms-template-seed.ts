@@ -259,28 +259,33 @@ These savings are only available before class starts!
 Higher Ground Learning`,
   },
   {
-    // PL-274 amendment A: returning-family thank-you pair — DRAFTS with
-    // PLACEHOLDER copy; Scarlett supplies final wording. Sent instead of #1
-    // when the family has a prior COMPLETED HGL class (code twin carries
-    // sends until these are ramped).
+    // PL-274 amendment A / PL-282: returning-family thank-you pair —
+    // Scarlett's FINAL copy (Aug 7), replacing the placeholder drafts. Sent
+    // instead of #1 when the family has a prior COMPLETED HGL class.
+    // Diagnostics-agnostic by design (no diagnostic promises — the E0/E2
+    // conditioning from PL-274 B carries that load).
     template_key: 'E1_RETURNING_PARENT',
     display_name: '#1-R — Returning-family thank-you (parent)',
     sequence_number: '1',
     audience: 'parent',
     from_identity: 'billy',
     category: 'transactional',
-    subject: 'Welcome back, {parentFirstName} — {studentFirstName} is set for {className}',
-    preheader: 'Registration for {className} is confirmed.',
+    subject: 'Thank you (again!), {parentFirstName}',
+    preheader: "You're making all the right calls",
     footer_note: null,
     body_markdown: `Hi {parentFirstName},
 
-[PLACEHOLDER — Scarlett's returning-family copy] Great to have {studentFirstName} continuing with Higher Ground — registration for {className} is confirmed.
+You registered {studentFirstName} for the {className} class, and I wanted to take a moment to say thank you...again!
 
-In the days before the course starts, you and {studentFirstName} will receive the necessary course information, such as {e1IncludesPhrase}.
+The first time a family trusts us with their student's future, it means a lot. When they come back, it means even more. There's no better compliment you could pay us than giving us another chance to work with {studentFirstName}, and we don't take it lightly.
 
-Thanks!
+We've watched {studentFirstName} put in the work once already, so we know what {she_he_they} {is_are} capable of. This next class is about building on that — taking what's already strong and pushing it further.
 
-Higher Ground Learning`,
+In the days before the course starts, you and {studentFirstName} will receive the necessary course information. Everything will also be waiting in your family portal, same as before — the class schedule, receipts, and {studentFirstName}'s progress, no password needed.
+
+Thanks for continuing this journey with us.
+
+William`,
   },
   {
     template_key: 'E1_RETURNING_STUDENT',
@@ -289,18 +294,20 @@ Higher Ground Learning`,
     audience: 'student',
     from_identity: 'billy',
     category: 'transactional',
-    subject: 'Welcome back — {className} is a go',
-    preheader: 'Registration for {className} is confirmed.',
+    subject: '{studentFirstName}, welcome back',
+    preheader: "Round two. Let's go.",
     footer_note: null,
-    body_markdown: `Hi {studentFirstName},
+    body_markdown: `Hey {studentFirstName},
 
-[PLACEHOLDER — Scarlett's returning-family copy] Great to have you continuing with Higher Ground — registration for {className} is confirmed.
+You're back! That's the best news we've had all week.
 
-In the days before the course starts, you'll receive the necessary course information, such as {e1IncludesPhrase}.
+You've been registered for the {className} class, and since you've already been through one of our classes, you know how this works: we'll send you everything you need in the days before the course starts.
 
-Thanks!
+Here's the thing about coming back for more — it says something about you. Plenty of students finish a class and call it good, but you decided to keep leveling up. That's exactly the kind of student this class was built for.
 
-Higher Ground Learning`,
+We'll see you in there.
+
+William`,
   },
   {
     template_key: 'E2_DIAG_PARENT',

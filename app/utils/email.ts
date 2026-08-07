@@ -295,12 +295,13 @@ export function studentPronounSet(
   have: string
   need: string
   dont: string
+  is: string
 } {
   switch (ctx.studentPronouns) {
     case 'she_her':
-      return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't" }
+      return { subj: 'she', obj: 'her', poss: 'her', have: 'has', need: 'needs', dont: "doesn't", is: 'is' }
     case 'he_him':
-      return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't" }
+      return { subj: 'he', obj: 'him', poss: 'his', have: 'has', need: 'needs', dont: "doesn't", is: 'is' }
     case 'name_only':
       return {
         subj: ctx.studentFirstName,
@@ -309,9 +310,10 @@ export function studentPronounSet(
         have: 'has',
         need: 'needs',
         dont: "doesn't",
+        is: 'is',
       }
     default:
-      return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't" }
+      return { subj: 'they', obj: 'them', poss: 'their', have: 'have', need: 'need', dont: "don't", is: 'are' }
   }
 }
 
@@ -550,32 +552,55 @@ function thankYouBody(ctx: EnrollmentEmailContext) {
       ${PARENT_TESTIMONIALS}`
 }
 
-// PL-274 amendment A: the RETURNING-family thank-you pair — the family has
-// completed an HGL class before, so no first-meeting framing. PLACEHOLDER
-// COPY (flagged): Scarlett supplies the final wording; structure and
-// variables are wired so her copy drops into the registry drafts.
+// PL-274 amendment A / PL-282: the RETURNING-family thank-you pair — the
+// family has completed an HGL class before, so no first-meeting framing.
+// Scarlett's FINAL copy (Aug 7) — the twin of the live registry templates;
+// keep in lockstep. Diagnostics-agnostic by design (no diagnostic promises).
 export function returningThanksEmail(ctx: EnrollmentEmailContext, audience: Audience): Rendered {
-  const isStudent = audience === 'student'
+  if (audience === 'student') {
+    return {
+      from: PERSONAL_FROM,
+      subject: `${ctx.studentFirstName}, welcome back`,
+      html: wrap(
+        `
+      <p>Hey ${ctx.studentFirstName},</p>
+      <p>You're back! That's the best news we've had all week.</p>
+      <p>You've been registered for the ${ctx.className} class, and since you've already been
+      through one of our classes, you know how this works: we'll send you everything you need in
+      the days before the course starts.</p>
+      <p>Here's the thing about coming back for more — it says something about you. Plenty of
+      students finish a class and call it good, but you decided to keep leveling up. That's
+      exactly the kind of student this class was built for.</p>
+      <p>We'll see you in there.</p>
+      <p>William</p>
+    `,
+        { preheader: "Round two. Let's go.", footer: footerT() }
+      ),
+    }
+  }
+  const p = studentPronounSet(ctx)
   return {
-    subject: isStudent
-      ? `Welcome back — ${ctx.className} is a go`
-      : `Welcome back, ${ctx.parentFirstName} — ${ctx.studentFirstName} is set for ${ctx.className}`,
+    from: PERSONAL_FROM,
+    subject: `Thank you (again!), ${ctx.parentFirstName}`,
     html: wrap(
       `
-      <p>Hi ${isStudent ? ctx.studentFirstName : ctx.parentFirstName},</p>
-      <p>[PLACEHOLDER — Scarlett's returning-family copy] Great to have
-      ${isStudent ? 'you' : ctx.studentFirstName} continuing with Higher Ground — registration for
-      ${ctx.className} is confirmed.</p>
-      <p>In the days before the course starts, ${isStudent ? "you'll" : "you and " + ctx.studentFirstName + ' will'} receive the
-      necessary course information, such as ${
-        ctx.hasDiagnostics
-          ? `${classLocationPhrase(ctx)} and diagnostic test access`
-          : classLocationPhrase(ctx)
-      }.</p>
-      <p>Thanks!</p>
-      <p>Higher Ground Learning</p>
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>You registered ${ctx.studentFirstName} for the ${ctx.className} class, and I wanted to
+      take a moment to say thank you...again!</p>
+      <p>The first time a family trusts us with their student's future, it means a lot. When they
+      come back, it means even more. There's no better compliment you could pay us than giving us
+      another chance to work with ${ctx.studentFirstName}, and we don't take it lightly.</p>
+      <p>We've watched ${ctx.studentFirstName} put in the work once already, so we know what
+      ${p.subj} ${p.is} capable of. This next class is about building on that — taking what's
+      already strong and pushing it further.</p>
+      <p>In the days before the course starts, you and ${ctx.studentFirstName} will receive the
+      necessary course information. Everything will also be waiting in your family portal, same
+      as before — the class schedule, receipts, and ${ctx.studentFirstName}'s progress, no
+      password needed.</p>
+      <p>Thanks for continuing this journey with us.</p>
+      <p>William</p>
     `,
-      { preheader: `Registration for ${ctx.className} is confirmed.`, footer: footerT() }
+      { preheader: "You're making all the right calls", footer: footerT() }
     ),
   }
 }

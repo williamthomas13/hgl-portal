@@ -156,7 +156,8 @@ export function templateMetaFor(
     case 'E1_RETURNING_PARENT':
       return { key: 'E1_RETURNING_PARENT', role: 'parent' }
     case 'E1_RETURNING_STUDENT':
-      return { key: 'E1_RETURNING_STUDENT', role: 'parent' }
+      // PL-282: the student send is student-role (was 'parent' — copy/paste).
+      return { key: 'E1_RETURNING_STUDENT', role: 'student' }
     case 'T3_SCHEDULE_CHANGE':
       return { key: 'T3_SCHEDULE_CHANGE', role: 'parent' }
     // PL-262: the admin's "got your message" ack for a reschedule request.
@@ -183,6 +184,9 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   PR3: 'PR3 — Payment reminder (72h)',
   PR4: 'PR4 — Payment reminder (final)',
   E1_THANKS: '#1 — Thank you',
+  // PL-282: the returning pair was missing here (raw keys would have shown).
+  E1_RETURNING_PARENT: '#1-R — Returning-family thank-you (parent)',
+  E1_RETURNING_STUDENT: '#1-R — Returning-family thank-you (student)',
   E2_DIAG_PARENT: '#2-P — Diagnostic & Synap access (parent)',
   E2_DIAG_STUDENT: '#2-S — Diagnostic & Synap access (student)',
   E3_VFAQ: '#3 — VERY FAQs',
