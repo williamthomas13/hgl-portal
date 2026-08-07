@@ -31,7 +31,6 @@ export default function LoginForm({
   const [code, setCode] = useState('')
   // PL-272: an SSO bounce reopens the staff panel so the retry is one click.
   const [staffMode, setStaffMode] = useState(Boolean(ssoError))
-  const [password, setPassword] = useState('')
   const [error, setError] = useState(
     linkError
       ? `That sign-in link has expired or was already used — request a new one, or use the ${OTP_LENGTH}-digit code from the same email.`
@@ -110,7 +109,7 @@ export default function LoginForm({
     })
     if (error || !data?.url) {
       setError(
-        "Google sign-in isn't available right now — the office may still be finishing its setup. Use the email link above, or your password below."
+        "Google sign-in isn't available right now — use the email sign-in link instead (it works for staff accounts too)."
       )
       setLoading(false)
       return
@@ -124,7 +123,7 @@ export default function LoginForm({
         return
       }
       setError(
-        "Google sign-in isn't switched on yet — the office still has a setup step to finish. Use the email link above, or your password below."
+        "Google sign-in isn't responding right now — use the email sign-in link instead (it works for staff accounts too)."
       )
       setLoading(false)
     } catch {
@@ -132,24 +131,6 @@ export default function LoginForm({
       // error path lands back here with a message either way.
       window.location.assign(data.url)
     }
-  }
-
-  async function staffSignIn(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    })
-    if (error) {
-      setError(
-        error.message === 'Invalid login credentials' ? 'Incorrect email or password.' : error.message
-      )
-      setLoading(false)
-      return
-    }
-    window.location.assign(next ?? '/admin')
   }
 
   return (
@@ -161,35 +142,29 @@ export default function LoginForm({
         {staffMode ? (
           <div className="space-y-4">
             {/* PL-272: Google Workspace is the staff front door — one click,
-                no password, and Workspace offboarding closes it. */}
+                no password, and Workspace offboarding closes it.
+                PL-278: the password form is GONE — there was never a way to
+                set a password, SSO is live and verified, and a second
+                credential path is standing attack surface with zero users.
+                Break-glass for a Google outage: the same magic-link flow
+                every other user has (staff accounts receive them fine). */}
             <button type="button" onClick={googleSignIn} disabled={loading} className={buttonClass}>
               {loading ? 'Opening Google…' : 'Sign in with Google'}
             </button>
             <p className="text-xs text-gray-500 text-center">
               Use your @highergroundlearning.com Google account.
             </p>
-            <div className="flex items-center gap-3 text-xs text-gray-400">
-              <span className="flex-1 border-t border-gray-200" />
-              or with a password
-              <span className="flex-1 border-t border-gray-200" />
-            </div>
-            <form onSubmit={staffSignIn} className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-600">Email</label>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" className={inputClass} />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" className={inputClass} />
-              </div>
+            <p className="text-xs text-gray-500 text-center">
+              Trouble with Google?{' '}
               <button
-                type="submit"
-                disabled={loading}
-                className="w-full border border-gray-300 text-gray-700 font-bold py-3 px-4 rounded-md hover:bg-gray-50 transition disabled:opacity-60"
+                type="button"
+                onClick={() => { setStaffMode(false); setError('') }}
+                className="text-hgl-blue underline"
               >
-                {loading ? 'Signing in...' : 'Sign in with password'}
+                Get an email sign-in link instead
               </button>
-            </form>
+              {' '}— it works for staff accounts too.
+            </p>
           </div>
         ) : sent ? (
           <>
@@ -268,7 +243,7 @@ export default function LoginForm({
                 : 'mt-6 w-full text-xs text-gray-400 hover:text-hgl-blue transition'
             }
           >
-            {staffMode ? '← Back — sign in with an email link instead' : 'Staff sign-in (Google or password)'}
+            {staffMode ? '← Back — sign in with an email link instead' : 'Staff sign-in with Google'}
           </button>
         )}
       </div>
