@@ -678,6 +678,13 @@ export default function AdminDashboard() {
   // native alert()/confirm() freeze the browser automation bridge and are
   // banned by the standing rule. Confirms are per-button ConfirmAction.
   const [actionNotice, setActionNotice] = useState('')
+  // PL-288: success toasts auto-dismiss after a few seconds; error toasts
+  // stay until read (auto-hiding a problem is how problems get missed).
+  useEffect(() => {
+    if (!actionNotice || /^(Error|Problem|Use |Slug |That slug)/.test(actionNotice)) return
+    const t = setTimeout(() => setActionNotice(''), 6000)
+    return () => clearTimeout(t)
+  }, [actionNotice])
   // PL-268: the waitlist over-cap override asks INLINE (it used to be a
   // nested native confirm) — state carries the 409 payload until answered.
   const [overCapAsk, setOverCapAsk] = useState<{
@@ -864,49 +871,19 @@ export default function AdminDashboard() {
     setTimeout(() => setCopiedClassId(null), 2000)
   }
 
-  async function handleEditRegistrationClose(c: ClassRow) {
-    const next = prompt(
-      'Registration close date — the automatic sign-up cutoff (YYYY-MM-DD). Blank = default (first session):',
-      c.registration_close_date ?? ''
-    )
-    if (next == null) return
-    const trimmed = next.trim()
-    if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      setActionNotice('Use YYYY-MM-DD format, or leave blank for the default.')
-      return
-    }
+  // PL-287/PL-289: the two roster date edits — a real calendar picker (the
+  // typed YYYY-MM-DD prompt is gone). Null clears back to the default.
+  async function handleDateField(
+    c: ClassRow,
+    field: 'enrollment_deadline' | 'registration_close_date',
+    value: string | null
+  ) {
     const { error } = await supabase
       .from('classes')
-      .update({ registration_close_date: trimmed || null })
+      .update({ [field]: value })
       .eq('id', c.id)
     if (error) {
-      setActionNotice('Error updating close date: ' + error.message)
-      return
-    }
-    fetchRosters()
-  }
-
-  // PL-287: the registration DEADLINE (the commit-by decision date the flyer
-  // prints) finally gets a post-wizard edit control — the min-enrollment
-  // decision brief has been telling people to "set it on the class page" all
-  // along.
-  async function handleEditEnrollmentDeadline(c: ClassRow) {
-    const next = prompt(
-      'Registration deadline — the commit-by date decisions run on; the flyer prints this (YYYY-MM-DD). Blank = default (registration close, or the first session):',
-      c.enrollment_deadline ?? ''
-    )
-    if (next == null) return
-    const trimmed = next.trim()
-    if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      setActionNotice('Use YYYY-MM-DD format, or leave blank for the default.')
-      return
-    }
-    const { error } = await supabase
-      .from('classes')
-      .update({ enrollment_deadline: trimmed || null })
-      .eq('id', c.id)
-    if (error) {
-      setActionNotice('Error updating the registration deadline: ' + error.message)
+      setActionNotice('Error saving the date: ' + error.message)
       return
     }
     fetchRosters()
@@ -1588,12 +1565,23 @@ export default function AdminDashboard() {
                   not set — falls back to registration close{c.registration_close_date ? '' : ' (first session)'}
                 </span>
               )}
-              <button
-                onClick={() => handleEditEnrollmentDeadline(c)}
-                className="text-xs text-gray-500 underline hover:text-hgl-blue"
-              >
-                edit
-              </button>
+              {/* PL-289: a real calendar picker instead of the typed prompt. */}
+              <input
+                type="date"
+                value={c.enrollment_deadline ?? ''}
+                onChange={(e) => handleDateField(c, 'enrollment_deadline', e.target.value || null)}
+                className="border border-gray-200 rounded px-1 py-0.5 text-xs"
+                title="Pick the commit-by date — the flyer prints this"
+              />
+              {c.enrollment_deadline && (
+                <button
+                  onClick={() => handleDateField(c, 'enrollment_deadline', null)}
+                  className="text-xs text-gray-500 underline hover:text-hgl-blue"
+                  title="Back to the default (registration close, or the first session)"
+                >
+                  clear
+                </button>
+              )}
             </p>
             <p className="text-xs text-gray-500 flex items-center gap-2">
               <span title="The automatic cutoff — the register page stops taking sign-ups after this date. A setup detail; decisions run on the deadline above.">
@@ -1602,12 +1590,23 @@ export default function AdminDashboard() {
                   ? formatDateAdmin(c.registration_close_date)
                   : 'first session (default)'}
               </span>
-              <button
-                onClick={() => handleEditRegistrationClose(c)}
-                className="underline hover:text-hgl-blue"
-              >
-                edit
-              </button>
+              {/* PL-289: same calendar picker as the deadline above. */}
+              <input
+                type="date"
+                value={c.registration_close_date ?? ''}
+                onChange={(e) => handleDateField(c, 'registration_close_date', e.target.value || null)}
+                className="border border-gray-200 rounded px-1 py-0.5 text-xs"
+                title="Pick the automatic sign-up cutoff — blank means the first session"
+              />
+              {c.registration_close_date && (
+                <button
+                  onClick={() => handleDateField(c, 'registration_close_date', null)}
+                  className="underline hover:text-hgl-blue"
+                  title="Back to the default (first session)"
+                >
+                  clear
+                </button>
+              )}
             </p>
             <p className="text-sm text-gray-600 flex items-center gap-2">
               <span className="font-semibold" title="Parents of this class's students see the follow-on as a 'you might be interested in' card in their portal">

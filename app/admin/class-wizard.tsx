@@ -123,6 +123,13 @@ export default function ClassWizard({
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  // PL-288: the post-create closure screen (Add another / Back to classes /
+  // Back to dashboard) — replaces the old banner-over-a-reset-wizard state.
+  const [createdSummary, setCreatedSummary] = useState<{
+    classId: string
+    label: string
+    sessionCount: number
+  } | null>(null)
   // PL-239: when an error names a fixable field, the message carries the
   // step to jump to — one click lands on the field, no decoding required.
   const [messageStep, setMessageStep] = useState<1 | 2 | 3 | 4 | null>(null)
@@ -623,6 +630,9 @@ export default function ClassWizard({
       return
     }
 
+    // PL-288: a dedicated closure screen replaces the old inline banner that
+    // sat confusingly on top of an already-reset wizard.
+    setCreatedSummary({ classId: created.id, label: classType.trim() || 'The class', sessionCount: sorted.length })
     // Reset for the next class.
     setStep(1)
     setSchoolId('')
@@ -649,7 +659,7 @@ export default function ClassWizard({
     setDefaultLocation('')
     setSessions([])
     setDraft({ session_date: '', start_time: '', end_time: '', location: '' })
-    setMessage('Success — class created with ' + sorted.length + ' sessions.')
+    setMessage('')
     setSaving(false)
     onCreated()
   }
@@ -665,6 +675,45 @@ export default function ClassWizard({
       : null
 
   const steps = ['School', 'Details', 'Sessions', 'Branding & Collateral', 'Review'] as const
+
+  // PL-288: clear closure after a create — the wizard is already reset
+  // behind this screen, so "Add another class" just returns to it.
+  if (createdSummary) {
+    return (
+      <div className="max-w-xl">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6 space-y-4">
+          <h3 className="text-xl font-bold text-green-800">
+            {createdSummary.label} is created 🎉
+          </h3>
+          <p className="text-sm text-green-900">
+            {createdSummary.sessionCount} session{createdSummary.sessionCount === 1 ? '' : 's'} scheduled.
+            The class is live on its roster — registration link, deadlines, and follow-on settings
+            all live there.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setCreatedSummary(null)}
+              className="bg-hgl-slate text-white font-bold px-4 py-2 rounded hover:opacity-90"
+            >
+              Add another class
+            </button>
+            <a
+              href={`/admin?class=${createdSummary.classId}`}
+              className="bg-white border border-gray-300 text-gray-700 font-bold px-4 py-2 rounded hover:border-hgl-slate"
+            >
+              Back to classes
+            </a>
+            <a
+              href="/admin"
+              className="bg-white border border-gray-300 text-gray-700 font-bold px-4 py-2 rounded hover:border-hgl-slate"
+            >
+              Back to dashboard
+            </a>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
