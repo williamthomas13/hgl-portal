@@ -2011,9 +2011,30 @@ export async function GET(req: Request) {
   // PL-136: only a sweep that reached here finished. (A throw above leaves
   // the start stamp newer than the finish stamp — which is exactly the
   // "sweep is hanging" signal the card reads.)
+  // PL-273: if the PREVIOUS finish was more than the staleness threshold
+  // ago, this run is a RECOVERY — note it (the dashboard's activity feed
+  // synthesizes the line) and clear the overdue-alert latch so the next
+  // outage alerts again.
+  const { data: prevFinish } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'cron_sweep_finished_at')
+    .maybeSingle()
+  const nowIso = new Date().toISOString()
+  if (prevFinish?.value) {
+    const gapMinutes = Math.round((Date.now() - new Date(prevFinish.value).getTime()) / 60_000)
+    if (gapMinutes > 75) {
+      await supabase.from('app_settings').upsert({
+        key: 'sweep_recovered_note',
+        value: JSON.stringify({ at: nowIso, gapMinutes }),
+      })
+      await supabase.from('app_settings').upsert({ key: 'sweep_overdue_alerted_for', value: '' })
+      counters.sweep_recovered_after_minutes = gapMinutes
+    }
+  }
   await supabase
     .from('app_settings')
-    .upsert({ key: 'cron_sweep_finished_at', value: new Date().toISOString() })
+    .upsert({ key: 'cron_sweep_finished_at', value: nowIso })
 
   return NextResponse.json({ ok: true, classes: bundles.length, actions: counters })
 }

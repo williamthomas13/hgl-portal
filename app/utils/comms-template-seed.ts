@@ -1637,6 +1637,21 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     body_markdown: `{alertDetailsBlock}`,
   },
   {
+    // PL-273: the sweep watches itself — sent by /api/cron/sweep-watch (a
+    // pg_cron-scheduled check independent of the sweep's own triggers) on
+    // TRANSITION to overdue, once per outage.
+    template_key: 'AL_SWEEP_OVERDUE',
+    display_name: 'AL — Hourly sweep down',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Hourly sweep is DOWN — emails are not going out',
+    preheader: 'The email cadence is paused until the sweep recovers.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
     template_key: 'AL_QBO_FAILURE',
     display_name: 'AL — QuickBooks sync failure',
     sequence_number: 'AL',

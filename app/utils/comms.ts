@@ -219,6 +219,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   AL_NO_INSTRUCTOR: 'AL — No instructor assigned',
   AL_WEBHOOK_FAILURE: 'AL — Stripe webhook mismatch',
   AL_QBO_FAILURE: 'AL — QuickBooks sync failure',
+  AL_SWEEP_OVERDUE: 'AL — Hourly sweep down',
   AL_UNAGREED: 'AL — Billed without signed agreement',
   AL_AVAILABILITY_SHARED: 'AL — Family shared availability',
   AL_INTAKE_COMPLETE: 'AL — Intake complete',

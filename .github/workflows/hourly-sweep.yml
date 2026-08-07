@@ -1,17 +1,17 @@
-# The hourly sweep (Billy's cron-cadence decision, Jul 29 2026).
+# The hourly sweep — BACKUP + MANUAL trigger since PL-273 (Aug 6 2026).
 #
-# Vercel Hobby caps crons at once daily, but the portal's architecture
-# assumes an HOURLY sweep and that assumption is load-bearing: the PL-144
-# generation catch-up gate, failed/scheduled email flushing, and PL-201
-# campaign resumes all retry "on the next hourly sweep". So:
-#   - vercel.json keeps its DAILY cron as the backstop (do not remove);
-#   - this workflow provides the hourly cadence via GitHub Actions.
-# GH Actions cron is best-effort (runs can start minutes late) — the health
-# card allows ~15 minutes of slack for exactly that reason.
-#
-# CUTOVER (decide before Aug 20): on Vercel Pro, flip vercel.json to
-# "0 * * * *" and DELETE this workflow. The runbook line lives beside the
-# origin-guard runbook in app/utils/base-url.ts.
+# PRIMARY is now Supabase pg_cron (job hgl-hourly-sweep at :05, plus
+# hgl-sweep-watch at :35 — see scripts/setup-pl273-pg-cron.mjs), scheduled
+# independently of both GitHub and Vercel. This workflow stays because:
+#   - Run workflow (workflow_dispatch) is the one-click manual recovery
+#     path — exactly what fixed the Aug 6 outage;
+#   - its best-effort hourly schedule is a free extra layer if pg_cron ever
+#     stops (the sweep is idempotent — overlapping runs are safe; every send
+#     dedupes and claims are optimistic).
+# The Aug 6 outage (runs #85/#86: GitHub runner-acquisition failures + a
+# 5-hour scheduling gap) is why this scheduler is no longer trusted as
+# primary. vercel.json keeps its DAILY cron as a third backstop (Hobby caps
+# crons at daily; on Vercel Pro it could go hourly too — Aug 20 decision).
 name: hourly-sweep
 on:
   schedule:

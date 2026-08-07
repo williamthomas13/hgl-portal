@@ -783,11 +783,30 @@ export async function GET() {
       supabase
         .from('app_settings')
         .select('key, value')
-        .in('key', ['cron_sweep_started_at', 'cron_sweep_finished_at']),
+        .in('key', ['cron_sweep_started_at', 'cron_sweep_finished_at', 'sweep_recovered_note']),
     ])
   const sweepMap = Object.fromEntries(((sweepRows as any[]) ?? []).map((r) => [r.key, r.value]))
   const finishedAt = sweepMap.cron_sweep_finished_at ?? null
   const startedAt = sweepMap.cron_sweep_started_at ?? null
+  // PL-273: the sweep's own recovery note lands in the activity feed —
+  // "down for N hours, recovered at X" — for a week, then ages out of the
+  // 40-row window naturally.
+  try {
+    const rec = sweepMap.sweep_recovered_note ? JSON.parse(sweepMap.sweep_recovered_note) : null
+    if (rec?.at && now.getTime() - new Date(rec.at).getTime() < 7 * 86_400_000) {
+      const hours = Math.round((rec.gapMinutes / 60) * 10) / 10
+      activity.push({
+        id: `sweep-recovered-${rec.at}`,
+        type: 'System',
+        groupKey: `System|sweep-${rec.at}`,
+        when: rec.at,
+        text: `Hourly sweep recovered after a ${hours}-hour gap — the backlog was delivered by this run.`,
+        href: '/admin',
+      })
+    }
+  } catch {
+    // an unparseable note is not worth failing the dashboard over
+  }
   const cap = Number(capRow?.value ?? 100)
   const used = sendsToday ?? 0
   const health: SystemHealth = {
