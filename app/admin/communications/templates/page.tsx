@@ -454,12 +454,16 @@ export default function TemplateEditor() {
                       >
                         Save as new version
                       </button>
+                      {/* PL-291: the label (and render audience) follow the
+                          template's own role — a student template's test now
+                          says and renders "student"; "both" keeps the parent
+                          button here plus the student one below. */}
                       <button
-                        onClick={() => handleTestSend('parent')}
+                        onClick={() => handleTestSend(selected.audience === 'student' ? 'student' : 'parent')}
                         disabled={busy}
                         className="text-sm text-hgl-blue underline disabled:opacity-50"
                       >
-                        Send test to me (parent)
+                        Send test to me ({selected.audience === 'student' ? 'student' : 'parent'})
                       </button>
                       {selected.audience === 'both' && (
                         <button

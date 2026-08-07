@@ -343,6 +343,8 @@ Since we're expecting the class to fill up, we're only leaving this discount off
 
 To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and **use the code {discountCode} to get your discount.**
 
+{followOnInfoBlock}
+
 We hope to see {studentFirstName} in class!
 
 To {studentFirstName}'s continued progress,
@@ -373,6 +375,8 @@ We're expecting the class to fill up, so we're only leaving this discount offer 
 
 To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and **use the code {discountCode} to get your discount.**
 
+{followOnInfoBlock}
+
 We hope to see you in class, {studentFirstName}!
 
 To your continued progress,
@@ -399,7 +403,9 @@ The class isn't perfect for everyone, so I understand if it may not be a good fi
 
 To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and use the code {discountCode} to get your discount.
 
-If you're considering enrolling {studentFirstName}, but you're wondering if the course is right for them, you can reply to this message and ask anything you'd like.
+{followOnInfoBlock}
+
+If you're considering enrolling {studentFirstName}, but you're wondering if the course is right for {her_him_them}, you can reply to this message and ask anything you'd like.
 
 To {studentFirstName}'s burgeoning confidence,
 
@@ -426,6 +432,8 @@ I just wanted to remind you that we've got a pretty useful math class coming up.
 We're expecting the class to fill up, so we're only leaving this discount offer open until {endDate}. That's soon!
 
 **To register or learn more about the course, you can visit [{followOnRegistrationLink}]({followOnRegistrationLink}) and use the code {discountCode} to get your discount.**
+
+{followOnInfoBlock}
 
 If you have any questions, just reply to this message! Easy peasy.
 
@@ -455,7 +463,9 @@ If you missed out earlier, this is your chance to secure a spot for {studentFirs
 
 [{followOnRegistrationLink}]({followOnRegistrationLink})
 
-Learning to solve these most difficult math problems is transformative – both for {studentFirstName}'s scores *and* their confidence.
+{followOnInfoBlock}
+
+Learning to solve these most difficult math problems is transformative – both for {studentFirstName}'s scores *and* {her_his_their} confidence.
 
 Let's make it happen together!
 
@@ -482,6 +492,8 @@ You now have until **{endDate} at midnight** to save {discountAmount} using the 
 Tell someone who cares to sign up here...
 
 [{followOnRegistrationLink}]({followOnRegistrationLink})
+
+{followOnInfoBlock}
 
 See you there? See you there.`,
   },

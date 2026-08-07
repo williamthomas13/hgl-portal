@@ -33,6 +33,8 @@ type ClassDetails = {
   packages: TutoringPackage[]
   /** PL-279: the class has a discount code configured (never the code itself). */
   promoAvailable?: boolean
+  /** PL-293: the class's marketing page (Squarespace). */
+  marketing_url?: string | null
   /** PL-279: the emailed link's auto-applied cohort discount. */
   followOnDiscount?: { amount: number; code: string; endDate: string } | null
   /** PL-279: plain-English note when the link's discount no longer applies. */
@@ -381,6 +383,20 @@ export default function RegistrationPage() {
       {classDetails.followOnDiscountNote && (
         <p className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-md px-3 py-2 mb-3">
           {classDetails.followOnDiscountNote}
+        </p>
+      )}
+      {/* PL-293: the class-page pointer — full course details live on the
+          marketing site; registration stays here. */}
+      {classDetails.marketing_url && (
+        <p className="text-sm mb-3">
+          <a
+            href={classDetails.marketing_url}
+            target="_blank"
+            rel="noopener"
+            className="text-hgl-blue underline font-semibold"
+          >
+            More info about the class ↗
+          </a>
         </p>
       )}
       {sessionCalendar}

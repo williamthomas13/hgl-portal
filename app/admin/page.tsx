@@ -111,6 +111,10 @@ type ClassRow = {
   fo_short_name: string | null
   /** PL-279: this FEEDER cohort's extended follow-on discount deadline. */
   fo_extended_until: string | null
+  /** PL-293: the class's Squarespace marketing page. */
+  marketing_url: string | null
+  /** PL-294: open classes — auto-extend under-minimum cohorts (default off). */
+  fo_auto_extend: boolean
   /** PL-237: skip-for-now stamp — the Needs Attention reminder shows while
    *  set AND short_link is still empty. */
   collateral_reminder_at: string | null
@@ -244,7 +248,7 @@ function FoExtendControl({
   onChanged,
 }: {
   classRow: { id: string; start_date: string; fo_extended_until: string | null; sessions: { session_date: string }[] | null }
-  followOn: { class_type: string; promo_code: string | null; promo_amount: number | null }
+  followOn: { class_type: string; promo_code: string | null; promo_amount: number | null; fo_auto_extend: boolean }
   onChanged: () => void
 }) {
   const [armed, setArmed] = useState(false)
@@ -263,6 +267,23 @@ function FoExtendControl({
         {window.extended ? ' (extended)' : ''}
         {!promoReady && ' — set a promo code + amount on the follow-on class first'}
       </span>
+      {/* PL-294: the extension stage's state, in plain words. */}
+      {promoReady && (
+        <span
+          className={
+            window.extended
+              ? 'inline-block px-1.5 py-0.5 rounded font-semibold bg-green-100 text-green-700'
+              : 'inline-block px-1.5 py-0.5 rounded font-semibold bg-gray-100 text-gray-500'
+          }
+          title={
+            window.extended
+              ? 'The "Bad News, Great News" pair sends to this cohort on the next hourly sweep (once the FO templates are live), once per family.'
+              : `The extension email only sends if this cohort's window is extended — by the button here, or automatically if the follow-on class has auto-extend on and is under minimum when the deadline passes.${followOn.fo_auto_extend ? ' Auto-extend is ON for the follow-on class.' : ''}`
+          }
+        >
+          Extension email: {window.extended ? `armed — deadline now ${formatDateAdmin(window.deadline)}` : `off${followOn.fo_auto_extend ? ' (auto-extend on)' : ''}`}
+        </span>
+      )}
       {promoReady &&
         (armed ? (
           <span className="bg-blue-50 border border-blue-200 rounded px-2 py-1 flex items-center gap-2">
@@ -917,7 +938,14 @@ export default function AdminDashboard() {
   // PL-250: Synap group and location become editable where they're read.
   async function handleClassField(
     c: ClassRow,
-    field: 'synap_group' | 'default_location' | 'has_diagnostics' | 'has_synap' | 'fo_short_name',
+    field:
+      | 'synap_group'
+      | 'default_location'
+      | 'has_diagnostics'
+      | 'has_synap'
+      | 'fo_short_name'
+      | 'fo_auto_extend'
+      | 'marketing_url',
     value: string | boolean | null
   ) {
     const { error } = await supabase
@@ -1338,6 +1366,38 @@ export default function AdminDashboard() {
                 off = the email sequence drops diagnostic/Synap content for this class
               </span>
             </p>
+            {/* PL-294: only meaningful on a class that IS a follow-on target
+                (open classes). Default off — the deliberate Extend action on
+                the feeder card stays the recommended path. */}
+            {!c.school_id && (
+              <p className="text-sm text-gray-600 flex items-center gap-1.5 flex-wrap">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={c.fo_auto_extend === true}
+                    onChange={(e) => handleClassField(c, 'fo_auto_extend', e.target.checked)}
+                  />
+                  <span className="font-semibold">Auto-extend follow-on discounts</span>
+                </label>
+                <span className="text-xs text-gray-400">
+                  on = when a feeder cohort&apos;s discount deadline passes while this class is
+                  still under its minimum, the sweep extends that cohort a week and sends the
+                  extension pair (once per cohort)
+                </span>
+              </p>
+            )}
+            {/* PL-293: the class's Squarespace marketing page — the FO
+                emails' "More info" link and the register page's class-page
+                pointer compose from this; blank drops both cleanly. */}
+            {!c.school_id && (
+              <InlineEditableText
+                label="Marketing page URL"
+                value={c.marketing_url}
+                emptyText='not set — no "More info" link in follow-on emails or on the register page'
+                title="The class's marketing page (e.g. https://hgl.co/advanced-sat)"
+                onSave={(v) => handleClassField(c, 'marketing_url', v)}
+              />
+            )}
             {/* PL-250: visible and editable even when unset — counselors
                 often skip the form and just reply by email with the room. */}
             <InlineEditableText

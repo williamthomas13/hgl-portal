@@ -631,6 +631,18 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'THIS cohort\'s discount deadline, written out (e.g. "Friday, September 25, 2026") — computed from the recipient\'s feeder class, extension-aware',
     resolve: (c) => c.followOn?.endDate ?? '',
   },
+  // PL-293: the small "More info" pointer to the class's Squarespace
+  // marketing page (classes.marketing_url) — EMPTY when no page is set, so
+  // nothing dangles.
+  followOnInfoBlock: {
+    description:
+      'PL-293: "More info about the class →" linking the class\'s marketing page (set per class on the roster) — EMPTY when no marketing page is set',
+    block: true,
+    resolve: (c) =>
+      c.followOn?.infoUrl
+        ? `**[More info about ${c.followOn.className} →](${c.followOn.infoUrl})**`
+        : '',
+  },
   Your_or_names: {
     description: `Sentence-start "Your" ↔ "Ana's"`,
     resolve: (c, a) => (a === 'student' ? 'Your' : `${s(c)}'s`),
@@ -1093,6 +1105,7 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
     discountAmount: '$50',
     discountCode: 'DEEPDIVE50',
     endDate: 'Saturday, November 7, 2026',
+    infoUrl: 'https://hgl.co/advanced-sat',
   },
 }
 

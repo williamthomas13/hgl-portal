@@ -40,7 +40,7 @@ export {
   foLongDate,
   type CohortWindow,
 } from './follow-on-shared'
-import { FO_SEND_HOUR, cohortWindow, foLongDate, type CohortWindow } from './follow-on-shared'
+import { FO_SEND_HOUR, cohortWindow, extensionTarget, foLongDate, type CohortWindow } from './follow-on-shared'
 
 // ---------------------------------------------------------------------------
 // Tokenized auto-apply links ('fo:' prefix; composite id like 'roster:')
@@ -71,13 +71,22 @@ export type FollowOnTarget = {
   shortName: string
   promoCode: string | null
   promoAmount: number | null
+  /** PL-293: the class's Squarespace marketing page; null drops the
+   *  "More info" link everywhere. */
+  marketingUrl: string | null
+  /** PL-294: auto-extend cohorts whose deadline passes while this class is
+   *  under its minimum. Default off. */
+  autoExtend: boolean
+  minEnrollment: number
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export async function loadFollowOnTarget(classId: string): Promise<FollowOnTarget | null> {
   const { data } = await supabase
     .from('classes')
-    .select('id, slug, class_type, status, school_id, fo_short_name, promo_code, promo_amount')
+    .select(
+      'id, slug, class_type, status, school_id, fo_short_name, promo_code, promo_amount, marketing_url, fo_auto_extend, min_enrollment'
+    )
     .eq('id', classId)
     .maybeSingle()
   if (!data) return null
@@ -90,6 +99,9 @@ export async function loadFollowOnTarget(classId: string): Promise<FollowOnTarge
     shortName: (data.fo_short_name as string | null)?.trim() || data.class_type,
     promoCode: (data.promo_code as string | null)?.trim() || null,
     promoAmount: data.promo_amount != null ? Number(data.promo_amount) : null,
+    marketingUrl: (data.marketing_url as string | null)?.trim() || null,
+    autoExtend: Boolean(data.fo_auto_extend),
+    minEnrollment: data.min_enrollment != null && Number(data.min_enrollment) >= 1 ? Number(data.min_enrollment) : 3,
   }
 }
 
@@ -120,6 +132,7 @@ export function followOnOfferFor(
     discountAmount: `$${Number(target.promoAmount).toFixed(0)}`,
     discountCode: target.promoCode ?? '',
     endDate: foLongDate(window.deadline),
+    infoUrl: target.marketingUrl,
   }
 }
 
@@ -299,11 +312,29 @@ export async function sweepFollowOnForBundle(bundle: ClassBundle): Promise<FoSwe
     return { ...report, reason: 'follow-on class is not an open class with a complete promo (code + amount)' }
   }
 
-  const window = cohortWindow({
+  let window = cohortWindow({
     lastSession: bundle.lastSession,
     foExtendedUntil: bundle.foExtendedUntil,
   })
   const today = localDate(bundle.timezone)
+
+  // PL-294: the auto-extend switch (per follow-on class, default OFF —
+  // Extend-by-hand stays the recommended path). When this cohort's deadline
+  // has passed, nothing extended it, and the follow-on class is still under
+  // its minimum, extend a week and let the extension stage arm below. The
+  // `extended` flag makes this once-per-cohort by construction.
+  if (!window.extended && today > window.baseDeadline && target.autoExtend) {
+    const { count } = await supabase
+      .from('enrollments')
+      .select('id', { count: 'exact', head: true })
+      .eq('class_id', target.id)
+      .in('payment_status', ['Paid', 'Completed'])
+    if ((count ?? 0) < target.minEnrollment) {
+      const until = extensionTarget(window, today)
+      await supabase.from('classes').update({ fo_extended_until: until }).eq('id', bundle.id)
+      window = cohortWindow({ lastSession: bundle.lastSession, foExtendedUntil: until })
+    }
+  }
 
   // Which stages are due right now (cohort clock = the feeder's timezone)?
   const stages: FoStage[] = []

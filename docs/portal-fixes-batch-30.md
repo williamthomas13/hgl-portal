@@ -1,0 +1,43 @@
+# Portal fixes — batch 30 (opened Aug 7 evening — Scarlett's two green lights + four FO-flip gates)
+
+Five items: **PL-280 GO** (all four phases, with two plan edits), and four early-pulled items — **PL-291** (editor label), **PL-292** (pronoun-true FO copy), **PL-293** (FO links × Squarespace), **PL-294** (extension legibility + auto-extend switch). **The FO templates stay drafts until PL-292 + PL-293 land; Scarlett flips them live after.** FO copy itself is APPROVED.
+
+**Standing rules:** plain-English statuses · no internal shorthand · every alert deep-links its record · samples from composers · `git push` after committing · PL-x IDs in commits · check items off here when shipped · registry template edits ship as new versions via anchor guards · verify composed blocks via the composer path · inline confirm banners only.
+
+---
+
+## PL-280 — GO on ALL FOUR PHASES (A→D) with two plan edits (Scarlett, Aug 7 evening)
+
+Build the batch-29 plan as reported — including the structural no-dollar-variables firewall — with two changes:
+
+1. **Unsubscribe is per-PERSON, not family-level.** Parent and student each decide separately — one leg unsubscribing must NOT silence the other. Rework the Phase C suppression model accordingly, and check nothing else in the existing pipeline collapses student suppression into the family.
+2. **Open tracking is IN scope.** Our emails are already set up for open tracking (Scarlett's call — the privacy-stance gate is resolved; she wants it). Build opens into the campaign engine: opens per campaign/recipient on the preview-style surfaces.
+
+## PL-291 — Template editor: test-send label says "(parent)" on student templates (reported Aug 7)
+
+Student-role templates show "Send test to me (parent)". Behavior is correct; the label should match the template's role ("student"/"both"). Label only.
+
+✅ **Shipped Aug 7.** The button now reads "Send test to me (student)" on student-role templates — and renders the test AS the student audience while it's at it (previously a student-only template's test rendered with parent-audience variables; the email still went to you either way). "Both" templates keep the parent button plus the existing separate student one.
+
+## PL-292 — Pronoun-true FO copy (GATES THE FLIP; reported Aug 7)
+
+Students already have pronouns on record; messaging must compose them automatically, always. Two known hard-coded spots: FO-3P's closing ("both for {studentFirstName}'s scores *and* their confidence") and FO-2P ("wondering if the course is right for them") — switch to the existing pronoun-variable machinery, then audit all six FO bodies for any other hard-coded third-person student pronouns. New anchor-guarded versions; composer-verify across all pronoun states.
+
+✅ **Shipped Aug 7 — all six FO templates at v2 (still drafts; your flip stands).** FO-2P: "right for {her_him_them}" · FO-3P: "*and* {her_his_their} confidence" — anchor-guarded (`scripts/seed-pl292-293-fo-v2.mjs`, refused-on-drift, seeds in lockstep). **The audit found no other hard-coded third-person student pronouns** across the six bodies: FO-1P's "(as {studentFirstName} has)" uses the name (always agrees), and every student-facing body is second-person. Composer-verified across all four states (`verify-pl292-294-fo.mjs`): she → "right for her / her confidence" · he → "him / his" · name_only → "right for Ana / Ana's confidence" (the PL-80 warm-repetition rule) · **unset renders your original words byte-for-byte** ("them / their").
+
+## PL-293 — FO links route through the Squarespace marketing site (GATES THE FLIP; reported Aug 7)
+
+Scarlett wants recipients landing on the marketing page (its Register button hands off to the portal). She values the tokenized auto-apply highly: recommend whether the token can survive the Squarespace hop (e.g. passthrough param the register button carries into the portal). If it can't, ship her workaround instead: keep the tokenized portal register link as the CTA and add a small "More info" button beside it opening the Squarespace class page in a new tab (currently hgl.co/advanced-sat — make the marketing URL a per-class field, not hard-coded).
+
+✅ **Shipped Aug 7 — the workaround, with the token-survival answer.** **Can the token survive the hop? Yes, but only with a Squarespace dependency I recommend against as the default.** Squarespace buttons are static links — they can't forward an inbound visitor's URL parameters on their own. A ~6-line **code-injection snippet** on the class page (Business plan+) CAN read the arriving `?fo=…&fe=…` and append them to every register-button link, making marketing-first links fully auto-apply. The catch: it breaks silently if the page is rebuilt or the snippet dropped, and the emails can't detect that — recipients would land on full price with no error. So **shipped: your workaround** — the tokenized portal register link stays the CTA (auto-apply guaranteed, zero external dependencies), and a "**More info about {class} →**" link now follows the CTA in all six emails (new `{followOnInfoBlock}` — composes from the new per-class **Marketing page URL** field on the open class's roster card; blank = the link vanishes with no trace). The register page itself also shows "More info about the class ↗" (new tab) when the URL is set. Composer-verified both ways (renders with the sample hgl.co/advanced-sat; vanishes cleanly without). **If you want marketing-first links later**, say so — the change is small once the snippet is on the page; here it is for whoever manages Squarespace:
+```
+<script>(function(){var p=new URLSearchParams(location.search),fo=p.get('fo'),fe=p.get('fe');
+if(!fo||!fe)return;document.querySelectorAll('a[href*="/register/"]').forEach(function(a){
+try{var u=new URL(a.href);u.searchParams.set('fo',fo);u.searchParams.set('fe',fe);a.href=u.toString()}catch(e){}})})();</script>
+```
+
+## PL-294 — Extension stage legibility + auto-extend switch (reported Aug 7)
+
+The extend-action gate is right, but surface it as a readable "Extension email: off / armed" state on the feeder roster card, and ship the per-class auto-extend switch offered in the PL-279 ship note: auto-extend when the deadline passes with enrollment under the class minimum. Default off; deliberate admin action stays the recommended path. Existing suppress-once-registered covers already-enrolled families.
+
+✅ **Shipped Aug 7.** Feeder card now wears a plain state badge beside the window line: "**Extension email: off**" (gray; the tooltip explains both ways it can arm, and notes when the follow-on class has auto-extend on) → "**Extension email: armed — deadline now {date}**" (green; sends on the next sweep once templates are live, once per family). The switch: "**Auto-extend follow-on discounts**" on the OPEN class's roster card (migration `20260831000001`, `classes.fo_auto_extend`, **default off**) — when a feeder cohort's deadline passes un-extended while the follow-on class's paid count is under its minimum, the sweep extends that cohort a week and arms the extension pair; the `extended` flag makes it once-per-cohort by construction, and suppress-once-registered already excludes enrolled families. Deliberate admin action stays the recommended path (the switch is the safety net for cohorts nobody was watching). Verified on the real sweep (`verify-pl292-294-fo.mjs`): switch off → nothing · on but at minimum → nothing · on + under minimum → extended exactly a week, extension pair attempted with Scarlett's subject, no re-extend on the next sweep.

@@ -151,6 +151,8 @@ export type EnrollmentEmailContext = {
     discountCode: string
     /** The cohort's own deadline, written out ("Friday, September 25, 2026"). */
     endDate: string
+    /** PL-293: the class's marketing page; null drops the More-info link. */
+    infoUrl: string | null
   }
 }
 
