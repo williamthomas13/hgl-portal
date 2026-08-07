@@ -44,7 +44,8 @@ export function ScoresTable({ scores }: { scores: ScoreRow[] }) {
   return (
     <div className="mt-2">
       <h4 className="text-sm font-semibold text-hgl-slate mb-1">Diagnostic scores</h4>
-      <table className="w-full text-sm border border-gray-200 rounded">
+      <div className="overflow-x-auto">{/* PL-275: scroll container — on mobile the table's min-content width otherwise pushes the whole page wide */}
+              <table className="w-full text-sm border border-gray-200 rounded">
         <thead>
           <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
             <th className="px-2 py-1.5">Test</th>
@@ -71,7 +72,7 @@ export function ScoresTable({ scores }: { scores: ScoreRow[] }) {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </div>
   )
 }

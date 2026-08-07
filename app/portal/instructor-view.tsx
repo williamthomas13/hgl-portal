@@ -305,6 +305,7 @@ export default async function InstructorView({
             </details>
 
             {active.length > 0 ? (
+              <div className="overflow-x-auto">{/* PL-275: scroll container — on mobile the table's min-content width otherwise pushes the whole page wide */}
               <table className="w-full text-sm border border-gray-200 rounded">
                 <thead>
                   <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
@@ -363,7 +364,7 @@ export default async function InstructorView({
                           <td className="px-2 py-1.5">
                             <StatusBadge status={e.payment_status} />
                           </td>
-                          <td className="px-2 py-1.5 text-gray-600 text-xs max-w-56">
+                          <td className="px-2 py-1.5 text-gray-600 text-xs max-w-56 break-words">
                             {intake.length > 0
                               ? intake.map((line, i) => <div key={i}>{line}</div>)
                               : '—'}
@@ -372,7 +373,7 @@ export default async function InstructorView({
                       )
                     })}
                 </tbody>
-              </table>
+              </table></div>
             ) : (
               <p className="text-sm text-gray-500">No registrations yet.</p>
             )}

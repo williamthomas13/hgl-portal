@@ -215,7 +215,7 @@ export default async function TutoringSection({ email }: { email: string }) {
           const next = ((upcoming as any[]) ?? []).find((s) => s.engagement_id === e.id)
           const pkg = packageInfo.get(e.id)
           return (
-            <div key={e.id} className="border border-gray-200 rounded-lg p-4 text-sm">
+            <div key={e.id} className="border border-gray-200 rounded-lg p-4 text-sm min-w-0">
               <div className="font-bold text-hgl-slate">
                 {student?.first_name} — {one<any>(e.subjects)?.name}
               </div>
@@ -232,8 +232,10 @@ export default async function TutoringSection({ email }: { email: string }) {
                   Next: {fmtDay(next.starts_at)} {fmtTime(next.starts_at)}
                 </div>
               )}
+              {/* PL-275: truncate needs a bounded box — min-w-0 keeps the
+                  long meeting URL from stretching the card past the phone. */}
               {(e.location ?? tutor?.default_meeting_link) && (
-                <div className="text-xs text-gray-500 mt-1 truncate">
+                <div className="text-xs text-gray-500 mt-1 truncate min-w-0 max-w-full [overflow-wrap:anywhere]">
                   {e.location ?? tutor?.default_meeting_link}
                 </div>
               )}

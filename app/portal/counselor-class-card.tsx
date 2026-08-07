@@ -137,7 +137,8 @@ base: string
       )}
 
       {active.length > 0 ? (
-        <table className="w-full text-sm border border-gray-200 rounded">
+        <div className="overflow-x-auto">{/* PL-275: scroll container — on mobile the table's min-content width otherwise pushes the whole page wide */}
+              <table className="w-full text-sm border border-gray-200 rounded">
           <thead>
             <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
               <th className="px-2 py-1.5">Student</th>
@@ -188,7 +189,7 @@ base: string
                 )
               })}
           </tbody>
-        </table>
+        </table></div>
       ) : (
         <p className="text-sm text-gray-500">No registrations yet.</p>
       )}
