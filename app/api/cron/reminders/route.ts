@@ -491,10 +491,11 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
         adminEmail: ADMIN_EMAIL,
         templateKey: 'AL_CLASS_DETAILS_HOLD',
         vars: { schoolNickname: bundle.schoolLabel, classType: bundle.classType },
-        subject: `HOLD: class details email not sent for ${bundle.schoolLabel} ${bundle.classType}`,
+        subject: `HOLD: class details email not sent for ${bundle.isOpenEnrollment ? bundle.classType : `${bundle.schoolLabel} ${bundle.classType}`}`,
         // PL-89: this alert now only fires after the 3-day warning failed —
-        // the email is OVERDUE to families, so say so plainly.
-        body: `<p>The class-details email to your ${bundle.schoolLabel} ${bundle.classType} families
+        // the email is OVERDUE to families, so say so plainly. PL-290: open
+        // classes carry no fabricated school prefix.
+        body: `<p>The class-details email to your ${bundle.isOpenEnrollment ? bundle.classType : `${bundle.schoolLabel} ${bundle.classType}`} families
           was due this morning and is being held —
           <strong>families are waiting on it</strong>. Fill in
           ${!bundle.instructorName ? '<strong>instructor</strong>' : ''}${!bundle.instructorName && !bundle.defaultLocation ? ' and ' : ''}${!bundle.defaultLocation ? '<strong>location</strong>' : ''}
@@ -997,7 +998,8 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     today <= bundle.firstSession &&
     (!bundle.instructorName || !bundle.defaultLocation)
   ) {
-    const label = `${bundle.schoolLabel} ${bundle.classType}`
+    // PL-290 (the PL-274E label rule): open classes carry no school prefix.
+    const label = bundle.isOpenEnrollment ? bundle.classType : `${bundle.schoolLabel} ${bundle.classType}`
     const daysToFirst = Math.round((Date.parse(bundle.firstSession) - Date.parse(today)) / 86_400_000)
     const daysToSend = Math.round((Date.parse(fourSend) - Date.parse(today)) / 86_400_000)
     const weeksPhrase = daysToFirst >= 7 ? `in ${Math.round(daysToFirst / 7)} week${Math.round(daysToFirst / 7) === 1 ? '' : 's'}` : `in ${daysToFirst} day${daysToFirst === 1 ? '' : 's'}`
@@ -1078,7 +1080,8 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
   const deadline = effectiveDeadline(bundle)
   const paidCount = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
   if (paidCount < bundle.minEnrollment && today <= bundle.firstSession && localHour(bundle.timezone) >= 8) {
-    const label = `${bundle.schoolLabel} ${bundle.classType}`
+    // PL-290 (the PL-274E label rule): open classes carry no school prefix.
+    const label = bundle.isOpenEnrollment ? bundle.classType : `${bundle.schoolLabel} ${bundle.classType}`
     const daysToDeadline = Math.round((Date.parse(deadline) - Date.parse(today)) / 86_400_000)
     const daysToFirst = Math.round((Date.parse(bundle.firstSession) - Date.parse(today)) / 86_400_000)
     const weeksToFirst = Math.max(1, Math.round(daysToFirst / 7))
@@ -1091,20 +1094,31 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
       .order('sent_at', { ascending: false })
       .limit(1)
     // PL-98 standing rule: no internal shorthand in alert bodies — spell
-    // out what a new hire would understand.
-    const fpStatus = fpSends?.[0]?.sent_at
-      ? `the final-days push (the counselor's last-call email) was sent ${formatDate(fpSends[0].sent_at.slice(0, 10))}`
-      : "the counselor's final-days push has not gone out yet (it goes out 3 days to 1 day before the deadline)"
+    // out what a new hire would understand. PL-290: counselor-less classes
+    // (open enrollment) get copy with no counselor machinery in it — the
+    // final-days push never fires for them, so claiming it's "working that
+    // side" would be false comfort.
+    const fpStatus = bundle.isOpenEnrollment
+      ? 'this is an open-enrollment class — there is no counselor push; sign-ups come from our own marketing (the follow-on emails, the class page, direct outreach)'
+      : fpSends?.[0]?.sent_at
+        ? `the final-days push (the counselor's last-call email) was sent ${formatDate(fpSends[0].sent_at.slice(0, 10))}`
+        : "the counselor's final-days push has not gone out yet (it goes out 3 days to 1 day before the deadline)"
     const classLink = `${emailBaseUrl()}/admin?class=${bundle.id}`
     const movesHtml = `
       <p><strong>Your three moves:</strong></p>
       <ul style="margin:0;padding-left:20px;color:#334155">
-        <li style="margin:6px 0"><strong>Hold</strong> — final-days signups often close the gap;
-        the counselor's final-days push is already working that side.</li>
+        <li style="margin:6px 0"><strong>Hold</strong> — final-days signups often close the gap${
+          bundle.isOpenEnrollment
+            ? ' (for this open class that means your own marketing, not a counselor push)'
+            : "; the counselor's final-days push is already working that side"
+        }.</li>
         <li style="margin:6px 0"><strong>Extend the deadline</strong> (commonly a week) —
         <a href="${classLink}">set it on the class page</a>. Extending propagates automatically:
-        collateral, the registration page, and the counselor push timing all derive from the
-        class record, and this checkpoint re-arms against the new date (you'll get this brief
+        ${
+          bundle.isOpenEnrollment
+            ? 'the registration page and the emails derive from the class record'
+            : 'collateral, the registration page, and the counselor push timing all derive from the class record'
+        }, and this checkpoint re-arms against the new date (you'll get this brief
         again at new-deadline −3d if still under).</li>
         <li style="margin:6px 0"><strong>Run under minimum, or cancel</strong> — running under
         is a legitimate call once in a while; <a href="${classLink}">the cancel flow lives on
@@ -1114,7 +1128,7 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     const pictureHtml = `<p><strong>${paidCount} paid / ${bundle.minEnrollment} minimum / ${bundle.capacity} cap</strong>
       · the registration deadline is ${daysToDeadline >= 0 ? `in ${daysToDeadline} day${daysToDeadline === 1 ? '' : 's'}` : `${-daysToDeadline} day${daysToDeadline === -1 ? '' : 's'} past`} (${formatDate(deadline)})
       · first session in ${weeksToFirst} week${weeksToFirst === 1 ? '' : 's'} (${formatDate(bundle.firstSession)}).</p>
-      <p>Counselor side: ${fpStatus}.</p>`
+      <p>${bundle.isOpenEnrollment ? 'Marketing side' : 'Counselor side'}: ${fpStatus}.</p>`
     if (today >= addDaysISO(deadline, -3) && today <= deadline) {
       const status = await sendAdminAlert({
         dedupeKey: `min_enrollment:${bundle.id}:${deadline}`,
