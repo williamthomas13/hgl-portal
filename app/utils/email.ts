@@ -122,6 +122,14 @@ export type EnrollmentEmailContext = {
   classTime: string | null
   examInfo: { examName: string; regLabel: string; regUrl: string } | null
   instructorName: string | null
+  /** PL-274 F: family-facing instructor intro paragraph; null drops cleanly. */
+  instructorBio: string | null
+  /** PL-274: no school — an HGL open-enrollment class (no school prefix,
+   *  no counselor machinery, location known at creation). */
+  isOpenEnrollment: boolean
+  /** PL-274 B: per-class switches — diagnostic/Synap copy conditions on these. */
+  hasDiagnostics: boolean
+  hasSynap: boolean
   defaultLocation: string | null
   deliveryMode: string
   synapGroup: string | null
@@ -343,8 +351,11 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       <p>Hi ${ctx.parentFirstName},</p>
       <p>Thanks for registering! Your class registration with Higher Ground Learning is confirmed.</p>
       <p>We'll be in touch with you in the days before the first day of class with all the relevant
-      information that you'll need! This includes diagnostic test information, instructor information,
-      and ${classLocationPhrase(ctx)}.</p>
+      information that you'll need! This includes ${
+        ctx.hasDiagnostics
+          ? `diagnostic test information, instructor information, and ${classLocationPhrase(ctx)}`
+          : `instructor information and ${classLocationPhrase(ctx)}`
+      }.</p>
       ${addonTutoringBlockHtml(ctx)}
       <p>If you have any questions between now and then, you can respond to this email (but maybe
       check our <a href="https://highergroundlearning.com/faqs#general">FAQs</a> first).</p>
@@ -396,8 +407,12 @@ export function studentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered 
       <p><strong>${ctx.studentFirstName}, this is just a quick note to let you know that you have
       been registered for the ${ctx.className} class starting on ${formatDate(ctx.firstSession)}.</strong></p>
       <p>In the days before the course starts, you'll receive the necessary course information,
-      such as ${classLocationPhrase(ctx)} and information to access your initial diagnostic test.</p>
-      <p>(By the way, that test is due ${formatDate(ctx.diagnosticDueDate)}!)</p>
+      such as ${
+        ctx.hasDiagnostics
+          ? `${classLocationPhrase(ctx)} and information to access your initial diagnostic test`
+          : classLocationPhrase(ctx)
+      }.</p>
+      ${ctx.hasDiagnostics ? `<p>(By the way, that test is due ${formatDate(ctx.diagnosticDueDate)}!)</p>` : ''}
       <p>Until then, you might be interested in signing up for our free
       <a href="${COMPASS_URL}">College Prep Compass</a>, which goes over:</p>
       <ul style="padding-left:20px">
@@ -511,7 +526,11 @@ function thankYouBody(ctx: EnrollmentEmailContext) {
       score on the test. And we really appreciate your vote of confidence in us.</p>
       <p>So here's what happens next.</p>
       <p>In the days before the course starts, you and ${s} will receive the necessary course
-      information, such as ${classLocationPhrase(ctx)} and diagnostic test access.</p>
+      information, such as ${
+        ctx.hasDiagnostics
+          ? `${classLocationPhrase(ctx)} and diagnostic test access`
+          : classLocationPhrase(ctx)
+      }.</p>
       <p>By the way, you might be interested in <a href="${COMPASS_URL}">College Prep Compass</a>,
       where we send out useful information to help you along in this process:</p>
       <ul style="padding-left:20px">
@@ -529,6 +548,36 @@ function thankYouBody(ctx: EnrollmentEmailContext) {
       <p>William Thomas<br/>President, Higher Ground Learning</p>
       <p>P.S. Here's what some other parents have said about our classes:</p>
       ${PARENT_TESTIMONIALS}`
+}
+
+// PL-274 amendment A: the RETURNING-family thank-you pair — the family has
+// completed an HGL class before, so no first-meeting framing. PLACEHOLDER
+// COPY (flagged): Scarlett supplies the final wording; structure and
+// variables are wired so her copy drops into the registry drafts.
+export function returningThanksEmail(ctx: EnrollmentEmailContext, audience: Audience): Rendered {
+  const isStudent = audience === 'student'
+  return {
+    subject: isStudent
+      ? `Welcome back — ${ctx.className} is a go`
+      : `Welcome back, ${ctx.parentFirstName} — ${ctx.studentFirstName} is set for ${ctx.className}`,
+    html: wrap(
+      `
+      <p>Hi ${isStudent ? ctx.studentFirstName : ctx.parentFirstName},</p>
+      <p>[PLACEHOLDER — Scarlett's returning-family copy] Great to have
+      ${isStudent ? 'you' : ctx.studentFirstName} continuing with Higher Ground — registration for
+      ${ctx.className} is confirmed.</p>
+      <p>In the days before the course starts, ${isStudent ? "you'll" : "you and " + ctx.studentFirstName + ' will'} receive the
+      necessary course information, such as ${
+        ctx.hasDiagnostics
+          ? `${classLocationPhrase(ctx)} and diagnostic test access`
+          : classLocationPhrase(ctx)
+      }.</p>
+      <p>Thanks!</p>
+      <p>Higher Ground Learning</p>
+    `,
+      { preheader: `Registration for ${ctx.className} is confirmed.`, footer: footerT() }
+    ),
+  }
 }
 
 export function thankYouEmail(ctx: EnrollmentEmailContext): Rendered {
@@ -680,13 +729,23 @@ export function faqEmail(ctx: EnrollmentEmailContext, audience: Audience): Rende
       <p><strong>Does enrolling in this course also register me for the ${examName}?</strong><br/>
       ${examFaq}</p>
       <p><strong>What's the exact location for the class?</strong><br/>
-      We don't have that information confirmed just yet, but we'll write you again when we know!</p>
+      ${
+        ctx.defaultLocation
+          ? ctx.deliveryMode === 'online'
+            ? `Class meets online — your meeting link: <a href="${ctx.defaultLocation}">${ctx.defaultLocation}</a>`
+            : `${ctx.defaultLocation} — see you there!`
+          : "We don't have that information confirmed just yet, but we'll write you again when we know!"
+      }</p>
       <p>Are you still here? You are? Okay, here are a few regular FAQs, just for you:</p>
-      <p><strong>What if I didn't get the diagnostic test information?</strong><br/>
+      ${
+        ctx.hasDiagnostics
+          ? `<p><strong>What if I didn't get the diagnostic test information?</strong><br/>
       No problem — you can get to it right here:</p>
       ${synap ? button('Take the diagnostic test', synap) : ''}
       <p>It's due ${formatDate(ctx.diagnosticDueDate)}, the day before your first class. (It also
-      went to your inbox, so it's worth a search of your spam folder for next time.)</p>
+      went to your inbox, so it's worth a search of your spam folder for next time.)</p>`
+          : ''
+      }
       <p><strong>What is the 30-minute strategy session? And when can I schedule it?</strong><br/>
       Each student receives one strategy session with enrollment, during which the instructor will
       help you craft an individualized study and review plan, build a perfect test-day mindset,
@@ -743,11 +802,21 @@ export function classDetailsEmail(ctx: EnrollmentEmailContext, audience: Audienc
       <p>We're looking forward to seeing ${isStudent ? 'you' : s} in class!</p>
       <p>All the best,</p>
       <p>Higher Ground Learning</p>
-      <p>P.S. If ${isStudent ? "you haven't" : `${s} hasn't`} found a moment to take the diagnostic
+      ${
+        ctx.isOpenEnrollment && ctx.deliveryMode === 'online' && ctx.defaultLocation
+          ? `<p>All classes will take place here:</p><p><a href="${ctx.defaultLocation}">${ctx.defaultLocation}</a></p>`
+          : ''
+      }
+      ${ctx.instructorBio ? `<p>${ctx.instructorBio}</p>` : ''}
+      ${
+        ctx.hasDiagnostics
+          ? `<p>P.S. If ${isStudent ? "you haven't" : `${s} hasn't`} found a moment to take the diagnostic
       test yet, ${isStudent ? 'you' : studentPronounSet(ctx).subj} can still do so by clicking below. If
       ${isStudent ? 'you have' : `${studentPronounSet(ctx).subj} ${studentPronounSet(ctx).have}`} already completed the test, no need to let us know.
       We surely have it.</p>
-      ${synap ? button('Access Diagnostic Tests', synap) : ''}
+      ${synap ? button('Access Diagnostic Tests', synap) : ''}`
+          : ''
+      }
     `,
       {
         preheader: `Class starts soon! Open to see where classes will be held.`,
@@ -808,9 +877,13 @@ export function locationReminderEmail(ctx: EnrollmentEmailContext, audience: Aud
       ${formatDate(ctx.firstSession)} from ${classTimeHtml(ctx)}.</p>
       <p><strong>All classes take place ${classLocationTailText(ctx.defaultLocation, ctx.deliveryMode)}</strong></p>
       <p>Looking forward to seeing ${isStudent ? 'you' : s} in class!</p>
-      <p>P.S. If ${isStudent ? "you still haven't" : `${s} still hasn't`} taken the first
+      ${
+        ctx.hasDiagnostics
+          ? `<p>P.S. If ${isStudent ? "you still haven't" : `${s} still hasn't`} taken the first
       diagnostic test, don't worry. It's still available
-      ${synap ? `<a href="${synap}">here</a>` : `via the link in your diagnostic test email`}.</p>
+      ${synap ? `<a href="${synap}">here</a>` : `via the link in your diagnostic test email`}.</p>`
+          : ''
+      }
     `,
       {
         preheader: `Open up to see ${ctx.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'}.`,

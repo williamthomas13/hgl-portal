@@ -58,6 +58,7 @@ import {
   e8AddonSchedulingEmail,
   e8AddonNudgeEmail,
   schedulingCtaBlockHtml,
+  returningThanksEmail,
 } from '../../../utils/email'
 import { renderEmail, type RenderedWithVersion } from '../../../utils/comms-db-render'
 import { studentSurveyUrl } from '../../../utils/survey'
@@ -96,6 +97,8 @@ import {
   type TutoringPackage,
   classDetailsSendDate,
   missingDetailsAlertStart,
+  stepDisabledForClass,
+  isReturningFamily,
 } from '../../../utils/lifecycle'
 
 // The lifecycle sweep. Runs hourly (Supabase pg_cron; Vercel daily cron as
@@ -334,6 +337,49 @@ async function sweepThankYou(bundle: ClassBundle, c: Counters) {
     if (!e.paid_at || hoursSince(e.paid_at) < 3) continue
 
     const ctx = emailContext(bundle, e)
+    // PL-274 amendment A: a family with a prior COMPLETED HGL class doesn't
+    // get the first-meeting #1 ("we're honored you've chosen HGL" + the
+    // personal story) — they get the returning pair acknowledging the
+    // student CONTINUING with us. Copy is Scarlett's to finalize (drafts);
+    // the code twins carry placeholder-flagged copy meanwhile.
+    const returning = await isReturningFamily(e.familyId, bundle.id)
+    if (returning) {
+      const rCtx = ctx
+      const rParent = await renderEmail('E1_RETURNING_PARENT', rCtx, 'parent', {}, () =>
+        returningThanksEmail(rCtx, 'parent')
+      )
+      const pStatus = await sendOnce({
+        dedupeKey: `thank_you:${e.id}`,
+        emailType: 'thank_you',
+        enrollmentId: e.id,
+        classId: bundle.id,
+        to: [rCtx.parentEmail],
+        from: rParent.from,
+        subject: rParent.subject,
+        html: rParent.html,
+        bodySnapshotId: rParent.versionId,
+      })
+      if (pStatus === 'sent') bump(c, 'thank_you_returning')
+      if (rCtx.studentEmail) {
+        const rStudent = await renderEmail('E1_RETURNING_STUDENT', rCtx, 'student', {}, () =>
+          returningThanksEmail(rCtx, 'student')
+        )
+        const sStatus = await sendOnce({
+          dedupeKey: `thank_you_s:${e.id}`,
+          emailType: 'thank_you',
+          enrollmentId: e.id,
+          classId: bundle.id,
+          to: [rCtx.studentEmail],
+          from: rStudent.from,
+          subject: rStudent.subject,
+          html: rStudent.html,
+          bodySnapshotId: rStudent.versionId,
+        })
+        if (sStatus === 'sent') bump(c, 'thank_you_returning')
+      }
+      continue
+    }
+
     const { subject, html, from, versionId } = await renderEmail('E1_THANKS', ctx, 'parent', {}, () =>
       thankYouEmail(ctx)
     )
@@ -417,6 +463,24 @@ async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: Tut
 
   for (const step of SEQUENCE) {
     const target = stepTargetDate(step, bundle)
+    // PL-274 amendment B: a switched-off step never sends AND never lingers
+    // as "scheduled" — matching projector rows get audit-cancelled.
+    const disabledReason = stepDisabledForClass(step.type, bundle)
+    if (disabledReason) {
+      await supabase
+        .from('email_sends')
+        .update({
+          status: 'cancelled',
+          cancel_reason: disabledReason,
+          cancelled_by: 'system',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('class_id', bundle.id)
+        .eq('email_type', step.type)
+        .in('status', ['scheduled', 'held'])
+      continue
+    }
+
     if (!isDue(bundle.timezone, target, step.hour)) continue
 
     // Email #4 hold rule: never send class details with gaps.
@@ -941,7 +1005,13 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     // track — say plainly that it's overdue and held.
     const overdue = daysToSend < 0
     const bullets: string[] = []
-    if (!bundle.defaultLocation) {
+    if (!bundle.defaultLocation && bundle.isOpenEnrollment) {
+      // PL-274: no counselor loop exists for open classes — the location (or
+      // meeting link) is ours to set, so say exactly that.
+      bullets.push(
+        `<li style="margin:4px 0"><strong>${bundle.deliveryMode === 'online' ? 'Meeting link' : 'Location'}</strong> — blank. Open-enrollment class: there is no counselor to ask — set it on the class page.</li>`
+      )
+    } else if (!bundle.defaultLocation) {
       // PL-264a: a class created inside the request window with CR1 never
       // sent must not read like a chase on schedule — name the real state.
       const rounds = await classroomChaseRounds(bundle.id)
@@ -1200,6 +1270,9 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
   const live = bundles.filter((b) => b.status !== 'cancelled' && b.lastSession >= today)
   const underMinInPerson: string[] = []
   const classBlocks: string[] = []
+  // PL-274: school-less classes bucket under their own heading instead of
+  // wearing a fabricated school label.
+  const openClassBlocks: string[] = []
   for (const b of live) {
     const active = b.enrollments.filter((e: EnrollmentRow) =>
       ['Paid', 'Completed', 'Pending', 'Waitlisted'].includes(e.payment_status)
@@ -1217,7 +1290,7 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
           : `<span style="color:#b45309;font-weight:bold">below minimum — needs ${b.minEnrollment - paid} more paid</span>`
     if (paid < b.minEnrollment && b.deliveryMode !== 'online') {
       underMinInPerson.push(
-        `<li><strong>${b.schoolLabel} ${b.classType}</strong> — ${paid} paid / ${b.minEnrollment} min, starts ${b.firstSession}</li>`
+        `<li><strong>${b.isOpenEnrollment ? b.classType : `${b.schoolLabel} ${b.classType}`}</strong> — ${paid} paid / ${b.minEnrollment} min, starts ${b.firstSession}</li>`
       )
     }
     const roster =
@@ -1232,9 +1305,9 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
               }</li>`
             })
             .join('')
-    classBlocks.push(
+    ;(b.isOpenEnrollment ? openClassBlocks : classBlocks).push(
       `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0">
-        <p style="margin:0"><strong>${b.schoolLabel} ${b.classType}</strong> — starts ${b.firstSession} ·
+        <p style="margin:0"><strong>${b.isOpenEnrollment ? b.classType : `${b.schoolLabel} ${b.classType}`}</strong> — starts ${b.firstSession} ·
         ${paid} paid / ${pending} pending / ${waitlisted} waitlisted ·
         ${b.minEnrollment} min / ${b.capacity} cap · ${verdict}</p>
         <ul style="margin:6px 0 0">${roster}</ul>
@@ -1250,6 +1323,11 @@ async function sweepAdminRosterReport(bundles: ClassBundle[], c: Counters) {
   }
   if (classBlocks.length > 0) {
     sections.push(`<p><strong>Enrollment for open classes:</strong></p>${classBlocks.join('')}`)
+  }
+  if (openClassBlocks.length > 0) {
+    sections.push(
+      `<p><strong>Higher Ground (open enrollment):</strong></p>${openClassBlocks.join('')}`
+    )
   }
 
   // Feature B3 abuse guard: instructor class messages sent this week, so the

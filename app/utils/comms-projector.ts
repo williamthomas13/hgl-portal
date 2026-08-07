@@ -8,6 +8,7 @@ import {
   type ClassBundle,
   type EnrollmentRow,
   type TutoringPackage,
+  stepDisabledForClass,
 } from './lifecycle'
 import { templateMetaFor, zonedTimeToUtc } from './comms'
 
@@ -130,6 +131,9 @@ export function projectBundle(bundle: ClassBundle, prePackages: TutoringPackage[
     // The post-payment sequence #2–#8, audience-split like the sweep.
     for (const step of SEQUENCE) {
       if (RELATIONSHIP_TYPES.has(step.type) && e.marketingOptOut) continue
+      // PL-274 amendment B: switched-off steps are never scheduled (the
+      // sweep audit-cancels any pre-existing rows with the same reason).
+      if (stepDisabledForClass(step.type, bundle)) continue
       const when = zonedTimeToUtc(stepTargetDate(step, bundle), step.hour, bundle.timezone).toISOString()
       for (const t of audienceTargets(e, step.type === 'review_request')) {
         out.push({

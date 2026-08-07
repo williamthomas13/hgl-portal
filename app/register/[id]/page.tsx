@@ -24,6 +24,7 @@ type ClassDetails = {
   start_date: string
   default_location: string | null
   registration_close_date: string | null
+  timezone?: string | null
   schools: { name: string; nickname: string; timezone: string | null } | null
   sessions: SessionRow[] | null
   isFull: boolean
@@ -318,7 +319,7 @@ export default function RegistrationPage() {
         sessions={sessions}
         defaultLocation={classDetails.default_location}
         calendarHref={`/classes/${classDetails.id}/calendar`}
-        timezone={classDetails.schools?.timezone ?? null}
+        timezone={classDetails.timezone ?? classDetails.schools?.timezone ?? null}
       />
     ) : null
 

@@ -32,7 +32,7 @@ export const TEMPLATE_SEEDS: TemplateSeed[] = [
 
 Thanks for registering! Your class registration with Higher Ground Learning is confirmed.
 
-We'll be in touch with you in the days before the first day of class with all the relevant information that you'll need! This includes diagnostic test information, instructor information, and {classLocationPhrase}.
+We'll be in touch with you in the days before the first day of class with all the relevant information that you'll need! This includes {e0IncludesPhrase}.
 
 {addonTutoringBlock}
 
@@ -64,9 +64,9 @@ If you do know, great! We'll teach you a lot of other things, too. 🙂
 
 **{studentFirstName}, this is just a quick note to let you know that you have been registered for the {className} class starting on {firstSessionDate}.**
 
-In the days before the course starts, you'll receive the necessary course information, such as {classLocationPhrase} and information to access your initial diagnostic test.
+In the days before the course starts, you'll receive the necessary course information, such as {e0StudentIncludesPhrase}.
 
-(By the way, that test is due {diagnosticDueDate}!)
+{diagnosticDueLine}
 
 Until then, you might be interested in signing up for our free [College Prep Compass]({compassLink}), which goes over:
 
@@ -201,7 +201,7 @@ We don't take lightly the chance to work with {studentFirstName} and to help {he
 
 So here's what happens next.
 
-In the days before the course starts, you and {studentFirstName} will receive the necessary course information, such as {classLocationPhrase} and diagnostic test access.
+In the days before the course starts, you and {studentFirstName} will receive the necessary course information, such as {e1IncludesPhrase}.
 
 By the way, you might be interested in [College Prep Compass]({compassLink}), where we send out useful information to help you along in this process:
 
@@ -255,6 +255,50 @@ Spots always go quickly after the class ends, so we offer a discount and priorit
 {upsellPackagesBlock}
 
 These savings are only available before class starts!
+
+Higher Ground Learning`,
+  },
+  {
+    // PL-274 amendment A: returning-family thank-you pair — DRAFTS with
+    // PLACEHOLDER copy; Scarlett supplies final wording. Sent instead of #1
+    // when the family has a prior COMPLETED HGL class (code twin carries
+    // sends until these are ramped).
+    template_key: 'E1_RETURNING_PARENT',
+    display_name: '#1-R — Returning-family thank-you (parent)',
+    sequence_number: '1',
+    audience: 'parent',
+    from_identity: 'billy',
+    category: 'transactional',
+    subject: 'Welcome back, {parentFirstName} — {studentFirstName} is set for {className}',
+    preheader: 'Registration for {className} is confirmed.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+[PLACEHOLDER — Scarlett's returning-family copy] Great to have {studentFirstName} continuing with Higher Ground — registration for {className} is confirmed.
+
+In the days before the course starts, you and {studentFirstName} will receive the necessary course information, such as {e1IncludesPhrase}.
+
+Thanks!
+
+Higher Ground Learning`,
+  },
+  {
+    template_key: 'E1_RETURNING_STUDENT',
+    display_name: '#1-R — Returning-family thank-you (student)',
+    sequence_number: '1',
+    audience: 'student',
+    from_identity: 'billy',
+    category: 'transactional',
+    subject: 'Welcome back — {className} is a go',
+    preheader: 'Registration for {className} is confirmed.',
+    footer_note: null,
+    body_markdown: `Hi {studentFirstName},
+
+[PLACEHOLDER — Scarlett's returning-family copy] Great to have you continuing with Higher Ground — registration for {className} is confirmed.
+
+In the days before the course starts, you'll receive the necessary course information, such as {e1IncludesPhrase}.
+
+Thanks!
 
 Higher Ground Learning`,
   },
@@ -331,13 +375,11 @@ All classes are held from {classTime}. You can download the full calendar of cla
 **Does enrolling in this course also register me for the {examName}?**
 NO. You must register for official exams through the {examRegistrationLink}.
 
-**What's the exact location for the class?**
-We don't have that information confirmed just yet, but we'll write you again when we know!
+{vfaqLocationAnswer}
 
 Are you still here? You are? Okay, here are a few regular FAQs, just for you:
 
-**What if I didn't get the diagnostic test information?**
-No problem — you can get to it right here: [button:Take the diagnostic test]({synapGroupLink}). It's due {diagnosticDueDate}, the day before your first class. (It also went to your inbox, so it's worth a search of your spam folder for next time.)
+{vfaqDiagnosticQa}
 
 **What is the 30-minute strategy session? And when can I schedule it?**
 Each student receives one strategy session with enrollment, during which the instructor will help you craft an individualized study and review plan, build a perfect test-day mindset, understand your diagnostic score report, or go over day-of test strategies.
@@ -385,9 +427,11 @@ All the best,
 
 Higher Ground Learning
 
-P.S. If {you_havent_or_name_hasnt} found a moment to take the diagnostic test yet, {you_or_they} can still do so by clicking below. If {you_have_or_they_have} already completed the test, no need to let us know. We surely have it.
+{openClassMeetingBlock}
 
-[button:Access Diagnostic Tests]({synapGroupLink})`,
+{instructorBioBlock}
+
+{diagnosticPsE4Block}`,
   },
   {
     template_key: 'E5_LOCATION',
@@ -414,7 +458,9 @@ So here you go...one last reminder: the first day of class is {firstSessionDate}
 
 Looking forward to seeing {you_or_name} in class!
 
-P.S. If {you_still_havent_or_name_still_hasnt} taken the first diagnostic test, don't worry. It's still available [here]({synapGroupLink}).`,
+{openClassMeetingBlock}
+
+{diagnosticPsE5Block}`,
   },
   {
     template_key: 'E6_DIAG2',

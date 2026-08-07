@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     )
     .eq('id', body.classId)
     .maybeSingle()
-  if (!cls?.school_id) return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
+  if (!cls) return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
   if (cls.status !== 'open') {
     return NextResponse.json({ error: 'Only open classes can be announced.' }, { status: 400 })
   }
@@ -59,14 +59,19 @@ export async function POST(req: Request) {
       ? shortLink
       : `https://${shortLink}`
     : `${base}/register/${cls.slug ?? cls.id}?src=interest`
-  const classSummaryLine = `<strong>${schoolNickname} ${cls.class_type}</strong> — starts ${formatDateAdmin(firstSession)}`
+  const classSummaryLine = `<strong>${cls.school_id ? `${schoolNickname} ${cls.class_type}` : cls.class_type}</strong> — starts ${formatDateAdmin(firstSession)}`
 
-  const { data: waiting } = await supabase
+  // PL-274: open-enrollment classes match interest rows by class type alone
+  // (their school_id is null on both sides of the old key).
+  let waitingQuery = supabase
     .from('class_interest')
     .select('id, email, parent_name')
-    .eq('school_id', cls.school_id)
     .eq('class_type', cls.class_type)
     .is('notified_at', null)
+  waitingQuery = cls.school_id
+    ? waitingQuery.eq('school_id', cls.school_id)
+    : waitingQuery.is('school_id', null)
+  const { data: waiting } = await waitingQuery
   if (!waiting || waiting.length === 0) {
     return NextResponse.json({ ok: true, notified: 0 })
   }

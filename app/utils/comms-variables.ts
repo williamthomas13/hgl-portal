@@ -404,6 +404,90 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'Per delivery mode: "the classroom location" (in-person) or "the meeting link for class" (online)',
     resolve: (c) => (c.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'),
   },
+  // ------- PL-274 amendment B/F: switch-aware composed pieces. All resolve
+  // straight from the enrollment context — no extras plumbing, so every send
+  // path (sweep, inline, projector previews) conditions identically.
+  e0IncludesPhrase: {
+    description: "PL-274: E0-P's what-you'll-get list — drops 'diagnostic test information' when the class has no diagnostics",
+    resolve: (c) => {
+      const loc = c.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'
+      return c.hasDiagnostics
+        ? `diagnostic test information, instructor information, and ${loc}`
+        : `instructor information and ${loc}`
+    },
+  },
+  e0StudentIncludesPhrase: {
+    description: "PL-274: E0-S's what-you'll-get list, diagnostics-aware",
+    resolve: (c) => {
+      const loc = c.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'
+      return c.hasDiagnostics
+        ? `${loc} and information to access your initial diagnostic test`
+        : loc
+    },
+  },
+  diagnosticDueLine: {
+    description: 'PL-274: the "(By the way, that test is due {date}!)" aside — EMPTY when the class has no diagnostics',
+    block: true,
+    resolve: (c) =>
+      c.hasDiagnostics ? `(By the way, that test is due ${fmt(c.diagnosticDueDate)}!)` : '',
+  },
+  e1IncludesPhrase: {
+    description: "PL-274: #1's course-information list, diagnostics-aware",
+    resolve: (c) => {
+      const loc = c.deliveryMode === 'online' ? 'the meeting link for class' : 'the classroom location'
+      return c.hasDiagnostics ? `${loc} and diagnostic test access` : loc
+    },
+  },
+  vfaqLocationAnswer: {
+    description: 'PL-274: #3\'s location Q&A — states the KNOWN location/meeting link when set (open classes always know it at creation); the old "not confirmed yet" copy only when genuinely blank',
+    block: true,
+    resolve: (c) => {
+      const q = "**What's the exact location for the class?**"
+      if (c.defaultLocation) {
+        return c.deliveryMode === 'online'
+          ? `${q}\nClass meets online — your meeting link: [${c.defaultLocation}](${c.defaultLocation})`
+          : `${q}\n${c.defaultLocation} — see you there!`
+      }
+      return `${q}\nWe don't have that information confirmed just yet, but we'll write you again when we know!`
+    },
+  },
+  vfaqDiagnosticQa: {
+    description: 'PL-274: #3\'s diagnostic Q&A — EMPTY when the class has no diagnostics',
+    block: true,
+    resolve: (c) =>
+      c.hasDiagnostics
+        ? `**What if I didn't get the diagnostic test information?**\nNo problem — you can get to it right here: [button:Take the diagnostic test](${synapUrlValue(c)}). It's due ${fmt(c.diagnosticDueDate)}, the day before your first class.`
+        : '',
+  },
+  instructorBioBlock: {
+    description: 'PL-274 F: the instructor-introduction paragraph from instructors.bio — EMPTY when no bio is on record (never a dangling sentence)',
+    block: true,
+    resolve: (c) => (c.instructorBio ? c.instructorBio : ''),
+  },
+  openClassMeetingBlock: {
+    description: 'PL-274 F: for online open-enrollment classes, "All classes will take place here:" + the meeting link — EMPTY otherwise',
+    block: true,
+    resolve: (c) =>
+      c.isOpenEnrollment && c.deliveryMode === 'online' && c.defaultLocation
+        ? `All classes will take place here:\n\n[${c.defaultLocation}](${c.defaultLocation})`
+        : '',
+  },
+  diagnosticPsE4Block: {
+    description: "PL-274: #4's pronoun-aware diagnostic P.S. + button — EMPTY when the class has no diagnostics",
+    block: true,
+    resolve: (c, a) =>
+      c.hasDiagnostics
+        ? `P.S. If ${a === 'student' ? "you haven't" : `${s(c)} hasn't`} found a moment to take the diagnostic test yet, ${a === 'student' ? 'you' : pn(c).subj} can still do so by clicking below. If ${a === 'student' ? 'you have' : `${pn(c).subj} ${pn(c).have}`} already completed the test, no need to let us know. We surely have it.\n\n[button:Access Diagnostic Tests](${synapUrlValue(c)})`
+        : '',
+  },
+  diagnosticPsE5Block: {
+    description: "PL-274: #5's pronoun-aware diagnostic P.S. — EMPTY when the class has no diagnostics",
+    block: true,
+    resolve: (c, a) =>
+      c.hasDiagnostics
+        ? `P.S. If ${a === 'student' ? "you still haven't" : `${s(c)} still hasn't`} taken the first diagnostic test, don't worry. It's still available [here](${synapUrlValue(c)}).`
+        : '',
+  },
   // PL-71: the composed mode-aware "where" — templates write
   // "…take place {classLocationLine}" and it renders "in Room 204" or
   // "online — here's the meeting link: <link>".
@@ -953,6 +1037,10 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   classTime: '10:00 AM to 12:00 PM',
   examInfo: { examName: 'SAT', regLabel: 'College Board Website', regUrl: 'https://www.collegeboard.org' },
   instructorName: 'Jordan Rivera',
+  instructorBio: null,
+  isOpenEnrollment: false,
+  hasDiagnostics: true,
+  hasSynap: true,
   defaultLocation: 'Room 204',
   deliveryMode: 'in_person',
   synapGroup: 'https://hgl.synap.ac/groups/sample',

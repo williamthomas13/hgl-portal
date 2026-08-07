@@ -129,6 +129,10 @@ export default function ClassWizard({
 
   // -- step 1: details ------------------------------------------------------
   const [schoolId, setSchoolId] = useState(initial?.schoolId ?? '')
+  // PL-274: open-enrollment classes have NO school. Two flavors: online
+  // (asks its timezone explicitly) and in-person at Higher Ground (Denver).
+  const [openKind, setOpenKind] = useState<'' | 'online' | 'hgl'>('')
+  const [openTimezone, setOpenTimezone] = useState('America/Denver')
   const [counselorId, setCounselorId] = useState('') // '' = all school contacts; never copied
   const [classType, setClassType] = useState(initial?.classType ?? '')
   const [instructorId, setInstructorId] = useState(initial?.instructorId ?? '')
@@ -142,6 +146,11 @@ export default function ClassWizard({
   const [deadlineEdited, setDeadlineEdited] = useState(false)
   const [registrationClose, setRegistrationClose] = useState('') // cohort-specific; never copied
   const [synapGroup, setSynapGroup] = useState(initial?.synapGroup ?? '')
+  // PL-274 amendment B: two independent per-class switches — emails and nags
+  // condition on them (diagnostics-off drops diagnostic promises/reminders;
+  // Synap-off drops Synap links; both off skips #2 entirely).
+  const [hasDiagnostics, setHasDiagnostics] = useState(true)
+  const [hasSynap, setHasSynap] = useState(true)
   // PL-106: collateral basics are part of creating the class, not an
   // afterthought on the card — the card keeps full editing + regeneration.
   const [shortLink, setShortLink] = useState(initial?.collateral?.short_link ?? '')
@@ -181,6 +190,9 @@ export default function ClassWizard({
   const [sessionError, setSessionError] = useState('')
 
   const school = schools.find((s) => s.id === schoolId) ?? null
+  // PL-274: open-enrollment — no school; the class carries its own timezone.
+  const isOpen = openKind !== ''
+  const classTimezone = isOpen ? (openKind === 'hgl' ? 'America/Denver' : openTimezone) : (school?.timezone ?? '')
   const instructor = instructors.find((i) => i.id === instructorId) ?? null
   const schoolContacts = contacts.filter((c) => c.school_id === schoolId)
   const sorted = [...sessions].sort(
@@ -447,9 +459,9 @@ export default function ClassWizard({
   const detailsComplete = detailsNeeds.length === 0
   const stepNeeds: string[] =
     step === 1
-      ? schoolId
+      ? schoolId || openKind
         ? []
-        : ['a school — pick one or add it']
+        : ['a school — pick one, add one, or choose open enrollment']
       : step === 2
         ? detailsNeeds
         : step === 3
@@ -498,7 +510,7 @@ export default function ClassWizard({
   }
 
   async function handleCreate() {
-    if (!school || sessions.length === 0 || !allDated) return
+    if ((!school && !isOpen) || sessions.length === 0 || !allDated) return
     setSaving(true)
     setMessage('')
     setMessageStep(null)
@@ -523,8 +535,13 @@ export default function ClassWizard({
     }
 
     const newClass = {
-      school_id: school.id,
-      counselor_id: counselorId || null,
+      // PL-274: open enrollment — no school, no counselor, the class carries
+      // its own timezone, and the slug is minted from type + term alone.
+      school_id: school?.id ?? null,
+      counselor_id: isOpen ? null : counselorId || null,
+      timezone: isOpen ? classTimezone : null,
+      has_diagnostics: hasDiagnostics,
+      has_synap: hasSynap,
       class_type: classType.trim(),
       instructor_id: instructor?.id ?? null,
       price: Number(price),
@@ -536,7 +553,9 @@ export default function ClassWizard({
       min_enrollment: minSanitized,
       enrollment_deadline: enrollmentDeadline || null,
       registration_close_date: registrationClose || null,
-      slug: slugify(`${school.nickname}-${classType}-${termFor(startDate)}`),
+      slug: isOpen
+        ? slugify(`${classType}-${termFor(startDate)}`)
+        : slugify(`${school!.nickname}-${classType}-${termFor(startDate)}`),
       // Duplicate-class prefill carries the collateral fields onto the new
       // row; the four visible wizard fields (PL-106) win over the prefill.
       ...(initial?.collateral ?? {}),
@@ -549,7 +568,8 @@ export default function ClassWizard({
       promo_deadline: promoDeadline || null,
       // PL-237: skip-for-now stamps the reminder; the Needs Attention row is
       // state-driven (shows while stamped AND no short link) — no bookkeeping.
-      collateral_reminder_at: skipForNow ? new Date().toISOString() : null,
+      // PL-274: open classes have no collateral at all — never stamp.
+      collateral_reminder_at: !isOpen && skipForNow ? new Date().toISOString() : null,
       // PL-239: never null — the field defaults to 2 and validates at its
       // step, and this belt catches any path that skips both.
       practice_test_count: practiceTestCount.trim() === '' ? 2 : Math.trunc(Number(practiceTestCount)),
@@ -687,13 +707,25 @@ export default function ClassWizard({
           <div>
             <label className="block text-sm font-medium text-gray-700">School</label>
             <select
-              value={addingSchool ? '__new' : schoolId}
+              value={addingSchool ? '__new' : openKind ? `__open_${openKind}` : schoolId}
               onChange={(e) => {
-                if (e.target.value === '__new') {
+                const v = e.target.value
+                if (v === '__new') {
                   setAddingSchool(true)
+                  setOpenKind('')
+                } else if (v === '__open_online' || v === '__open_hgl') {
+                  // PL-274: no school — clears every school-coupled choice.
+                  setAddingSchool(false)
+                  setOpenKind(v === '__open_online' ? 'online' : 'hgl')
+                  setSchoolId('')
+                  setCounselorId('')
+                  setAddingContact(false)
+                  setDeliveryMode(v === '__open_online' ? 'online' : 'in_person')
+                  if (v === '__open_hgl') setDefaultLocation('380 W. Pierpont Ave, Salt Lake City, UT')
                 } else {
                   setAddingSchool(false)
-                  setSchoolId(e.target.value)
+                  setOpenKind('')
+                  setSchoolId(v)
                   setCounselorId('')
                   setAddingContact(false)
                 }
@@ -706,6 +738,8 @@ export default function ClassWizard({
                   {s.nickname} — {s.name}
                 </option>
               ))}
+              <option value="__open_online">🌐 No school — open enrollment, online</option>
+              <option value="__open_hgl">🏔 No school — in person at Higher Ground</option>
               <option value="__new">➕ Add a new school…</option>
             </select>
             {addingSchool && (
@@ -778,6 +812,17 @@ export default function ClassWizard({
             )}
           </div>
 
+          {isOpen ? (
+            <div className="text-sm text-gray-600 bg-blue-50/60 border border-blue-100 rounded-md p-3 self-start">
+              <p className="font-semibold text-hgl-slate mb-1">Open enrollment — no school machinery</p>
+              <p>
+                No school contact, no classroom request, no counselor emails, and no flyer/letter
+                collateral — the Branding &amp; Collateral step is skipped. Location
+                {openKind === 'online' ? ' is the meeting link you set' : ' is Higher Ground'} and
+                registration is open to students from any school.
+              </p>
+            </div>
+          ) : (
           <div>
             <label className="block text-sm font-medium text-gray-700">
               School contact <span className="text-gray-400">(optional)</span>
@@ -839,6 +884,7 @@ export default function ClassWizard({
               </div>
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -999,7 +1045,13 @@ export default function ClassWizard({
               type="text"
               value={defaultLocation}
               onChange={(e) => setDefaultLocation(e.target.value)}
-              placeholder={deliveryMode === 'online' ? "Blank = instructor's default meeting link" : 'Blank = counselor gets asked 14 days out'}
+              placeholder={
+                deliveryMode === 'online'
+                  ? "Blank = instructor's default meeting link"
+                  : isOpen
+                    ? 'Higher Ground — set the room/address'
+                    : 'Blank = counselor gets asked 14 days out'
+              }
               className={inputCls}
             />
             {/* PL-68: live preview of the exact email sentence — a hint, never
@@ -1016,6 +1068,37 @@ export default function ClassWizard({
             <input type="url" value={synapGroup} onChange={(e) => setSynapGroup(e.target.value)} placeholder="https://…" className={inputCls} />
           </div>
 
+          {/* PL-274 amendment B: independent per-class switches — the email
+              sequence conditions on them (see the roster to change later). */}
+          <div className="col-span-2 flex flex-wrap gap-6 text-sm text-gray-700 border border-gray-200 rounded-md p-3">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={hasDiagnostics}
+                onChange={(e) => setHasDiagnostics(e.target.checked)}
+              />
+              <span>
+                <span className="font-semibold">Has diagnostic tests</span>{' '}
+                <span className="text-xs text-gray-500">
+                  (off = no diagnostic promises, reminders, or due dates in any email)
+                </span>
+              </span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={hasSynap}
+                onChange={(e) => setHasSynap(e.target.checked)}
+              />
+              <span>
+                <span className="font-semibold">Has Synap</span>{' '}
+                <span className="text-xs text-gray-500">
+                  (off = no Synap access links; both off skips the access email entirely)
+                </span>
+              </span>
+            </label>
+          </div>
+
           {/* PL-237: collateral moved to its own step (Sessions → Branding &
               Collateral → Review). */}
         </div>
@@ -1027,6 +1110,12 @@ export default function ClassWizard({
             <p className="text-xs text-gray-500 mb-3">
               All times in <span className="font-semibold">{school.timezone}</span>{' '}(from the
               school record, read-only)
+            </p>
+          )}
+          {isOpen && (
+            <p className="text-xs text-gray-500 mb-3">
+              All times in <span className="font-semibold">{classTimezone}</span>{' '}(the class
+              timezone from the School step)
             </p>
           )}
           {sorted.length > 0 && !allDated && (
@@ -1333,18 +1422,23 @@ export default function ClassWizard({
         </div>
       )}
 
-      {step === 5 && school && skipForNow && (
+      {step === 5 && !isOpen && school && skipForNow && (
         <p className="mb-4 p-2.5 rounded bg-amber-50 border border-amber-200 text-xs text-amber-800">
           Collateral skipped for now — after the class is created, a &quot;Collateral not set
           up&quot; reminder will sit on the dashboard until the fields are completed under
           Classes → Branding &amp; collateral.
         </p>
       )}
-      {step === 5 && school && (
+      {step === 5 && (school || isOpen) && (
         <div className="grid grid-cols-2 gap-8">
           <div className="text-sm space-y-1.5">
             <h3 className="font-bold text-hgl-slate text-base mb-2">
-              {school.nickname} — {classType}
+              {school ? `${school.nickname} — ${classType}` : `Open enrollment — ${classType}`}
+              {isOpen && (
+                <span className="ml-2 text-xs font-semibold text-hgl-blue align-middle">
+                  {openKind === 'online' ? 'online, any school' : 'in person at Higher Ground'}
+                </span>
+              )}
             </h3>
             <p>
               <span className="text-gray-500">Instructor:</span>{' '}
@@ -1354,17 +1448,22 @@ export default function ClassWizard({
             </p>
             <p>
               <span className="text-gray-500">School contact:</span>{' '}
-              {counselorId
-                ? (() => {
-                    const c = schoolContacts.find((x) => x.id === counselorId)
-                    return c ? `${c.first_name} ${c.last_name} (${c.email})` : '—'
-                  })()
-                : 'all school contacts'}
+              {isOpen
+                ? 'none — open enrollment (no counselor emails, no classroom request, no collateral)'
+                : counselorId
+                  ? (() => {
+                      const c = schoolContacts.find((x) => x.id === counselorId)
+                      return c ? `${c.first_name} ${c.last_name} (${c.email})` : '—'
+                    })()
+                  : 'all school contacts'}
             </p>
             <p><span className="text-gray-500">Starts:</span> {startDate ? formatDateAdmin(startDate) : '—'}</p>
             <p><span className="text-gray-500">Price:</span> ${Number(price || 0).toLocaleString()} · <span className="text-gray-500">Capacity:</span> {capacity} · <span className="text-gray-500">Min:</span> {minEnrollment}</p>
             <p><span className="text-gray-500">Mode:</span> {deliveryMode === 'online' ? 'Online' : 'In person'}</p>
-            <p><span className="text-gray-500">Timezone:</span> {school.timezone} (from the school record)</p>
+            <p>
+              <span className="text-gray-500">Timezone:</span>{' '}
+              {school ? `${school.timezone} (from the school record)` : `${classTimezone} (class timezone — open enrollment)`}
+            </p>
             <p>
               <span className="text-gray-500">Location:</span>{' '}
               {defaultLocation.trim() ||
@@ -1373,7 +1472,9 @@ export default function ClassWizard({
                     (instructor
                       ? 'instructor has no default link — set later'
                       : 'set when the instructor is assigned'))
-                  : 'blank — counselor gets asked 14 days out')}
+                  : isOpen
+                    ? 'blank — set it before the class-details email'
+                    : 'blank — counselor gets asked 14 days out')}
             </p>
             <p><span className="text-gray-500">Enrollment deadline:</span> {enrollmentDeadline ? formatDateAdmin(enrollmentDeadline) : 'default (registration close, or the first session)'}</p>
             <p><span className="text-gray-500">Registration closes:</span> {registrationClose ? formatDateAdmin(registrationClose) : 'first session (default)'}</p>
@@ -1400,7 +1501,14 @@ export default function ClassWizard({
       <div className="flex items-center justify-between mt-6">
         <button
           type="button"
-          onClick={() => setStep((s) => (s === 1 ? s : ((s - 1) as 1 | 2 | 3 | 4)))}
+          onClick={() =>
+            setStep((s) => {
+              if (s === 1) return s
+              // PL-274: open enrollment skips Branding & Collateral entirely.
+              if (isOpen && s === 5) return 3
+              return (s - 1) as 1 | 2 | 3 | 4
+            })
+          }
           disabled={step === 1}
           className="text-sm text-gray-500 underline hover:text-hgl-slate disabled:opacity-0"
         >
@@ -1410,7 +1518,13 @@ export default function ClassWizard({
           <div className="text-right">
             <button
               type="button"
-              onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4 | 5)}
+              onClick={() =>
+                setStep((s) => {
+                  // PL-274: open enrollment skips Branding & Collateral.
+                  if (isOpen && s === 3) return 5
+                  return (s + 1) as 2 | 3 | 4 | 5
+                })
+              }
               disabled={stepNeeds.length > 0}
               className="bg-hgl-blue text-white font-bold py-2.5 px-6 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50"
             >

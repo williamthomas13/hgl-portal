@@ -153,6 +153,10 @@ export function templateMetaFor(
       return { key: 'T1B_PROPOSAL_NUDGE', role: 'parent' }
     case 'T2_INVOICE':
       return { key: 'T2_INVOICE', role: 'parent' }
+    case 'E1_RETURNING_PARENT':
+      return { key: 'E1_RETURNING_PARENT', role: 'parent' }
+    case 'E1_RETURNING_STUDENT':
+      return { key: 'E1_RETURNING_STUDENT', role: 'parent' }
     case 'T3_SCHEDULE_CHANGE':
       return { key: 'T3_SCHEDULE_CHANGE', role: 'parent' }
     // PL-262: the admin's "got your message" ack for a reschedule request.

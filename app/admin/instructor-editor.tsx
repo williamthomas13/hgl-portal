@@ -34,6 +34,8 @@ export default function InstructorEditor({
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  // PL-274 F: family-facing intro paragraph for open-class details emails.
+  const [bio, setBio] = useState('')
   const [picked, setPicked] = useState<string[]>([])
   const [pickedPrep, setPickedPrep] = useState<string[]>([])
   const [timezone, setTimezone] = useState('America/Denver')
@@ -75,6 +77,7 @@ export default function InstructorEditor({
           setEmail(row.email ?? '')
           setOriginalEmail(row.email ?? '')
           setPhone(row.phone ?? '')
+          setBio((row as { bio?: string | null }).bio ?? '')
           setPicked((row.subjects as string[]) ?? [])
           setPickedPrep((row.subjects_with_prep as string[]) ?? [])
           setTimezone(row.timezone ?? 'America/Denver')
@@ -108,6 +111,7 @@ export default function InstructorEditor({
       email: cleanEmail,
       name: name.trim() || null,
       phone: phone.trim() || null,
+      bio: bio.trim() || null,
       subjects: picked,
       subjects_with_prep: pickedPrep,
       timezone: timezone || 'America/Denver',
@@ -180,6 +184,26 @@ export default function InstructorEditor({
                   className="w-full border border-gray-300 rounded-md p-2"
                 />
               </div>
+            </div>
+
+            {/* PL-274 F: FAMILY-FACING (unlike the matching notes below) —
+                composed into open-class details emails as {instructorBio}.
+                Empty = the paragraph drops cleanly. */}
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Bio — families see this
+              </label>
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                rows={3}
+                placeholder='e.g. "Eric is a graduate of Princeton University and has taught SAT prep at Higher Ground Learning since 2010. He is also our Executive Director and the creator of this course."'
+                className="w-full border border-gray-300 rounded-md p-2 text-sm"
+              />
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Appears as the instructor introduction in open-enrollment class emails. Leave blank
+                to skip the paragraph entirely.
+              </p>
             </div>
 
             <div>

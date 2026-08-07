@@ -81,9 +81,16 @@ export type ClassBundle = {
   counselorId: string | null
   classType: string
   schoolId: string | null
+  /** PL-274: no school — an HGL open-enrollment class. */
+  isOpenEnrollment: boolean
   schoolName: string
   schoolLabel: string
   timezone: string
+  /** PL-274 amendment B: per-class switches — emails/nags condition on these. */
+  hasDiagnostics: boolean
+  hasSynap: boolean
+  /** PL-274 amendment F: family-facing instructor intro; null drops cleanly. */
+  instructorBio: string | null
   instructorId: string | null
   instructorName: string | null
   instructorEmail: string | null
@@ -201,9 +208,9 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     id, slug, status, counselor_id, class_type, school_id, instructor_id,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
-    collateral_changed_at,
+    collateral_changed_at, timezone, has_diagnostics, has_synap,
     schools ( name, nickname, timezone ),
-    instructors ( name, email ),
+    instructors ( name, email, bio ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
       id, payment_status, enrolled_at, paid_at, amount_paid,
@@ -271,9 +278,18 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       counselorId: c.counselor_id ?? null,
       classType: c.class_type,
       schoolId: c.school_id ?? null,
+      // PL-274: a school-less class IS Higher Ground's own — the label must
+      // not fabricate a school prefix, so className composes to just the
+      // class type (e.g. "SAT Math Deep Dive", not "HGL SAT Math Deep Dive").
+      isOpenEnrollment: !c.school_id,
       schoolName: school?.name ?? school?.nickname ?? 'Higher Ground Learning',
       schoolLabel: school?.nickname ?? 'HGL',
-      timezone: school?.timezone ?? DEFAULT_TIMEZONE,
+      // PL-274: class timezone wins (set at creation for open classes),
+      // then the school's, then the default — one precedence everywhere.
+      timezone: c.timezone ?? school?.timezone ?? DEFAULT_TIMEZONE,
+      hasDiagnostics: c.has_diagnostics !== false,
+      hasSynap: c.has_synap !== false,
+      instructorBio: instructor?.bio || null,
       instructorId: c.instructor_id ?? null,
       instructorName: instructor?.name ?? instructor?.email ?? null,
       instructorEmail: instructor?.email ?? null,
@@ -354,10 +370,17 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     schoolName: bundle.schoolName,
     schoolNickname: bundle.schoolLabel,
     classType: bundle.classType,
-    className: `${bundle.schoolLabel} ${bundle.classType}`,
+    // PL-274: open classes carry no school prefix — "SAT Math Deep Dive".
+    className: bundle.isOpenEnrollment
+      ? bundle.classType
+      : `${bundle.schoolLabel} ${bundle.classType}`,
     classTime: classTimeFor(bundle.sessions),
     examInfo: examInfoFor(bundle.classType),
     instructorName: bundle.instructorName,
+    instructorBio: bundle.instructorBio,
+    isOpenEnrollment: bundle.isOpenEnrollment,
+    hasDiagnostics: bundle.hasDiagnostics,
+    hasSynap: bundle.hasSynap,
     defaultLocation: bundle.defaultLocation,
     deliveryMode: bundle.deliveryMode,
     synapGroup: bundle.synapGroup,
@@ -374,6 +397,37 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
  * the first session; registration_close_date overrides per class (e.g. the
  * third session's date to allow joining after missing one or two).
  */
+/** PL-274 amendment A: has this family COMPLETED any other HGL class?
+ *  'Completed' flips the day after a class's last session (sweepCompletion),
+ *  so this is exactly "the student has finished a class with us before". */
+export async function isReturningFamily(familyId: string, excludeClassId: string): Promise<boolean> {
+  const { supabaseAdmin } = await import('./supabase-admin')
+  const { data } = await supabaseAdmin
+    .from('enrollments')
+    .select('id, class_id, students!inner ( family_id )')
+    .eq('students.family_id', familyId)
+    .eq('payment_status', 'Completed')
+    .neq('class_id', excludeClassId)
+    .limit(1)
+  return Boolean(data && data.length > 0)
+}
+
+/** PL-274 amendment B: sequence steps a class's switches turn off.
+ *  #2 (synap_access) carries BOTH the diagnostic intro and the Synap link —
+ *  it only goes silent when the class has neither. #6 (second_diagnostic)
+ *  is pure diagnostics. Used by the sweep AND the projector — the two must
+ *  never disagree, or the comms dashboard shows steps as "not yet sent"
+ *  forever. */
+export function stepDisabledForClass(stepType: string, bundle: ClassBundle): string | null {
+  if (stepType === 'synap_access' && !bundle.hasDiagnostics && !bundle.hasSynap) {
+    return 'class has neither diagnostics nor Synap (PL-274 switches)'
+  }
+  if (stepType === 'second_diagnostic' && !bundle.hasDiagnostics) {
+    return 'class has no diagnostics (PL-274 switch)'
+  }
+  return null
+}
+
 export function registrationCloseFor(bundle: ClassBundle): string {
   return bundle.registrationCloseDate ?? bundle.firstSession
 }

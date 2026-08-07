@@ -98,6 +98,10 @@ type ClassRow = {
   default_location: string | null
   synap_group: string | null
   school_id: string | null
+  /** PL-274: class-level timezone (open-enrollment classes); wins over school. */
+  timezone: string | null
+  has_diagnostics: boolean
+  has_synap: boolean
   delivery_mode: string
   min_enrollment: number | null
   enrollment_deadline: string | null
@@ -810,7 +814,11 @@ export default function AdminDashboard() {
   }
 
   // PL-250: Synap group and location become editable where they're read.
-  async function handleClassField(c: ClassRow, field: 'synap_group' | 'default_location', value: string | null) {
+  async function handleClassField(
+    c: ClassRow,
+    field: 'synap_group' | 'default_location' | 'has_diagnostics' | 'has_synap',
+    value: string | boolean | null
+  ) {
     const { error } = await supabase
       .from('classes')
       .update({ [field]: value })
@@ -1106,7 +1114,7 @@ export default function AdminDashboard() {
     const enrolledCount = paidCount + pendingCount
     const waitlistCount =
       c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
-    const schoolLabel = c.schools?.nickname ?? '—'
+    const schoolLabel = c.schools?.nickname ?? (c.school_id ? '—' : 'Open enrollment')
     const sortedSessions = [...(c.sessions ?? [])].sort(bySessionStart)
     const lastSession = sortedSessions[sortedSessions.length - 1] ?? null
     const isCancelled = c.status === 'cancelled'
@@ -1201,8 +1209,33 @@ export default function AdminDashboard() {
                 </p>
               )}
             <p className="text-sm text-gray-600">
-              Timezone: {c.schools?.timezone ?? '—'}{' '}
-              <span className="text-xs text-gray-400">(from the school record)</span>
+              Timezone: {c.timezone ?? c.schools?.timezone ?? '—'}{' '}
+              <span className="text-xs text-gray-400">
+                {c.timezone ? '(class timezone — open enrollment)' : '(from the school record)'}
+              </span>
+            </p>
+            {/* PL-274 amendment B: the two switches, editable where they're
+                read — the email sequence conditions on them. */}
+            <p className="text-sm text-gray-600 flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={c.has_diagnostics !== false}
+                  onChange={(e) => handleClassField(c, 'has_diagnostics', e.target.checked)}
+                />
+                <span className="font-semibold">Has diagnostics</span>
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={c.has_synap !== false}
+                  onChange={(e) => handleClassField(c, 'has_synap', e.target.checked)}
+                />
+                <span className="font-semibold">Has Synap</span>
+              </label>
+              <span className="text-xs text-gray-400">
+                off = the email sequence drops diagnostic/Synap content for this class
+              </span>
             </p>
             {/* PL-250: visible and editable even when unset — counselors
                 often skip the form and just reply by email with the room. */}

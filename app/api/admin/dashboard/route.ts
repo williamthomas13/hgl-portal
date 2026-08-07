@@ -96,7 +96,7 @@ export async function GET() {
       .from('classes')
       .select(
         `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, default_location, delivery_mode, start_date, created_at,
-         collateral_reminder_at, short_link,
+         collateral_reminder_at, short_link, school_id,
          schools ( nickname ), sessions ( session_date ), enrollments ( payment_status )`
       )
       .neq('status', 'cancelled'),
@@ -201,7 +201,8 @@ export async function GET() {
   // row is STATE-DRIVEN: it shows while the stamp is set and the class still
   // has no short link, and clears itself the moment the collateral is
   // completed (from the deep-linked panel or anywhere else).
-  for (const c of liveClasses.filter((c) => c.collateral_reminder_at && !c.short_link)) {
+  // PL-274: open-enrollment classes have no collateral at all — never nag.
+  for (const c of liveClasses.filter((c) => c.school_id && c.collateral_reminder_at && !c.short_link)) {
     attention.push({
       id: `collateral-${c.id}`,
       kind: 'Collateral not set up',

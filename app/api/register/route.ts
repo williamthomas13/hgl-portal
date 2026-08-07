@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      `id, status, school_id, capacity, registration_close_date, start_date,
+      `id, status, school_id, capacity, registration_close_date, start_date, timezone,
        schools ( timezone ),
        sessions ( session_date ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
@@ -107,7 +107,12 @@ export async function POST(request: Request) {
   }
 
   const school = Array.isArray(cls.schools) ? cls.schools[0] : cls.schools
-  const timezone = (school as { timezone?: string } | null)?.timezone ?? DEFAULT_TIMEZONE
+  // PL-274: class timezone wins (open-enrollment classes), then school, then
+  // default — the registration-close clock must match what families see.
+  const timezone =
+    (cls as { timezone?: string | null }).timezone ??
+    (school as { timezone?: string } | null)?.timezone ??
+    DEFAULT_TIMEZONE
   const firstSession =
     [...((cls.sessions as { session_date: string }[]) ?? [])
       .map((s) => s.session_date)]
