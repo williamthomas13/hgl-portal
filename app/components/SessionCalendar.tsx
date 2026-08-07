@@ -3,9 +3,12 @@
 // the Phase 4 portal views can reuse it read-only. Pure presentational: no
 // hooks, renders in server and client components alike.
 
+import type { ReactNode } from 'react'
 import { bySessionStart, dateParts, timezoneCityLabel } from '../utils/dates'
 
 export type CalendarSession = {
+  /** PL-277: present on admin surfaces so per-session actions can target rows. */
+  id?: string
   session_date: string
   start_time: string | null
   end_time: string | null
@@ -27,6 +30,7 @@ export default function SessionCalendar({
   calendarHref,
   hour24 = false,
   timezone = null,
+  renderActions,
 }: {
   sessions: CalendarSession[]
   defaultLocation: string | null
@@ -37,6 +41,9 @@ export default function SessionCalendar({
   /** PL-126: the school's IANA timezone — when set, a "(times shown in
    *  {city} time)" line renders so an international family never guesses. */
   timezone?: string | null
+  /** PL-277: admin-only per-session actions (Edit/Remove) rendered at the
+   *  row's right edge. Public and portal callers never pass this. */
+  renderActions?: (s: CalendarSession) => ReactNode
 }) {
   const sorted = [...sessions].sort(bySessionStart)
   if (sorted.length === 0) return null
@@ -60,18 +67,21 @@ export default function SessionCalendar({
                   {d.dayOfMonth}
                 </div>
               </div>
-              <div>
+              {/* PL-275: min-w-0 + break-words — a long meeting-link URL
+                  must wrap, not push the page wide on mobile. */}
+              <div className="min-w-0">
                 <div className="font-semibold text-hgl-slate">
                   {d.weekdayLong}
                   <span className="text-gray-500 font-normal"> · Session {i + 1}</span>
                 </div>
-                <div className="text-gray-600">
+                <div className="text-gray-600 break-words [overflow-wrap:anywhere]">
                   {fmtTime(s.start_time, hour24)
                     ? `${fmtTime(s.start_time, hour24)}${s.end_time ? ` – ${fmtTime(s.end_time, hour24)}` : ''}`
                     : 'Time TBD'}
                   {loc ? ` · ${loc}` : ''}
                 </div>
               </div>
+              {renderActions && <span className="ml-auto shrink-0">{renderActions(s)}</span>}
             </div>
           )
         })}

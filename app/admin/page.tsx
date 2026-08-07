@@ -957,6 +957,55 @@ export default function AdminDashboard() {
     setWizardMode('blank')
   }
 
+  // PL-277: per-session Edit — saved through /api/admin/class-session, which
+  // updates the row AND sends the SU schedule-update emails to every family
+  // that already received class details (event-driven; the sweep's snapshot
+  // diff doesn't see per-session changes).
+  const [editingSession, setEditingSession] = useState<{
+    id: string
+    classId: string
+    date: string
+    start: string
+    end: string
+    location: string
+  } | null>(null)
+  const [sessionSaving, setSessionSaving] = useState(false)
+  async function handleEditSession(classId: string) {
+    if (!editingSession || editingSession.classId !== classId) return
+    if (editingSession.start && editingSession.end && editingSession.end <= editingSession.start) {
+      setActionNotice('End time must be after the start time.')
+      return
+    }
+    setSessionSaving(true)
+    try {
+      const res = await fetch('/api/admin/class-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'edit',
+          id: editingSession.id,
+          session_date: editingSession.date,
+          start_time: editingSession.start || null,
+          end_time: editingSession.end || null,
+          location: editingSession.location.trim() || null,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) setActionNotice(json.error ?? 'Saving the session failed — try again.')
+      else {
+        setActionNotice(
+          json.changed
+            ? `Session saved — ${json.emailed} schedule-update email${json.emailed === 1 ? '' : 's'} sent.`
+            : 'Nothing changed — no emails sent.'
+        )
+        setEditingSession(null)
+        fetchRosters()
+      }
+    } finally {
+      setSessionSaving(false)
+    }
+  }
+
   // PL-268: the confirm is the button's ConfirmAction.
   async function handleDeleteSession(sessionId: string) {
     const { error } = await supabase.from('sessions').delete().eq('id', sessionId)
@@ -1528,38 +1577,106 @@ export default function AdminDashboard() {
             All times in <span className="font-semibold">{c.schools?.timezone ?? '—'}</span>{' '}
             (from the school record, read-only)
           </p>
+          {/* PL-277: ONE list — the card list — with Edit + Remove inside
+              each card (the second, remove-only list is gone). */}
           {sortedSessions.length === 0 ? (
             <p className="text-sm text-gray-500 italic mb-3">No sessions scheduled yet.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-6 mb-3 items-start">
+            <div className="mb-3 max-w-2xl">
               <SessionCalendar
                 sessions={sortedSessions}
                 defaultLocation={c.default_location}
                 hour24
-              />
-              <ul className="space-y-2">
-                {sortedSessions.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
-                  >
-                    <span>
-                      <strong>{formatDateAdmin(s.session_date)}</strong>
-                      {s.start_time && ` · ${to24h(s.start_time)}`}
-                      {s.end_time && ` – ${to24h(s.end_time)}`}
-                      {s.location && ` · ${s.location}`}
-                    </span>
+                renderActions={(s) => (
+                  <span className="flex gap-2 text-xs items-center">
+                    <button
+                      onClick={() =>
+                        setEditingSession({
+                          id: s.id!,
+                          classId: c.id,
+                          date: s.session_date,
+                          start: to24h(s.start_time),
+                          end: to24h(s.end_time),
+                          location: s.location ?? '',
+                        })
+                      }
+                      className="text-hgl-blue underline"
+                    >
+                      Edit
+                    </button>
                     <ConfirmAction
                       label="Remove"
                       message="Remove this session?"
                       confirmLabel="Yes, remove"
-                      className="text-red-600 text-xs hover:underline"
+                      className="text-red-600 hover:underline"
                       confirmClassName="text-xs text-red-700 font-semibold underline"
-                      onConfirm={() => handleDeleteSession(s.id)}
+                      onConfirm={() => handleDeleteSession(s.id!)}
                     />
-                  </li>
-                ))}
-              </ul>
+                  </span>
+                )}
+              />
+              {editingSession?.classId === c.id && (
+                <div className="mt-2 border border-hgl-blue/40 bg-blue-50/40 rounded-md p-3">
+                  <p className="text-xs font-semibold text-hgl-slate mb-2">
+                    Editing the {formatDateAdmin(
+                      sortedSessions.find((s) => s.id === editingSession.id)?.session_date ?? editingSession.date
+                    )}{' '}
+                    session
+                  </p>
+                  <div className="grid grid-cols-4 gap-2 items-start text-sm">
+                    <div>
+                      <label className="block text-xs text-gray-600">Date</label>
+                      <input
+                        type="date"
+                        value={editingSession.date}
+                        onChange={(e) => setEditingSession({ ...editingSession, date: e.target.value })}
+                        className="mt-1 w-full border rounded p-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600">Start (24h)</label>
+                      <div className="mt-1">
+                        <TimeSelect
+                          value={editingSession.start}
+                          onChange={(v) => setEditingSession({ ...editingSession, start: v })}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600">End (24h)</label>
+                      <div className="mt-1">
+                        <TimeSelect
+                          value={editingSession.end}
+                          onChange={(v) => setEditingSession({ ...editingSession, end: v })}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600">Location (blank = default)</label>
+                      <input
+                        type="text"
+                        value={editingSession.location}
+                        onChange={(e) => setEditingSession({ ...editingSession, location: e.target.value })}
+                        className="mt-1 w-full border rounded p-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-3 text-xs">
+                    <ConfirmAction
+                      label={sessionSaving ? 'saving…' : 'Save changes'}
+                      message="Save this session change? Every registered family that already received the class-details email gets the schedule-update email automatically (the instructor gets their FYI too). Families who haven't received details yet see the new schedule when their details email sends."
+                      confirmLabel="Yes, save & email"
+                      className="bg-hgl-slate text-white rounded px-3 py-1 font-semibold"
+                      confirmClassName="text-green-700 font-semibold underline"
+                      disabled={sessionSaving}
+                      onConfirm={() => handleEditSession(c.id)}
+                    />
+                    <button onClick={() => setEditingSession(null)} className="text-gray-500 underline">
+                      cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <AddSessionForm
