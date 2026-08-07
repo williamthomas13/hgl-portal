@@ -80,6 +80,13 @@ export default function TutoringAdmin() {
       setActiveSection('schedule')
       setWizardOpenSignal((n) => n + 1)
       setWizardPreload(schedule)
+    } else {
+      // PL-298: ?section= lands on a named section (the dashboard's
+      // timecard to-do uses it) — same contract as /admin's sidebar links.
+      const section = q.get('section')
+      if (section && ['schedule', 'activity', 'students', 'billing', 'timecards', 'tutors'].includes(section)) {
+        setActiveSection(section)
+      }
     }
   }, [])
   useDeepLinkFocus(focusElement)

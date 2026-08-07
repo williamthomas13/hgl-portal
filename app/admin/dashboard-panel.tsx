@@ -467,7 +467,9 @@ export default function DashboardPanel() {
                 {health.qbo.failed > 0 && (
                   <>
                     {' · '}
-                    <a href="/admin?section=qbo" className="text-red-700 underline">
+                    {/* PL-298 audit: ?section= without ?tab= landed back on
+                        the dashboard — the tab must ride along. */}
+                    <a href="/admin?tab=settings&section=qbo" className="text-red-700 underline">
                       {health.qbo.failed} failed
                     </a>
                   </>

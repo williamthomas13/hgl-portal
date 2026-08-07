@@ -40,7 +40,7 @@ export function qboDocLink(status: QboStatus | null, kind: string, docId: string
 type SyncLogRow = {
   id: string
   kind: 'sale' | 'refund' | 'tutoring_sale' | 'timecard_time'
-  status: 'pending' | 'synced' | 'failed'
+  status: 'pending' | 'synced' | 'failed' | 'dismissed'
   amount: number | null
   attempts: number
   last_error: string | null
@@ -49,6 +49,11 @@ type SyncLogRow = {
   stripe_payment_intent_id: string | null
   created_at: string
   synced_at: string | null
+  // PL-298: the record links + dismissal trail.
+  enrollment_id: string | null
+  tutoring_invoice_id: string | null
+  dismissed_reason: string | null
+  dismissed_by: string | null
   enrollments: {
     students: {
       first_name: string
@@ -62,6 +67,12 @@ type SyncLogRow = {
     period_end: string
     instructors: { name: string | null; email: string } | null
   } | null
+}
+
+/** PL-298: known machine errors, translated (unknown text passes through). */
+const ERROR_PLAIN: Record<string, string> = {
+  'tutoring invoice has no positive lines':
+    'the invoice has no charges on it (a $0 or credit-only invoice) — QuickBooks refuses an empty receipt',
 }
 
 /** PL-281: plain-English kind labels (no internal shorthand on screens). */
@@ -127,6 +138,66 @@ const SYNC_BADGES: Record<string, { text: string; cls: string }> = {
   synced: { text: '✓ synced', cls: 'bg-green-100 text-green-700' },
   pending: { text: '⏳ pending', cls: 'bg-yellow-100 text-yellow-800' },
   failed: { text: '✗ failed', cls: 'bg-red-100 text-red-600' },
+  // PL-298: dismissed-with-reason — history kept, nagging stopped.
+  dismissed: { text: 'dismissed', cls: 'bg-gray-200 text-gray-600' },
+}
+
+// PL-298: dismiss-with-reason — inline armed control (no native dialogs).
+// The reason is required and shows in the log so nobody re-investigates.
+function DismissControl({ id, busy, onDone }: { id: string; busy: boolean; onDone: () => void }) {
+  const [armed, setArmed] = useState(false)
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  if (!armed) {
+    return (
+      <button
+        onClick={() => setArmed(true)}
+        disabled={busy}
+        className="text-xs text-gray-500 underline hover:text-hgl-slate disabled:opacity-50"
+        title="Stop this row from nagging — with a reason kept in the log"
+      >
+        Dismiss…
+      </button>
+    )
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+      <input
+        type="text"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Why is this fine to ignore?"
+        className="border border-gray-300 rounded p-1 text-xs w-56"
+      />
+      <button
+        disabled={saving || !reason.trim()}
+        onClick={async () => {
+          setSaving(true)
+          setErr('')
+          const res = await fetch('/api/qbo/dismiss', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, reason }),
+          })
+          const json = await res.json().catch(() => ({}))
+          setSaving(false)
+          if (!res.ok) setErr(json.error ?? 'Could not dismiss.')
+          else {
+            setArmed(false)
+            onDone()
+          }
+        }}
+        className="text-xs font-bold text-hgl-blue underline disabled:opacity-40"
+      >
+        Dismiss
+      </button>
+      <button onClick={() => setArmed(false)} className="text-xs text-gray-500 underline">
+        cancel
+      </button>
+      {err && <span className="text-xs text-red-600">{err}</span>}
+    </span>
+  )
 }
 
 export default function QboPanel({ status, onStatusChange }: { status: QboStatus | null; onStatusChange: () => void }) {
@@ -153,6 +224,7 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
         `
         id, kind, status, amount, attempts, last_error, qbo_doc_id, qbo_doc_number,
         stripe_payment_intent_id, created_at, synced_at,
+        enrollment_id, tutoring_invoice_id, dismissed_reason, dismissed_by,
         enrollments ( students ( first_name, last_name ),
           classes ( class_type, schools ( nickname ) ) ),
         timecards ( period_start, period_end, instructors ( name, email ) )
@@ -174,17 +246,22 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLog()
     // OAuth round-trip lands on /admin?qbo=<status> — surface it once.
+    // PL-298: ?qbo= is ALSO the failed-row deep link (?qbo=<row uuid>) — this
+    // effect runs BEFORE the parent page's param-reading effect (children's
+    // effects fire first), and deleting the param here ate the deep link:
+    // the dashboard's "QuickBooks sync failed" to-do looked like a page
+    // reload. Only consume the param when it's a real OAuth outcome.
     const params = new URLSearchParams(window.location.search)
     const outcome = params.get('qbo')
-    if (outcome) {
-      const messages: Record<string, string> = {
-        connected: '✓ QuickBooks connected.',
-        cancelled: 'QuickBooks connection was cancelled at Intuit.',
-        invalid: 'The QuickBooks sign-in link expired — try Connect again.',
-        denied: 'Only an admin can connect QuickBooks.',
-        error: 'QuickBooks connection failed — check the server logs and try again.',
-      }
-      setBanner(messages[outcome] ?? '')
+    const messages: Record<string, string> = {
+      connected: '✓ QuickBooks connected.',
+      cancelled: 'QuickBooks connection was cancelled at Intuit.',
+      invalid: 'The QuickBooks sign-in link expired — try Connect again.',
+      denied: 'Only an admin can connect QuickBooks.',
+      error: 'QuickBooks connection failed — check the server logs and try again.',
+    }
+    if (outcome && messages[outcome]) {
+      setBanner(messages[outcome])
       params.delete('qbo')
       const rest = params.toString()
       window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''))
@@ -527,6 +604,7 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
               <option value="pending">pending</option>
               <option value="synced">synced</option>
               <option value="failed">failed</option>
+              <option value="dismissed">dismissed</option>
             </select>
             {failedCount > 0 && (
               <button
@@ -599,17 +677,67 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
                       </span>
                       {r.status === 'failed' && (
                         <>
+                          {/* PL-298: known machine errors read as sentences. */}
                           {r.last_error && (
-                            <span className="block text-xs text-red-500 mt-1 max-w-xs truncate" title={r.last_error}>
-                              {r.last_error}
+                            <span
+                              className="block text-xs text-red-500 mt-1 max-w-xs"
+                              title={r.last_error}
+                            >
+                              {ERROR_PLAIN[r.last_error] ?? r.last_error}
+                            </span>
+                          )}
+                          <span className="flex flex-wrap gap-2 items-center mt-1">
+                            <button
+                              onClick={() => retry([r.id])}
+                              disabled={busy}
+                              className="text-xs text-hgl-blue underline hover:text-hgl-slate disabled:opacity-50"
+                            >
+                              Retry
+                            </button>
+                            {/* PL-298: the record behind the row, one click. */}
+                            {r.tutoring_invoice_id && (
+                              <a
+                                href={`/admin/tutoring?invoice=${r.tutoring_invoice_id}`}
+                                className="text-xs text-hgl-blue underline hover:text-hgl-slate"
+                              >
+                                View the invoice
+                              </a>
+                            )}
+                            {r.enrollment_id && (
+                              <a
+                                href={`/admin/communications?enrollment=${r.enrollment_id}`}
+                                className="text-xs text-hgl-blue underline hover:text-hgl-slate"
+                              >
+                                View the enrollment
+                              </a>
+                            )}
+                            <DismissControl id={r.id} busy={busy} onDone={fetchLog} />
+                          </span>
+                        </>
+                      )}
+                      {r.status === 'dismissed' && (
+                        <>
+                          {r.dismissed_reason && (
+                            <span className="block text-xs text-gray-500 mt-1 max-w-xs">
+                              {r.dismissed_reason}
+                              {r.dismissed_by ? ` — ${r.dismissed_by}` : ''}
                             </span>
                           )}
                           <button
-                            onClick={() => retry([r.id])}
+                            onClick={async () => {
+                              setBusy(true)
+                              await fetch('/api/qbo/dismiss', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: r.id, action: 'reinstate' }),
+                              })
+                              setBusy(false)
+                              fetchLog()
+                            }}
                             disabled={busy}
-                            className="text-xs text-hgl-blue underline hover:text-hgl-slate disabled:opacity-50"
+                            className="text-xs text-gray-500 underline hover:text-hgl-slate disabled:opacity-50"
                           >
-                            Retry
+                            reinstate
                           </button>
                         </>
                       )}

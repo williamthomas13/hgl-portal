@@ -99,8 +99,36 @@ The open-enrollment class's roster Sessions header reads "All times in — (from
 ## PL-297 — Reschedule-request to-do must deep-link to an approve/propose surface (Scarlett, Aug 7, w/ screenshot)
 The admin dashboard's "Reschedule request pending" to-do ("Roman Thomas Sierra asked to move the 2026-08-08 session — 'Sunday at midnight please.'") currently links to the NEW student schedule page (Tutoring → Scheduling wizard, student prefilled) — as if building a schedule from scratch. It must land on the request itself: a surface showing the existing session, the family's ask (their note), and two actions — **approve the move** (pick the new session time, family gets the confirmation) or **propose an alternative** (counter-offer through the existing reschedule machinery). Standing-rule catch: the to-do renders a raw ISO date ("2026-08-08") — should be plain English ("the Aug 8 session").
 
+✅ **Shipped Aug 7 — verified live on Roman's real request.** Root cause: the to-do used `?schedule={student id}`, which is the "build a NEW schedule" wizard's prefill parameter — the PL-262 request surface (`?session={id}&reschedule=1`) existed all along and simply wasn't what the to-do pointed at. It now lands on the session dialog showing the existing session (Roman Thomas Sierra — French, Saturday Aug 8, 4:00–5:30 PM), the family's ask in an amber banner ("Sunday at midnight please." + the one-click Acknowledge), and the reschedule form pre-armed — **approve the move** = enter the asked time, **propose an alternative** = enter a different one; either way the family and tutor get the change email through the existing machinery, with the late-notice policy auto-classified in view. The to-do now reads "asked to move the **Aug 8** session" (new `shortDate` helper — the same fix applied to every other to-do that rendered raw ISO dates).
+
 ## PL-298 — Every dashboard to-do must click through to a resolution surface (Scarlett, Aug 7, w/ screenshot; generalizes PL-297)
 The "QuickBooks sync failed · waiting 10 days — A tutoring_sale row failed to post — tutoring invoice has no positive lines." to-do just reloads the page when clicked. Scarlett's rule: **any item in the admin to-do list must click through to a place where she can quickly take action to resolve it.** For this one: land on the failed row in the QuickBooks sync log with its plain-English failure reason and actions (retry now / view the invoice / dismiss-with-reason). Two standing-rule catches in the same line: "tutoring_sale row" is internal shorthand (should read like "A tutoring invoice failed to post to QuickBooks"), and "no positive lines" needs a human explanation. **Then audit EVERY to-do type on the admin dashboard** for dead or wrong click-throughs (PL-297 was the second instance) and report the list with where each now lands. NOTE: the underlying failed row is the ARMED Willie Tomás $11.37 hollow-invoice fixture — fix the navigation and copy, do NOT resolve/retry-to-success/delete the fixture itself.
+
+✅ **Shipped Aug 7 — the dead link had a real root cause, and the audit caught four more wrong targets** (migration `20260903000001` APPLIED; Willie's $11.37 fixture untouched and still armed — navigation and copy only, verified live).
+
+**Why it "just reloaded":** the QuickBooks panel's OAuth-return banner effect consumes the `?qbo=` parameter — and child effects run before the parent page's parameter-reading effect, so the deep link was **deleted from the URL before the page ever read it**. The panel now only consumes `?qbo=` when it's one of the five OAuth outcomes; a row-id deep link survives, and clicking the to-do lands on Settings → QuickBooks with the failed row scrolled into view (verified live). The row itself now carries the full action set: **Retry** (existing) · **View the invoice** (tutoring rows) / **View the enrollment** (class rows) · **Dismiss…** with a required reason (inline armed control; the reason + who dismissed shows in the log; dismissed rows stop nagging the dashboard and health card but keep their history, with a one-click **reinstate**). Copy: the to-do reads "**A tutoring invoice failed to post to QuickBooks — the invoice has no charges on it (a $0 or credit-only invoice), and QuickBooks refuses an empty receipt**" (kind names translated for all four kinds; known machine errors translated in both the to-do and the sync log, unknown errors pass through verbatim).
+
+**The full audit — every to-do type, where it lands now:**
+| To-do | Verdict | Lands on |
+|---|---|---|
+| Class needs an instructor · Minimum-enrollment decision · Class details missing | ✓ already right | the class's roster card (`?class=`) |
+| Collateral not set up | ✓ | Branding & collateral with the class picked |
+| Invoice 10/30+ days past due | ✓ | Billing with the invoice row focused |
+| Billed without signed agreement · Hours past the package · Package hours used up/almost · No session location set · Missed call · Invoice generation FAILING · Wants 1-on-1 after the class | ✓ | the family's card (`?family=`) |
+| QuickBooks sync failed | **was dead — FIXED** | the failed sync-log row, scrolled into view, Retry/View/Dismiss in hand |
+| Reschedule request pending | **was wrong (new-schedule wizard) — FIXED** (PL-297) | the request's session dialog, reschedule pre-armed |
+| Proposed session never resolved | **was wrong (new-schedule wizard) — FIXED** | the session dialog (confirm/reschedule/cancel live there) |
+| Cancelled on the calendar, not in the portal | **was broken (session id fed to the student-wizard param) — FIXED** | the session dialog |
+| Calendar edited outside the portal | **was indirect (family card) — FIXED** | the session on the schedule view, where the adopt/revert decision lives |
+| Session still needs coverage | **was wrong (new-schedule wizard) — FIXED** | the session dialog |
+| Timecard awaiting approval | **was vague (tutoring root) — FIXED** | Tutoring → Timecards directly (the tutoring page now honors `?section=`) |
+| Email sent with unfilled placeholders | ✓ | the templates editor |
+| Intake complete — ready to schedule | ✓ | the lead's row |
+| Refund requested | ✓ | the roster with the enrollment focused |
+| Availability promise / availability-shared rows | ✓ deliberate | the new-schedule wizard prefilled — scheduling IS the resolution there |
+| Sticky notes | ✓ by design | no link (a note isn't a record) |
+
+One more catch in the same family: the health card's "N failed" link used `?section=qbo` without `?tab=` — which the page ignores, landing back on the dashboard — now `?tab=settings&section=qbo`. Raw ISO dates in the coverage, proposed-session, and timecard to-dos got the same plain-English date fix as PL-297.
 
 ## PL-299 — Hours-block exhaustion: family must confirm the move to standard 1-on-1 billing BEFORE hours run out (Scarlett, Aug 7, w/ screenshots — her business model, authoritative)
 Business model: hours blocks are ONLY sold as an add-on with a group class. When the purchased block runs out, the student moves to the usual 1-on-1 scheduling + monthly-invoicing path — and the FAMILY MUST CONFIRM that transition, before exhaustion, not discover it on an invoice. Build:

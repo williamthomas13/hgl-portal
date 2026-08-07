@@ -16,6 +16,16 @@ import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../u
 // the tool) and waitlist rollovers (the PL-94 sweep self-heals them).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/** PL-297/298: to-dos speak plain dates — "Aug 8", never "2026-08-08". */
+const shortDate = (iso: string) =>
+  iso
+    ? new Date(iso.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      })
+    : ''
+
 const one = <T,>(v: T | T[] | null | undefined): T | null =>
   v == null ? null : Array.isArray(v) ? ((v[0] as T) ?? null) : v
 
@@ -281,12 +291,28 @@ export async function GET() {
     }
   }
 
+  // PL-298: to-do copy is plain English — no internal shorthand. Kind names
+  // become what actually failed; known machine errors get a human sentence
+  // (unknown ones pass through verbatim rather than hiding information).
+  const QBO_KIND_PLAIN: Record<string, string> = {
+    sale: 'A class payment receipt',
+    refund: 'A refund receipt',
+    tutoring_sale: 'A tutoring invoice',
+    timecard_time: "A tutor's timecard hours",
+  }
+  const QBO_ERROR_PLAIN: Record<string, string> = {
+    'tutoring invoice has no positive lines':
+      'the invoice has no charges on it (a $0 or credit-only invoice), and QuickBooks refuses an empty receipt',
+  }
   for (const q of (qboFailed as any[]) ?? []) {
+    const err = q.last_error ? String(q.last_error) : ''
     attention.push({
       id: `qbo-${q.id}`,
       since: q.created_at, // PL-135
       kind: 'QuickBooks sync failed',
-      text: `A ${q.kind ?? 'sync'} row failed to post${q.last_error ? ` — ${String(q.last_error).slice(0, 90)}` : ''}.`,
+      text: `${QBO_KIND_PLAIN[q.kind ?? ''] ?? 'A payment record'} failed to post to QuickBooks${
+        err ? ` — ${QBO_ERROR_PLAIN[err] ?? err.slice(0, 90)}` : ''
+      }. Retry or dismiss it from the sync log.`,
       href: `/admin?qbo=${q.id}`,
     })
   }
@@ -301,7 +327,10 @@ export async function GET() {
         id: `xcl-${d.sessionId}`,
         kind: 'Cancelled on the calendar, not in the portal',
         text: `${d.tutorName} marked ${d.studentName}'s ${new Date(d.startsAt).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })} session "${d.eventTitle}" in Google, but it's still scheduled here — it will bill and count on the timecard as-is.`,
-        href: `/admin/tutoring?schedule=${d.sessionId}`,
+        // PL-298 audit: ?schedule= expects a STUDENT and opens the
+        // new-schedule wizard — a session id there was a dead end. The
+        // session dialog is the resolution surface.
+        href: `/admin/tutoring?session=${d.sessionId}`,
         urgent: new Date(d.startsAt).getTime() < now.getTime(),
       })
     }
@@ -352,8 +381,9 @@ export async function GET() {
       id: `coverage-${r.session_id}`,
       since: r.created_at, // PL-135: waiting since the request went out
       kind: 'Session still needs coverage',
-      text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'}'s session on ${String(ses?.starts_at ?? '').slice(0, 10)} — substitute request ${r.status === 'offered' ? 'waiting on an answer' : 'was declined; nobody is lined up'}.`,
-      href: `/admin/tutoring?schedule=${ses?.student_id}`,
+      text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'}'s ${shortDate(String(ses?.starts_at ?? ''))} session — substitute request ${r.status === 'offered' ? 'waiting on an answer' : 'was declined; nobody is lined up'}.`,
+      // PL-298 audit: land on the session itself, not a fresh-schedule wizard.
+      href: `/admin/tutoring?session=${r.session_id}`,
       urgent: r.status === 'declined',
     })
   }
@@ -364,8 +394,9 @@ export async function GET() {
       id: `timecard-${t.id}`,
       since: t.tutor_confirmed_at, // PL-135: waiting since the tutor confirmed
       kind: 'Timecard awaiting approval',
-      text: `${ins?.name ?? ins?.email ?? 'A tutor'} confirmed ${t.period_start} → ${t.period_end}; it needs office approval.`,
-      href: `/admin/tutoring`,
+      text: `${ins?.name ?? ins?.email ?? 'A tutor'} confirmed ${shortDate(t.period_start)} → ${shortDate(t.period_end)}; it needs office approval.`,
+      // PL-298 audit: land on the Timecards section, not the tutoring root.
+      href: `/admin/tutoring?section=timecards`,
     })
   }
 
@@ -374,8 +405,11 @@ export async function GET() {
     attention.push({
       id: `resched-${s.id}`,
       kind: 'Reschedule request pending',
-      text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'} asked to move the ${String(s.starts_at).slice(0, 10)} session${s.reschedule_request_note ? ` — “${String(s.reschedule_request_note).slice(0, 60)}”` : ''}.`,
-      href: `/admin/tutoring?schedule=${s.student_id}`,
+      // PL-297: plain-English date, and the link lands ON THE REQUEST — the
+      // session dialog with the family's note, approve-the-move (pick the
+      // new time), or propose-an-alternative — not a fresh-schedule wizard.
+      text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'} asked to move the ${shortDate(String(s.starts_at))} session${s.reschedule_request_note ? ` — “${String(s.reschedule_request_note).slice(0, 60)}”` : ''}.`,
+      href: `/admin/tutoring?session=${s.id}&reschedule=1`,
     })
   }
 
@@ -384,8 +418,9 @@ export async function GET() {
     attention.push({
       id: `stranded-proposal-${s.id}`,
       kind: 'Proposed session never resolved',
-      text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'}'s proposed session on ${String(s.starts_at).slice(0, 10)} passed without approval — confirm it happened, reschedule it, or cancel it.`,
-      href: `/admin/tutoring?schedule=${s.student_id}`,
+      text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'}'s proposed ${shortDate(String(s.starts_at))} session passed without approval — confirm it happened, reschedule it, or cancel it.`,
+      // PL-298 audit: the session dialog IS the confirm/reschedule/cancel surface.
+      href: `/admin/tutoring?session=${s.id}`,
     })
   }
 
@@ -701,7 +736,9 @@ export async function GET() {
       text: d.cal_starts_at
         ? `${tutorFirst} moved ${stu?.first_name ?? 'a student'}'s session in their Google Calendar — ${fmtDrift(d.portal_starts_at)} → ${fmtDrift(d.cal_starts_at)}. The family hasn't been told and billing hasn't changed. Adopt or revert from the tutoring page.`
         : `${tutorFirst} deleted ${stu?.first_name ?? 'a student'}'s session event (${fmtDrift(d.portal_starts_at)}) from their Google Calendar. Revert restores it; the portal still expects the session.`,
-      href: `/admin/tutoring?family=${stu?.family_id ?? ''}`,
+      // PL-298 audit: the adopt/revert decision banner lives on the schedule
+      // view with the session in sight — land there, not on the family card.
+      href: `/admin/tutoring?session=${d.session_id}`,
       urgent: true,
       since: d.detected_at,
     })

@@ -615,6 +615,11 @@ export default function AdminDashboard() {
     }
     const qboRow = q.get('qbo')
     if (qboRow) {
+      // PL-298: the dashboard's "QuickBooks sync failed" to-do lands HERE —
+      // select the section directly (the signal-only path left the page on
+      // the dashboard, which read as "clicking just reloads the page").
+      setActiveGroup('settings')
+      setActiveSection('qbo')
       setQboOpenSignal((n) => n + 1)
       setDeepFocus(`qbo-${qboRow}`)
     }
