@@ -170,6 +170,29 @@ try {
   await fo.sweepFollowOnForBundle(await bundle())
   ;({ data: f1 } = await db.from('classes').select('fo_extended_until').eq('id', feeder.id).maybeSingle())
   check('auto-extend: once per cohort (no re-extend)', f1.fo_extended_until === before)
+
+  // --- PL-295: nudge, early-start override, exclude flag ---------------------
+  // Nudge: window closed yesterday, switch off, not extended → admin nudge.
+  await db.from('classes').update({ fo_extended_until: null, fo_discount_end: addDays(today, -1) }).eq('id', feeder.id)
+  await db.from('classes').update({ fo_auto_extend: false }).eq('id', target.id)
+  let rep = await fo.sweepFollowOnForBundle(await bundle())
+  check('295: day-after-close nudge attempted (no emails to families)', rep.nudged === true && rep.attempts.length === 0, JSON.stringify(rep))
+
+  // Early start: announce override BEFORE the last session (class still in
+  // session) arms the announce stage; endDate = announce + 7.
+  await db.from('sessions').update({ session_date: addDays(today, 10) }).eq('class_id', feeder.id)
+  await db.from('classes').update({ fo_announce_date: addDays(today, -1), fo_discount_end: null }).eq('id', feeder.id)
+  rep = await fo.sweepFollowOnForBundle(await bundle())
+  check('295: early-start announce fires mid-class', rep.attempts.some((a) => a.stage === 'announce'), JSON.stringify(rep))
+  const earlyW = fo.cohortWindow({ lastSession: addDays(today, 10), foExtendedUntil: null, foAnnounceDate: addDays(today, -1) })
+  check('295: early-start endDate = announce + 7', earlyW.baseDeadline === addDays(today, 6))
+
+  // Exclude: the cohort drops out of the sweep AND the discount seam.
+  await db.from('classes').update({ fo_exclude: true }).eq('id', feeder.id)
+  rep = await fo.sweepFollowOnForBundle(await bundle())
+  check('295: excluded cohort — sweep skips with a plain reason', !rep.ran && /excluded/.test(rep.reason ?? ''), rep.reason)
+  const vEx = await fo.validateFollowOnDiscount({ classId: target.id, code: 'QA294', parentEmail: 'qa-pl294@example.com' })
+  check('295: excluded cohort — typed code refused plainly', !vEx.ok && /does not apply/.test(vEx.reason), vEx.reason)
 } finally {
   await cleanup()
 }

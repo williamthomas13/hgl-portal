@@ -31,16 +31,28 @@ export const FO_TEMPLATES = {
 export type FoStage = keyof typeof FO_TEMPLATES
 
 export {
-  FO_WINDOW_DAYS,
+  FO_ANNOUNCE_OFFSET_DAYS,
+  FO_DISCOUNT_DAYS,
   FO_REMINDER_BEFORE_DAYS,
   FO_EXTENSION_DAYS,
+  FO_SEND_HOUR,
+  FO_NUDGE_GRACE_DAYS,
+  cohortWindow,
+  extensionTarget,
+  foLongDate,
+  type CohortWindow,
+  type CohortInputs,
+} from './follow-on-shared'
+import {
+  FO_NUDGE_GRACE_DAYS,
   FO_SEND_HOUR,
   cohortWindow,
   extensionTarget,
   foLongDate,
   type CohortWindow,
 } from './follow-on-shared'
-import { FO_SEND_HOUR, cohortWindow, extensionTarget, foLongDate, type CohortWindow } from './follow-on-shared'
+import { sendAdminAlert } from './email'
+import { ADMIN_EMAIL, addDaysISO } from './lifecycle'
 
 // ---------------------------------------------------------------------------
 // Tokenized auto-apply links ('fo:' prefix; composite id like 'roster:')
@@ -78,6 +90,10 @@ export type FollowOnTarget = {
    *  under its minimum. Default off. */
   autoExtend: boolean
   minEnrollment: number
+  /** PL-295B: the FO class's stated registration deadline (the PL-141 chain:
+   *  enrollment deadline → registration close → first session). Discount
+   *  windows clamp to it; registration itself stays open until it. */
+  registrationDeadline: string | null
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -85,11 +101,13 @@ export async function loadFollowOnTarget(classId: string): Promise<FollowOnTarge
   const { data } = await supabase
     .from('classes')
     .select(
-      'id, slug, class_type, status, school_id, fo_short_name, promo_code, promo_amount, marketing_url, fo_auto_extend, min_enrollment'
+      'id, slug, class_type, status, school_id, fo_short_name, promo_code, promo_amount, marketing_url, fo_auto_extend, min_enrollment, enrollment_deadline, registration_close_date, start_date, sessions ( session_date )'
     )
     .eq('id', classId)
     .maybeSingle()
   if (!data) return null
+  const sessionDates = ((data.sessions as any[]) ?? []).map((s) => s.session_date).sort()
+  const firstSession = sessionDates[0] ?? data.start_date
   return {
     id: data.id,
     slug: data.slug,
@@ -102,6 +120,11 @@ export async function loadFollowOnTarget(classId: string): Promise<FollowOnTarge
     marketingUrl: (data.marketing_url as string | null)?.trim() || null,
     autoExtend: Boolean(data.fo_auto_extend),
     minEnrollment: data.min_enrollment != null && Number(data.min_enrollment) >= 1 ? Number(data.min_enrollment) : 3,
+    registrationDeadline:
+      (data.enrollment_deadline as string | null) ??
+      (data.registration_close_date as string | null) ??
+      firstSession ??
+      null,
   }
 }
 
@@ -141,12 +164,21 @@ export function followOnOfferFor(
 // fallback, both computing expiry from the recipient's feeder cohort.
 // ---------------------------------------------------------------------------
 
-type FeederRow = { id: string; lastSession: string; foExtendedUntil: string | null }
+type FeederRow = {
+  id: string
+  lastSession: string
+  foExtendedUntil: string | null
+  foAnnounceDate: string | null
+  foDiscountEnd: string | null
+  foExclude: boolean
+}
 
 async function loadFeeder(classId: string): Promise<FeederRow | null> {
   const { data } = await supabase
     .from('classes')
-    .select('id, start_date, fo_extended_until, follow_on_class_id, sessions ( session_date )')
+    .select(
+      'id, start_date, fo_extended_until, fo_announce_date, fo_discount_end, fo_exclude, follow_on_class_id, sessions ( session_date )'
+    )
     .eq('id', classId)
     .maybeSingle()
   if (!data) return null
@@ -155,6 +187,9 @@ async function loadFeeder(classId: string): Promise<FeederRow | null> {
     id: data.id,
     lastSession: dates[dates.length - 1] ?? data.start_date,
     foExtendedUntil: data.fo_extended_until,
+    foAnnounceDate: data.fo_announce_date,
+    foDiscountEnd: data.fo_discount_end,
+    foExclude: data.fo_exclude === true,
   }
 }
 
@@ -187,7 +222,17 @@ export async function validateFollowOnDiscount(opts: {
   }
 
   const accept = (feeder: FeederRow): FoDiscount | FoDiscountRefusal => {
-    const w = cohortWindow(feeder)
+    // PL-295C: an excluded cohort has no discount window at all.
+    if (feeder.foExclude) {
+      return { ok: false, reason: 'This discount offer does not apply to this class group.' }
+    }
+    const w = cohortWindow({
+      lastSession: feeder.lastSession,
+      foExtendedUntil: feeder.foExtendedUntil,
+      foAnnounceDate: feeder.foAnnounceDate,
+      foDiscountEnd: feeder.foDiscountEnd,
+      targetRegistrationDeadline: target.registrationDeadline,
+    })
     // The cohort clock: valid through the END of the deadline day ("until
     // {endDate}" and stage 3's "at midnight" both mean the whole day).
     if (localDate('America/Denver') > w.deadline) {
@@ -241,7 +286,7 @@ export async function validateFollowOnDiscount(opts: {
     }
     const { data: feeders } = await supabase
       .from('classes')
-      .select('id, start_date, fo_extended_until, sessions ( session_date )')
+      .select('id, start_date, fo_extended_until, fo_announce_date, fo_discount_end, fo_exclude, sessions ( session_date )')
       .eq('follow_on_class_id', opts.classId)
     let best: FoDiscount | FoDiscountRefusal = {
       ok: false,
@@ -261,6 +306,9 @@ export async function validateFollowOnDiscount(opts: {
         id: f.id,
         lastSession: dates[dates.length - 1] ?? f.start_date,
         foExtendedUntil: f.fo_extended_until,
+        foAnnounceDate: f.fo_announce_date,
+        foDiscountEnd: f.fo_discount_end,
+        foExclude: f.fo_exclude === true,
       })
       if (verdict.ok) return verdict
       best = verdict // an expired cohort beats "no registration found"
@@ -295,6 +343,8 @@ export type FoSweepReport = {
   reason?: string
   attempts: FoAttempt[]
   suppressed: string[] // enrollment ids skipped as already-registered
+  /** PL-295B: the day-after-close extend nudge went out this pass. */
+  nudged: boolean
 }
 
 /**
@@ -303,19 +353,25 @@ export type FoSweepReport = {
  * only counting). Idempotent via sendOnce dedupe keys.
  */
 export async function sweepFollowOnForBundle(bundle: ClassBundle): Promise<FoSweepReport> {
-  const report: FoSweepReport = { ran: false, attempts: [], suppressed: [] }
+  const report: FoSweepReport = { ran: false, attempts: [], suppressed: [], nudged: false }
   if (!bundle.followOnClassId) return { ...report, reason: 'no follow-on class linked' }
   if (bundle.status === 'cancelled') return { ...report, reason: 'feeder cancelled' }
+  // PL-295C: a cohort can be excluded entirely (e.g. running concurrently
+  // with the FO class, earmarked for a later campaign).
+  if (bundle.foExclude) return { ...report, reason: 'cohort excluded from the follow-on campaign' }
 
   const target = await loadFollowOnTarget(bundle.followOnClassId)
   if (!foTargetReady(target)) {
     return { ...report, reason: 'follow-on class is not an open class with a complete promo (code + amount)' }
   }
 
-  let window = cohortWindow({
+  const windowInputs = {
     lastSession: bundle.lastSession,
-    foExtendedUntil: bundle.foExtendedUntil,
-  })
+    foAnnounceDate: bundle.foAnnounceDate,
+    foDiscountEnd: bundle.foDiscountEnd,
+    targetRegistrationDeadline: target.registrationDeadline,
+  }
+  let window = cohortWindow({ ...windowInputs, foExtendedUntil: bundle.foExtendedUntil })
   const today = localDate(bundle.timezone)
 
   // PL-294: the auto-extend switch (per follow-on class, default OFF —
@@ -332,16 +388,52 @@ export async function sweepFollowOnForBundle(bundle: ClassBundle): Promise<FoSwe
     if ((count ?? 0) < target.minEnrollment) {
       const until = extensionTarget(window, today)
       await supabase.from('classes').update({ fo_extended_until: until }).eq('id', bundle.id)
-      window = cohortWindow({ lastSession: bundle.lastSession, foExtendedUntil: until })
+      window = cohortWindow({ ...windowInputs, foExtendedUntil: until })
     }
   }
 
+  // PL-295B: the day after a cohort's discount window closes un-extended,
+  // NUDGE the admin (once per cohort per window — dedupe carries the window
+  // end) instead of auto-arming anything. The extend control is one click
+  // away on the feeder card; the auto-extend switch has its own path above.
+  if (
+    !window.extended &&
+    !target.autoExtend &&
+    today > window.baseDeadline &&
+    today <= addDaysISO(window.baseDeadline, FO_NUDGE_GRACE_DAYS)
+  ) {
+    const status = await sendAdminAlert({
+      dedupeKey: `fo_extend_nudge:${bundle.id}:${window.baseDeadline}`,
+      adminEmail: ADMIN_EMAIL,
+      subject: `${bundle.schoolLabel} ${bundle.classType}'s ${target.shortName} discount window closed — extend a week?`,
+      body: `<p>The <strong>${bundle.schoolLabel} ${bundle.classType}</strong> cohort's discount for
+        <strong>${target.classType}</strong> ended ${foLongDate(window.baseDeadline)}. Families can
+        still register at full price until the class's registration deadline${
+          target.registrationDeadline ? ` (${foLongDate(target.registrationDeadline)})` : ''
+        } — the question is only whether to extend the discount.</p>
+        <p>If you extend, the "Bad News, Great News" pair goes to this cohort on the next hourly
+        sweep (families already registered are skipped automatically). If you do nothing, nothing
+        more sends to this cohort.</p>
+        <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin?class=${bundle.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the class card — the extend button is on it</a></p>`,
+    })
+    // 'duplicate' = this cohort/window was already nudged on an earlier
+    // sweep; anything else means an attempt was made this pass.
+    report.nudged = status !== 'duplicate'
+  }
+
   // Which stages are due right now (cohort clock = the feeder's timezone)?
+  // Announce may predate the last session (PL-295C early start).
   const stages: FoStage[] = []
   if (isDue(bundle.timezone, window.announceDate, FO_SEND_HOUR) && today <= window.deadline) {
     stages.push('announce')
   }
-  if (isDue(bundle.timezone, window.reminderDate, FO_SEND_HOUR) && today <= window.baseDeadline) {
+  if (
+    isDue(bundle.timezone, window.reminderDate, FO_SEND_HOUR) &&
+    today <= window.baseDeadline &&
+    // A very tight window (override/clamp) has no room for a separate
+    // reminder — announce alone carries it.
+    window.reminderDate > window.announceDate
+  ) {
     stages.push('reminder')
   }
   if (window.extended && today <= window.deadline) {

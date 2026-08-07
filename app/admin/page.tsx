@@ -115,6 +115,10 @@ type ClassRow = {
   marketing_url: string | null
   /** PL-294: open classes — auto-extend under-minimum cohorts (default off). */
   fo_auto_extend: boolean
+  /** PL-295C: per-cohort overrides on the FEEDER. */
+  fo_exclude: boolean
+  fo_announce_date: string | null
+  fo_discount_end: string | null
   /** PL-237: skip-for-now stamp — the Needs Attention reminder shows while
    *  set AND short_link is still empty. */
   collateral_reminder_at: string | null
@@ -239,34 +243,135 @@ function AddSessionForm({
 // fields (Synap group, location) — view with an edit link, flipping to an
 // input + save/cancel. No window.prompt (it loses context and can't cancel
 // cleanly on mobile).
-// PL-279: one feeder cohort's follow-on discount window + the deliberate
-// Extend action (stage 3 of the FO sequence sends only on this — the "we
-// extended the discount" story must be true). Inline confirm, per the rule.
+// PL-279/PL-295: one feeder cohort's follow-on campaign calendar — the
+// effective dates (announce → discount end, override- and clamp-aware), the
+// per-cohort overrides (announce date incl. early start, discount end,
+// exclude flag), and the deliberate Extend action. Inline confirm, per the
+// rule. The math is follow-on-shared.ts — the same source the sweep and the
+// checkout seam read, so this card can never disagree with what sends.
 function FoExtendControl({
   classRow,
   followOn,
   onChanged,
 }: {
-  classRow: { id: string; start_date: string; fo_extended_until: string | null; sessions: { session_date: string }[] | null }
-  followOn: { class_type: string; promo_code: string | null; promo_amount: number | null; fo_auto_extend: boolean }
+  classRow: {
+    id: string
+    start_date: string
+    fo_extended_until: string | null
+    fo_announce_date: string | null
+    fo_discount_end: string | null
+    fo_exclude: boolean
+    sessions: { session_date: string }[] | null
+  }
+  followOn: {
+    class_type: string
+    promo_code: string | null
+    promo_amount: number | null
+    fo_auto_extend: boolean
+    enrollment_deadline: string | null
+    registration_close_date: string | null
+    start_date: string
+    sessions: { session_date: string }[] | null
+  }
   onChanged: () => void
 }) {
   const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const dates = (classRow.sessions ?? []).map((s) => s.session_date).sort()
+  // The FO class's stated registration deadline (the PL-141 chain) — the
+  // discount clamp, and the date registration itself stays open until.
+  const targetSessionDates = (followOn.sessions ?? []).map((s) => s.session_date).sort()
+  const targetRegDeadline =
+    followOn.enrollment_deadline ??
+    followOn.registration_close_date ??
+    targetSessionDates[0] ??
+    followOn.start_date
   const window = cohortWindow({
     lastSession: dates[dates.length - 1] ?? classRow.start_date,
     foExtendedUntil: classRow.fo_extended_until,
+    foAnnounceDate: classRow.fo_announce_date,
+    foDiscountEnd: classRow.fo_discount_end,
+    targetRegistrationDeadline: targetRegDeadline,
   })
   const promoReady = Boolean(followOn.promo_code && followOn.promo_amount != null)
+
+  async function saveField(field: 'fo_announce_date' | 'fo_discount_end' | 'fo_exclude', value: string | boolean | null) {
+    setBusy(true)
+    const { error } = await supabase.from('classes').update({ [field]: value }).eq('id', classRow.id)
+    setBusy(false)
+    setNote(error ? 'Error saving: ' + error.message : '')
+    if (!error) onChanged()
+  }
+
+  if (classRow.fo_exclude) {
+    return (
+      <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+        <span className="inline-block px-1.5 py-0.5 rounded font-semibold bg-gray-100 text-gray-500">
+          Excluded from the follow-on campaign
+        </span>
+        <span>— no announcements, no discount, no reminders for this cohort.</span>
+        <button disabled={busy} onClick={() => saveField('fo_exclude', false)} className="underline hover:text-hgl-blue">
+          include it again
+        </button>
+        {note && <span className="text-red-600">{note}</span>}
+      </p>
+    )
+  }
+
   return (
     <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-      <span title="This cohort's follow-on discount window — announce the day after the last session, deadline 14 days after; every FO email quotes THIS date as {endDate}">
-        Follow-on discount window: ends {formatDateAdmin(window.deadline)}
-        {window.extended ? ' (extended)' : ''}
+      <span title="This cohort's follow-on campaign calendar — every FO email quotes the discount end as {endDate}. Registration itself stays open (full price) until the follow-on class's registration deadline.">
+        Follow-on campaign: announce{' '}
+        <input
+          type="date"
+          value={classRow.fo_announce_date ?? window.announceDate}
+          disabled={busy}
+          onChange={(e) => saveField('fo_announce_date', e.target.value || null)}
+          className="border border-gray-200 rounded px-1 py-0.5 text-xs"
+          title="Announce date — set it earlier for an early start while the class is still in session; matches last session + 2 by default"
+        />
+        {window.announceOverridden && (
+          <button
+            disabled={busy}
+            onClick={() => saveField('fo_announce_date', null)}
+            className="ml-1 underline"
+            title="Back to the standard date (last session + 2)"
+          >
+            reset
+          </button>
+        )}{' '}
+        · discount ends{' '}
+        <input
+          type="date"
+          value={classRow.fo_discount_end ?? window.baseDeadline}
+          disabled={busy}
+          onChange={(e) => saveField('fo_discount_end', e.target.value || null)}
+          className="border border-gray-200 rounded px-1 py-0.5 text-xs"
+          title="Discount end — announce + 7 by default; never past the follow-on class's registration deadline"
+        />
+        {window.discountEndOverridden && (
+          <button
+            disabled={busy}
+            onClick={() => saveField('fo_discount_end', null)}
+            className="ml-1 underline"
+            title="Back to the standard date (announce + 7)"
+          >
+            reset
+          </button>
+        )}
+        {window.clampedToRegistrationDeadline &&
+          ` (held to the class's registration deadline, ${formatDateAdmin(targetRegDeadline)})`}
         {!promoReady && ' — set a promo code + amount on the follow-on class first'}
       </span>
+      <button
+        disabled={busy}
+        onClick={() => saveField('fo_exclude', true)}
+        className="underline hover:text-red-700"
+        title="Exclude this cohort from the campaign entirely (e.g. it runs at the same time as the follow-on class)"
+      >
+        exclude this cohort
+      </button>
       {/* PL-294: the extension stage's state, in plain words. */}
       {promoReady && (
         <span

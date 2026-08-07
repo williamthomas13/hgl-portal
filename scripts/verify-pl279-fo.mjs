@@ -50,17 +50,28 @@ const check = (name, cond, detail = '') => {
 const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
 const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 
-// --- 1. cohort math ---------------------------------------------------------
+// --- 1. cohort math (PL-295 shape: announce +2, discount 7 days) ------------
 {
   const w = shared.cohortWindow({ lastSession: '2026-10-24', foExtendedUntil: null })
-  check('math: announce = last session + 1', w.announceDate === '2026-10-25')
-  check('math: base deadline = last session + 14', w.baseDeadline === '2026-11-07')
-  check('math: reminder = deadline − 2', w.reminderDate === '2026-11-05')
-  check('math: not extended by default', w.deadline === '2026-11-07' && !w.extended)
-  const we = shared.cohortWindow({ lastSession: '2026-10-24', foExtendedUntil: '2026-11-14' })
-  check('math: extension wins', we.deadline === '2026-11-14' && we.extended)
-  check('math: extension target = deadline + 7 (future window)', shared.extensionTarget(w, '2026-10-30') === '2026-11-14')
+  check('math: announce = last session + 2 (off the E-series)', w.announceDate === '2026-10-26')
+  check('math: discount end = announce + 7', w.baseDeadline === '2026-11-02')
+  check('math: reminder = discount end − 2', w.reminderDate === '2026-10-31')
+  check('math: not extended by default', w.deadline === '2026-11-02' && !w.extended)
+  const we = shared.cohortWindow({ lastSession: '2026-10-24', foExtendedUntil: '2026-11-09' })
+  check('math: extension wins', we.deadline === '2026-11-09' && we.extended)
+  check('math: extension target = deadline + 7 (future window)', shared.extensionTarget(w, '2026-10-28') === '2026-11-09')
   check('math: extension from today when long gone', shared.extensionTarget(w, '2026-12-01') === '2026-12-08')
+  // PL-295C overrides + the registration-deadline clamp.
+  const early = shared.cohortWindow({ lastSession: '2026-10-24', foExtendedUntil: null, foAnnounceDate: '2026-10-10' })
+  check('math: announce override (early start, mid-class)', early.announceDate === '2026-10-10' && early.baseDeadline === '2026-10-17' && early.announceOverridden)
+  const clamped = shared.cohortWindow({
+    lastSession: '2026-10-24',
+    foExtendedUntil: null,
+    targetRegistrationDeadline: '2026-10-30',
+  })
+  check('math: discount end clamps to the FO registration deadline', clamped.baseDeadline === '2026-10-30' && clamped.clampedToRegistrationDeadline)
+  const manualEnd = shared.cohortWindow({ lastSession: '2026-10-24', foExtendedUntil: null, foDiscountEnd: '2026-10-29' })
+  check('math: manual discount end honored', manualEnd.baseDeadline === '2026-10-29' && manualEnd.discountEndOverridden)
 }
 
 // --- fixtures ---------------------------------------------------------------
@@ -79,10 +90,11 @@ const { data: feeder, error: fErr } = await db.from('classes').insert([{
   follow_on_class_id: target.id,
 }]).select('id').single()
 if (fErr) { console.error('feeder insert failed:', fErr.message); process.exit(1) }
-// last session yesterday → announce due today, deadline today+13.
+// PL-295 shape: last session 3 days ago → announce = today−1 (due
+// regardless of the hour), discount end = today+6 (window open).
 await db.from('sessions').insert([
-  { class_id: feeder.id, session_date: addDays(today, -8), start_time: '16:00', end_time: '18:00' },
-  { class_id: feeder.id, session_date: addDays(today, -1), start_time: '16:00', end_time: '18:00' },
+  { class_id: feeder.id, session_date: addDays(today, -10), start_time: '16:00', end_time: '18:00' },
+  { class_id: feeder.id, session_date: addDays(today, -3), start_time: '16:00', end_time: '18:00' },
 ])
 const { data: fam } = await db.from('families').insert([{
   parent_first_name: 'QAP', parent_last_name: 'PL279', parent_email: 'qa-pl279-parent@example.com',

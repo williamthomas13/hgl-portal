@@ -25,7 +25,9 @@ export async function POST(req: Request) {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const { data: cls } = await supabase
     .from('classes')
-    .select('id, start_date, follow_on_class_id, fo_extended_until, sessions ( session_date )')
+    .select(
+      'id, start_date, follow_on_class_id, fo_extended_until, fo_announce_date, fo_discount_end, fo_exclude, sessions ( session_date )'
+    )
     .eq('id', body.classId)
     .maybeSingle()
   if (!cls) return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
@@ -35,11 +37,19 @@ export async function POST(req: Request) {
       { status: 400 }
     )
   }
+  if (cls.fo_exclude) {
+    return NextResponse.json(
+      { error: 'This cohort is excluded from the follow-on campaign — nothing to extend.' },
+      { status: 400 }
+    )
+  }
   const dates = ((cls.sessions as any[]) ?? []).map((s) => s.session_date).sort()
   /* eslint-enable @typescript-eslint/no-explicit-any */
   const window = cohortWindow({
     lastSession: dates[dates.length - 1] ?? cls.start_date,
     foExtendedUntil: cls.fo_extended_until,
+    foAnnounceDate: cls.fo_announce_date,
+    foDiscountEnd: cls.fo_discount_end,
   })
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
   const until = extensionTarget(window, today)
