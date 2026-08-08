@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { WEEKDAYS } from './types'
 import type { Subject, Tutor } from './types'
+import { groupSubjects } from '../../utils/subject-groups'
 
 // PL-226: tutors ARE instructors, and this panel is now a read-only
 // REPRESENTATION of that shared record + a matching FINDER (subject +
@@ -23,6 +24,90 @@ const TZ_REGION_LABELS: Record<string, string> = {
   americas: 'Americas',
   emea: 'Europe & Africa',
   apac: 'Asia-Pacific',
+}
+
+// PL-320: subjects render as a grouped category summary ("Math (9) · Test
+// prep (7)"), expanding to a chip grid — Billy's ~35-subject comma wall made
+// the row a screen tall. Grouping is the ONE shared source
+// (utils/subject-groups); an active subject filter auto-expands and
+// highlights the matching chip.
+function SubjectSummaryCell({
+  tutor,
+  subjects,
+  filter,
+}: {
+  tutor: Tutor
+  subjects: Subject[]
+  filter: string
+}) {
+  const [openManual, setOpenManual] = useState(false)
+  const catByName = new Map(subjects.map((s) => [s.name, s.category]))
+  const ready = groupSubjects(tutor.subjects.map((name) => ({ name, category: catByName.get(name) })))
+  const prep = tutor.subjects_with_prep ?? []
+  const filterMatches =
+    !!filter && (tutor.subjects.includes(filter) || prep.includes(filter))
+  const open = openManual || filterMatches
+  if (tutor.subjects.length === 0 && prep.length === 0) {
+    return <span className="italic text-gray-400">none set</span>
+  }
+  const summary = ready.map((g) => `${g.group} (${g.names.length})`).join(' · ')
+  return (
+    <div className="text-xs">
+      <button
+        type="button"
+        onClick={() => setOpenManual((o) => !o)}
+        className="text-left text-gray-600 hover:text-hgl-slate"
+        title={open ? 'Collapse' : 'Show every subject'}
+      >
+        {summary || 'no ready subjects'}
+        {prep.length > 0 && `${summary ? ' · ' : ''}with prep (${prep.length})`}
+        <span className="ml-1 text-gray-400">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {ready.map((g) => (
+            <div key={g.group}>
+              <span className="font-semibold text-gray-500">{g.group}</span>
+              <span className="flex flex-wrap gap-1 mt-0.5">
+                {g.names.map((n) => (
+                  <span
+                    key={n}
+                    className={`rounded-full px-2 py-0.5 border ${
+                      filter === n
+                        ? 'bg-hgl-blue text-white border-hgl-blue font-semibold'
+                        : 'bg-gray-100 border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {n}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ))}
+          {/* PL-35a: capable-but-confirm-first set, visually distinct. */}
+          {prep.length > 0 && (
+            <div>
+              <span className="font-semibold text-amber-700">With prep — confirm first</span>
+              <span className="flex flex-wrap gap-1 mt-0.5">
+                {prep.map((n) => (
+                  <span
+                    key={n}
+                    className={`rounded-full px-2 py-0.5 border ${
+                      filter === n
+                        ? 'bg-amber-600 text-white border-amber-600 font-semibold'
+                        : 'bg-amber-50 border-amber-200 text-amber-800'
+                    }`}
+                  >
+                    {n}
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function TutorsPanel({
@@ -152,10 +237,15 @@ export default function TutorsPanel({
           className="border border-gray-300 rounded p-1.5 text-sm"
         >
           <option value="">any subject</option>
-          {subjects.map((s) => (
-            <option key={s.id} value={s.name}>
-              {s.name}
-            </option>
+          {/* PL-320: options grouped by the shared category mapping. */}
+          {groupSubjects(subjects.map((s) => ({ name: s.name, category: s.category }))).map((g) => (
+            <optgroup key={g.group} label={g.group}>
+              {g.names.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <select
@@ -250,18 +340,8 @@ export default function TutorsPanel({
                     <div className="text-xs text-gray-400">cal: {t.google_calendar_id}</div>
                   )}
                 </td>
-                <td className="px-3 py-2 text-gray-600 max-w-48">
-                  {t.subjects.length ? (
-                    t.subjects.join(', ')
-                  ) : (
-                    <span className="italic text-gray-400">none set</span>
-                  )}
-                  {/* PL-35a: capable-but-confirm-first set, visually distinct */}
-                  {(t.subjects_with_prep ?? []).length > 0 && (
-                    <span className="block text-xs text-amber-700 mt-0.5">
-                      Also, with prep — confirm first: {t.subjects_with_prep.join(', ')}
-                    </span>
-                  )}
+                <td className="px-3 py-2 text-gray-600 max-w-64">
+                  <SubjectSummaryCell tutor={t} subjects={subjects} filter={subjectFilter} />
                 </td>
                 <td className="px-3 py-2 text-gray-600">{t.timezone}</td>
                 <td className="px-3 py-2 text-gray-600 max-w-44">

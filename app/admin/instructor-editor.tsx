@@ -6,6 +6,7 @@ import { GOOGLE_CALENDAR_PALETTE, textOnColor } from '../utils/calendar-colors'
 import { TimezoneSelect } from './ui'
 import { WEEKDAYS } from './tutoring/types'
 import type { OfferWindowUI } from './tutoring/types'
+import { groupSubjects } from '../utils/subject-groups'
 
 // PL-226: THE instructor add/edit surface (instructors = tutors — one table,
 // one profile). Lives on Contacts→Instructors; the 1-on-1→Tutors panel is a
@@ -253,44 +254,54 @@ export default function InstructorEditor({
                   Ready subjects auto-match in the wizard; with-prep ones never do.
                 </span>
               </label>
-              <div className="flex flex-wrap gap-2">
-                {subjects.map((s) => {
-                  const state = picked.includes(s.name) ? 'ready' : pickedPrep.includes(s.name) ? 'prep' : 'off'
-                  const cycle = () => {
-                    if (state === 'ready') {
-                      setPicked((p) => p.filter((x) => x !== s.name))
-                      setPickedPrep((p) => [...p, s.name])
-                    } else if (state === 'prep') {
-                      setPickedPrep((p) => p.filter((x) => x !== s.name))
-                    } else {
-                      setPicked((p) => [...p, s.name])
-                    }
-                  }
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={cycle}
-                      className={`px-2 py-1 rounded border cursor-pointer text-xs ${
-                        state === 'ready'
-                          ? 'bg-hgl-slate text-white border-hgl-slate'
-                          : state === 'prep'
-                            ? 'bg-amber-50 text-amber-800 border-amber-400'
-                            : 'bg-white text-gray-600 border-gray-300'
-                      }`}
-                      title={
-                        state === 'ready'
-                          ? 'Ready — auto-matchable'
-                          : state === 'prep'
-                            ? 'Capable with prep — confirm with the tutor first, never auto-suggested'
-                            : 'Not offered'
-                      }
-                    >
-                      {s.name}
-                      {state === 'prep' ? ' *' : ''}
-                    </button>
+              {/* PL-320: the same grouping the tutors table uses — one source. */}
+              <div className="space-y-2">
+                {groupSubjects(subjects.map((s) => ({ name: s.name, category: s.category }))).map(
+                  (g) => (
+                    <div key={g.group}>
+                      <p className="text-xs font-semibold text-gray-500 mb-1">{g.group}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {g.names.map((name) => {
+                          const state = picked.includes(name) ? 'ready' : pickedPrep.includes(name) ? 'prep' : 'off'
+                          const cycle = () => {
+                            if (state === 'ready') {
+                              setPicked((p) => p.filter((x) => x !== name))
+                              setPickedPrep((p) => [...p, name])
+                            } else if (state === 'prep') {
+                              setPickedPrep((p) => p.filter((x) => x !== name))
+                            } else {
+                              setPicked((p) => [...p, name])
+                            }
+                          }
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={cycle}
+                              className={`px-2 py-1 rounded border cursor-pointer text-xs ${
+                                state === 'ready'
+                                  ? 'bg-hgl-slate text-white border-hgl-slate'
+                                  : state === 'prep'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-400'
+                                    : 'bg-white text-gray-600 border-gray-300'
+                              }`}
+                              title={
+                                state === 'ready'
+                                  ? 'Ready — auto-matchable'
+                                  : state === 'prep'
+                                    ? 'Capable with prep — confirm with the tutor first, never auto-suggested'
+                                    : 'Not offered'
+                              }
+                            >
+                              {name}
+                              {state === 'prep' ? ' *' : ''}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
                   )
-                })}
+                )}
               </div>
             </div>
 

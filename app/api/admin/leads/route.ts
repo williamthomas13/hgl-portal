@@ -10,6 +10,7 @@ import { loadContactInfo } from '../../../utils/tutoring-emails'
 import { sendAdminAlert, sendOnce } from '../../../utils/email'
 import { LEAD_STATUS_LABELS, leadAssignedDetails, leadAssignedSubject } from '../../../utils/lead-assign-copy'
 import { escapeLike } from '../../../utils/like-escape'
+import { scanCloseMatches } from '../../../utils/close-match'
 import {
   loadGcalConnection,
   createGcalEvent,
@@ -108,6 +109,11 @@ export async function POST(req: Request) {
         .select('id')
         .single()
       if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed.' }, { status: 500 })
+      // PL-313: the new prospective student may already BE a registered
+      // student under a fuller name — scan best-effort behind the response.
+      scanCloseMatches({ leadId: data.id }).catch((e) =>
+        console.error('close-match scan failed (lead stands):', e)
+      )
       return NextResponse.json({ ok: true, id: data.id })
     }
 
@@ -189,6 +195,7 @@ export async function POST(req: Request) {
           await sendAdminAlert({
             dedupeKey: `al_lead_assigned:${body.id}:${newAssignee}`,
             adminEmail: newAssignee,
+            direct: true, // PL-309: a personal handoff, not a category alert
             templateKey: 'AL_LEAD_ASSIGNED',
             subject: leadAssignedSubject(facts),
             body: leadAssignedDetails(facts),

@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { emailBaseUrl, nonProductionOrigins } from './base-url'
-import { classLocationTailText } from './comms-variables'
+import { classLocationTailText, sessionScheduleMarkdown } from './comms-variables'
+import { renderMarkdownBody } from './comms-md'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { convertUrlFor, refundRequestUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 import { templateMetaFor, type RecipientRole } from './comms'
@@ -129,7 +130,6 @@ export type EnrollmentEmailContext = {
   isOpenEnrollment: boolean
   /** PL-274 B: per-class switches — diagnostic/Synap copy conditions on these. */
   hasDiagnostics: boolean
-  hasSynap: boolean
   defaultLocation: string | null
   deliveryMode: string
   synapGroup: string | null
@@ -374,6 +374,7 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
           ? `diagnostic test information, instructor information, and ${classLocationPhrase(ctx)}`
           : `instructor information and ${classLocationPhrase(ctx)}`
       }.</p>
+      ${renderMarkdownBody(sessionScheduleMarkdown(ctx), {})}
       ${addonTutoringBlockHtml(ctx)}
       <p>If you have any questions between now and then, you can respond to this email (but maybe
       check our <a href="https://highergroundlearning.com/faqs#general">FAQs</a> first).</p>
@@ -431,6 +432,7 @@ export function studentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered 
           : classLocationPhrase(ctx)
       }.</p>
       ${ctx.hasDiagnostics ? `<p>(By the way, that test is due ${formatDate(ctx.diagnosticDueDate)}!)</p>` : ''}
+      ${renderMarkdownBody(sessionScheduleMarkdown(ctx), {})}
       <p>Until then, you might be interested in signing up for our free
       <a href="${COMPASS_URL}">College Prep Compass</a>, which goes over:</p>
       <ul style="padding-left:20px">
@@ -1253,16 +1255,26 @@ export function waitlistOfferEmail(
 // SU — Schedule Update · on change after #4 sent · both · info@ · T
 // ---------------------------------------------------------------------------
 
-export type ScheduleChange = { label: string; value: string }
+export type ScheduleChange = {
+  label: string
+  value: string
+  /** PL-314: a complete plain-English line ("A fourth session was added:
+   *  Tuesday, September 8 · 5:00 PM–8:00 PM.") — preferred over the
+   *  label/value form when present. */
+  sentence?: string
+}
+
+/** ONE renderer for a schedule-change bullet — the sweep, the per-session
+ *  edit route, and this twin must produce identical lines. */
+export const scheduleChangeLi = (c: ScheduleChange) =>
+  `<li>${c.sentence ?? `<strong>${c.label}:</strong> now ${c.value}`}</li>`
 
 export function scheduleUpdateEmail(
   ctx: EnrollmentEmailContext,
   audience: Audience,
   changes: ScheduleChange[]
 ): Rendered {
-  const changesBlock = changes
-    .map((c) => `<li><strong>${c.label}:</strong> now ${c.value}</li>`)
-    .join('')
+  const changesBlock = changes.map(scheduleChangeLi).join('')
   return {
     subject: `Schedule update for ${ctx.className}`,
     html: wrap(
@@ -2196,12 +2208,33 @@ export function registrationNotificationContent(opts: {
   }
 }
 
+// PL-309: recipients resolve from staff_alert_subscriptions by category —
+// cached briefly so the hourly sweep's alert bursts don't re-query per send.
+let subsCache: { at: number; rows: { email: string; category: string; enabled: boolean }[] } | null = null
+async function alertSubscribers(category: string): Promise<string[]> {
+  if (!subsCache || Date.now() - subsCache.at > 60_000) {
+    const { data } = await supabase
+      .from('staff_alert_subscriptions')
+      .select('email, category, enabled')
+    subsCache = { at: Date.now(), rows: (data as { email: string; category: string; enabled: boolean }[]) ?? [] }
+  }
+  return [...new Set(
+    subsCache.rows.filter((r) => r.category === category && r.enabled).map((r) => r.email.toLowerCase())
+  )]
+}
+export function clearAlertSubscriberCache() {
+  subsCache = null
+}
+
 export async function sendAdminAlert(opts: {
   dedupeKey: string
   adminEmail: string
   subject: string
   body: string
   enrollmentId?: string
+  /** PL-309: send ONLY to opts.adminEmail (personal alerts like
+   *  lead-assignment) — subscriptions don't apply. */
+  direct?: boolean
   /** PL-66: the alert's registry template (AL_*). When set AND the template
    *  is live, the editable framing (subject/body) comes from the registry
    *  with the composed guts riding {alertDetailsBlock}; until then the
@@ -2254,13 +2287,28 @@ export async function sendAdminAlert(opts: {
     }
   }
 
+  // PL-309: one sender path, recipients from the subscription settings —
+  // fan out to every staff member subscribed to this alert's category, with
+  // the callsite's legacy address as the never-goes-nowhere fallback (and
+  // the only recipient for `direct` personal alerts).
+  let to = [opts.adminEmail]
+  if (!opts.direct) {
+    try {
+      const { alertCategory } = await import('./alert-categories')
+      const subscribed = await alertSubscribers(alertCategory(opts.templateKey, opts.dedupeKey))
+      if (subscribed.length > 0) to = subscribed
+    } catch (e) {
+      console.error('alert subscription resolve failed — legacy recipient used:', e)
+    }
+  }
+
   return sendOnce({
     dedupeKey: opts.dedupeKey,
     emailType: 'admin_alert',
     templateKey: opts.templateKey,
     recipientRole: 'admin',
     enrollmentId: opts.enrollmentId,
-    to: [opts.adminEmail],
+    to,
     subject: `[HGL Admin] ${rendered.subject}`,
     html: rendered.html,
   })

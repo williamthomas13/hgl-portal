@@ -26,7 +26,18 @@ import { signingSecret } from './signing'
 // through sendOnce.
 
 const ORG_TZ = 'America/Denver'
-const LATE_RESCHEDULE_FEE_PER_HOUR = 40 // signed policy; engagement rate does NOT change it
+// PL-321: the signed-policy default; the Settings → Price list panel can
+// change it via app_settings (engagement rate never changes it either way).
+const LATE_RESCHEDULE_FEE_DEFAULT = 40
+async function lateRescheduleFeePerHour(): Promise<number> {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'late_reschedule_fee_per_hour')
+    .maybeSingle()
+  const n = Number(data?.value)
+  return Number.isFinite(n) && n >= 0 ? n : LATE_RESCHEDULE_FEE_DEFAULT
+}
 
 // ---------------------------------------------------------------------------
 // Settings (app_settings; §10.4 cycle dates are configuration, not code)
@@ -561,13 +572,14 @@ export async function generateMonthlyCycle(
         .limit(1)
       if (charged?.length) continue
       const hours = s.duration_minutes / 60
+      const feeRate = await lateRescheduleFeePerHour()
       lines.push({
         invoice_id: invoice.id,
         session_id: s.id,
         description: `Late reschedule fee (${one<any>(s.students)?.first_name ?? 'student'}, under 24h notice, ${new Date(s.starts_at).toLocaleDateString('en-US', { timeZone: ORG_TZ, month: 'short', day: 'numeric' })})`,
         qty_hours: hours,
-        rate: LATE_RESCHEDULE_FEE_PER_HOUR,
-        amount: Number((hours * LATE_RESCHEDULE_FEE_PER_HOUR).toFixed(2)),
+        rate: feeRate,
+        amount: Number((hours * feeRate).toFixed(2)),
         kind: 'late_reschedule_fee',
       })
     }

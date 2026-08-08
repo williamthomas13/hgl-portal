@@ -15,6 +15,8 @@ import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import GcalPanel from './tutoring/gcal-panel'
 import ContactSettingsPanel from './contact-settings-panel'
 import TeamAccessPanel from './team-access-panel'
+import NotificationsPanel from './notifications-panel'
+import PricingPanel from './pricing-panel'
 import DashboardPanel from './dashboard-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import { ConfirmAction } from './tutoring/confirm'
@@ -102,14 +104,15 @@ type ClassRow = {
   /** PL-274: class-level timezone (open-enrollment classes); wins over school. */
   timezone: string | null
   has_diagnostics: boolean
-  has_synap: boolean
   delivery_mode: string
   min_enrollment: number | null
   enrollment_deadline: string | null
   follow_on_class_id: string | null
+  /** PL-311: explicit follow-up flag — gates the FO marketing controls. */
+  is_follow_on: boolean
   /** PL-279: short marketing name for an open class ("Deep Dive"). */
   fo_short_name: string | null
-  /** PL-279: this FEEDER cohort's extended follow-on discount deadline. */
+  /** PL-279: this FEEDER cohort's extended follow-up discount deadline. */
   fo_extended_until: string | null
   /** PL-293: the class's Squarespace marketing page. */
   marketing_url: string | null
@@ -243,7 +246,7 @@ function AddSessionForm({
 // fields (Synap group, location) — view with an edit link, flipping to an
 // input + save/cancel. No window.prompt (it loses context and can't cancel
 // cleanly on mobile).
-// PL-279/PL-295: one feeder cohort's follow-on campaign calendar — the
+// PL-279/PL-295: one feeder cohort's follow-up campaign calendar — the
 // effective dates (announce → discount end, override- and clamp-aware), the
 // per-cohort overrides (announce date incl. early start, discount end,
 // exclude flag), and the deliberate Extend action. Inline confirm, per the
@@ -308,7 +311,7 @@ function FoExtendControl({
     return (
       <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
         <span className="inline-block px-1.5 py-0.5 rounded font-semibold bg-gray-100 text-gray-500">
-          Excluded from the follow-on campaign
+          Excluded from the follow-up campaign
         </span>
         <span>— no announcements, no discount, no reminders for this cohort.</span>
         <button disabled={busy} onClick={() => saveField('fo_exclude', false)} className="underline hover:text-hgl-blue">
@@ -321,8 +324,8 @@ function FoExtendControl({
 
   return (
     <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-      <span title="This cohort's follow-on campaign calendar — every FO email quotes the discount end as {endDate}. Registration itself stays open (full price) until the follow-on class's registration deadline.">
-        Follow-on campaign: announce{' '}
+      <span title="This cohort's follow-up campaign calendar — every FO email quotes the discount end as {endDate}. Registration itself stays open (full price) until the follow-up class's registration deadline.">
+        Follow-up campaign: announce{' '}
         <input
           type="date"
           value={classRow.fo_announce_date ?? window.announceDate}
@@ -348,7 +351,7 @@ function FoExtendControl({
           disabled={busy}
           onChange={(e) => saveField('fo_discount_end', e.target.value || null)}
           className="border border-gray-200 rounded px-1 py-0.5 text-xs"
-          title="Discount end — announce + 7 by default; never past the follow-on class's registration deadline"
+          title="Discount end — announce + 7 by default; never past the follow-up class's registration deadline"
         />
         {window.discountEndOverridden && (
           <button
@@ -362,13 +365,13 @@ function FoExtendControl({
         )}
         {window.clampedToRegistrationDeadline &&
           ` (held to the class's registration deadline, ${formatDateAdmin(targetRegDeadline)})`}
-        {!promoReady && ' — set a promo code + amount on the follow-on class first'}
+        {!promoReady && ' — set a promo code + amount on the follow-up class first'}
       </span>
       <button
         disabled={busy}
         onClick={() => saveField('fo_exclude', true)}
         className="underline hover:text-red-700"
-        title="Exclude this cohort from the campaign entirely (e.g. it runs at the same time as the follow-on class)"
+        title="Exclude this cohort from the campaign entirely (e.g. it runs at the same time as the follow-up class)"
       >
         exclude this cohort
       </button>
@@ -383,7 +386,7 @@ function FoExtendControl({
           title={
             window.extended
               ? 'The "Bad News, Great News" pair sends to this cohort on the next hourly sweep (once the FO templates are live), once per family.'
-              : `The extension email only sends if this cohort's window is extended — by the button here, or automatically if the follow-on class has auto-extend on and is under minimum when the deadline passes.${followOn.fo_auto_extend ? ' Auto-extend is ON for the follow-on class.' : ''}`
+              : `The extension email only sends if this cohort's window is extended — by the button here, or automatically if the follow-up class has auto-extend on and is under minimum when the deadline passes.${followOn.fo_auto_extend ? ' Auto-extend is ON for the follow-up class.' : ''}`
           }
         >
           Extension email: {window.extended ? `armed — deadline now ${formatDateAdmin(window.deadline)}` : `off${followOn.fo_auto_extend ? ' (auto-extend on)' : ''}`}
@@ -545,6 +548,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'settings', label: 'Contact settings' },
       // PL-213: who can open the admin side (admin-only; hidden for managers).
       { id: 'team', label: 'Team access' },
+      { id: 'notifications', label: 'Notifications' },
+      { id: 'pricing', label: 'Price list' },
       // PL-202: the Quo calls integration (setup + enable switch).
       { id: 'calls', label: 'Phone calls' },
       // PL-198: View-as files here (Scarlett's Jul 29 filing).
@@ -889,7 +894,7 @@ export default function AdminDashboard() {
     fetchRosters()
   }
 
-  // Feature C3: "Part 2" pointer — the parent dashboard's follow-on card
+  // Feature C3: "Part 2" pointer — the parent dashboard's follow-up card
   // prefers this over the same-school heuristic.
   async function handleFollowOnChange(c: ClassRow, followOnId: string) {
     const { error } = await supabase
@@ -897,8 +902,14 @@ export default function AdminDashboard() {
       .update({ follow_on_class_id: followOnId || null })
       .eq('id', c.id)
     if (error) {
-      setActionNotice('Error setting follow-on class: ' + error.message)
+      setActionNotice('Error setting follow-up class: ' + error.message)
       return
+    }
+    // PL-311: linking a feeder auto-sets the target's follow-up flag — the
+    // pointer and the flag stay consistent without a second manual step
+    // (unchecking later just hides the marketing controls, with a warning).
+    if (followOnId) {
+      await supabase.from('classes').update({ is_follow_on: true }).eq('id', followOnId).eq('is_follow_on', false)
     }
     fetchRosters()
   }
@@ -1029,9 +1040,9 @@ export default function AdminDashboard() {
       | 'synap_group'
       | 'default_location'
       | 'has_diagnostics'
-      | 'has_synap'
       | 'fo_short_name'
       | 'fo_auto_extend'
+      | 'is_follow_on'
       | 'marketing_url',
     value: string | boolean | null
   ) {
@@ -1430,8 +1441,9 @@ export default function AdminDashboard() {
                 {c.timezone ? '(class timezone — open enrollment)' : '(from the school record)'}
               </span>
             </p>
-            {/* PL-274 amendment B: the two switches, editable where they're
-                read — the email sequence conditions on them. */}
+            {/* PL-310: ONE switch (diagnostics run through Synap — a second
+                Synap toggle modeled a distinction that doesn't exist),
+                editable where it's read — the email sequence conditions on it. */}
             <p className="text-sm text-gray-600 flex items-center gap-4 flex-wrap">
               <label className="flex items-center gap-1.5">
                 <input
@@ -1441,22 +1453,39 @@ export default function AdminDashboard() {
                 />
                 <span className="font-semibold">Has diagnostics</span>
               </label>
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={c.has_synap !== false}
-                  onChange={(e) => handleClassField(c, 'has_synap', e.target.checked)}
-                />
-                <span className="font-semibold">Has Synap</span>
-              </label>
               <span className="text-xs text-gray-400">
                 off = the email sequence drops diagnostic/Synap content for this class
               </span>
             </p>
-            {/* PL-294: only meaningful on a class that IS a follow-on target
-                (open classes). Default off — the deliberate Extend action on
-                the feeder card stays the recommended path. */}
+            {/* PL-311: the explicit follow-up flag — what gates the FO
+                marketing controls below. Auto-set when a feeder first links
+                this class; editable here. Only open classes can be one. */}
             {!c.school_id && (
+              <p className="text-sm text-gray-600 flex items-center gap-1.5 flex-wrap">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={c.is_follow_on === true}
+                    onChange={(e) => handleClassField(c, 'is_follow_on', e.target.checked)}
+                  />
+                  <span className="font-semibold">This is a follow-up class</span>
+                </label>
+                <span className="text-xs text-gray-400">
+                  marketed to students finishing a feeder class — shows the marketing controls
+                  below; a follow-up doesn&apos;t get its own feeder dropdown
+                </span>
+                {!c.is_follow_on && rosters.some((f) => f.follow_on_class_id === c.id) && (
+                  <span className="text-xs text-amber-700 font-semibold">
+                    ⚠ a feeder class points its follow-up at this class but the flag is off —
+                    the marketing controls stay hidden until it&apos;s checked
+                  </span>
+                )}
+              </p>
+            )}
+            {/* PL-294 + PL-311: only on flagged follow-up classes. Default
+                off — the deliberate Extend action on the feeder card stays
+                the recommended path. */}
+            {!c.school_id && c.is_follow_on === true && (
               <p className="text-sm text-gray-600 flex items-center gap-1.5 flex-wrap">
                 <label className="flex items-center gap-1.5">
                   <input
@@ -1464,7 +1493,7 @@ export default function AdminDashboard() {
                     checked={c.fo_auto_extend === true}
                     onChange={(e) => handleClassField(c, 'fo_auto_extend', e.target.checked)}
                   />
-                  <span className="font-semibold">Auto-extend follow-on discounts</span>
+                  <span className="font-semibold">Auto-extend follow-up discounts</span>
                 </label>
                 <span className="text-xs text-gray-400">
                   on = when a feeder cohort&apos;s discount deadline passes while this class is
@@ -1476,11 +1505,11 @@ export default function AdminDashboard() {
             {/* PL-293: the class's Squarespace marketing page — the FO
                 emails' "More info" link and the register page's class-page
                 pointer compose from this; blank drops both cleanly. */}
-            {!c.school_id && (
+            {!c.school_id && c.is_follow_on === true && (
               <InlineEditableText
                 label="Marketing page URL"
                 value={c.marketing_url}
-                emptyText='not set — no "More info" link in follow-on emails or on the register page'
+                emptyText='not set — no "More info" link in follow-up emails or on the register page'
                 title="The class's marketing page (e.g. https://hgl.co/advanced-sat)"
                 onSave={(v) => handleClassField(c, 'marketing_url', v)}
               />
@@ -1608,27 +1637,32 @@ export default function AdminDashboard() {
                 </button>
               )}
             </p>
-            <p className="text-sm text-gray-600 flex items-center gap-2">
-              <span className="font-semibold" title="Parents of this class's students see the follow-on as a 'you might be interested in' card in their portal">
-                Follow-on class:
-              </span>
-              <select
-                value={c.follow_on_class_id ?? ''}
-                onChange={(e) => handleFollowOnChange(c, e.target.value)}
-                className="border border-gray-300 rounded p-0.5 text-xs bg-white max-w-64"
-              >
-                <option value="">none</option>
-                {rosters
-                  .filter((other) => other.id !== c.id && other.status !== 'cancelled')
-                  .map((other) => (
-                    <option key={other.id} value={other.id}>
-                      {(other.schools?.nickname ?? '—') + ' ' + other.class_type} (starts{' '}
-                      {formatDateAdmin(other.start_date)})
-                    </option>
-                  ))}
-              </select>
-            </p>
-            {/* PL-279: the FO campaign runs when the follow-on is an OPEN
+            {/* PL-311: the feeder side. A flagged follow-up (Deep Dive) never
+                shows this — a follow-up has no follow-up (chain one by
+                flagging both and the dropdown returns). */}
+            {c.is_follow_on !== true && (
+              <p className="text-sm text-gray-600 flex items-center gap-2">
+                <span className="font-semibold" title="Parents of this class's students see the follow-up as a 'you might be interested in' card in their portal">
+                  Follow-up class:
+                </span>
+                <select
+                  value={c.follow_on_class_id ?? ''}
+                  onChange={(e) => handleFollowOnChange(c, e.target.value)}
+                  className="border border-gray-300 rounded p-0.5 text-xs bg-white max-w-64"
+                >
+                  <option value="">none</option>
+                  {rosters
+                    .filter((other) => other.id !== c.id && other.status !== 'cancelled')
+                    .map((other) => (
+                      <option key={other.id} value={other.id}>
+                        {(other.schools?.nickname ?? '—') + ' ' + other.class_type} (starts{' '}
+                        {formatDateAdmin(other.start_date)})
+                      </option>
+                    ))}
+                </select>
+              </p>
+            )}
+            {/* PL-279: the FO campaign runs when the follow-up is an OPEN
                 class with a promo — this cohort's window + the deliberate
                 Extend action live here, on the feeder. */}
             {c.follow_on_class_id &&
@@ -1638,14 +1672,14 @@ export default function AdminDashboard() {
                   <FoExtendControl classRow={c} followOn={target} onChanged={fetchRosters} />
                 ) : null
               })()}
-            {/* PL-279: the short marketing name Scarlett's FO copy italicizes
-                ("Deep Dive") — only meaningful on open classes. */}
-            {!c.school_id && (
+            {/* PL-279 + PL-311: the short marketing name Scarlett's FO copy
+                italicizes ("Deep Dive") — only on flagged follow-up classes. */}
+            {!c.school_id && c.is_follow_on === true && (
               <InlineEditableText
                 label="Short marketing name"
                 value={c.fo_short_name}
-                emptyText={`not set — follow-on emails say "${c.class_type}"`}
-                title='The short name the follow-on emails italicize ("Deep Dive"). Blank = the full class name.'
+                emptyText={`not set — follow-up emails say "${c.class_type}"`}
+                title='The short name the follow-up emails italicize ("Deep Dive"). Blank = the full class name.'
                 onSave={(v) => handleClassField(c, 'fo_short_name', v)}
               />
             )}
@@ -2501,6 +2535,28 @@ export default function AdminDashboard() {
         {/* PL-213: Team access — admin-only (same self-gating pattern). */}
         <div className={activeSection === 'team' ? '' : 'hidden'}>
         <TeamAccessPanel />
+        </div>
+
+        {/* PL-309: who receives which [HGL Admin] alert family. */}
+        <div className={activeSection === 'notifications' ? '' : 'hidden'}>
+          <CollapsibleSection
+            title="Notifications"
+            subtitle="Which [HGL Admin] alerts reach which staff member — per category"
+            defaultOpen
+          >
+            <NotificationsPanel />
+          </CollapsibleSection>
+        </div>
+
+        {/* PL-321: the single pricing source — admin-only (self-gating). */}
+        <div className={activeSection === 'pricing' ? '' : 'hidden'}>
+          <CollapsibleSection
+            title="Price list"
+            subtitle="Base rates + derived tier discounts — every future price resolves from here"
+            defaultOpen
+          >
+            <PricingPanel />
+          </CollapsibleSection>
         </div>
 
           </div>

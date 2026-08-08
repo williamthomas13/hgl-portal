@@ -114,7 +114,15 @@ export async function POST(req: Request) {
           )
         }
         const preFeeSubtotal = (existingLines ?? []).reduce((sum, l) => sum + Number(l.amount), 0)
-        lateFeeAmount = Number((preFeeSubtotal * 0.1).toFixed(2))
+        // PL-321: the percent reads from the price list (app_settings), 10
+        // as the signed-policy default.
+        const { data: pctRow } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'late_fee_percent')
+          .maybeSingle()
+        const pct = Number.isFinite(Number(pctRow?.value)) && Number(pctRow?.value) > 0 ? Number(pctRow?.value) : 10
+        lateFeeAmount = Number(((preFeeSubtotal * pct) / 100).toFixed(2))
         if (lateFeeAmount <= 0) {
           return NextResponse.json({ error: 'Nothing to apply a fee to on this invoice.' }, { status: 400 })
         }
@@ -123,7 +131,7 @@ export async function POST(req: Request) {
         body.action === 'apply_late_fee'
           ? {
               invoice_id: invoice.id,
-              description: `Late payment fee (10%, per the signed policy — 30+ days past due)`,
+              description: `Late payment fee (per the signed policy — 30+ days past due)`,
               qty_hours: 0,
               rate: null,
               amount: lateFeeAmount,

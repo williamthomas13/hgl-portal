@@ -57,6 +57,7 @@ import {
   type EnrollmentEmailContext,
   type Rendered,
   type ScheduleChange,
+  scheduleChangeLi,
   e8AddonSchedulingEmail,
   e8AddonNudgeEmail,
   schedulingCtaBlockHtml,
@@ -79,6 +80,7 @@ import {
   addonPageUrlFor,
   claimUrlFor,
   classDetailsSnapshot,
+  sessionListChanges,
   classroomRequestUrlFor,
   digestFrequencyUrlFor,
   emailContext,
@@ -835,17 +837,23 @@ async function sweepAddonSchedulingNudges(c: Counters) {
 // ---------------------------------------------------------------------------
 
 function computeChanges(
-  snapshot: Partial<ReturnType<typeof classDetailsSnapshot>>,
+  snapshot: Partial<ReturnType<typeof classDetailsSnapshot>> & { origin?: string },
   bundle: ClassBundle
 ): ScheduleChange[] {
   const current = classDetailsSnapshot(bundle)
   const changes: ScheduleChange[] = []
-  if (snapshot.first_session !== current.first_session)
+  const snapSessions = Array.isArray(snapshot.sessions) ? snapshot.sessions : null
+  // PL-314: when the snapshot carries the session list, the list diff owns
+  // date-level changes — the scalar first-day line would just repeat it.
+  if (!snapSessions && snapshot.first_session !== current.first_session)
     changes.push({ label: 'First day of class', value: formatDate(current.first_session) })
   if ((snapshot.location ?? null) !== (current.location ?? null))
     changes.push({ label: 'Location', value: current.location ?? 'TBD' })
-  if ((snapshot.instructor ?? null) !== (current.instructor ?? null))
+  // PL-314: a registration-baseline family was never told an instructor —
+  // announcing an "instructor change" they never knew about is noise.
+  if (snapshot.origin !== 'registration' && (snapshot.instructor ?? null) !== (current.instructor ?? null))
     changes.push({ label: 'Instructor', value: current.instructor ?? 'TBD' })
+  if (snapSessions) changes.push(...sessionListChanges(snapSessions, current.sessions))
   return changes
 }
 
@@ -859,30 +867,52 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
     .eq('template_key', 'E4_CLASS_DETAILS')
     .in('status', ['sent', 'delivered', 'bounced', 'complained'])
     .in('enrollment_id', enrollmentIds)
-  if (!sentDetails || sentDetails.length === 0) return
+
+  // PL-314: the baseline starts at REGISTRATION — the family paid for the
+  // schedule the register page showed. Until an E4 exists, the enrollment's
+  // own registration snapshot is what they last saw; from E4 on, the E4
+  // snapshot takes over exactly as before.
+  const e4Informed = new Set(((sentDetails as { enrollment_id: string }[]) ?? []).map((r) => r.enrollment_id))
+  const { data: regRows } = await supabase
+    .from('enrollments')
+    .select('id, schedule_snapshot')
+    .in('id', enrollmentIds)
+    .not('schedule_snapshot', 'is', null)
 
   const current = classDetailsSnapshot(bundle)
   // jsonb does not preserve key order, so compare fields — never stringified objects.
   const stateKey = (s: Partial<typeof current>) =>
-    `${s.first_session ?? ''}|${s.location ?? ''}|${s.instructor ?? ''}`
+    `${s.first_session ?? ''}|${s.location ?? ''}|${s.instructor ?? ''}|${(s.sessions ?? [])
+      .map((x) => `${x.session_date}~${x.start_time ?? ''}~${x.end_time ?? ''}~${x.location ?? ''}`)
+      .join(',')}`
 
   // PL-138: the dedupe key used to hash the DESTINATION state alone, so a
   // room that went A→B→A→B suppressed the second "now B" email forever — the
   // family sat on a stale room. The key now names the TRANSITION (old→new)
   // and carries a per-enrollment change sequence, so every real change sends
   // exactly once even when the class oscillates between two states.
-  const staleByEnrollment = new Map<string, { changes: ScheduleChange[]; suffix: string; seq: number }>()
-  for (const row of sentDetails) {
-    if (!row.payload || !row.enrollment_id || staleByEnrollment.has(row.enrollment_id)) continue
-    const snapshot = row.payload as Partial<typeof current> & { seq?: number }
+  const staleByEnrollment = new Map<
+    string,
+    { changes: ScheduleChange[]; suffix: string; seq: number; source: 'e4' | 'registration' }
+  >()
+  const consider = (enrollmentId: string, snapshot: Partial<typeof current> & { seq?: number; origin?: string }, source: 'e4' | 'registration') => {
+    if (staleByEnrollment.has(enrollmentId)) return
     const changes = computeChanges(snapshot, bundle)
-    if (changes.length === 0) continue
+    if (changes.length === 0) return
     const seq = Number(snapshot.seq ?? 0) + 1
     const hash = createHash('md5')
       .update(`${stateKey(snapshot)}>${stateKey(current)}`)
       .digest('hex')
       .slice(0, 8)
-    staleByEnrollment.set(row.enrollment_id, { changes, suffix: `${hash}s${seq}`, seq })
+    staleByEnrollment.set(enrollmentId, { changes, suffix: `${hash}s${seq}`, seq, source })
+  }
+  for (const row of (sentDetails as { enrollment_id: string; payload: Record<string, unknown> | null }[]) ?? []) {
+    if (!row.payload || !row.enrollment_id) continue
+    consider(row.enrollment_id, row.payload as Partial<typeof current> & { seq?: number }, 'e4')
+  }
+  for (const row of (regRows as { id: string; schedule_snapshot: Record<string, unknown> | null }[]) ?? []) {
+    if (e4Informed.has(row.id) || !row.schedule_snapshot) continue
+    consider(row.id, row.schedule_snapshot as Partial<typeof current> & { seq?: number; origin?: string }, 'registration')
   }
   if (staleByEnrollment.size === 0) return
 
@@ -894,7 +924,7 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
     )
     if (!e) continue
     const changesBlock = `<ul style="padding-left:20px">${changes
-      .map((ch) => `<li><strong>${ch.label}:</strong> now ${ch.value}</li>`)
+      .map(scheduleChangeLi)
       .join('')}</ul>`
     await sendToAudiences({
       type: 'schedule_update',
@@ -917,14 +947,22 @@ async function sweepScheduleUpdates(bundle: ClassBundle, c: Counters) {
 
   // Refresh the snapshots so the *next* change triggers again. PL-138: the
   // sequence rides along in the snapshot, so it survives as the enrollment's
-  // own change counter.
-  for (const [enrollmentId, { seq }] of staleByEnrollment) {
-    await supabase
-      .from('email_sends')
-      .update({ payload: { ...current, seq } })
-      .eq('template_key', 'E4_CLASS_DETAILS')
-      .in('status', ['sent', 'delivered', 'bounced', 'complained'])
-      .eq('enrollment_id', enrollmentId)
+  // own change counter. PL-314: registration-baseline enrollments refresh
+  // their own snapshot (keeping the registration origin marker).
+  for (const [enrollmentId, { seq, source }] of staleByEnrollment) {
+    if (source === 'e4') {
+      await supabase
+        .from('email_sends')
+        .update({ payload: { ...current, seq } })
+        .eq('template_key', 'E4_CLASS_DETAILS')
+        .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+        .eq('enrollment_id', enrollmentId)
+    } else {
+      await supabase
+        .from('enrollments')
+        .update({ schedule_snapshot: { ...current, seq, origin: 'registration' } })
+        .eq('id', enrollmentId)
+    }
   }
 }
 
@@ -1100,7 +1138,7 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
     // final-days push never fires for them, so claiming it's "working that
     // side" would be false comfort.
     const fpStatus = bundle.isOpenEnrollment
-      ? 'this is an open-enrollment class — there is no counselor push; sign-ups come from our own marketing (the follow-on emails, the class page, direct outreach)'
+      ? 'this is an open-enrollment class — there is no counselor push; sign-ups come from our own marketing (the follow-up emails, the class page, direct outreach)'
       : fpSends?.[0]?.sent_at
         ? `the final-days push (the counselor's last-call email) was sent ${formatDate(fpSends[0].sent_at.slice(0, 10))}`
         : "the counselor's final-days push has not gone out yet (it goes out 3 days to 1 day before the deadline)"
@@ -1937,7 +1975,7 @@ export async function GET(req: Request) {
     await sweepCompletion(bundle, counters)
     await sweepThankYou(bundle, counters)
     await sweepUpsell(bundle, counters, packages.pre)
-    // PL-279: the FO follow-on sequence — per-cohort windows anchored on
+    // PL-279: the FO follow-up sequence — per-cohort windows anchored on
     // THIS feeder's own last session; registry-only rendering means the
     // drafts send nothing until Scarlett flips them live.
     const foReport = await sweepFollowOnForBundle(bundle)

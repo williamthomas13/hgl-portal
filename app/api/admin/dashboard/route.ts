@@ -413,6 +413,32 @@ export async function GET() {
     })
   }
 
+  // PL-313: pending same-person prompts — visible to admin AND manager
+  // (the whole dashboard is staff-gated). The link lands on the lead card's
+  // side-by-side panel; nothing merges without the click there.
+  {
+    const { data: pendingMatches } = await supabase
+      .from('record_matches')
+      .select(
+        `id, created_at, lead_id,
+         leads ( student_name, contact_name ),
+         students ( first_name, last_name )`
+      )
+      .eq('status', 'pending')
+    for (const m of (pendingMatches as any[]) ?? []) {
+      const lead = one<any>(m.leads)
+      const st = one<any>(m.students)
+      const leadName = lead?.student_name || lead?.contact_name || 'A pipeline lead'
+      attention.push({
+        id: `match-${m.id}`,
+        since: m.created_at,
+        kind: 'Possible duplicate person',
+        text: `${leadName} (pipeline) looks like ${st ? `${st.first_name} ${st.last_name}` : 'a registered student'} — same person? Review side by side and link them or say no.`,
+        href: `/admin/leads?lead=${m.lead_id}&match=${m.id}`,
+      })
+    }
+  }
+
   for (const s of (strandedProposals as any[]) ?? []) {
     const st = one<any>(s.students)
     attention.push({

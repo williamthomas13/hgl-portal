@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from "./supabase-admin"
 import { createHmac, timingSafeEqual } from 'crypto'
 import { availabilityToken } from './intake'
 import type { EnrollmentEmailContext, SessionInfo } from './email'
-import { bySessionStart } from './dates'
+import { bySessionStart, formatDateFull as formatDate } from './dates'
 import { checkToken, mintToken, signingSecret } from './signing'
 
 // Shared plumbing for the email lifecycle: loads every class with its school,
@@ -88,7 +88,6 @@ export type ClassBundle = {
   timezone: string
   /** PL-274 amendment B: per-class switches — emails/nags condition on these. */
   hasDiagnostics: boolean
-  hasSynap: boolean
   /** PL-274 amendment F: family-facing instructor intro; null drops cleanly. */
   instructorBio: string | null
   instructorId: string | null
@@ -217,7 +216,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     id, slug, status, counselor_id, class_type, school_id, instructor_id,
     default_location, synap_group, price, capacity, min_enrollment,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
-    collateral_changed_at, timezone, has_diagnostics, has_synap,
+    collateral_changed_at, timezone, has_diagnostics,
     follow_on_class_id, fo_extended_until, fo_exclude, fo_announce_date, fo_discount_end,
     schools ( name, nickname, timezone ),
     instructors ( name, email, bio ),
@@ -298,7 +297,6 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       // then the school's, then the default — one precedence everywhere.
       timezone: c.timezone ?? school?.timezone ?? DEFAULT_TIMEZONE,
       hasDiagnostics: c.has_diagnostics !== false,
-      hasSynap: c.has_synap !== false,
       instructorBio: instructor?.bio || null,
       instructorId: c.instructor_id ?? null,
       instructorName: instructor?.name ?? instructor?.email ?? null,
@@ -395,7 +393,6 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     instructorBio: bundle.instructorBio,
     isOpenEnrollment: bundle.isOpenEnrollment,
     hasDiagnostics: bundle.hasDiagnostics,
-    hasSynap: bundle.hasSynap,
     defaultLocation: bundle.defaultLocation,
     deliveryMode: bundle.deliveryMode,
     synapGroup: bundle.synapGroup,
@@ -427,18 +424,18 @@ export async function isReturningFamily(familyId: string, excludeClassId: string
   return Boolean(data && data.length > 0)
 }
 
-/** PL-274 amendment B: sequence steps a class's switches turn off.
- *  #2 (synap_access) carries BOTH the diagnostic intro and the Synap link —
- *  it only goes silent when the class has neither. #6 (second_diagnostic)
- *  is pure diagnostics. Used by the sweep AND the projector — the two must
- *  never disagree, or the comms dashboard shows steps as "not yet sent"
- *  forever. */
+/** PL-274 amendment B / PL-310: sequence steps the class's diagnostics
+ *  switch turns off. One switch since PL-310 — diagnostics run through
+ *  Synap, so #2 (synap_access, the diagnostic intro + Synap link) and #6
+ *  (second_diagnostic) both key off it. Used by the sweep AND the
+ *  projector — the two must never disagree, or the comms dashboard shows
+ *  steps as "not yet sent" forever. */
 export function stepDisabledForClass(stepType: string, bundle: ClassBundle): string | null {
-  if (stepType === 'synap_access' && !bundle.hasDiagnostics && !bundle.hasSynap) {
-    return 'class has neither diagnostics nor Synap (PL-274 switches)'
+  if (stepType === 'synap_access' && !bundle.hasDiagnostics) {
+    return 'class has no diagnostics (PL-310 switch)'
   }
   if (stepType === 'second_diagnostic' && !bundle.hasDiagnostics) {
-    return 'class has no diagnostics (PL-274 switch)'
+    return 'class has no diagnostics (PL-310 switch)'
   }
   return null
 }
@@ -773,10 +770,115 @@ export function checkCounselorRosterToken(
   return checkToken('roster:', `${classId}:${counselorEmail.trim().toLowerCase()}`, token, 'family-form')
 }
 
+export type SnapshotSession = {
+  session_date: string
+  start_time: string | null
+  end_time: string | null
+  location: string | null
+}
+
 export function classDetailsSnapshot(bundle: ClassBundle) {
   return {
     first_session: bundle.firstSession,
     location: bundle.defaultLocation,
     instructor: bundle.instructorName,
+    // PL-314: the full session list rides the snapshot — the sweep's diff
+    // catches ANY session add/edit/remove, not just first-session moves.
+    // Older stored snapshots lack this key; the diff skips the list for them.
+    sessions: bundle.sessions.map((s) => ({
+      session_date: s.session_date,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      location: s.location,
+    })) as SnapshotSession[],
   }
+}
+
+// PL-314: plain-English session-list diff — shared by the sweep and the
+// per-session edit route so both paths word changes identically.
+const ORDINAL_WORDS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth']
+const ordinalWord = (i: number) => ORDINAL_WORDS[i] ?? `${i + 1}th`
+
+const t12 = (t: string | null): string | null => {
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 === 0 ? 12 : h % 12
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+/** "5:00 PM–8:00 PM · Room 204" — the non-date half of a session line. */
+function sessionDetailText(s: SnapshotSession): string {
+  const parts: string[] = []
+  const start = t12(s.start_time)
+  const end = t12(s.end_time)
+  if (start) parts.push(end ? `${start}–${end}` : start)
+  if (s.location) parts.push(s.location)
+  return parts.join(' · ')
+}
+
+/** Diff two session lists into complete sentences ("A fourth session was
+ *  added: Tuesday, September 8, 2026 · 5:00 PM–8:00 PM."). Sessions match
+ *  by date (same-date split days pair up in start-time order). A date move
+ *  reads as removed + added — plain, and never wrong. */
+export function sessionListChanges(
+  before: SnapshotSession[],
+  after: SnapshotSession[]
+): { label: string; value: string; sentence: string }[] {
+  const byDate = (list: SnapshotSession[]) => {
+    const m = new Map<string, SnapshotSession[]>()
+    for (const s of [...list].sort((a, b) =>
+      (a.session_date + (a.start_time ?? '')).localeCompare(b.session_date + (b.start_time ?? ''))
+    )) {
+      const arr = m.get(s.session_date) ?? []
+      arr.push(s)
+      m.set(s.session_date, arr)
+    }
+    return m
+  }
+  const beforeBy = byDate(before)
+  const afterBy = byDate(after)
+  const sortedAfter = [...after].sort((a, b) =>
+    (a.session_date + (a.start_time ?? '')).localeCompare(b.session_date + (b.start_time ?? ''))
+  )
+  const changes: { label: string; value: string; sentence: string }[] = []
+
+  for (const [date, olds] of beforeBy) {
+    const news = afterBy.get(date) ?? []
+    for (let i = news.length; i < olds.length; i++) {
+      changes.push({
+        label: 'Session removed',
+        value: formatDate(date),
+        sentence: `The ${formatDate(date)} session was removed.`,
+      })
+    }
+  }
+  for (const [date, news] of afterBy) {
+    const olds = beforeBy.get(date) ?? []
+    for (let i = 0; i < news.length; i++) {
+      const s = news[i]
+      const b = olds[i]
+      if (!b) {
+        const position = sortedAfter.indexOf(s)
+        const detail = sessionDetailText(s)
+        changes.push({
+          label: 'Session added',
+          value: `${formatDate(date)}${detail ? ` · ${detail}` : ''}`,
+          sentence: `A ${ordinalWord(position)} session was added: ${formatDate(date)}${detail ? ` · ${detail}` : ''}.`,
+        })
+      } else if (
+        (b.start_time ?? '') !== (s.start_time ?? '') ||
+        (b.end_time ?? '') !== (s.end_time ?? '') ||
+        (b.location ?? '') !== (s.location ?? '')
+      ) {
+        const detail = sessionDetailText(s) || 'time TBD'
+        changes.push({
+          label: `The ${formatDate(date)} session`,
+          value: detail,
+          sentence: `The ${formatDate(date)} session now runs ${detail}.`,
+        })
+      }
+    }
+  }
+  return changes
 }

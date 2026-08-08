@@ -4,6 +4,7 @@ import { validAvailabilityRanges } from '../../utils/availability'
 import { emailBaseUrl } from '../../utils/base-url'
 import { sendAdminAlert } from '../../utils/email'
 import { ADMIN_EMAIL } from '../../utils/lifecycle'
+import { scanCloseMatches } from '../../utils/close-match'
 
 // Public intake submission (Phase 7e, spec §11), authenticated by the signed
 // link token — same trust model as the proposal/autopay links. Creates or
@@ -113,6 +114,11 @@ export async function POST(req: Request) {
 
   const result = await applyIntakeSubmission(leadId, submission)
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
+
+  // PL-313: intake just gave the lead fuller names/email — scan for an
+  // existing student record that looks like the same person (prompt only,
+  // never auto-merge). Best-effort behind the alert.
+  scanCloseMatches({ leadId }).catch((e) => console.error('close-match scan failed:', e))
 
   // Heads-up to the Ops Director — one alert per lead (re-submits stay quiet).
   await sendAdminAlert({

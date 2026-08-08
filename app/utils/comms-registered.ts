@@ -68,7 +68,6 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
     instructorBio: null,
     isOpenEnrollment: false,
     hasDiagnostics: true,
-    hasSynap: true,
     defaultLocation: null,
     deliveryMode: 'online',
     synapGroup: null,

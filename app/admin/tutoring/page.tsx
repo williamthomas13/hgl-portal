@@ -283,7 +283,7 @@ export default function TutoringAdmin() {
               <SidebarPanel id="activity" active={activeSection}>
                 <CollapsibleSection
                   title="Recent parent activity"
-                  subtitle="Reschedules families completed themselves in the portal — nothing happens invisibly"
+                  subtitle="Everything families did from the portal — completed moves AND requests waiting on you"
                   defaultOpen
                 >
                   <ActivityFeed refreshSignal={refreshSignal} />

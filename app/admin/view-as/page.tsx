@@ -128,7 +128,7 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
     }
   }
 
-  // PL-279: the FO follow-on sequence samples — the sign-off surface. Same
+  // PL-279: the FO follow-up sequence samples — the sign-off surface. Same
   // sample pipeline as the editor; each template renders for its own
   // audience. These stay drafts until Scarlett flips them live (the send
   // engine is registry-only, so nothing sends while they're drafts).
@@ -334,14 +334,14 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
             )}
           </div>
         )}
-        {/* PL-279: the FO follow-on sequence, rendered for sign-off — the
+        {/* PL-279: the FO follow-up sequence, rendered for sign-off — the
             send engine is registry-only, so flipping these live in the
             template editor IS the go-live switch. */}
         {role === 'parent' && followOnEmails.length > 0 && (
           <div className="space-y-3">
             <div className="bg-white rounded-lg border p-5 text-sm text-gray-700 space-y-2">
               <h2 className="font-bold text-hgl-slate">
-                The follow-on marketing sequence (families of a finishing class)
+                The follow-up marketing sequence (families of a finishing class)
               </h2>
               <p>
                 Three stages × parent + student, each rendered below with sample data through the

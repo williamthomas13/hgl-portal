@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { cohortWindow, extensionTarget, foLongDate } from '../../../utils/follow-on-shared'
 
-// PL-279: extend ONE feeder cohort's follow-on discount window — a
+// PL-279: extend ONE feeder cohort's follow-up discount window — a
 // deliberate admin action (never automatic: the stage-3 "we extended the
 // discount" story is only honest when someone chose to extend). Sets the
 // feeder's fo_extended_until a week past the current effective deadline;
@@ -33,13 +33,13 @@ export async function POST(req: Request) {
   if (!cls) return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
   if (!cls.follow_on_class_id) {
     return NextResponse.json(
-      { error: 'This class has no follow-on class linked — nothing to extend.' },
+      { error: 'This class has no follow-up class linked — nothing to extend.' },
       { status: 400 }
     )
   }
   if (cls.fo_exclude) {
     return NextResponse.json(
-      { error: 'This cohort is excluded from the follow-on campaign — nothing to extend.' },
+      { error: 'This cohort is excluded from the follow-up campaign — nothing to extend.' },
       { status: 400 }
     )
   }

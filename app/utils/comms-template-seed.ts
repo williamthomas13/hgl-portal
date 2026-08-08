@@ -35,6 +35,8 @@ Thanks for registering! Your class registration with Higher Ground Learning is c
 
 We'll be in touch with you in the days before the first day of class with all the relevant information that you'll need! This includes {e0IncludesPhrase}.
 
+{sessionScheduleBlock}
+
 {addonTutoringBlock}
 
 If you have any questions between now and then, you can respond to this email (but maybe check our [FAQs](https://highergroundlearning.com/faqs#general) first).
@@ -68,6 +70,8 @@ If you do know, great! We'll teach you a lot of other things, too. 🙂
 In the days before the course starts, you'll receive the necessary course information, such as {e0StudentIncludesPhrase}.
 
 {diagnosticDueLine}
+
+{sessionScheduleBlock}
 
 Until then, you might be interested in signing up for our free [College Prep Compass]({compassLink}), which goes over:
 
@@ -311,17 +315,17 @@ We'll see you in there.
 William`,
   },
   {
-    // PL-279: the FO follow-on campaign — Scarlett's proven manual sequence
+    // PL-279: the FO follow-up campaign — Scarlett's proven manual sequence
     // (batch-29 doc, transcribed verbatim + confirmed). Three stages ×
     // parent/student. Seeded as DRAFTS: the send engine renders registry-only
     // (no code twin), so flipping these live IS the go-live switch — the
     // "samples before the sequence goes live" sign-off gate. Formatting
     // adaptations only (never wording): the bare {followOnRegistrationLink}
     // renders as a clickable link via [x](x), and the standalone italicized
-    // "Deep Dive" became *{followOnShortName}* so a future follow-on class
+    // "Deep Dive" became *{followOnShortName}* so a future follow-up class
     // degrades without rewriting her voice.
     template_key: 'FO_ANNOUNCE_PARENT',
-    display_name: 'FO-1P — Follow-on announcement (parent)',
+    display_name: 'FO-1P — Follow-up announcement (parent)',
     sequence_number: 'FO-1',
     audience: 'parent',
     from_identity: 'billy',
@@ -353,7 +357,7 @@ William`,
   },
   {
     template_key: 'FO_ANNOUNCE_STUDENT',
-    display_name: 'FO-1S — Follow-on announcement (student)',
+    display_name: 'FO-1S — Follow-up announcement (student)',
     sequence_number: 'FO-1',
     audience: 'student',
     from_identity: 'billy',
@@ -385,7 +389,7 @@ William`,
   },
   {
     template_key: 'FO_REMINDER_PARENT',
-    display_name: 'FO-2P — Follow-on deadline reminder (parent)',
+    display_name: 'FO-2P — Follow-up deadline reminder (parent)',
     sequence_number: 'FO-2',
     audience: 'parent',
     from_identity: 'billy',
@@ -413,7 +417,7 @@ William`,
   },
   {
     template_key: 'FO_REMINDER_STUDENT',
-    display_name: 'FO-2S — Follow-on deadline reminder (student)',
+    display_name: 'FO-2S — Follow-up deadline reminder (student)',
     sequence_number: 'FO-2',
     audience: 'student',
     from_identity: 'billy',
@@ -443,7 +447,7 @@ William Thomas`,
   },
   {
     template_key: 'FO_EXTENSION_PARENT',
-    display_name: 'FO-3P — Follow-on extension (parent)',
+    display_name: 'FO-3P — Follow-up extension (parent)',
     sequence_number: 'FO-3',
     audience: 'parent',
     from_identity: 'billy',
@@ -473,7 +477,7 @@ William`,
   },
   {
     template_key: 'FO_EXTENSION_STUDENT',
-    display_name: 'FO-3S — Follow-on extension (student)',
+    display_name: 'FO-3S — Follow-up extension (student)',
     sequence_number: 'FO-3',
     audience: 'student',
     from_identity: 'billy',
@@ -1955,6 +1959,20 @@ Worth a quick glance even if you live in your calendar — your Google Calendar 
     category: 'transactional',
     subject: 'Add-on family shared availability — {alertStudentName} is ready to schedule',
     preheader: 'Ready for the schedule wizard.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
+    // PL-313: the close-match link prompt — in Kelsie's PL-309 default
+    // category set (close_match), so both admin and manager get it.
+    template_key: 'AL_CLOSE_MATCH',
+    display_name: 'AL — Possible duplicate person (link prompt)',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Possible duplicate person — {alertStudentName}',
+    preheader: 'Two records look like the same person — link them or say no.',
     footer_note: null,
     body_markdown: `{alertDetailsBlock}`,
   },

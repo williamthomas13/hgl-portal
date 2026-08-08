@@ -42,7 +42,7 @@ export function templateMetaFor(
     }
     case 'thank_you':
       return { key: 'E1_THANKS', role: 'parent' }
-    // PL-279: the FO follow-on stages (parent/student split by dedupe tag).
+    // PL-279: the FO follow-up stages (parent/student split by dedupe tag).
     case 'fo_announce':
       return student
         ? { key: 'FO_ANNOUNCE_STUDENT', role: 'student' }
@@ -202,13 +202,13 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   E1_RETURNING_STUDENT: '#1-R — Returning-family thank-you (student)',
   // PL-299: the hours-block confirmation ask.
   BL_BLOCK_CONFIRM: 'BL — Hours block ending: confirm to continue (parent)',
-  // PL-279: the FO follow-on sequence.
-  FO_ANNOUNCE_PARENT: 'FO-1P — Follow-on announcement (parent)',
-  FO_ANNOUNCE_STUDENT: 'FO-1S — Follow-on announcement (student)',
-  FO_REMINDER_PARENT: 'FO-2P — Follow-on deadline reminder (parent)',
-  FO_REMINDER_STUDENT: 'FO-2S — Follow-on deadline reminder (student)',
-  FO_EXTENSION_PARENT: 'FO-3P — Follow-on extension (parent)',
-  FO_EXTENSION_STUDENT: 'FO-3S — Follow-on extension (student)',
+  // PL-279: the FO follow-up sequence.
+  FO_ANNOUNCE_PARENT: 'FO-1P — Follow-up announcement (parent)',
+  FO_ANNOUNCE_STUDENT: 'FO-1S — Follow-up announcement (student)',
+  FO_REMINDER_PARENT: 'FO-2P — Follow-up deadline reminder (parent)',
+  FO_REMINDER_STUDENT: 'FO-2S — Follow-up deadline reminder (student)',
+  FO_EXTENSION_PARENT: 'FO-3P — Follow-up extension (parent)',
+  FO_EXTENSION_STUDENT: 'FO-3S — Follow-up extension (student)',
   E2_DIAG_PARENT: '#2-P — Diagnostic & Synap access (parent)',
   E2_DIAG_STUDENT: '#2-S — Diagnostic & Synap access (student)',
   E3_VFAQ: '#3 — VERY FAQs',
@@ -253,6 +253,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   AL_UNAGREED: 'AL — Billed without signed agreement',
   AL_AVAILABILITY_SHARED: 'AL — Family shared availability',
   AL_INTAKE_COMPLETE: 'AL — Intake complete',
+  AL_CLOSE_MATCH: 'AL — Possible duplicate person (link prompt)',
   AL_LEAD_ASSIGNED: 'AL — Pipeline lead assigned to you',
   AL_DUNNING_EXHAUSTED: 'AL — Autopay retries exhausted',
   AL_OVERDUE_10: 'AL — Invoice 10+ days past due',
@@ -322,8 +323,8 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
   { name: 'Class sequence', match: (k) => /^E\d|^LR_|^SU_|^SV_/.test(k) && !/^E8_ADDON/.test(k) },
   { name: 'Payment reminders', match: (k) => /^PR\d/.test(k) },
   { name: 'Waitlist & interest', match: (k) => /^W\d|^NW_|^WR_/.test(k) },
-  // PL-279: the follow-on marketing sequence (three stages × parent/student).
-  { name: 'Follow-on marketing', match: (k) => /^FO_/.test(k) },
+  // PL-279: the follow-up marketing sequence (three stages × parent/student).
+  { name: 'Follow-up marketing', match: (k) => /^FO_/.test(k) },
   { name: 'Cancellation', match: (k) => /^CX_/.test(k) && k !== 'CX_C_CANCELLATION' },
   { name: 'Agreements', match: (k) => /^AG_/.test(k) },
   {

@@ -641,6 +641,118 @@ function IntakeAnswers({ intake }: { intake: Record<string, any> }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// PL-313: "this looks like the same person" — pending close matches for a
+// lead, both records side by side, link-or-not (never auto-merged; "not the
+// same" is remembered and never re-asks).
+type MatchInfo = {
+  id: string
+  reasons: string[]
+  student: { id: string; name: string; grade: string | null } | null
+  family: { id: string; parentName: string; parentEmail: string } | null
+  enrollment: { id: string; status: string; classLabel: string | null } | null
+}
+
+function CloseMatchPrompt({ lead, onChange }: { lead: Lead; onChange: () => void }) {
+  const [matches, setMatches] = useState<MatchInfo[]>([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/admin/record-match?lead=${lead.id}`)
+      .then((r) => (r.ok ? r.json() : { matches: [] }))
+      .then((j) => {
+        if (!cancelled) setMatches(j.matches ?? [])
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [lead.id])
+  if (matches.length === 0) return null
+
+  const decide = async (id: string, action: 'link' | 'not_same') => {
+    setBusy(true)
+    setErr(null)
+    const res = await fetch('/api/admin/record-match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action }),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      setErr(j.error ?? 'Failed.')
+      return
+    }
+    setMatches((m) => m.filter((x) => x.id !== id))
+    onChange()
+  }
+
+  return (
+    <div className="space-y-3">
+      {matches.map((m) => (
+        <div key={m.id} className="bg-purple-50 border border-purple-300 rounded-md p-3 text-sm">
+          <p className="font-bold text-purple-900 mb-2">
+            This looks like the same person — link them?
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+            <div className="bg-white rounded border border-purple-200 p-2 text-xs">
+              <p className="font-semibold text-gray-500 uppercase mb-1">Pipeline lead</p>
+              <p><span className="text-gray-400">Student:</span> {lead.student_name ?? '—'}</p>
+              <p><span className="text-gray-400">Contact:</span> {lead.contact_name ?? '—'}</p>
+              <p><span className="text-gray-400">Email:</span> {lead.contact_email ?? '—'}</p>
+              <p><span className="text-gray-400">Phone:</span> {lead.contact_phone ?? '—'}</p>
+              <p><span className="text-gray-400">Stage:</span> {LEAD_STATUS_LABELS[lead.status] ?? lead.status}</p>
+            </div>
+            <div className="bg-white rounded border border-purple-200 p-2 text-xs">
+              <p className="font-semibold text-gray-500 uppercase mb-1">Registered record</p>
+              <p><span className="text-gray-400">Student:</span> {m.student?.name ?? '—'}{m.student?.grade ? ` · Grade ${m.student.grade}` : ''}</p>
+              <p><span className="text-gray-400">Parent:</span> {m.family?.parentName ?? '—'}</p>
+              <p><span className="text-gray-400">Email:</span> {m.family?.parentEmail ?? '—'}</p>
+              {m.enrollment && (
+                <p>
+                  <span className="text-gray-400">Enrollment:</span> {m.enrollment.classLabel ?? 'a class'} ·{' '}
+                  {m.enrollment.status}
+                </p>
+              )}
+              {m.student && (
+                <a href={`/admin/students/${m.student.id}`} className="text-hgl-blue underline">
+                  student profile →
+                </a>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-purple-800 mb-2">Why it matched: {m.reasons.join(' · ')}</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide(m.id, 'link')}
+              className="bg-purple-700 text-white font-bold py-1.5 px-4 rounded-md hover:opacity-90 disabled:opacity-50 text-sm"
+            >
+              Link them — same person
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide(m.id, 'not_same')}
+              className="bg-white border border-purple-400 text-purple-900 font-bold py-1.5 px-4 rounded-md hover:bg-purple-100 disabled:opacity-50 text-sm"
+            >
+              Not the same — don&apos;t ask again
+            </button>
+            <span className="text-xs text-purple-700 self-center">
+              Linking marks this lead Started and connects it to the record — nothing merges
+              beyond that.
+            </span>
+          </div>
+          {err && <p className="text-xs text-red-600 mt-1">{err}</p>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function LeadDetail({
   lead,
   offers,
@@ -714,6 +826,9 @@ function LeadDetail({
 
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 space-y-3 text-sm">
+      {/* PL-313: pending same-person prompts render first — they change
+          what everything below should even be doing. */}
+      <CloseMatchPrompt lead={lead} onChange={onChange} />
       {lead.status === 'lost' && lead.lost_reason_kind && (
         <p className="text-xs text-gray-500">
           Closed — not now: <span className="font-semibold">{LOST_REASONS[lead.lost_reason_kind] ?? lead.lost_reason_kind}</span>

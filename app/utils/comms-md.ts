@@ -10,7 +10,7 @@
 // HTML-escaped; block variables (pre-rendered HTML like {orderSummaryBlock})
 // must stand alone as their own paragraph and are inserted raw.
 
-export type ResolvedVars = Record<string, { value: string; block?: boolean }>
+export type ResolvedVars = Record<string, { value: string; block?: boolean; md?: boolean }>
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -55,10 +55,15 @@ export function renderMarkdownBody(markdown: string, vars: ResolvedVars): string
     const lines = block.split('\n').map((l) => l.trim()).filter(Boolean)
     if (lines.length === 0) continue
 
-    // A paragraph that IS a single block variable → raw HTML insertion.
+    // A paragraph that IS a single block variable. Two flavors (batch-32
+    // fix): md-flavored blocks (the PL-274/PL-293 composed pieces) carry
+    // MARKDOWN and render through this same pipeline — before this fix
+    // their **bold** and [button:…] arrived literally in live sends;
+    // HTML-flavored blocks (order summary, changes list…) insert raw.
     const soloVar = block.trim().match(/^\{([a-zA-Z][a-zA-Z0-9_]*)\}$/)
     if (soloVar && vars[soloVar[1]]?.block) {
-      html.push(vars[soloVar[1]].value)
+      const v = vars[soloVar[1]]
+      html.push(v.md && v.value ? renderMarkdownBody(v.value, vars) : v.value)
       continue
     }
 

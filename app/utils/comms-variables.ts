@@ -9,7 +9,7 @@ import {
   type CoverageEvent,
 } from './coverage-copy'
 import { leadAssignedDetails } from './lead-assign-copy'
-import { formatDateFull , zonedDeadline } from './dates'
+import { formatDateFull, zonedDeadline, friendlyZoneCity, bySessionStart } from './dates'
 import type { ResolvedVars } from './comms-md'
 
 // Feature A4 variable registry (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4):
@@ -19,6 +19,40 @@ import type { ResolvedVars } from './comms-md'
 // stand alone as a paragraph.
 
 const fmt = (iso: string | null | undefined) => (iso ? formatDateFull(iso.slice(0, 10)) : '—')
+
+/** "5:00 PM" from "17:00" (12-hour, matching the register page). */
+const fmt12h = (t: string | null): string | null => {
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 === 0 ? 12 : h % 12
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+/** PL-315: the full session schedule as MARKDOWN — the same facts the
+ *  register page showed when the family signed up (dates, times, location,
+ *  PL-305 friendly zone line) plus the course-calendar subscribe link.
+ *  ONE source: the {sessionScheduleBlock} variable resolves this and the
+ *  #0 code twins render it through comms-md, so both paths are identical.
+ *  EMPTY when no sessions are scheduled yet (degrades to no block at all —
+ *  never a dangling heading). */
+export function sessionScheduleMarkdown(c: EnrollmentEmailContext): string {
+  const sessions = [...(c.sessions ?? [])].sort(bySessionStart)
+  if (sessions.length === 0) return ''
+  const lines = sessions.map((s) => {
+    const start = fmt12h(s.start_time)
+    const end = fmt12h(s.end_time)
+    const parts = [formatDateFull(s.session_date)]
+    if (start) parts.push(end ? `${start}–${end}` : start)
+    const loc = s.location ?? c.defaultLocation
+    if (loc) parts.push(loc)
+    return `- ${parts.join(' · ')}`
+  })
+  const zoneLine = c.timezone
+    ? `\n\n(times shown in ${friendlyZoneCity(c.timezone, c.defaultLocation)} time)`
+    : ''
+  return `Here's the full session schedule:\n\n${lines.join('\n')}${zoneLine}\n\n[Add the class calendar to your own — subscribe here.](${c.calendarPageUrl})`
+}
 
 export type ExtraVars = {
   /** SU: pre-rendered list of what changed. */
@@ -239,6 +273,10 @@ type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVa
 type VariableDef = {
   description: string
   block?: boolean
+  /** Batch-32: the block's VALUE is markdown (bold/links/buttons) and must
+   *  render through comms-md rather than inserting raw. HTML-carrying
+   *  blocks (pre-rendered order summaries etc.) leave this unset. */
+  md?: boolean
   resolve: Resolver
 }
 
@@ -430,9 +468,17 @@ export const VARIABLES: Record<string, VariableDef> = {
         : loc
     },
   },
+  sessionScheduleBlock: {
+    description:
+      "PL-315: the full session schedule (dates, times, location, timezone line) + the course-calendar subscribe link — EMPTY while the class has no sessions scheduled",
+    block: true,
+    md: true,
+    resolve: (c) => sessionScheduleMarkdown(c),
+  },
   diagnosticDueLine: {
     description: 'PL-274: the "(By the way, that test is due {date}!)" aside — EMPTY when the class has no diagnostics',
     block: true,
+    md: true,
     resolve: (c) =>
       c.hasDiagnostics ? `(By the way, that test is due ${fmt(c.diagnosticDueDate)}!)` : '',
   },
@@ -446,6 +492,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   vfaqLocationAnswer: {
     description: 'PL-274: #3\'s location Q&A — states the KNOWN location/meeting link when set (open classes always know it at creation); the old "not confirmed yet" copy only when genuinely blank',
     block: true,
+    md: true,
     resolve: (c) => {
       const q = "**What's the exact location for the class?**"
       if (c.defaultLocation) {
@@ -459,6 +506,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   vfaqDiagnosticQa: {
     description: 'PL-274: #3\'s diagnostic Q&A — EMPTY when the class has no diagnostics',
     block: true,
+    md: true,
     resolve: (c) =>
       c.hasDiagnostics
         ? `**What if I didn't get the diagnostic test information?**\nNo problem — you can get to it right here: [button:Take the diagnostic test](${synapUrlValue(c)}). It's due ${fmt(c.diagnosticDueDate)}, the day before your first class.`
@@ -467,11 +515,13 @@ export const VARIABLES: Record<string, VariableDef> = {
   instructorBioBlock: {
     description: 'PL-274 F: the instructor-introduction paragraph from instructors.bio — EMPTY when no bio is on record (never a dangling sentence)',
     block: true,
+    md: true,
     resolve: (c) => (c.instructorBio ? c.instructorBio : ''),
   },
   openClassMeetingBlock: {
     description: 'PL-274 F: for online open-enrollment classes, "All classes will take place here:" + the meeting link — EMPTY otherwise',
     block: true,
+    md: true,
     resolve: (c) =>
       c.isOpenEnrollment && c.deliveryMode === 'online' && c.defaultLocation
         ? `All classes will take place here:\n\n[${c.defaultLocation}](${c.defaultLocation})`
@@ -480,6 +530,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   diagnosticPsE4Block: {
     description: "PL-274: #4's pronoun-aware diagnostic P.S. + button — EMPTY when the class has no diagnostics",
     block: true,
+    md: true,
     resolve: (c, a) =>
       c.hasDiagnostics
         ? `P.S. If ${a === 'student' ? "you haven't" : `${s(c)} hasn't`} found a moment to take the diagnostic test yet, ${a === 'student' ? 'you' : pn(c).subj} can still do so by clicking below. If ${a === 'student' ? 'you have' : `${pn(c).subj} ${pn(c).have}`} already completed the test, no need to let us know. We surely have it.\n\n[button:Access Diagnostic Tests](${synapUrlValue(c)})`
@@ -488,6 +539,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   diagnosticPsE5Block: {
     description: "PL-274: #5's pronoun-aware diagnostic P.S. — EMPTY when the class has no diagnostics",
     block: true,
+    md: true,
     resolve: (c, a) =>
       c.hasDiagnostics
         ? `P.S. If ${a === 'student' ? "you still haven't" : `${s(c)} still hasn't`} taken the first diagnostic test, don't worry. It's still available [here](${synapUrlValue(c)}).`
@@ -607,17 +659,17 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: `"is" ↔ "are", agreeing with {she_he_they} ("she is / he is / they are / Ana is"; unset → are)`,
     resolve: (c) => pn(c).is,
   },
-  // PL-279: the FO follow-on campaign's offer variables. They resolve from
+  // PL-279: the FO follow-up campaign's offer variables. They resolve from
   // ctx.followOn, which ONLY the FO sweep (and the sample context) attaches
   // — per-cohort values, computed from the recipient's own feeder class.
   // Outside an FO send they resolve empty rather than crashing every other
   // template's render (resolveVariables evaluates the whole vocabulary).
   followOnClassName: {
-    description: 'The follow-on class being marketed, e.g. "SAT Math Deep Dive" (FO emails only)',
+    description: 'The follow-up class being marketed, e.g. "SAT Math Deep Dive" (FO emails only)',
     resolve: (c) => c.followOn?.className ?? '',
   },
   followOnShortName: {
-    description: 'The follow-on class\'s short marketing name, e.g. "Deep Dive" (roster-editable on the open class; falls back to the full name)',
+    description: 'The follow-up class\'s short marketing name, e.g. "Deep Dive" (roster-editable on the open class; falls back to the full name)',
     resolve: (c) => c.followOn?.shortName ?? '',
   },
   followOnRegistrationLink: {
@@ -625,7 +677,7 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (c) => c.followOn?.registrationLink ?? '',
   },
   discountAmount: {
-    description: 'The follow-on discount, formatted ("$50") — the open class\'s promo amount',
+    description: 'The follow-up discount, formatted ("$50") — the open class\'s promo amount',
     resolve: (c) => c.followOn?.discountAmount ?? '',
   },
   discountCode: {
@@ -657,6 +709,7 @@ export const VARIABLES: Record<string, VariableDef> = {
     description:
       'PL-293: "More info about the class →" linking the class\'s marketing page (set per class on the roster) — EMPTY when no marketing page is set',
     block: true,
+    md: true,
     resolve: (c) =>
       c.followOn?.infoUrl
         ? `**[More info about ${c.followOn.className} →](${c.followOn.infoUrl})**`
@@ -1065,7 +1118,7 @@ export function resolveVariables(
 ): ResolvedVars {
   const out: ResolvedVars = {}
   for (const [name, def] of Object.entries(VARIABLES)) {
-    out[name] = { value: def.resolve(ctx, audience, extra), block: def.block }
+    out[name] = { value: def.resolve(ctx, audience, extra), block: def.block, md: def.md }
   }
   return out
 }
@@ -1106,7 +1159,6 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   instructorBio: null,
   isOpenEnrollment: false,
   hasDiagnostics: true,
-  hasSynap: true,
   defaultLocation: 'Room 204',
   deliveryMode: 'in_person',
   synapGroup: 'https://hgl.synap.ac/groups/sample',
@@ -1114,7 +1166,13 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   firstSession: '2026-09-05',
   lastSession: '2026-10-24',
   price: 450,
-  sessions: [],
+  // PL-315: realistic sample sessions so {sessionScheduleBlock} previews
+  // show the real shape (list + zone line + subscribe link).
+  sessions: [
+    { id: 'ses-1', session_date: '2026-09-05', start_time: '10:00', end_time: '13:00', location: null },
+    { id: 'ses-2', session_date: '2026-09-12', start_time: '10:00', end_time: '13:00', location: null },
+    { id: 'ses-3', session_date: '2026-09-19', start_time: '10:00', end_time: '13:00', location: null },
+  ],
   // PL-279: FO samples render with a realistic per-cohort offer (the editor
   // preview + view-as sign-off page compose from here).
   followOn: {

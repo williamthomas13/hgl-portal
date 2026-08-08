@@ -157,7 +157,12 @@ export default function ClassWizard({
   // condition on them (diagnostics-off drops diagnostic promises/reminders;
   // Synap-off drops Synap links; both off skips #2 entirely).
   const [hasDiagnostics, setHasDiagnostics] = useState(true)
-  const [hasSynap, setHasSynap] = useState(true)
+  // PL-311: explicit follow-up flag (open-enrollment classes only) — gates
+  // the roster's FO marketing controls.
+  const [isFollowOn, setIsFollowOn] = useState(false)
+  // PL-316: per-row session editing (same pickers as the add form).
+  const [editIdx, setEditIdx] = useState<number | null>(null)
+  const [editDraft, setEditDraft] = useState<SessionDraft | null>(null)
   // PL-106: collateral basics are part of creating the class, not an
   // afterthought on the card — the card keeps full editing + regeneration.
   const [shortLink, setShortLink] = useState(initial?.collateral?.short_link ?? '')
@@ -548,7 +553,7 @@ export default function ClassWizard({
       counselor_id: isOpen ? null : counselorId || null,
       timezone: isOpen ? classTimezone : null,
       has_diagnostics: hasDiagnostics,
-      has_synap: hasSynap,
+      is_follow_on: isOpen ? isFollowOn : false,
       class_type: classType.trim(),
       instructor_id: instructor?.id ?? null,
       price: Number(price),
@@ -687,7 +692,7 @@ export default function ClassWizard({
           </h3>
           <p className="text-sm text-green-900">
             {createdSummary.sessionCount} session{createdSummary.sessionCount === 1 ? '' : 's'} scheduled.
-            The class is live on its roster — registration link, deadlines, and follow-on settings
+            The class is live on its roster — registration link, deadlines, and follow-up settings
             all live there.
           </p>
           <div className="flex flex-wrap gap-3">
@@ -1123,8 +1128,32 @@ export default function ClassWizard({
             <input type="url" value={synapGroup} onChange={(e) => setSynapGroup(e.target.value)} placeholder="https://…" className={inputCls} />
           </div>
 
-          {/* PL-274 amendment B: independent per-class switches — the email
-              sequence conditions on them (see the roster to change later). */}
+          {/* PL-317: no-school flavors set the class timezone HERE — online
+              picks explicitly (the PL-233 picker); at-HGL is fixed Denver.
+              School classes read the school record and never see this. */}
+          {openKind === 'online' && (
+            <div className="col-span-2">
+              <label className="block text-sm font-semibold text-gray-700">
+                Class timezone{' '}
+                <span className="font-normal text-xs text-gray-500">
+                  — every session time, deadline, and email speaks this zone
+                </span>
+              </label>
+              <div className="mt-1">
+                <TimezoneSelect value={openTimezone} onChange={setOpenTimezone} />
+              </div>
+            </div>
+          )}
+          {openKind === 'hgl' && (
+            <p className="col-span-2 text-xs text-gray-500">
+              Class timezone: <span className="font-semibold">America/Denver</span> (fixed — the
+              class meets at Higher Ground in Salt Lake City)
+            </p>
+          )}
+          {/* PL-310: ONE switch — a class with diagnostics runs them through
+              Synap (or similar), so a separate Synap toggle modeled a
+              distinction that doesn't exist. The email sequence conditions
+              on this (editable later on the roster). */}
           <div className="col-span-2 flex flex-wrap gap-6 text-sm text-gray-700 border border-gray-200 rounded-md p-3">
             <label className="flex items-center gap-2">
               <input
@@ -1133,25 +1162,30 @@ export default function ClassWizard({
                 onChange={(e) => setHasDiagnostics(e.target.checked)}
               />
               <span>
-                <span className="font-semibold">Has diagnostic tests</span>{' '}
+                <span className="font-semibold">Has diagnostics</span>{' '}
                 <span className="text-xs text-gray-500">
-                  (off = no diagnostic promises, reminders, or due dates in any email)
+                  (off = the email sequence drops all diagnostic and Synap content — no promises,
+                  reminders, due dates, or access links)
                 </span>
               </span>
             </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={hasSynap}
-                onChange={(e) => setHasSynap(e.target.checked)}
-              />
-              <span>
-                <span className="font-semibold">Has Synap</span>{' '}
-                <span className="text-xs text-gray-500">
-                  (off = no Synap access links; both off skips the access email entirely)
+            {/* PL-311: only open-enrollment classes can be a follow-up. */}
+            {isOpen && (
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={isFollowOn}
+                  onChange={(e) => setIsFollowOn(e.target.checked)}
+                />
+                <span>
+                  <span className="font-semibold">This is a follow-up class</span>{' '}
+                  <span className="text-xs text-gray-500">
+                    (marketed to students finishing a feeder class — unlocks the marketing
+                    controls on the roster card)
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            )}
           </div>
 
           {/* PL-237: collateral moved to its own step (Sessions → Branding &
@@ -1170,7 +1204,7 @@ export default function ClassWizard({
           {isOpen && (
             <p className="text-xs text-gray-500 mb-3">
               All times in <span className="font-semibold">{classTimezone}</span>{' '}(the class
-              timezone from the School step)
+              timezone from the Details step)
             </p>
           )}
           {sorted.length > 0 && !allDated && (
@@ -1190,29 +1224,99 @@ export default function ClassWizard({
                   key={`${s.session_date}-${i}`}
                   className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
                 >
-                  <span className="flex items-center gap-2">
-                    {s.session_date ? (
-                      <strong>{formatDateAdmin(s.session_date)}</strong>
-                    ) : (
-                      <input
-                        type="date"
-                        value=""
-                        onChange={(e) => setSessionDate(sessions.indexOf(s), e.target.value)}
-                        className="border border-amber-400 rounded p-1"
-                        title="Copied session — enter the new date"
+                  {editIdx === sessions.indexOf(s) && editDraft ? (
+                    /* PL-316: fix one session in place — same pickers as the
+                       add form; no more remove + re-add. */
+                    <span className="w-full grid grid-cols-4 gap-2 items-start">
+                      <span>
+                        <input
+                          type="date"
+                          value={editDraft.session_date}
+                          onChange={(e) => setEditDraft({ ...editDraft, session_date: e.target.value })}
+                          className="w-full border border-gray-300 rounded p-1"
+                        />
+                        <DateHint value={editDraft.session_date} />
+                      </span>
+                      <TimeSelect
+                        value={editDraft.start_time}
+                        onChange={(v) => setEditDraft({ ...editDraft, start_time: v })}
                       />
-                    )}
-                    {s.start_time && ` · ${s.start_time}`}
-                    {s.end_time && ` – ${s.end_time}`}
-                    {s.location && ` · ${s.location}`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeSession(sessions.indexOf(s))}
-                    className="text-red-600 text-xs hover:underline"
-                  >
-                    Remove
-                  </button>
+                      <TimeSelect
+                        value={editDraft.end_time}
+                        onChange={(v) => setEditDraft({ ...editDraft, end_time: v })}
+                      />
+                      <span className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editDraft.location}
+                          onChange={(e) => setEditDraft({ ...editDraft, location: e.target.value })}
+                          placeholder={defaultLocation || 'location'}
+                          className="w-full border border-gray-300 rounded p-1"
+                        />
+                        <button
+                          type="button"
+                          disabled={!editDraft.session_date}
+                          onClick={() => {
+                            const idx = editIdx
+                            setSessions((prev) => prev.map((x, j) => (j === idx ? { ...editDraft } : x)))
+                            setEditIdx(null)
+                            setEditDraft(null)
+                          }}
+                          className="text-hgl-blue text-xs font-semibold hover:underline disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditIdx(null)
+                            setEditDraft(null)
+                          }}
+                          className="text-gray-500 text-xs hover:underline"
+                        >
+                          cancel
+                        </button>
+                      </span>
+                    </span>
+                  ) : (
+                    <>
+                      <span className="flex items-center gap-2">
+                        {s.session_date ? (
+                          <strong>{formatDateAdmin(s.session_date)}</strong>
+                        ) : (
+                          <input
+                            type="date"
+                            value=""
+                            onChange={(e) => setSessionDate(sessions.indexOf(s), e.target.value)}
+                            className="border border-amber-400 rounded p-1"
+                            title="Copied session — enter the new date"
+                          />
+                        )}
+                        {s.start_time && ` · ${s.start_time}`}
+                        {s.end_time && ` – ${s.end_time}`}
+                        {s.location && ` · ${s.location}`}
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditIdx(sessions.indexOf(s))
+                            setEditDraft({ ...s })
+                          }}
+                          className="text-hgl-blue text-xs hover:underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeSession(sessions.indexOf(s))}
+                          className="text-red-600 text-xs hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </span>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

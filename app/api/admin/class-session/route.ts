@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
-import { loadClassBundles, emailContext } from '../../../utils/lifecycle'
+import { loadClassBundles, emailContext, classDetailsSnapshot } from '../../../utils/lifecycle'
 import { renderEmail } from '../../../utils/comms-db-render'
-import { scheduleUpdateEmail, sendOnce, formatDate } from '../../../utils/email'
+import { scheduleUpdateEmail, scheduleChangeLi, sendOnce, formatDate } from '../../../utils/email'
 import { maybeSendInstructorFyi } from '../../../utils/instructor-comms'
 
 // PL-277: per-session Edit on the roster — the missing half of "the only
@@ -65,26 +65,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'This class is cancelled — its sessions are read-only.' }, { status: 400 })
   }
 
-  // Plain-English change list (also the SU body's bullet list).
-  const changes: { label: string; value: string }[] = []
+  // Plain-English change list — complete sentences (PL-314's shared shape,
+  // rendered identically by the sweep, this route, and the SU twin).
+  const changes: { label: string; value: string; sentence: string }[] = []
   const oldLabel = `The ${formatDate(session.session_date)} session`
   if (session.session_date !== body.session_date) {
-    changes.push({ label: oldLabel, value: `moved to ${formatDate(body.session_date)}` })
+    changes.push({
+      label: oldLabel,
+      value: `moved to ${formatDate(body.session_date)}`,
+      sentence: `${oldLabel} moved to ${formatDate(body.session_date)}.`,
+    })
   }
   if (fmtT(session.start_time) !== fmtT(body.start_time) || fmtT(session.end_time) !== fmtT(body.end_time)) {
     const span = [fmtT(body.start_time), fmtT(body.end_time)].filter(Boolean).join('–') || 'time TBD'
     changes.push({
-      label:
-        session.session_date !== body.session_date
-          ? `${oldLabel}'s time`
-          : `${oldLabel}'s time`,
-      value: `now ${span}`,
+      label: `${oldLabel}'s time`,
+      value: span,
+      sentence: `${oldLabel}'s time is now ${span}.`,
     })
   }
   if ((session.location ?? '') !== (body.location ?? '')) {
     changes.push({
       label: `${oldLabel}'s location`,
-      value: body.location ? `now ${body.location}` : 'now the class default',
+      value: body.location ?? 'the class default',
+      sentence: `${oldLabel}'s location is now ${body.location ?? 'the class default'}.`,
     })
   }
   if (changes.length === 0) return NextResponse.json({ ok: true, changed: false, emailed: 0 })
@@ -105,7 +109,9 @@ export async function POST(req: Request) {
   const bundle = bundles.find((b) => b.id === session.class_id)
   if (!bundle) return NextResponse.json({ ok: true, changed: true, emailed: 0 })
 
-  // Who already has details on paper: enrollments with a sent-ish E4 row.
+  // Who knows the schedule: enrollments with a sent-ish E4 row — PLUS, per
+  // PL-314, every enrollment carrying a registration snapshot (families
+  // registered SEEING the session calendar; they paid for what they saw).
   const enrollmentIds = bundle.enrollments.map((e) => e.id)
   const { data: sentDetails } = enrollmentIds.length
     ? await supabase
@@ -115,7 +121,16 @@ export async function POST(req: Request) {
         .in('status', ['sent', 'delivered', 'bounced', 'complained'])
         .in('enrollment_id', enrollmentIds)
     : { data: [] }
-  const informed = new Set(((sentDetails as any[]) ?? []).map((r) => r.enrollment_id))
+  const e4Informed = new Set(((sentDetails as any[]) ?? []).map((r) => r.enrollment_id))
+  const informed = new Set(e4Informed)
+  const { data: regRows } = enrollmentIds.length
+    ? await supabase
+        .from('enrollments')
+        .select('id, schedule_snapshot')
+        .in('id', enrollmentIds)
+        .not('schedule_snapshot', 'is', null)
+    : { data: [] }
+  for (const r of (regRows as any[]) ?? []) informed.add(r.id)
 
   const hash = createHash('md5')
     .update(
@@ -125,7 +140,7 @@ export async function POST(req: Request) {
     .digest('hex')
     .slice(0, 8)
   const changesBlock = `<ul style="padding-left:20px">${changes
-    .map((ch) => `<li><strong>${ch.label}:</strong> ${ch.value}</li>`)
+    .map(scheduleChangeLi)
     .join('')}</ul>`
 
   let emailed = 0
@@ -170,17 +185,41 @@ export async function POST(req: Request) {
     )
   }
 
-  // First-session move: patch stored E4 snapshots so the sweep's own SU
-  // diff doesn't re-announce the same change next hour.
+  // Patch stored baselines so the sweep's own SU diff doesn't re-announce
+  // the same change next hour: E4 snapshots get the new first-session AND
+  // (PL-314) the fresh session list when they carry one; registration
+  // snapshots always carry the list, so they refresh to current.
   const newFirst = bundle.firstSession
+  const freshSessions = classDetailsSnapshot(bundle).sessions
   for (const row of (sentDetails as any[]) ?? []) {
-    if (!row.payload || row.payload.first_session === newFirst) continue
+    if (!row.payload) continue
+    const carriesList = Array.isArray(row.payload.sessions)
+    if (row.payload.first_session === newFirst && !carriesList) continue
     await supabase
       .from('email_sends')
-      .update({ payload: { ...row.payload, first_session: newFirst } })
+      .update({
+        payload: {
+          ...row.payload,
+          first_session: newFirst,
+          ...(carriesList ? { sessions: freshSessions } : {}),
+        },
+      })
       .eq('template_key', 'E4_CLASS_DETAILS')
       .eq('enrollment_id', row.enrollment_id)
       .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+  }
+  for (const row of (regRows as any[]) ?? []) {
+    if (e4Informed.has(row.id)) continue
+    await supabase
+      .from('enrollments')
+      .update({
+        schedule_snapshot: {
+          ...row.schedule_snapshot,
+          first_session: newFirst,
+          sessions: freshSessions,
+        },
+      })
+      .eq('id', row.id)
   }
 
   return NextResponse.json({ ok: true, changed: true, emailed })

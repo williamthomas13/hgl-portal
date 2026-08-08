@@ -159,7 +159,7 @@ export default async function ParentView({
     return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
   }
 
-  // C3 "you might be interested in": per student, the follow-on pointer from
+  // C3 "you might be interested in": per student, the follow-up pointer from
   // any of their classes, else an open class at their school they're not in.
   // Parents can't read other classes under RLS, so this is a privileged read
   // (like the waitlist position) — sanitized to one name+link card.
@@ -527,7 +527,7 @@ export default async function ParentView({
               })}
             </div>
 
-            {/* C3: gentle upsell — at most ONE card, follow-on pointer first,
+            {/* C3: gentle upsell — at most ONE card, follow-up pointer first,
                 open-class-at-their-school fallback. */}
             {suggestions.has(st.id) && (
               <div className="mt-4 border border-hgl-blue/30 bg-blue-50/50 rounded-lg p-3 text-sm flex items-center justify-between gap-3 flex-wrap">

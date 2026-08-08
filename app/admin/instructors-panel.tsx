@@ -124,10 +124,13 @@ export default function InstructorsPanel({
         <p className="text-sm text-gray-500 italic mb-4">Nobody is inactive.</p>
       )}
       {visible.length > 0 && (
-        <table className="min-w-full divide-y divide-gray-200 mb-6">
+        /* PL-318: scroll container + a real Actions column — the buttons were
+           rendering past the card border (PL-275 overflow pattern). */
+        <div className="overflow-x-auto mb-6">
+        <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
-              {['Name', 'Email', 'Phone', 'Default meeting link', 'Class emails', ''].map((h) => (
+              {['Name', 'Email', 'Phone', 'Default meeting link', 'Class emails', 'Actions'].map((h) => (
                 <th key={h} className="px-4 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -168,7 +171,7 @@ export default function InstructorsPanel({
                     {i.comms_enabled ? 'on' : 'off'}
                   </button>
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-left whitespace-nowrap">
                   {/* PL-226: the full profile (identity + tutoring) edits here. */}
                   <button
                     onClick={() => setEditing(i.id)}
@@ -195,6 +198,7 @@ export default function InstructorsPanel({
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* PL-226: adding opens the SAME full editor — every field available

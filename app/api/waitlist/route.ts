@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { sendOnce, waitlistConfirmationEmail } from '../../utils/email'
 import { renderEmail } from '../../utils/comms-db-render'
 import {
+  classDetailsSnapshot,
   emailContext,
   loadClassBundles,
   localDate,
@@ -90,6 +91,26 @@ export async function POST(request: Request) {
       .single()
     if (enrErr || !enrollment) {
       return NextResponse.json({ error: enrErr?.message ?? 'Could not join waitlist.' }, { status: 500 })
+    }
+
+    // PL-314: the waitlist form shows the same session calendar — stamp the
+    // registration-time schedule baseline (notifications only ever go to
+    // paid rows, but the baseline is what they saw the day they joined).
+    {
+      const snap = classDetailsSnapshot(bundle)
+      await supabase
+        .from('enrollments')
+        .update({
+          schedule_snapshot: {
+            origin: 'registration',
+            first_session: snap.first_session,
+            location: snap.location,
+            sessions: snap.sessions,
+            seq: 0,
+          },
+        })
+        .eq('id', enrollment.id)
+        .is('schedule_snapshot', null)
     }
 
     // Position = how many waitlisted joined at or before us.

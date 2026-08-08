@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { localDate, DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { upsertFamilyAndStudent } from '../../utils/registration'
 import { runEnrollmentCommsPass } from '../../utils/comms-inline'
+import { scanCloseMatches } from '../../utils/close-match'
 
 // Creates the family + student + Pending enrollment for a registration.
 // Phase 3 moved these writes out of the browser (anon has no RLS policies);
@@ -92,8 +93,9 @@ export async function POST(request: Request) {
     .from('classes')
     .select(
       `id, status, school_id, capacity, registration_close_date, start_date, timezone,
+       default_location,
        schools ( timezone ),
-       sessions ( session_date ),
+       sessions ( session_date, start_time, end_time, location ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )
     .eq('id', classId)
@@ -208,6 +210,35 @@ export async function POST(request: Request) {
     createdIds.push(enrollmentData.id)
   }
 
+  // PL-314: stamp what the family just SAW — the register page's session
+  // calendar — as this enrollment's schedule baseline. Any later session
+  // add/edit/remove notifies them even before an E4 exists (the Bunji case:
+  // 3 sessions on screen, a 4th added, nothing sent). Only null rows stamp:
+  // a resumed Pending registration keeps its ORIGINAL baseline.
+  if (enrollmentIds.length > 0) {
+    const snapSessions = [...((cls.sessions as { session_date: string; start_time: string | null; end_time: string | null; location: string | null }[]) ?? [])]
+      .sort((a, b) => (a.session_date + (a.start_time ?? '')).localeCompare(b.session_date + (b.start_time ?? '')))
+      .map((s) => ({
+        session_date: s.session_date,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        location: s.location,
+      }))
+    await supabase
+      .from('enrollments')
+      .update({
+        schedule_snapshot: {
+          origin: 'registration',
+          first_session: snapSessions[0]?.session_date ?? cls.start_date,
+          location: (cls as { default_location?: string | null }).default_location ?? null,
+          sessions: snapSessions,
+          seq: 0,
+        },
+      })
+      .in('id', enrollmentIds)
+      .is('schedule_snapshot', null)
+  }
+
   // PL-125 oversell recount: our read-then-insert can race another family.
   // Re-count AFTER inserting — if the class is now over capacity, roll back
   // the rows THIS request created and refuse. Both racers recount after both
@@ -221,6 +252,18 @@ export async function POST(request: Request) {
       await supabase.from('enrollments').delete().in('id', createdIds)
       return NextResponse.json({ error: 'This class just filled up.', full: true }, { status: 409 })
     }
+  }
+
+  // PL-313: a fresh registration may be a pipeline lead signing up under a
+  // fuller name (the Bunji case) — scan behind the response; a plausible
+  // pair becomes a link-or-not prompt, never an auto-merge.
+  for (const r of resolved) {
+    const enrId = enrollmentIds[resolved.indexOf(r)] ?? null
+    after(() =>
+      scanCloseMatches({ studentId: r.studentId, enrollmentId: enrId }).catch((e) =>
+        console.error('close-match scan failed (registration stands):', e)
+      )
+    )
   }
 
   // PL-51: materialize each enrollment's PR rows immediately (and send
