@@ -40,6 +40,10 @@ export type ExtraVars = {
   tutoringMonthLabel?: string
   /** T1: distinct student first names, e.g. "Roman & Ana". */
   studentNames?: string
+  /** PL-299: the hours-block confirmation email's numbers. */
+  blockHoursLeft?: string
+  blockHours?: string
+  tutoringHourlyRate?: string
   /** Tutor's full name / first name (T8, PL-40/41). */
   tutorName?: string
   tutorFirstName?: string
@@ -634,6 +638,20 @@ export const VARIABLES: Record<string, VariableDef> = {
   // PL-293: the small "More info" pointer to the class's Squarespace
   // marketing page (classes.marketing_url) — EMPTY when no page is set, so
   // nothing dangles.
+  // PL-299: the hours-block confirmation email's numbers (extras-resolved —
+  // the sweep computes them from the live drawdown).
+  blockHoursLeft: {
+    description: 'PL-299: hours remaining on the purchased block, e.g. "3"',
+    resolve: (_c, _a, e) => e.blockHoursLeft ?? '',
+  },
+  blockHours: {
+    description: 'PL-299: the purchased block size, e.g. "15"',
+    resolve: (_c, _a, e) => e.blockHours ?? '',
+  },
+  tutoringHourlyRate: {
+    description: 'PL-299: the engagement\'s hourly rate, formatted ("$120")',
+    resolve: (_c, _a, e) => e.tutoringHourlyRate ?? '',
+  },
   followOnInfoBlock: {
     description:
       'PL-293: "More info about the class →" linking the class\'s marketing page (set per class on the roster) — EMPTY when no marketing page is set',
@@ -1515,6 +1533,10 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   T3_TUTOR_NOTICE: {
     scheduleChangeCountPhrase: '2 schedule changes',
     studentNames: 'Ana',
+    // PL-299: block-confirmation samples.
+    blockHoursLeft: '3',
+    blockHours: '15',
+    tutoringHourlyRate: '$120',
     tutoringSubject: 'SAT',
     tutorScheduleBlock:
       '<h3 style="color:#334155;margin:18px 0 6px">Ana — SAT · upcoming sessions</h3><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Wed, Sep 16 · 4:00 PM–5:00 PM</li><li style="margin:2px 0">Mon, Sep 21 · 4:00 PM–5:00 PM</li><li style="margin:2px 0">Mon, Sep 28 · 4:00 PM–5:00 PM</li></ul>',

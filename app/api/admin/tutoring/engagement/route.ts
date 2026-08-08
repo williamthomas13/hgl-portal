@@ -329,7 +329,10 @@ export async function POST(req: Request) {
         }
         // PL-197 Case B: flag a schedule that draws past the package BEFORE
         // it goes through — proceeding requires the explicit re-submit.
-        if (body.confirm_overdraw !== true) {
+        // PL-299: once the family flow is in play ('asked'/'declined'), the
+        // walk-past is GONE — the consent that matters is the family's, and
+        // no re-submit flag overrides it.
+        {
           const over = await overdrawCheck({
             addonId: body.addon_id,
             recurrence,
@@ -337,17 +340,33 @@ export async function POST(req: Request) {
             startDate: body.start_date ?? null,
           })
           if (over) {
+            const { data: sibling } = await supabase
+              .from('tutoring_engagements')
+              .select('block_confirmation')
+              .eq('addon_id', body.addon_id)
+              .in('block_confirmation', ['asked', 'declined'])
+              .limit(1)
             const { data: stuName } = await supabase
               .from('students').select('first_name').eq('id', student_id).maybeSingle()
-            return NextResponse.json(
-              {
-                needsOverdrawConfirm: true,
-                ...over,
-                rate: hourly_rate,
-                studentFirst: stuName?.first_name ?? 'the student',
-              },
-              { status: 409 }
-            )
+            if (sibling && sibling.length > 0) {
+              return NextResponse.json(
+                {
+                  error: `This schedule goes ${over.overBy}h past ${stuName?.first_name ?? 'the student'}'s ${over.packageHours}h block, and the family hasn't confirmed continuing past their purchased hours${sibling[0].block_confirmation === 'declined' ? ' (they declined)' : ''} — their answer, not a walk-past, unlocks this. Their confirmation lands from the portal or via the engagement row's "family confirmed" action.`,
+                },
+                { status: 409 }
+              )
+            }
+            if (body.confirm_overdraw !== true) {
+              return NextResponse.json(
+                {
+                  needsOverdrawConfirm: true,
+                  ...over,
+                  rate: hourly_rate,
+                  studentFirst: stuName?.first_name ?? 'the student',
+                },
+                { status: 409 }
+              )
+            }
           }
         }
       }
@@ -543,8 +562,10 @@ export async function POST(req: Request) {
         }
       }
       // PL-197 Case B: a regenerate that would draw past the package flags
-      // BEFORE anything changes — same walk-past rule as create.
-      if (body.regenerate && body.confirm_overdraw !== true) {
+      // BEFORE anything changes — same walk-past rule as create. PL-299: the
+      // check now runs even on the confirmed re-submit, because the family
+      // hold must not be bypassable by the walk-past flag.
+      if (body.regenerate) {
         const { data: current } = await supabase
           .from('tutoring_engagements')
           .select('funding, addon_id, recurrence, tutor_id, start_date, status, student_id')
@@ -562,17 +583,34 @@ export async function POST(req: Request) {
             excludeFutureOfEngagement: body.id,
           })
           if (over) {
+            // PL-299: with the family flow in play, no walk-past — the
+            // family's answer unlocks scheduling past the block.
+            const { data: engState } = await supabase
+              .from('tutoring_engagements')
+              .select('block_confirmation')
+              .eq('id', body.id)
+              .maybeSingle()
             const { data: stuName } = await supabase
               .from('students').select('first_name').eq('id', current.student_id).maybeSingle()
-            return NextResponse.json(
-              {
-                needsOverdrawConfirm: true,
-                ...over,
-                rate: body.hourly_rate ?? undefined,
-                studentFirst: stuName?.first_name ?? 'the student',
-              },
-              { status: 409 }
-            )
+            if (engState?.block_confirmation === 'asked' || engState?.block_confirmation === 'declined') {
+              return NextResponse.json(
+                {
+                  error: `This schedule goes ${over.overBy}h past ${stuName?.first_name ?? 'the student'}'s ${over.packageHours}h block, and the family hasn't confirmed continuing past their purchased hours${engState.block_confirmation === 'declined' ? ' (they declined)' : ''} — their answer, not a walk-past, unlocks this. Their confirmation lands from the portal or via the engagement row's "family confirmed" action.`,
+                },
+                { status: 409 }
+              )
+            }
+            if (body.confirm_overdraw !== true) {
+              return NextResponse.json(
+                {
+                  needsOverdrawConfirm: true,
+                  ...over,
+                  rate: body.hourly_rate ?? undefined,
+                  studentFirst: stuName?.first_name ?? 'the student',
+                },
+                { status: 409 }
+              )
+            }
           }
         }
       }

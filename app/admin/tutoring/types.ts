@@ -73,6 +73,8 @@ export type Engagement = {
   funding: 'monthly_billed' | 'package'
   addon_id: string | null
   overdraw_ack_hours: number | null
+  /** PL-299: hours-block consent — null pre-flow · asked · confirmed · declined. */
+  block_confirmation: string | null
   recurrence: RecurrenceSlotUI[]
   location: string | null
   status: 'pending_parent_confirmation' | 'active' | 'paused' | 'ended'

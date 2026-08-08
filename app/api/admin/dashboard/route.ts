@@ -558,7 +558,7 @@ export async function GET() {
   const { data: pkgEngs } = await supabase
     .from('tutoring_engagements')
     .select(
-      `id, addon_id, status, student_id, hourly_rate, overdraw_ack_hours,
+      `id, addon_id, status, student_id, hourly_rate, overdraw_ack_hours, block_confirmation,
        students ( first_name, last_name, family_id ),
        enrollment_addons ( id, hours )`
     )
@@ -615,11 +615,36 @@ export async function GET() {
       )
       if (renewed) continue
       const usedRaw = usedByAddon.get(addon.id) ?? 0
+      const over = Math.max(0, usedRaw - Number(addon.hours))
+      // PL-299: once the family flow is in play, IT owns this surface —
+      // the legacy PL-163/PL-197 rows below apply only to pre-flow (null)
+      // engagements, and retire by attrition.
+      if (e.block_confirmation === 'asked') {
+        attention.push({
+          id: `block-awaiting-${e.id}`,
+          kind: 'Hours block ending — awaiting family confirmation',
+          text: `${stu.first_name} ${stu.last_name} has ${remaining.toFixed(1)} of ${addon.hours}h left. The family was asked to confirm continuing on the monthly plan at $${e.hourly_rate}/hr — nothing schedules or bills past the block until they answer (portal button, or record their reply on the engagement row).`,
+          href: `/admin/tutoring?family=${stu.family_id}`,
+        })
+        continue
+      }
+      if (e.block_confirmation === 'declined') {
+        if (over > 0.05) {
+          attention.push({
+            id: `block-declined-${e.id}`,
+            kind: 'Family declined — sessions past the block',
+            text: `${stu.first_name} ${stu.last_name}'s family declined continuing past their ${addon.hours}h block, but ${over.toFixed(1)}h beyond it exist — remove or resolve those sessions (they will not bill).`,
+            href: `/admin/tutoring?family=${stu.family_id}`,
+            urgent: true,
+          })
+        }
+        continue
+      }
+      if (e.block_confirmation === 'confirmed') continue // agreed — Case-A billing, nothing to flag
       // PL-197: past the crossing this is a DIFFERENT conversation — "it's
       // happening", not "talk soon" — so the overdraw row REPLACES the
       // PL-163 warning (never both). Clears on new package (renewed, above),
       // engagement end (active filter), or acknowledgment at this overage.
-      const over = Math.max(0, usedRaw - Number(addon.hours))
       if (over > 0.05) {
         if (Number(e.overdraw_ack_hours ?? 0) >= over - 0.05) continue
         attention.push({

@@ -4,6 +4,7 @@ import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert } from './email'
 import { ADMIN_EMAIL } from './lifecycle'
 import { enqueueGcalSync, processGcalQueue } from './gcal-sync'
+import { blockHoldActive } from './block-confirm'
 import { generateOccurrences, zonedToUtc, type RecurrenceSlot } from './tutoring'
 import {
   contactBlockHtml,
@@ -156,6 +157,9 @@ type EngagementFull = {
   tutor_id: string
   hourly_rate: number
   funding: 'monthly_billed' | 'package'
+  /** PL-299: hours-block consent state — 'asked'/'declined' hold overflow
+   *  billing; null (pre-flow) and 'confirmed' bill per PL-197 Case A. */
+  block_confirmation: string | null
   addon_id: string | null
   recurrence: RecurrenceSlot[]
   status: string
@@ -180,6 +184,7 @@ async function loadActiveEngagements(): Promise<EngagementFull[]> {
     .from('tutoring_engagements')
     .select(
       `id, student_id, tutor_id, hourly_rate, funding, addon_id, recurrence, status, start_date,
+       block_confirmation,
        students ( id, first_name, last_name,
          families ( id, parent_first_name, parent_last_name, parent_email,
                     billing_email, billing_cc_emails, autopay, timezone ) ),
@@ -481,6 +486,10 @@ export async function generateMonthlyCycle(
           // the session appeared). Bill it now, once. Tombstones never get a
           // session line (their cost is the late fee).
           if (s.starts_at >= fromIso || s.status === 'rescheduled') continue
+          // PL-299: overflow past the block NEVER bills while the family's
+          // answer is pending (asked) or was no (declined). Null keeps the
+          // PL-197 legacy behavior; confirmed IS the Case-A path.
+          if (blockHoldActive(eng.block_confirmation)) continue
           const { data: hasLine } = await supabase
             .from('tutoring_invoice_lines')
             .select('id')
@@ -514,6 +523,9 @@ export async function generateMonthlyCycle(
           packageCoveredHours += hours
           continue // covered by the prepaid balance — no line
         }
+        // PL-299: an uncovered (past-the-block) session on a block engagement
+        // whose family hasn't confirmed does not bill — the consent gate.
+        if (eng.funding === 'package' && blockHoldActive(eng.block_confirmation)) continue
         lines.push({
           invoice_id: invoice.id,
           session_id: s.id,

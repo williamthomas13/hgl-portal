@@ -7,6 +7,7 @@ import {
   tutoringIcsToken,
 } from '../utils/tutoring-billing'
 import { loadContactInfo } from '../utils/tutoring-emails'
+import BlockConfirmControl from './block-confirm-control'
 import RescheduleRequest from './reschedule-request'
 import { escapeLike } from '../utils/like-escape'
 
@@ -65,6 +66,7 @@ export default async function TutoringSection({ email }: { email: string }) {
       .from('tutoring_engagements')
       .select(
         `id, status, funding, addon_id, hourly_rate, recurrence, location, student_id,
+         block_confirmation,
          students!inner ( first_name, last_name, family_id ),
          subjects ( name ),
          instructors ( name, timezone, default_meeting_link ),
@@ -243,6 +245,18 @@ export default async function TutoringSection({ email }: { email: string }) {
                 <div className="text-xs mt-2 bg-purple-50 border border-purple-200 rounded p-2 text-purple-900">
                   Package hours: <strong>{pkg.remaining}</strong> of {pkg.purchased} remaining
                 </div>
+              )}
+              {/* PL-299: the family's continue-or-stop decision, in the
+                  signed-in portal (no tokenized link, by design). */}
+              {pkg && (
+                <BlockConfirmControl
+                  engagementId={e.id}
+                  state={e.block_confirmation ?? null}
+                  studentFirst={student?.first_name ?? 'your student'}
+                  remaining={pkg.remaining}
+                  purchased={pkg.purchased}
+                  rate={Number(e.hourly_rate)}
+                />
               )}
               {e.status === 'paused' && (
                 <div className="text-xs mt-2 text-amber-700 font-semibold">Paused — get in touch to resume</div>

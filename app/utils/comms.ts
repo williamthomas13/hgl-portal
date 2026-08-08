@@ -200,6 +200,8 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   // PL-282: the returning pair was missing here (raw keys would have shown).
   E1_RETURNING_PARENT: '#1-R — Returning-family thank-you (parent)',
   E1_RETURNING_STUDENT: '#1-R — Returning-family thank-you (student)',
+  // PL-299: the hours-block confirmation ask.
+  BL_BLOCK_CONFIRM: 'BL — Hours block ending: confirm to continue (parent)',
   // PL-279: the FO follow-on sequence.
   FO_ANNOUNCE_PARENT: 'FO-1P — Follow-on announcement (parent)',
   FO_ANNOUNCE_STUDENT: 'FO-1S — Follow-on announcement (student)',
@@ -326,7 +328,7 @@ export const TEMPLATE_GROUPS: { name: string; match: (key: string) => boolean }[
   { name: 'Agreements', match: (k) => /^AG_/.test(k) },
   {
     name: 'Tutoring families',
-    match: (k) => /^T\d(?!_TUTOR|_NOTES)|^T1B|^T_SCHEDULE|^E8_ADDON/.test(k) && k !== 'T5_TIMECARD_READY',
+    match: (k) => /^T\d(?!_TUTOR|_NOTES)|^T1B|^T_SCHEDULE|^E8_ADDON|^BL_/.test(k) && k !== 'T5_TIMECARD_READY',
   },
   {
     name: 'Counselors & schools',

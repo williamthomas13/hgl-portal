@@ -16,6 +16,7 @@ import { chaseLine, classroomChaseRounds } from '../../../utils/classroom-chase'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
 import { sweepFollowOnForBundle } from '../../../utils/follow-on'
+import { sweepBlockConfirmations } from '../../../utils/block-confirm'
 import {
   maybeSendInstructorFyi,
   sweepInstructorComms,
@@ -2041,6 +2042,15 @@ export async function GET(req: Request) {
   const tc = await sweepTimecards()
   if (tc.created > 0) counters.timecards_created = tc.created
   if (tc.t5Sent > 0) counters.timecards_t5_sent = tc.t5Sent
+
+  // PL-299: hours blocks nearing exhaustion — ask the family to confirm the
+  // move to monthly billing BEFORE the hours run out (once per engagement).
+  try {
+    const bc = await sweepBlockConfirmations()
+    if (bc.asked > 0) counters.block_confirmations_asked = bc.asked
+  } catch (e) {
+    console.error('block-confirmation sweep failed:', e)
+  }
 
   // PL-201: campaigns the daily cap paused resume when quota allows —
   // transactional keeps its reserve; the engine re-pauses if still tight.

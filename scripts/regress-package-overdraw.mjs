@@ -31,7 +31,8 @@ execSync(
 )
 const require = createRequire(import.meta.url)
 const emailMod = require(path.join(out, 'email.js'))
-emailMod.sendOnce = async () => 'sent'
+const sendLog = []
+emailMod.sendOnce = async (opts) => { sendLog.push(opts); return 'sent' }
 emailMod.sendAdminAlert = async () => 'sent'
 const tb = require(path.join(out, 'tutoring-billing.js'))
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
@@ -177,6 +178,109 @@ try {
 
   const marker1 = (await db.from('app_settings').select('value').eq('key', 'tutoring_generated_period').maybeSingle()).data?.value ?? null
   check('8. completion marker untouched', marker1 === marker0, '')
+
+  // --- PL-299: the family consent gate on top of PL-197 ---------------------
+  const bc = require(path.join(out, 'block-confirm.js'))
+  check('9. thresholds: 15→3 · 10→2 · 5→1 · 8→2 (20% up)',
+    bc.blockThreshold(15) === 3 && bc.blockThreshold(10) === 2 && bc.blockThreshold(5) === 1 && bc.blockThreshold(8) === 2, '')
+  check('10. hold states: asked+declined hold, null+confirmed do not',
+    bc.blockHoldActive('asked') && bc.blockHoldActive('declined') && !bc.blockHoldActive(null) && !bc.blockHoldActive('confirmed'), '')
+
+  // A fresh 5h block at 4.5h used → the sweep asks the parent once.
+  const { data: addon2 } = await db.from('enrollment_addons').insert([{
+    enrollment_id: cleanup.enrollments[0], hours: 5, price_paid: 500, source: 'cancellation_conversion',
+  }]).select('id').single()
+  const { data: eng2 } = await db.from('tutoring_engagements').insert([{
+    student_id: cleanup.students[0], tutor_id: cleanup.instructors[0], subject_id: (await db.from('subjects').select('id').limit(1).single()).data.id,
+    hourly_rate: 110, funding: 'package', addon_id: addon2.id, recurrence: [], status: 'active',
+  }]).select('id').single()
+  cleanup.engagements.push(eng2.id)
+  const maySessions = Array.from({ length: 5 }, (_, i) => ({
+    engagement_id: eng2.id, student_id: cleanup.students[0], tutor_id: cleanup.instructors[0],
+    starts_at: `2027-05-${String(i + 3).padStart(2, '0')}T17:00:00-06:00`,
+    ends_at: `2027-05-${String(i + 3).padStart(2, '0')}T17:54:00-06:00`,
+    status: 'completed', rate_snapshot: 110,
+  }))
+  {
+    const { error } = await db.from('tutoring_sessions').insert(maySessions)
+    if (error) throw new Error('may sessions: ' + error.message)
+  }
+  sendLog.length = 0
+  // The sweep scans EVERY active block engagement — snapshot the moment so
+  // any real (non-QA) engagement it asks during this run can be restored.
+  const sweepStart = new Date().toISOString()
+  const swept = await bc.sweepBlockConfirmations()
+  await db
+    .from('tutoring_engagements')
+    .update({ block_confirmation: null, block_confirmation_asked_at: null })
+    .eq('block_confirmation', 'asked')
+    .gte('block_confirmation_asked_at', sweepStart)
+    .neq('id', eng2.id)
+  const { data: eng2After } = await db.from('tutoring_engagements')
+    .select('block_confirmation, block_confirmation_asked_at').eq('id', eng2.id).single()
+  const askEmail = sendLog.find((s) => s.dedupeKey === `block_confirm_ask:${eng2.id}`)
+  check('11. sweep asks at the threshold (4.5 of 5h used → 0.5 ≤ 1h left)',
+    swept.asked >= 1 && eng2After.block_confirmation === 'asked' && !!eng2After.block_confirmation_asked_at, JSON.stringify(eng2After))
+  check('12. the ask email goes to the parent, plain numbers in view',
+    !!askEmail && /0\.5 of the\s+5 tutoring hours/.test(askEmail.html) && /\$110\/hr/.test(askEmail.html), askEmail?.subject)
+  const sweep2Start = new Date().toISOString()
+  sendLog.length = 0
+  await bc.sweepBlockConfirmations()
+  await db
+    .from('tutoring_engagements')
+    .update({ block_confirmation: null, block_confirmation_asked_at: null })
+    .eq('block_confirmation', 'asked')
+    .gte('block_confirmation_asked_at', sweep2Start)
+    .neq('id', eng2.id)
+  check('13. asks THIS engagement once (state already set → no re-ask)',
+    !sendLog.some((s) => s.dedupeKey === `block_confirm_ask:${eng2.id}`), '')
+
+  // Overflow past the block while ASKED → generation writes NO overflow line.
+  // (A June monthly session keeps the family's invoice generating — the
+  // PL-197 no-billables-no-invoice edge would otherwise hide the difference.)
+  {
+    const { error } = await db.from('tutoring_sessions').insert([
+      {
+        engagement_id: eng2.id, student_id: cleanup.students[0], tutor_id: cleanup.instructors[0],
+        starts_at: '2027-05-20T17:00:00-06:00', ends_at: '2027-05-20T18:00:00-06:00',
+        status: 'completed', rate_snapshot: 110,
+      },
+      {
+        engagement_id: cleanup.engagements[1], student_id: cleanup.students[0], tutor_id: cleanup.instructors[0],
+        starts_at: '2027-06-10T17:00:00-06:00', ends_at: '2027-06-10T18:00:00-06:00',
+        status: 'confirmed', rate_snapshot: 80,
+      },
+    ])
+    if (error) throw new Error('overflow session: ' + error.message)
+  }
+  await tb.generateMonthlyCycle(new Date(), '2027-06', [cleanup.families[0]])
+  const { data: junInv } = await db.from('tutoring_invoices')
+    .select('id').eq('family_id', cleanup.families[0]).eq('period', '2027-06-01').maybeSingle()
+  if (junInv) cleanup.invoices.push(junInv.id)
+  const junLines = junInv
+    ? (await db.from('tutoring_invoice_lines').select('id, description, rate').eq('invoice_id', junInv.id)).data ?? []
+    : []
+  check('14. ASKED: overflow past the block never bills',
+    junLines.filter((l) => l.description?.includes('past the prepaid package') && Number(l.rate) === 110).length === 0,
+    JSON.stringify(junLines.map((l) => l.description)))
+
+  // The family confirms → the SAME overflow bills on the next cycle (PL-197
+  // Case A IS the standard monthly path — no funding flip needed).
+  const rec = await bc.recordBlockDecision(eng2.id, 'confirmed', 'admin')
+  check('15. decision recorder flips asked → confirmed', rec.ok === true, JSON.stringify(rec))
+  await tb.generateMonthlyCycle(new Date(), '2027-06', [cleanup.families[0]])
+  const junLines2 = junInv
+    ? (await db.from('tutoring_invoice_lines').select('id, description, rate, amount').eq('invoice_id', junInv.id)).data ?? []
+    : []
+  const confirmedCarry = junLines2.filter((l) => l.description?.includes('past the prepaid package') && Number(l.rate) === 110)
+  check('16. CONFIRMED: the held overflow now bills at the engagement rate',
+    confirmedCarry.length === 1 && Number(confirmedCarry[0].amount) === 110,
+    JSON.stringify(junLines2.map((l) => `${l.description} @${l.rate}`)))
+
+  // A decision can't be recorded before the ask (null → plain refusal).
+  const early = await bc.recordBlockDecision(cleanup.engagements[0], 'confirmed', 'admin')
+  check("17. pre-ask decision refused plainly ('the low-hours email goes out first')",
+    early.ok === false && /goes out first/.test(early.error), JSON.stringify(early))
 } finally {
   await destroy()
   rmSync(out, { recursive: true, force: true })

@@ -371,6 +371,55 @@ export default function EngagementsPanel({
                       )}
                     </span>
                   )}
+                  {/* PL-299: the family's block decision — state chip + the
+                      admin mirror for answers that arrive by phone/reply. */}
+                  {e.funding === 'package' && e.block_confirmation === 'asked' && (
+                    <span className="text-xs font-semibold text-amber-700">
+                      awaiting family confirmation to continue past the block
+                      {(['confirmed', 'declined'] as const).map((d) => (
+                        <button
+                          key={d}
+                          className="ml-1.5 underline text-hgl-blue font-semibold"
+                          disabled={busyId === e.id}
+                          title={
+                            d === 'confirmed'
+                              ? 'The family said continue (phone/reply) — records it and unlocks monthly billing past the block'
+                              : 'The family said stop — nothing schedules or bills past the block'
+                          }
+                          onClick={async () => {
+                            setBusyId(e.id)
+                            const res = await fetch('/api/admin/tutoring/block-decision', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ engagementId: e.id, decision: d }),
+                            })
+                            const json = await res.json().catch(() => ({}))
+                            setMessage(
+                              res.ok
+                                ? d === 'confirmed'
+                                  ? 'Recorded: family confirmed — tutoring continues monthly past the block.'
+                                  : 'Recorded: family declined — sessions stop when the hours do.'
+                                : 'Error: ' + (json.error ?? 'failed')
+                            )
+                            setBusyId('')
+                            if (res.ok) onChange()
+                          }}
+                        >
+                          {d === 'confirmed' ? 'family confirmed' : 'family declined'}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                  {e.funding === 'package' && e.block_confirmation === 'confirmed' && (
+                    <span className="text-xs text-green-700 font-semibold">
+                      family confirmed — continues monthly past the block
+                    </span>
+                  )}
+                  {e.funding === 'package' && e.block_confirmation === 'declined' && (
+                    <span className="text-xs text-gray-500 font-semibold">
+                      family declined — stops when the hours run out
+                    </span>
+                  )}
                   {next ? (
                     <span className="text-xs text-green-700">
                       next: {fmtDay(next, tz)} {fmtTime(next, tz)}

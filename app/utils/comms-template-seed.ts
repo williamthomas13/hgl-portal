@@ -498,6 +498,36 @@ Tell someone who cares to sign up here...
 See you there? See you there.`,
   },
   {
+    // PL-299: the hours-block exhaustion confirmation ask — the family
+    // confirms the move to standard monthly billing BEFORE the block runs
+    // out. Draft; the code twin (block-confirm.ts blockConfirmEmail) sends
+    // byte-equivalent copy until ramped. NO tokenized link by design.
+    template_key: 'BL_BLOCK_CONFIRM',
+    display_name: 'BL — Hours block ending: confirm to continue (parent)',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s tutoring hours are almost used up — one quick confirmation",
+    preheader: '{blockHoursLeft} of {blockHours} hours left — confirm to continue',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+A quick heads-up: {studentFirstName} has **{blockHoursLeft} of the {blockHours} tutoring hours** you purchased left.
+
+When those hours are used up, tutoring simply continues on our standard 1-on-1 plan — same tutor, same schedule — billed monthly at **{tutoringHourlyRate}/hr**.
+
+**Please confirm you'd like to continue**: open your family portal (no password needed) and use the "Continue after the hours" button — or just reply to this email and we'll record it for you.
+
+[button:Open your family portal]({portalLink})
+
+If we don't hear from you, nothing bills past the hours you purchased — the sessions simply stop when the hours do.
+
+Thanks!
+
+Higher Ground Learning`,
+  },
+  {
     template_key: 'E2_DIAG_PARENT',
     display_name: '#2-P — Diagnostic & Synap access (parent)',
     sequence_number: '2-P',
