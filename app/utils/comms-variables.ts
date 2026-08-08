@@ -531,7 +531,8 @@ export const VARIABLES: Record<string, VariableDef> = {
   expiryDate: {
     description: 'When a pending registration expires (7 days after signup) — zoned datetime (PL-118)',
     resolve: (c) =>
-      zonedDeadline(new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000), c.timezone),
+      // PL-305: the class's own city when the location names one.
+      zonedDeadline(new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000), c.timezone, c.defaultLocation),
   },
 
   // --- links ------------------------------------------------------------------

@@ -468,7 +468,7 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
   // datetime in the class's zone with a label — the sweep enforces the exact
   // instant, so a bare weekday could read a day off for the family.
   const expiry = new Date(new Date(ctx.enrolledAt).getTime() + 168 * 3_600_000)
-  const expiryDate = zonedDeadline(expiry, ctx.timezone)
+  const expiryDate = zonedDeadline(expiry, ctx.timezone, ctx.defaultLocation)
   const preheader =
     n === 4
       ? `After ${expiryDate}, the spot returns to the pool.`
@@ -1220,7 +1220,7 @@ export function waitlistOfferEmail(
   declineUrl: string
 ): Rendered {
   const s = ctx.studentFirstName
-  const deadline = zonedDeadline(expiresAt, ctx.timezone)
+  const deadline = zonedDeadline(expiresAt, ctx.timezone, ctx.defaultLocation)
   return {
     subject: `A spot just opened in ${ctx.className} 🎉`,
     html: wrap(

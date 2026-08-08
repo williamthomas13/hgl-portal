@@ -4,7 +4,7 @@
 // hooks, renders in server and client components alike.
 
 import type { ReactNode } from 'react'
-import { bySessionStart, dateParts, timezoneCityLabel } from '../utils/dates'
+import { bySessionStart, dateParts, friendlyZoneCity } from '../utils/dates'
 
 export type CalendarSession = {
   /** PL-277: present on admin surfaces so per-session actions can target rows. */
@@ -87,13 +87,17 @@ export default function SessionCalendar({
         })}
       </div>
       {timezone && (
+        /* PL-305: the class's own city when the location names one ("Salt
+           Lake City time" for at-HGL), the zone city otherwise. */
         <p className="text-xs text-gray-500 mt-1.5">
-          (times shown in {timezoneCityLabel(timezone)} time)
+          (times shown in {friendlyZoneCity(timezone, defaultLocation)} time)
         </p>
       )}
       {calendarHref && (
+        /* PL-306: a new tab — mid-registration, following this link must
+           never cost the parent their place or filled-in state. */
         <p className="text-sm mt-2">
-          <a href={calendarHref} className="text-hgl-blue underline font-semibold">
+          <a href={calendarHref} target="_blank" rel="noreferrer" className="text-hgl-blue underline font-semibold">
             Add to your calendar / subscribe →
           </a>
         </p>

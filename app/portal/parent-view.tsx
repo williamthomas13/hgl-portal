@@ -66,8 +66,8 @@ export default async function ParentView({
         attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early ),
         classes (
           id, slug, status, class_type, default_location, delivery_mode,
-          price, start_date, synap_group,
-          schools ( name, nickname ),
+          price, start_date, synap_group, timezone,
+          schools ( name, nickname, timezone ),
           instructors ( name, email ),
           sessions ( id, session_date, start_time, end_time, location )
         )
@@ -425,7 +425,7 @@ export default async function ParentView({
                           sessions={sessions}
                           defaultLocation={cls.default_location}
                           calendarHref={`/classes/${cls.id}/calendar`}
-                          timezone={one<any>(cls.schools)?.timezone ?? null}
+                          timezone={cls.timezone ?? one<any>(cls.schools)?.timezone ?? null}
                         />
                       </div>
                     )}

@@ -17,13 +17,17 @@ type Session = {
 
 type ClassInfo = {
   id: string
+  slug: string | null
+  status: string | null
   class_type: string
+  /** PL-274 precedence: the class's own zone wins over the school's. */
+  timezone: string | null
   default_location: string | null
   schools: { nickname: string; timezone: string | null } | null
   sessions: Session[] | null
 }
 
-import { timezoneCityLabel, bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
+import { friendlyZoneCity, bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
 
 function formatTime(t: string | null) {
   if (!t) return null
@@ -105,13 +109,25 @@ export default function ClassCalendarPage() {
             Google and Apple buttons subscribe to the calendar — schedule changes update
             automatically. Downloads are a one-time snapshot.
           </p>
+          {/* PL-306: the way back — parents arrive mid-registration and must
+              never be stranded here with only the browser's back button. */}
+          {info.status === 'open' && (
+            <a
+              href={`/register/${info.slug ?? info.id}`}
+              className="block text-center border-2 border-hgl-blue text-hgl-blue font-bold py-2 px-4 rounded-md hover:bg-blue-50 transition"
+            >
+              Continue registration →
+            </a>
+          )}
         </div>
 
         <h3 className="font-semibold text-hgl-slate mb-1">Sessions</h3>
-        {/* PL-126: international families should never guess the zone. */}
-        {info.schools?.timezone && (
+        {/* PL-126: international families should never guess the zone.
+            PL-305: class-tz precedence + the class's own city when known. */}
+        {(info.timezone ?? info.schools?.timezone) && (
           <p className="text-xs text-gray-500 mb-3">
-            (times shown in {timezoneCityLabel(info.schools.timezone)} time)
+            (times shown in{' '}
+            {friendlyZoneCity((info.timezone ?? info.schools?.timezone)!, info.default_location)} time)
           </p>
         )}
         {sessions.length === 0 ? (

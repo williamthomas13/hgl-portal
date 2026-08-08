@@ -105,18 +105,45 @@ export function formatTimestampAdmin(iso: string): string {
  *  rendered in the given IANA zone WITH a plain-English zone label:
  *  "Thursday, July 30, 3:00 PM (Mexico City time)". Leaf-safe on purpose:
  *  registry variables (client-reachable) and email composers share it. */
-export function zonedDeadline(iso: string | Date, timezone: string): string {
+export function zonedDeadline(iso: string | Date, timezone: string, location?: string | null): string {
   const when = new Date(iso).toLocaleString('en-US', {
     timeZone: timezone,
     weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
-  return `${when} (${timezoneCityLabel(timezone)} time)`
+  return `${when} (${friendlyZoneCity(timezone, location)} time)`
 }
 
 /** "America/Mexico_City" → "Mexico City" — the plain-English city half of an
  *  IANA zone, shared by deadline copy and the PL-126 calendar label. */
 export function timezoneCityLabel(timezone: string): string {
   return (timezone.split('/').pop() ?? timezone).replace(/_/g, ' ')
+}
+
+/** PL-305: the city inside a postal-address location string, or null.
+ *  Only strings that END like a US postal address are trusted ("380 W.
+ *  Pierpont Ave, Salt Lake City, UT" / "…, Salt Lake City, UT 84101") — the
+ *  city is the segment before the state. Room strings, buildings, and
+ *  meeting links never match, so they can't masquerade as a city. */
+export function cityFromLocation(location: string | null | undefined): string | null {
+  if (!location) return null
+  const parts = location.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length < 2) return null
+  const last = parts[parts.length - 1]
+  const stateLike = /^[A-Z]{2}(\s+\d{3,10})?$/.test(last) || /^\d{5}(-\d{4})?$/.test(last)
+  if (!stateLike) return null
+  const candidate = parts[parts.length - 2]
+  if (!candidate || /[\d@/]/.test(candidate) || candidate.length < 3 || candidate.length > 40) return null
+  return candidate
+}
+
+/** PL-305: the zone label families read should speak the CLASS's city when
+ *  the location tells us one — "Salt Lake City time", not "Denver time", for
+ *  the at-HGL classes (same America/Denver zone, but not every parent knows
+ *  that). Falls back to the IANA zone's city for online classes or when no
+ *  city can be read from the location. ONE source: every "(times shown in …)"
+ *  render and zoned deadline goes through here. */
+export function friendlyZoneCity(timezone: string, location?: string | null): string {
+  return cityFromLocation(location) ?? timezoneCityLabel(timezone)
 }
 
 // PL-127: ONE clock for the availability promise — the family-facing "we'll

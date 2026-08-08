@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { validateFollowOnDiscount } from '../../utils/follow-on'
+import { classTutoringTier } from '../../utils/tutoring-tier'
 
 // Stripe client. We don't pin apiVersion here — the installed SDK
 // version ships with a default that matches its TypeScript types.
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
       .from('enrollments')
       .select(
         `id, payment_status, class_id,
-         classes ( id, price, class_type, schools ( nickname ) ),
+         classes ( id, price, class_type, school_id, delivery_mode, schools ( nickname ) ),
          students ( first_name, families ( id, parent_email ) )`
       )
       .in('id', ids);
@@ -156,13 +157,22 @@ export async function POST(request: Request) {
       if (selectedPkg) {
         const { data: pkg, error: pkgError } = await supabase
           .from('tutoring_packages')
-          .select('id, name, package_price, phase, active')
+          .select('id, name, package_price, phase, active, tier')
           .eq('id', selectedPkg)
           .eq('phase', 'pre_class')
           .eq('active', true)
           .single();
         if (pkgError || !pkg) {
           return NextResponse.json({ error: 'Tutoring package not found.' }, { status: 400 });
+        }
+        // PL-307: the package's tier must match the class flavor — the same
+        // rule class-info used to build the dropdown, re-checked here so a
+        // stale or hand-crafted package id can't buy the wrong price sheet.
+        if (pkg.tier !== classTutoringTier(cls)) {
+          return NextResponse.json(
+            { error: 'That tutoring package doesn’t apply to this class — reload the page and pick again.' },
+            { status: 400 }
+          );
         }
         lineItems.push({
           price_data: {

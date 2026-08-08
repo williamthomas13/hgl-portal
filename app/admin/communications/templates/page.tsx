@@ -63,6 +63,14 @@ export default function TemplateEditor() {
   const [diffAgainst, setDiffAgainst] = useState<VersionRow | null>(null)
   const bodyRef = useRef<HTMLTextAreaElement | null>(null)
 
+  // PL-301 rule (batch 31): no native dialogs — one inline armed-confirm
+  // slot serves every needs-a-second-click action on this page (live toggle,
+  // revert, discard-unsaved). Arming replaces confirm(); the banner shows
+  // the consequence and an explicit proceed/cancel pair.
+  const [armed, setArmed] = useState<{ message: string; proceedLabel: string; proceed: () => void } | null>(null)
+  const arm = (message: string, proceedLabel: string, proceed: () => void) =>
+    setArmed({ message, proceedLabel, proceed })
+
   const fetchTemplates = useCallback(async () => {
     const { data, error } = await supabase
       .from('email_templates')
@@ -167,41 +175,59 @@ export default function TemplateEditor() {
     }
   }
 
-  async function handleTestSend(audience: 'parent' | 'student') {
+  async function doTestSend(audience: 'parent' | 'student') {
     if (!selected) return
-    if (dirty && !confirm('You have unsaved changes — the test sends the last SAVED version. Continue?')) return
     const out = await api({ action: 'test_send', templateKey: selected.template_key, audience })
     if (out) setMessage(out.ok ? `✓ Test sent to ${out.to}.` : `⚠ Test send: ${out.status}`)
   }
 
-  async function handleLiveToggle() {
+  function handleTestSend(audience: 'parent' | 'student') {
     if (!selected) return
-    const goingLive = !selected.live
-    if (
-      !confirm(
-        goingLive
-          ? `Make ${selected.template_key} LIVE? Future sends use this DB copy instead of the code-rendered original. Send yourself a test first.`
-          : `Take ${selected.template_key} off DB copy? The pipeline falls back to the code-rendered original.`
+    if (dirty) {
+      arm(
+        'You have unsaved changes — the test sends the last SAVED version.',
+        'Send the saved version',
+        () => doTestSend(audience)
       )
-    )
       return
-    const out = await api({ action: 'set_live', templateKey: selected.template_key, live: goingLive })
-    if (out) {
-      setMessage(goingLive ? '✓ Live — future sends use the DB template.' : '✓ Reverted to code-rendered copy.')
-      await fetchTemplates()
-      setSelected({ ...selected, live: goingLive })
     }
+    doTestSend(audience)
   }
 
-  async function handleRevert(v: VersionRow) {
+  function handleLiveToggle() {
     if (!selected) return
-    if (!confirm(`Revert to v${v.version_number}? This creates a NEW version with that content.`)) return
-    const out = await api({ action: 'revert', templateKey: selected.template_key, versionId: v.id })
-    if (out) {
-      await fetchTemplates()
-      await selectTemplate({ ...selected, active_version_id: out.versionId })
-      setMessage(`✓ Reverted — saved as v${out.versionNumber}.`)
-    }
+    const goingLive = !selected.live
+    const key = selected.template_key
+    arm(
+      goingLive
+        ? `Make ${key} LIVE? Future sends use this DB copy instead of the code-rendered original. Send yourself a test first.`
+        : `Take ${key} off DB copy? The pipeline falls back to the code-rendered original.`,
+      goingLive ? 'Yes, make it live' : 'Yes, back to code copy',
+      async () => {
+        const out = await api({ action: 'set_live', templateKey: key, live: goingLive })
+        if (out) {
+          setMessage(goingLive ? '✓ Live — future sends use the DB template.' : '✓ Reverted to code-rendered copy.')
+          await fetchTemplates()
+          setSelected((s) => (s && s.template_key === key ? { ...s, live: goingLive } : s))
+        }
+      }
+    )
+  }
+
+  function handleRevert(v: VersionRow) {
+    if (!selected) return
+    arm(
+      `Revert to v${v.version_number}? This creates a NEW version with that content.`,
+      `Yes, revert to v${v.version_number}`,
+      async () => {
+        const out = await api({ action: 'revert', templateKey: selected.template_key, versionId: v.id })
+        if (out) {
+          await fetchTemplates()
+          await selectTemplate({ ...selected, active_version_id: out.versionId })
+          setMessage(`✓ Reverted — saved as v${out.versionNumber}.`)
+        }
+      }
+    )
   }
 
   function insertVariable(name: string) {
@@ -244,6 +270,26 @@ export default function TemplateEditor() {
           </a>
         </div>
         {error && <div className="p-3 rounded bg-red-100 text-red-700 font-semibold text-sm">{error}</div>}
+        {armed && (
+          <div className="p-3 rounded bg-amber-50 border border-amber-300 text-sm flex flex-wrap items-center gap-3">
+            <span className="text-amber-900 font-semibold">{armed.message}</span>
+            <button
+              type="button"
+              disabled={busy}
+              className="bg-hgl-slate text-white font-bold py-1 px-3 rounded hover:opacity-90 disabled:opacity-50"
+              onClick={() => {
+                const a = armed
+                setArmed(null)
+                a.proceed()
+              }}
+            >
+              {armed.proceedLabel}
+            </button>
+            <button type="button" className="text-gray-500 underline" onClick={() => setArmed(null)}>
+              cancel
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-12 gap-4">
           {/* Template list */}
@@ -267,7 +313,10 @@ export default function TemplateEditor() {
                           <li key={t.template_key}>
                             <button
                               onClick={() => {
-                                if (dirty && !confirm('Discard unsaved changes?')) return
+                                if (dirty) {
+                                  arm('Discard unsaved changes?', 'Yes, discard them', () => selectTemplate(t))
+                                  return
+                                }
                                 selectTemplate(t)
                               }}
                               className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 ${

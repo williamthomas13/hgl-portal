@@ -14,6 +14,7 @@ import {
   loadGcalConnection,
   createGcalEvent,
   patchGcalEvent,
+  deleteGcalEvent,
   GcalApiError,
   type GcalEventInput,
 } from '../../../utils/gcal'
@@ -55,10 +56,26 @@ type Body =
   | ({ action: 'update'; id: string } & Record<string, unknown>)
   | { action: 'send_intake'; id: string }
   | { action: 'create_family'; id: string }
-  | { action: 'schedule_consult'; id: string; consult_at: string; consult_owner_email: string }
+  | {
+      action: 'schedule_consult'
+      id: string
+      consult_at: string
+      consult_owner_email: string
+      duration_minutes?: number
+    }
   | { action: 'record_phone_consult'; id: string; happened_at: string; notes?: string }
+  | { action: 'cancel_scheduled_consult'; id: string }
   | { action: 'create_offer'; name: string; kind: string; value: number; notes?: string }
   | { action: 'update_offer'; id: string; active?: boolean; name?: string; value?: number; notes?: string }
+  | { action: 'delete_offer'; id: string }
+
+// PL-304: the leads page asks who's calling so the Offers panel can be
+// admin-only in the UI (the actions below enforce the same rule server-side).
+export async function GET() {
+  const caller = await sessionRole('staff')
+  if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
+  return NextResponse.json({ role: caller.role })
+}
 
 function pickLeadFields(body: Record<string, unknown>): Record<string, unknown> {
   const patch: Record<string, unknown> = {}
@@ -325,6 +342,12 @@ export async function POST(req: Request) {
       if (!Number.isFinite(startMs)) {
         return NextResponse.json({ error: 'Invalid consult time.' }, { status: 400 })
       }
+      // PL-302: consultations default to 30 minutes; the picker offers
+      // 5-minute steps, so accept any sane multiple of 5.
+      const durationMin = Number(body.duration_minutes ?? 30)
+      if (!Number.isFinite(durationMin) || durationMin < 5 || durationMin > 240 || durationMin % 5 !== 0) {
+        return NextResponse.json({ error: 'Consult length should be 5–240 minutes, in 5-minute steps.' }, { status: 400 })
+      }
       const { data: lead } = await supabase
         .from('leads')
         .select('id, status, contact_name, contact_email, contact_phone, student_name, notes, consult_gcal_event_id')
@@ -364,7 +387,7 @@ export async function POST(req: Request) {
               `Lead record: ${appUrl()}/admin/leads`,
             location: null,
             startsAt: consultAtIso,
-            endsAt: new Date(startMs + 60 * 60_000).toISOString(),
+            endsAt: new Date(startMs + durationMin * 60_000).toISOString(),
             timezone: 'America/Denver',
             attendees: [],
           }
@@ -406,10 +429,24 @@ export async function POST(req: Request) {
       if (!Number.isFinite(whenMs)) return NextResponse.json({ error: 'Invalid date.' }, { status: 400 })
       const { data: lead } = await supabase
         .from('leads')
-        .select('id, status, notes')
+        .select('id, status, notes, consult_at, consult_mode, consult_owner_email, consult_gcal_event_id')
         .eq('id', body.id)
         .maybeSingle()
       if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
+      // PL-303: a consult was on the books and hasn't happened yet — the
+      // phone consult superseding it must be a CHOICE, not a silent orphaning
+      // (Scarlett's case: the meeting stayed on Billy's calendar). The record
+      // proceeds; the response tells the UI to offer keep-or-cancel.
+      const supersededConsult =
+        lead.consult_mode === 'scheduled' &&
+        lead.consult_at &&
+        new Date(lead.consult_at).getTime() > Date.now()
+          ? {
+              at: lead.consult_at,
+              owner: lead.consult_owner_email,
+              onCalendar: !!lead.consult_gcal_event_id,
+            }
+          : null
       const note = (body.notes ?? '').trim()
       const dayLabel = new Date(whenMs).toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
       const { error } = await supabase
@@ -429,10 +466,52 @@ export async function POST(req: Request) {
         })
         .eq('id', lead.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json({ ok: true })
+      return NextResponse.json({ ok: true, supersededConsult })
     }
 
+    // PL-303: the explicit "cancel the scheduled consult" half of
+    // keep-or-cancel — pulls the event off the owner's Google Calendar
+    // (best-effort; already-gone is success) and clears the reference.
+    if (body.action === 'cancel_scheduled_consult') {
+      if (!body.id) return NextResponse.json({ error: 'Missing lead id.' }, { status: 400 })
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('id, consult_gcal_event_id')
+        .eq('id', body.id)
+        .maybeSingle()
+      if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
+      let gcal: 'removed' | 'skipped' | 'failed' = 'skipped'
+      const ownerEmail = String((body as Record<string, unknown>).owner_email ?? '').trim()
+      if (lead.consult_gcal_event_id && ownerEmail) {
+        try {
+          const conn = await loadGcalConnection()
+          if (conn?.status === 'connected' && conn.key) {
+            try {
+              await deleteGcalEvent(conn.key, ownerEmail, null, lead.consult_gcal_event_id)
+              gcal = 'removed'
+            } catch (e) {
+              if (e instanceof GcalApiError && (e.status === 404 || e.status === 410)) gcal = 'removed'
+              else throw e
+            }
+          }
+        } catch (e) {
+          console.error('consult cancel gcal delete failed:', e)
+          gcal = 'failed'
+        }
+      }
+      await supabase
+        .from('leads')
+        .update({ consult_gcal_event_id: null, updated_at: new Date().toISOString() })
+        .eq('id', lead.id)
+      return NextResponse.json({ ok: true, gcal })
+    }
+
+    // PL-304: offers are ownership-level (admin), not general staff — the
+    // UI hides the panel for managers and these checks make that real.
     if (body.action === 'create_offer') {
+      if (caller.role !== 'admin') {
+        return NextResponse.json({ error: 'Offers are managed by the admin.' }, { status: 403 })
+      }
       if (!body.name || !body.kind || body.value == null) {
         return NextResponse.json({ error: 'Offers need a name, kind, and value.' }, { status: 400 })
       }
@@ -447,6 +526,9 @@ export async function POST(req: Request) {
     }
 
     if (body.action === 'update_offer') {
+      if (caller.role !== 'admin') {
+        return NextResponse.json({ error: 'Offers are managed by the admin.' }, { status: 403 })
+      }
       if (!body.id) return NextResponse.json({ error: 'Missing offer id.' }, { status: 400 })
       const patch: Record<string, unknown> = {}
       if ('active' in body) patch.active = body.active
@@ -454,6 +536,32 @@ export async function POST(req: Request) {
       if (body.value != null) patch.value = body.value
       if ('notes' in body) patch.notes = body.notes
       const { error } = await supabase.from('tutoring_offers').update(patch).eq('id', body.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+
+    // PL-304: delete is allowed only while nothing carries the offer — a
+    // mistyped offer (Scarlett's "1 free hour" at 110 hrs) should be
+    // removable, but one attached to any prospective student (including
+    // converted/closed ones) stays, deactivated at most.
+    if (body.action === 'delete_offer') {
+      if (caller.role !== 'admin') {
+        return NextResponse.json({ error: 'Offers are managed by the admin.' }, { status: 403 })
+      }
+      if (!body.id) return NextResponse.json({ error: 'Missing offer id.' }, { status: 400 })
+      const { count } = await supabase
+        .from('leads')
+        .select('id', { count: 'exact', head: true })
+        .eq('offer_id', body.id)
+      if ((count ?? 0) > 0) {
+        return NextResponse.json(
+          {
+            error: `This offer is attached to ${count} prospective student${count === 1 ? '' : 's'} — detach it from them (or leave it inactive) instead of deleting.`,
+          },
+          { status: 400 }
+        )
+      }
+      const { error } = await supabase.from('tutoring_offers').delete().eq('id', body.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }

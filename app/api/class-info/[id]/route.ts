@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { validateFollowOnDiscount } from '../../../utils/follow-on'
+import { classTutoringTier } from '../../../utils/tutoring-tier'
 
 // Public class details for the registration and calendar pages. Phase 3
 // removed the browser's direct DB access (anon has no RLS policies), so the
@@ -31,7 +32,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     .from('classes')
     .select(
       `id, slug, status, class_type, price, capacity,
-       start_date, default_location, registration_close_date,
+       start_date, default_location, registration_close_date, school_id, delivery_mode,
        timezone, promo_code, marketing_url, schools ( name, nickname, timezone ),
        sessions ( id, session_date, start_time, end_time, location ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
@@ -43,20 +44,28 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
   }
 
+  // PL-307: at-HGL classes show the domestic tiers, everything else the
+  // international ones — same rule the checkout re-validates server-side.
   const { data: pkgs } = await supabase
     .from('tutoring_packages')
     .select('id, name, hours, hourly_rate, package_price, regular_hourly_rate')
     .eq('phase', 'pre_class')
     .eq('active', true)
+    .eq('tier', classTutoringTier(cls as { school_id: string | null; delivery_mode: string | null }))
     .order('hours')
 
   // The promo code itself never rides the public payload — only whether a
   // "have a discount code?" field is worth showing (PL-279).
-  const { enrollments, capacity, promo_code, ...publicClass } = cls as typeof cls & {
-    enrollments: Slot[]
-    capacity: number
-    promo_code: string | null
-  }
+  const { enrollments, capacity, promo_code, school_id, delivery_mode, ...publicClass } =
+    cls as typeof cls & {
+      enrollments: Slot[]
+      capacity: number
+      promo_code: string | null
+      school_id: string | null
+      delivery_mode: string | null
+    }
+  void school_id
+  void delivery_mode
 
   // PL-279: the emailed auto-apply link carries ?fo=<token>&fe=<enrollment>.
   // Validation is per-cohort (the recipient's feeder class schedule); an

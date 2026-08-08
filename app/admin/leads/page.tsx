@@ -110,22 +110,60 @@ const LOST_REASONS: Record<string, string> = {
   other: 'Other',
 }
 
-function promptCloseReason(): { kind: string; text: string | null } | null {
-  const pick = prompt(
-    'Why "not now"? Type one:\n\nprice · timing · went elsewhere · no response · other'
+// PL-301: closing collects the reason INLINE — a dropdown of the five clean
+// enum values plus an optional note (required for "other"), replacing the
+// old native prompt() whose free text guaranteed dirty data ("too expensive"
+// ≠ 'price') and froze the automation bridge.
+function CloseLeadPanel({
+  busy,
+  onClose,
+  onCancel,
+}: {
+  busy: boolean
+  onClose: (reason: { kind: string; text: string | null }) => void
+  onCancel: () => void
+}) {
+  const [kind, setKind] = useState('price')
+  const [text, setText] = useState('')
+  const noteMissing = kind === 'other' && !text.trim()
+  return (
+    <div className="w-full bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2">
+      <p className="text-xs font-semibold text-amber-900">
+        Close this lead — why didn&apos;t it work out (for now)?
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-xs text-amber-900 mb-1">Reason</label>
+          <select
+            className={`${inputCls} bg-white w-auto`}
+            value={kind}
+            onChange={(e) => setKind(e.target.value)}
+          >
+            {Object.entries(LOST_REASONS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1 min-w-48">
+          <label className="block text-xs text-amber-900 mb-1">
+            {kind === 'other' ? 'A few words on why (required)' : 'Anything worth noting? (optional)'}
+          </label>
+          <input className={inputCls} value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+        <button
+          type="button"
+          disabled={busy || noteMissing}
+          onClick={() => onClose({ kind, text: text.trim() || null })}
+          className="bg-hgl-slate text-white font-bold py-1.5 px-4 rounded-md hover:opacity-90 disabled:opacity-50 text-sm"
+        >
+          Close the lead
+        </button>
+        <button type="button" onClick={onCancel} className="text-gray-500 underline text-sm">
+          never mind
+        </button>
+      </div>
+    </div>
   )
-  if (pick == null) return null
-  const kind = pick.trim().toLowerCase().replace(/\s+/g, '_')
-  if (!LOST_REASONS[kind]) {
-    alert('Please type one of: price, timing, went elsewhere, no response, other.')
-    return null
-  }
-  const text = prompt(kind === 'other' ? 'A few words on why (required):' : 'Anything worth noting? (optional)')
-  if (kind === 'other' && !(text ?? '').trim()) {
-    alert('For "other", a few words are required.')
-    return null
-  }
-  return { kind, text: (text ?? '').trim() || null }
 }
 
 const STALE_DAYS = 4
@@ -147,7 +185,12 @@ function isStale(lead: Lead): boolean {
   return Date.now() - new Date(lead.updated_at).getTime() > STALE_DAYS * 86_400_000
 }
 
-async function post(body: Record<string, unknown>): Promise<{ ok: boolean; error?: string; gcal?: string }> {
+async function post(body: Record<string, unknown>): Promise<{
+  ok: boolean
+  error?: string
+  gcal?: string
+  supersededConsult?: { at: string; owner: string | null; onCalendar: boolean } | null
+}> {
   const res = await fetch('/api/admin/leads', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -233,7 +276,10 @@ function NewLeadForm({
   const [f, setF] = useState(blank)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const set = (k: keyof typeof blank) => (v: string) => setF((p) => ({ ...p, [k]: v }))
+  const set = (k: keyof typeof blank) => (v: string) => {
+    setF((p) => ({ ...p, [k]: v }))
+    setDupArmed(false) // typing again invalidates a stale "add anyway" arming
+  }
   // The bare minimum: enough to identify them — a name (parent or student)
   // or an email. Same rule the server enforces.
   const identified = !!(f.contact_name.trim() || f.contact_email.trim() || f.student_name.trim())
@@ -315,20 +361,19 @@ function NewLeadForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.student_name, f.contact_name])
 
+  // PL-194 + PL-301 rule: an EXACT name match never saves silently — the
+  // first Add arms an inline warning (no native confirm) and a second,
+  // explicit click creates anyway (two different Ana Garcías stay creatable).
+  const [dupArmed, setDupArmed] = useState(false)
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    // PL-194: an EXACT name match never saves silently — creating anyway is
-    // legitimate (two different Ana Garcías) but must be deliberate.
     const exact = matches.filter((m) => m.exact)
-    if (exact.length > 0) {
-      const lines = exact.map((m) => `• ${m.name} — ${m.context}`).join('\n')
-      if (
-        !window.confirm(
-          `This exact name already exists:\n\n${lines}\n\nAdd a NEW record with the same name anyway? (Fine if they're genuinely different people.)`
-        )
-      )
-        return
+    if (exact.length > 0 && !dupArmed) {
+      setDupArmed(true)
+      return
     }
+    setDupArmed(false)
     setSaving(true)
     setError(null)
     const res = await post({ action: 'create', ...f })
@@ -433,14 +478,27 @@ function NewLeadForm({
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {dupArmed && (
+        <div className="bg-amber-50 border border-amber-300 rounded-md p-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            This exact name already exists (listed above). Add a NEW record with the same name
+            anyway? Fine if they&apos;re genuinely different people.
+          </p>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <button
           type="submit"
           disabled={saving || !identified}
-          className="bg-hgl-slate text-white font-bold py-2 px-5 rounded-md hover:opacity-90 disabled:opacity-50 text-sm"
+          className={`${dupArmed ? 'bg-amber-600' : 'bg-hgl-slate'} text-white font-bold py-2 px-5 rounded-md hover:opacity-90 disabled:opacity-50 text-sm`}
         >
-          {saving ? 'Adding…' : 'Add to pipeline'}
+          {saving ? 'Adding…' : dupArmed ? 'Add anyway — different person' : 'Add to pipeline'}
         </button>
+        {dupArmed && (
+          <button type="button" className="text-sm text-gray-500 underline" onClick={() => setDupArmed(false)}>
+            never mind
+          </button>
+        )}
         <span className="text-xs text-gray-400">
           {identified
             ? 'Whatever you have right now is enough — the intake sheet fills in the rest.'
@@ -456,34 +514,40 @@ function NewLeadForm({
 // status carries its one obvious next move as a button on the row.
 function NextStepButton({ lead, onChange }: { lead: Lead; onChange: () => void }) {
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   const stop = (e: React.MouseEvent) => e.stopPropagation()
   const act = async (e: React.MouseEvent, body: Record<string, unknown>, okMsg: string) => {
     e.stopPropagation()
     setBusy(true)
+    setErr(null)
     const res = await post(body)
     setBusy(false)
-    if (!res.ok) alert(res.error ?? 'Failed.')
+    if (!res.ok) setErr(res.error ?? 'Failed.')
     else onChange()
     void okMsg
   }
   const cls = 'text-xs font-semibold text-white bg-hgl-blue rounded px-2.5 py-1 hover:opacity-90 disabled:opacity-50'
   const studentFirst = (lead.student_name ?? '').split(' ')[0] || 'the student'
+  const errSpan = err ? <span className="text-xs text-red-600 ml-2" onClick={stop}>{err}</span> : null
 
-  if (lead.status === 'new' || lead.status === 'contacted') {
+  if (lead.status === 'new' || lead.status === 'contacted' || lead.status === 'intake_sent') {
     if (!lead.contact_email) return <span className="text-xs text-gray-400" onClick={stop}>next: get a contact email</span>
+    const resend = lead.status === 'intake_sent'
     return (
-      <button type="button" disabled={busy} className={cls}
-        onClick={(e) => { e.stopPropagation(); if (confirm(`Email the intake form link to ${lead.contact_email}?`)) act(e, { action: 'send_intake', id: lead.id }, 'sent') }}>
-        Send intake form
-      </button>
-    )
-  }
-  if (lead.status === 'intake_sent') {
-    return (
-      <button type="button" disabled={busy} className={cls}
-        onClick={(e) => { e.stopPropagation(); if (confirm(`Re-send the intake form link to ${lead.contact_email}?`)) act(e, { action: 'send_intake', id: lead.id }, 'sent') }}>
-        Re-send intake form
-      </button>
+      <span onClick={stop} className="inline-flex items-center">
+        <ConfirmAction
+          label={resend ? 'Re-send intake form' : 'Send intake form'}
+          message={`Email the intake form link to ${lead.contact_email}?`}
+          confirmLabel="Yes, send it"
+          className={cls}
+          confirmClassName="text-hgl-blue font-semibold underline text-xs"
+          disabled={busy}
+          onConfirm={() =>
+            act({ stopPropagation: () => {} } as React.MouseEvent, { action: 'send_intake', id: lead.id }, 'sent')
+          }
+        />
+        {errSpan}
+      </span>
     )
   }
   // PL-188: once the proposal is out, the row says so — the blue Schedule
@@ -515,10 +579,13 @@ function NextStepButton({ lead, onChange }: { lead: Lead; onChange: () => void }
   }
   if (lead.status === 'consult_scheduled') {
     return (
-      <button type="button" disabled={busy} className={cls}
-        onClick={(e) => act(e, { action: 'update', id: lead.id, status: 'consult_done' }, 'done')}>
-        Mark consult done
-      </button>
+      <span onClick={stop} className="inline-flex items-center">
+        <button type="button" disabled={busy} className={cls}
+          onClick={(e) => act(e, { action: 'update', id: lead.id, status: 'consult_done' }, 'done')}>
+          Mark consult done
+        </button>
+        {errSpan}
+      </span>
     )
   }
   if (lead.status === 'scheduled' && lead.student_id) {
@@ -589,6 +656,29 @@ function LeadDetail({
   const [assignOpen, setAssignOpen] = useState(false)
   const [notes, setNotes] = useState(lead.notes ?? '')
   const [offerId, setOfferId] = useState(lead.offer_id ?? '')
+  // PL-300: every intake field is editable right on the card — phone-call
+  // leads start email-less and must be able to gain one here (the intake
+  // send and Create family + student then unblock on their own).
+  const [fields, setFields] = useState({
+    contact_name: lead.contact_name ?? '',
+    contact_email: lead.contact_email ?? '',
+    contact_phone: lead.contact_phone ?? '',
+    student_name: lead.student_name ?? '',
+    student_school: lead.student_school ?? '',
+    student_grade: lead.student_grade ?? '',
+    source: lead.source,
+    interest: lead.interest,
+    subjects: lead.subjects ?? '',
+  })
+  const setField = (k: keyof typeof fields) => (v: string) => setFields((p) => ({ ...p, [k]: v }))
+  // PL-301: the inline close panel (one panel, both doors — the "Close
+  // lead…" link and picking Closed in the status dropdown).
+  const [closeOpen, setCloseOpen] = useState(false)
+  // PL-302: consult length, 30 minutes by default.
+  const [consultDuration, setConsultDuration] = useState(30)
+  // PL-303: a scheduled-but-not-yet-happened consult that a phone consult
+  // just superseded — keep-or-cancel until answered.
+  const [superseded, setSuperseded] = useState<{ at: string; owner: string | null; onCalendar: boolean } | null>(null)
   const [consultAt, setConsultAt] = useState(() => {
     if (!lead.consult_at) return ''
     // datetime-local wants LOCAL wall time, not the UTC slice.
@@ -611,9 +701,13 @@ function LeadDetail({
     setErr(null)
     const res = await post(body)
     setBusy(false)
-    if (!res.ok) return setErr(res.error ?? 'Failed.')
+    if (!res.ok) {
+      setErr(res.error ?? 'Failed.')
+      return res
+    }
     setMsg(res.gcal === 'failed' ? `${okMsg} (Google Calendar push failed — event not created)` : okMsg)
     onChange()
+    return res
   }
 
   const activeOffers = offers.filter((o) => o.active || o.id === lead.offer_id)
@@ -626,6 +720,54 @@ function LeadDetail({
           {lead.lost_reason ? ` — ${lead.lost_reason}` : ''}
         </p>
       )}
+      {/* PL-300: the same fields as "Add a prospective student", editable in
+          place — whatever wasn't known at add time lands here later. */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Parent / contact name</label>
+          <input className={inputCls} value={fields.contact_name} onChange={(e) => setField('contact_name')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Phone</label>
+          <input className={inputCls} type="tel" value={fields.contact_phone} onChange={(e) => setField('contact_phone')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Email</label>
+          <input className={inputCls} type="email" value={fields.contact_email} onChange={(e) => setField('contact_email')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Student name</label>
+          <input className={inputCls} value={fields.student_name} onChange={(e) => setField('student_name')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Source</label>
+          <select className={`${inputCls} bg-white`} value={fields.source} onChange={(e) => setField('source')(e.target.value)}>
+            {Object.entries(SOURCE_LABELS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">School</label>
+          <input className={inputCls} value={fields.student_school} onChange={(e) => setField('student_school')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Grade</label>
+          <input className={inputCls} value={fields.student_grade} onChange={(e) => setField('student_grade')(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Interest</label>
+          <select className={`${inputCls} bg-white`} value={fields.interest} onChange={(e) => setField('interest')(e.target.value)}>
+            {Object.entries(INTEREST_LABELS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-gray-600 mb-1">Subject(s) / test</label>
+        <input className={inputCls} placeholder="e.g. SAT / Algebra 2" value={fields.subjects} onChange={(e) => setField('subjects')(e.target.value)} />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
@@ -701,11 +843,12 @@ function LeadDetail({
           type="button"
           disabled={busy}
           onClick={() => {
-            // PL-108: picking "Closed — not now" in the dropdown also
-            // requires the reason before saving.
-            const closing = status === 'lost' && lead.status !== 'lost'
-            const reason = closing ? promptCloseReason() : null
-            if (closing && !reason) return
+            // PL-108/PL-301: picking "Closed — not now" in the dropdown also
+            // requires the reason — the same inline panel opens.
+            if (status === 'lost' && lead.status !== 'lost') {
+              setCloseOpen(true)
+              return
+            }
             run(
               {
                 action: 'update',
@@ -716,7 +859,7 @@ function LeadDetail({
                 // not assign on an unrelated save).
                 notes,
                 offer_id: offerId || null,
-                ...(reason ? { lost_reason_kind: reason.kind, lost_reason: reason.text } : {}),
+                ...fields,
               },
               'Saved.'
             )
@@ -743,27 +886,47 @@ function LeadDetail({
             onConfirm={() => run({ action: 'send_intake', id: lead.id }, 'Intake form sent.')}
           />
         ) : (
-          <span className="text-xs text-gray-400">Add a contact email to send the intake form</span>
+          <span className="text-xs text-gray-400">
+            Add a contact email above (then Save) to send the intake form
+          </span>
         )}
-        {lead.status !== 'lost' && (
+        {lead.status !== 'lost' && !closeOpen && (
           <button
             type="button"
             disabled={busy}
             className="text-gray-500 underline"
-            onClick={() => {
-              // PL-108: never closed without a reason.
-              const reason = promptCloseReason()
-              if (!reason) return
-              run(
-                { action: 'update', id: lead.id, status: 'lost', lost_reason_kind: reason.kind, lost_reason: reason.text },
-                'Closed — not now (reason saved).'
-              )
-            }}
+            onClick={() => setCloseOpen(true)}
           >
-            Close — not now…
+            Close lead…
           </button>
         )}
       </div>
+      {closeOpen && (
+        <CloseLeadPanel
+          busy={busy}
+          onCancel={() => {
+            setCloseOpen(false)
+            if (status === 'lost' && lead.status !== 'lost') setStatus(lead.status)
+          }}
+          onClose={(reason) => {
+            setCloseOpen(false)
+            setStatus('lost')
+            run(
+              {
+                action: 'update',
+                id: lead.id,
+                status: 'lost',
+                lost_reason_kind: reason.kind,
+                lost_reason: reason.text,
+                notes,
+                offer_id: offerId || null,
+                ...fields,
+              },
+              'Closed — not now (reason saved).'
+            )
+          }}
+        />
+      )}
 
       {/* Consult scheduling light (spec §11): datetime + owner → GCal push.
           PL-188: past the proposal, consultation is a step backward — greyed
@@ -784,7 +947,9 @@ function LeadDetail({
             <span className="ml-2 font-normal text-gray-500">
               currently {fmtWhen(lead.consult_at)} with {lead.consult_owner_email ?? '—'}
               {lead.consult_mode === 'phone'
-                ? ' · by phone (already happened — no calendar event)'
+                ? lead.consult_gcal_event_id
+                  ? ' · by phone (an earlier scheduled meeting was kept on the calendar)'
+                  : ' · by phone (already happened — no calendar event)'
                 : lead.consult_gcal_event_id
                   ? ' · on their Google Calendar'
                   : ''}
@@ -801,6 +966,19 @@ function LeadDetail({
               value={consultAt}
               onChange={(e) => setConsultAt(e.target.value)}
             />
+          </div>
+          <div>
+            {/* PL-302: length picker, 30 minutes by default. */}
+            <label className="block text-xs text-gray-500 mb-1">Length</label>
+            <select
+              className={`${inputCls} bg-white`}
+              value={consultDuration}
+              onChange={(e) => setConsultDuration(Number(e.target.value))}
+            >
+              {[15, 20, 30, 45, 60, 90].map((m) => (
+                <option key={m} value={m}>{m} min</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Owner (their Workspace email)</label>
@@ -821,6 +999,7 @@ function LeadDetail({
                   id: lead.id,
                   consult_at: new Date(consultAt).toISOString(),
                   consult_owner_email: consultOwner.trim().toLowerCase(),
+                  duration_minutes: consultDuration,
                 },
                 'Consult scheduled.'
               )
@@ -854,8 +1033,8 @@ function LeadDetail({
           <button
             type="button"
             disabled={busy || !phoneConsultDate}
-            onClick={() =>
-              run(
+            onClick={async () => {
+              const res = await run(
                 {
                   action: 'record_phone_consult',
                   id: lead.id,
@@ -864,12 +1043,68 @@ function LeadDetail({
                 },
                 'Phone consult recorded — no calendar event, pipeline advanced.'
               )
-            }
+              // PL-303: a not-yet-happened scheduled consult was superseded —
+              // whatever remains on a calendar must be there on purpose.
+              if (res.ok && res.supersededConsult) setSuperseded(res.supersededConsult)
+            }}
             className="bg-white border border-gray-400 text-gray-700 font-bold py-1.5 px-4 rounded-md hover:bg-gray-100 disabled:opacity-50"
           >
             Record phone consult
           </button>
         </div>
+        {superseded && (
+          <div className="mt-3 bg-amber-50 border border-amber-300 rounded p-3 text-xs text-amber-900 space-y-2">
+            <p className="font-semibold">
+              A consultation was already scheduled for {fmtWhen(superseded.at)}
+              {superseded.owner ? ` with ${superseded.owner}` : ''}
+              {superseded.onCalendar ? ' and is on their Google Calendar' : ''}. Keep it, or cancel
+              it?
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={busy}
+                className="bg-white border border-amber-400 text-amber-900 font-bold py-1 px-3 rounded hover:bg-amber-100"
+                onClick={() => {
+                  setSuperseded(null)
+                  setMsg(
+                    superseded.owner
+                      ? `Kept — the meeting stays on ${superseded.owner}'s calendar on purpose (maybe they still come in).`
+                      : 'Kept — the scheduled consultation stands.'
+                  )
+                }}
+              >
+                Keep it — they may still come in
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                className="bg-white border border-amber-400 text-amber-900 font-bold py-1 px-3 rounded hover:bg-amber-100"
+                onClick={async () => {
+                  setBusy(true)
+                  const res = await post({
+                    action: 'cancel_scheduled_consult',
+                    id: lead.id,
+                    owner_email: superseded.owner ?? '',
+                  })
+                  setBusy(false)
+                  setSuperseded(null)
+                  if (!res.ok) return setErr(res.error ?? 'Failed.')
+                  setMsg(
+                    res.gcal === 'failed'
+                      ? 'Consult cancelled here — but removing the Google Calendar event failed; delete it from the calendar by hand.'
+                      : res.gcal === 'removed'
+                        ? 'Scheduled consult cancelled and removed from the calendar.'
+                        : 'Scheduled consult cancelled.'
+                  )
+                  onChange()
+                }}
+              >
+                Cancel it — remove from the calendar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {lead.intake && <IntakeAnswers intake={lead.intake} />}
@@ -909,12 +1144,23 @@ function LeadDetail({
 // Offers panel (spec §11: the mechanism exists; nothing active at launch)
 // ---------------------------------------------------------------------------
 
-function OffersPanel({ offers, onChange }: { offers: Offer[]; onChange: () => void }) {
+function OffersPanel({
+  offers,
+  leads,
+  onChange,
+}: {
+  offers: Offer[]
+  leads: Lead[]
+  onChange: () => void
+}) {
   const [name, setName] = useState('')
   const [kind, setKind] = useState('free_hours')
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // PL-304: delete only while nothing carries the offer — counted from the
+  // pipeline (converted/closed leads included); the server re-checks.
+  const usedCount = (offerId: string) => leads.filter((l) => l.offer_id === offerId).length
 
   async function create(e: React.FormEvent) {
     e.preventDefault()
@@ -932,9 +1178,8 @@ function OffersPanel({ offers, onChange }: { offers: Offer[]; onChange: () => vo
     <div className="space-y-4">
       {offers.length === 0 ? (
         <p className="text-sm text-gray-500 italic">
-          No offers exist — that&apos;s expected at launch (the old &quot;2 free hours&quot; website
-          offer is retired). Create one here when a promotion comes back; active offers can then be
-          attached to leads and materialize on the first invoice.
+          No offers yet. Create one when a promotion runs; active offers can be attached to
+          prospective students and materialize on their first invoice.
         </p>
       ) : (
         <table className="w-full text-sm">
@@ -956,7 +1201,7 @@ function OffersPanel({ offers, onChange }: { offers: Offer[]; onChange: () => vo
                   {o.kind === 'percent_off_first_month' ? `${o.value}%` : o.kind === 'fixed_credit' ? `$${o.value}` : `${o.value} hrs`}
                 </td>
                 <td className="py-2 pr-3">{o.active ? 'Active' : 'Inactive'}</td>
-                <td className="py-2 text-right">
+                <td className="py-2 text-right space-x-3">
                   <button
                     type="button"
                     className="text-hgl-blue underline text-xs"
@@ -967,6 +1212,29 @@ function OffersPanel({ offers, onChange }: { offers: Offer[]; onChange: () => vo
                   >
                     {o.active ? 'Deactivate' : 'Reactivate'}
                   </button>
+                  {usedCount(o.id) === 0 ? (
+                    <ConfirmAction
+                      label="Delete"
+                      message={`Delete "${o.name}" for good? Nothing carries it, so nothing changes for any family.`}
+                      confirmLabel="Yes, delete it"
+                      className="text-red-700 underline text-xs"
+                      confirmClassName="text-red-700 font-semibold underline text-xs"
+                      disabled={busy}
+                      onConfirm={async () => {
+                        setErr(null)
+                        const res = await post({ action: 'delete_offer', id: o.id })
+                        if (!res.ok) setErr(res.error ?? 'Delete failed.')
+                        onChange()
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className="text-xs text-gray-400"
+                      title="Detach it from those prospective students to make it deletable."
+                    >
+                      attached to {usedCount(o.id)} — can&apos;t delete
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -1014,6 +1282,14 @@ export default function LeadsAdmin() {
   const [showClosed, setShowClosed] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [refreshSignal, setRefreshSignal] = useState(0)
+  // PL-304: the Offers panel is admin-only — ask the API who's here.
+  const [role, setRole] = useState<'admin' | 'manager' | null>(null)
+  useEffect(() => {
+    fetch('/api/admin/leads')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setRole(j?.role ?? null))
+      .catch(() => setRole(null))
+  }, [])
 
   const load = useCallback(async () => {
     const [leadsRes, offersRes] = await Promise.all([
@@ -1224,12 +1500,14 @@ export default function LeadsAdmin() {
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection
-              title="Offers"
-              subtitle="Promotions that can be attached to a prospective student — none active at launch"
-            >
-              <OffersPanel offers={offers} onChange={refresh} />
-            </CollapsibleSection>
+            {role === 'admin' && (
+              <CollapsibleSection
+                title="Offers"
+                subtitle="Promotions that can be attached to a prospective student"
+              >
+                <OffersPanel offers={offers} leads={leads} onChange={refresh} />
+              </CollapsibleSection>
+            )}
           </>
         )}
       </div>
