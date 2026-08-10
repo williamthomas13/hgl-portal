@@ -6,6 +6,7 @@ import {
   checkAddonToken,
 } from '../../utils/lifecycle'
 import { formatDateOnly } from '../../utils/dates'
+import { classTutoringTier } from '../../utils/tutoring-tier'
 
 // Per-enrollment discounted tutoring add-on page — the target of email #9.
 // Server component: the signed token is verified server-side, and the page
@@ -92,7 +93,10 @@ export default async function AddonPage({
     )
   }
 
-  const { pre } = await loadTutoringPackages()
+  // PL-322: the enrollment's class decides the price sheet.
+  const { pre } = await loadTutoringPackages(
+    classTutoringTier({ school_id: bundle.schoolId, delivery_mode: bundle.deliveryMode })
+  )
 
   return (
     <Shell title="Discounted 1-on-1 tutoring">

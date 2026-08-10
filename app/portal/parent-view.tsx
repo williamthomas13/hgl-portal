@@ -590,11 +590,19 @@ export default async function ParentView({
                   paidEnrs[paidEnrs.length - 1]
                 const pickCls = one<any>(pick.classes)
                 const phase = phaseOf(pickCls)
-                if (phase === 'prestart' && tutoringPackages.pre.length > 0) {
+                // PL-322: the card quotes the price sheet for THIS class's
+                // flavor (no school relation = open enrollment).
+                const clsTier =
+                  !one<any>(pickCls.schools) && pickCls.delivery_mode === 'in_person'
+                    ? 'domestic'
+                    : 'international'
+                const prePkgs = tutoringPackages.pre.filter((p) => p.tier === clsTier)
+                const postPkgs = tutoringPackages.post.filter((p) => p.tier === clsTier)
+                if (phase === 'prestart' && prePkgs.length > 0) {
                   const dates = (pickCls.sessions ?? []).map((s: any) => s.session_date).sort()
                   cardState = {
                     kind: 'no_addon_prestart',
-                    packages: tutoringPackages.pre.map((p) => ({ hours: p.hours, savings: packageSavings(p) })),
+                    packages: prePkgs.map((p) => ({ hours: p.hours, savings: packageSavings(p) })),
                     addonUrl: addonPageUrlFor(pick.id),
                     firstSessionDate: formatDate(dates[0] ?? pickCls.start_date),
                   }
@@ -607,7 +615,7 @@ export default async function ParentView({
                 } else if (phase === 'finished') {
                   cardState = {
                     kind: 'no_addon_finished',
-                    packages: tutoringPackages.post.map((p) => ({ hours: p.hours, savings: packageSavings(p) })),
+                    packages: postPkgs.map((p) => ({ hours: p.hours, savings: packageSavings(p) })),
                     discountUrl: DISCOUNT_URL,
                   }
                 }

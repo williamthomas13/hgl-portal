@@ -104,6 +104,7 @@ import {
   stepDisabledForClass,
   isReturningFamily,
 } from '../../../utils/lifecycle'
+import { classTutoringTier } from '../../../utils/tutoring-tier'
 
 // The lifecycle sweep. Runs hourly (Supabase pg_cron; Vercel daily cron as
 // backup). Every decision is derived from *current* DB state and every send
@@ -1959,7 +1960,9 @@ export async function GET(req: Request) {
     // Feature A projector: materialize/reconcile this class's upcoming sends
     // BEFORE the send passes, so held/cancelled/rescheduled rows exist for
     // sendOnce to honor and the dashboard's Upcoming tab reflects reality.
-    const proj = await projectScheduledSends(bundle, packages.pre)
+    // PL-322: each bundle sees its own price sheet.
+    const bundleTier = classTutoringTier({ school_id: bundle.schoolId, delivery_mode: bundle.deliveryMode })
+    const proj = await projectScheduledSends(bundle, packages.pre.filter((p) => p.tier === bundleTier))
     if (proj.inserted > 0) counters.comms_projected = (counters.comms_projected ?? 0) + proj.inserted
     if (proj.retimed > 0) counters.comms_retimed = (counters.comms_retimed ?? 0) + proj.retimed
     if (proj.cancelled > 0) counters.comms_cancelled = (counters.comms_cancelled ?? 0) + proj.cancelled
@@ -1974,7 +1977,7 @@ export async function GET(req: Request) {
     await syncInstructorClassCalendar(bundle)
     await sweepCompletion(bundle, counters)
     await sweepThankYou(bundle, counters)
-    await sweepUpsell(bundle, counters, packages.pre)
+    await sweepUpsell(bundle, counters, packages.pre.filter((p) => p.tier === bundleTier))
     // PL-279: the FO follow-up sequence — per-cohort windows anchored on
     // THIS feeder's own last session; registry-only rendering means the
     // drafts send nothing until Scarlett flips them live.
@@ -1982,7 +1985,7 @@ export async function GET(req: Request) {
     for (const a of foReport.attempts) {
       if (a.status === 'sent') bump(counters, `fo_${a.stage}`)
     }
-    await sweepSequence(bundle, counters, packages.post)
+    await sweepSequence(bundle, counters, packages.post.filter((p) => p.tier === bundleTier))
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)
     await sweepAdminCheckpoints(bundle, counters)

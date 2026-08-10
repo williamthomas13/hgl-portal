@@ -190,32 +190,51 @@ export default function PricingPanel() {
         )
       })}
 
-      <div className="border border-gray-200 rounded-lg p-4">
-        <p className="font-bold text-hgl-slate mb-1">Post-class hourly</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <tbody>
-              {data.packages
-                .filter((p) => p.phase === 'post_class')
-                .map((p) => (
-                  <tr key={p.id} className="border-b border-gray-100">
-                    <td className="py-1.5 pr-3">{p.name}</td>
-                    <td className="py-1.5 pr-3">
-                      discount{' '}
-                      <NumberEdit
-                        value={p.discount_per_hour}
-                        busy={busy}
-                        suffix="/hr"
-                        onSave={(v) => post({ action: 'set_package_discount', id: p.id, discount: v })}
-                      />
-                    </td>
-                    <td className="py-1.5 font-semibold">${p.hourly_rate}/hr</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* PL-322: post-class hourly is per-tier and derived too — same base
+          rates, the intl −$5/−$15 offsets applied to each tier's base. */}
+      {[...new Set(data.packages.filter((p) => p.phase === 'post_class').map((p) => p.tier))].map(
+        (tier) => {
+          const rows = data.packages.filter((p) => p.tier === tier && p.phase === 'post_class')
+          const base = rows[0]?.regular_hourly_rate ?? 0
+          return (
+            <div key={`post-${tier}`} className="border border-gray-200 rounded-lg p-4">
+              <p className="font-bold text-hgl-slate mb-1">
+                Post-class hourly — {TIER_LABELS[tier] ?? tier}
+              </p>
+              <p className="text-xs text-gray-500 mb-2">
+                Base rate:{' '}
+                <NumberEdit
+                  value={base}
+                  busy={busy}
+                  suffix="/hr"
+                  onSave={(v) => post({ action: 'set_tier_base', tier, phase: 'post_class', base: v })}
+                />
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {rows.map((p) => (
+                      <tr key={p.id} className="border-b border-gray-100">
+                        <td className="py-1.5 pr-3">{p.name}</td>
+                        <td className="py-1.5 pr-3">
+                          discount{' '}
+                          <NumberEdit
+                            value={p.discount_per_hour}
+                            busy={busy}
+                            suffix="/hr"
+                            onSave={(v) => post({ action: 'set_package_discount', id: p.id, discount: v })}
+                          />
+                        </td>
+                        <td className="py-1.5 font-semibold">${p.hourly_rate}/hr</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        }
+      )}
 
       <div className="border border-gray-200 rounded-lg p-4 space-y-1.5">
         <p className="font-bold text-hgl-slate">Base 1-on-1 hourly rates</p>

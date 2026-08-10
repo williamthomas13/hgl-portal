@@ -6,6 +6,7 @@ import {
 } from './lifecycle'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { renderEmail } from './comms-db-render'
+import { enrollmentTutoringTier } from './tutoring-tier'
 import {
   classDetailsEmail,
   faqEmail,
@@ -97,11 +98,12 @@ export async function renderSendRow(
     case 'E7_REVIEW':
       return wrap('E7_REVIEW', 'parent', () => reviewRequestEmail(ctx), 'review_request')
     case 'E8_POSTCLASS_TUTORING': {
-      const { post } = await loadTutoringPackages()
+      // PL-322: the class in play decides the price sheet.
+      const { post } = await loadTutoringPackages(enrollmentTutoringTier(ctx))
       return wrap('E8_POSTCLASS_TUTORING', audience, () => tutoringOfferEmail(ctx, post, audience), 'tutoring_offer')
     }
     case 'E9_UPSELL': {
-      const { pre } = await loadTutoringPackages()
+      const { pre } = await loadTutoringPackages(enrollmentTutoringTier(ctx))
       if (pre.length === 0) return null
       return wrap('E9_UPSELL', 'parent', () => tutoringUpsellEmail(ctx, pre, addonPageUrlFor(enrollment.id)), 'tutoring_upsell')
     }

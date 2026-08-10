@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { loadClassBundles, localDate, verifyAddonToken } from '../../../utils/lifecycle'
+import { classTutoringTier } from '../../../utils/tutoring-tier'
 
 // Buy button on the per-enrollment addon page (email #9). Creates an
 // addon-only Stripe checkout session and redirects into payment. The webhook
@@ -36,14 +37,16 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${baseUrl}/link-help?reason=addon-ended`, 303)
   }
 
+  // PL-322: the package must belong to this class's price sheet — a stale
+  // or hand-crafted id can't buy the wrong tier.
   const { data: pkg } = await supabase
     .from('tutoring_packages')
-    .select('id, name, package_price')
+    .select('id, name, package_price, tier')
     .eq('id', packageId)
     .eq('phase', 'pre_class')
     .eq('active', true)
     .single()
-  if (!pkg) {
+  if (!pkg || pkg.tier !== classTutoringTier({ school_id: bundle.schoolId, delivery_mode: bundle.deliveryMode })) {
     return NextResponse.redirect(`${baseUrl}/link-help`, 303)
   }
 

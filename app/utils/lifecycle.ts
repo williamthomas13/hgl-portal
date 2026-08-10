@@ -5,6 +5,7 @@ import { availabilityToken } from './intake'
 import type { EnrollmentEmailContext, SessionInfo } from './email'
 import { bySessionStart, formatDateFull as formatDate } from './dates'
 import { checkToken, mintToken, signingSecret } from './signing'
+import { classTutoringTier } from './tutoring-tier'
 
 // Shared plumbing for the email lifecycle: loads every class with its school,
 // sessions, and enrollments in one query, and provides the timezone-aware
@@ -44,6 +45,8 @@ export type TutoringPackage = {
   packagePrice: number
   regularHourlyRate: number
   phase: 'pre_class' | 'post_class'
+  /** PL-307/PL-322: which price sheet the row belongs to. */
+  tier: 'international' | 'domestic'
 }
 
 export type EnrollmentRow = {
@@ -516,16 +519,20 @@ export function verifyDeclineToken(enrollmentId: string, token: string): boolean
   return checkDeclineToken(enrollmentId, token) === 'ok'
 }
 
-/** Active tutoring packages, split by phase. All pricing comes from here. */
-export async function loadTutoringPackages(): Promise<{
+/** Active tutoring packages, split by phase. All pricing comes from here.
+ *  PL-322: pass a tier to get one price sheet; omit for all rows (callers
+ *  with a class in play filter by its flavor). */
+export async function loadTutoringPackages(tier?: 'international' | 'domestic'): Promise<{
   pre: TutoringPackage[]
   post: TutoringPackage[]
 }> {
-  const { data, error } = await supabase
+  let q = supabase
     .from('tutoring_packages')
-    .select('id, name, hours, hourly_rate, package_price, regular_hourly_rate, phase')
+    .select('id, name, hours, hourly_rate, package_price, regular_hourly_rate, phase, tier')
     .eq('active', true)
     .order('hours')
+  if (tier) q = q.eq('tier', tier)
+  const { data, error } = await q
   if (error || !data) {
     console.error('loadTutoringPackages failed:', error?.message)
     return { pre: [], post: [] }
@@ -538,6 +545,7 @@ export async function loadTutoringPackages(): Promise<{
     packagePrice: Number(p.package_price),
     regularHourlyRate: Number(p.regular_hourly_rate),
     phase: p.phase,
+    tier: p.tier,
   }))
   return {
     pre: all.filter((p) => p.phase === 'pre_class'),
@@ -547,6 +555,30 @@ export async function loadTutoringPackages(): Promise<{
 
 export function packageSavings(p: TutoringPackage) {
   return p.hours * p.regularHourlyRate - p.packagePrice
+}
+
+/** PL-322: the price sheet for a student when NO class is in play (pure
+ *  1-on-1 flows). The rule: their MOST RECENT group-class enrollment's
+ *  flavor decides — an at-HGL class means domestic; school or online means
+ *  international; no class history at all prices international (the
+ *  pre-PL-322 sheet — nobody gets an unearned domestic discount, and staff
+ *  can always override the rate on the engagement). Flows WITH a class in
+ *  play never call this — they use classTutoringTier on that class. */
+export async function studentTutoringTier(
+  studentId: string
+): Promise<'international' | 'domestic'> {
+  const { data } = await supabase
+    .from('enrollments')
+    .select('enrolled_at, classes ( school_id, delivery_mode )')
+    .eq('student_id', studentId)
+    .in('payment_status', ['Paid', 'Completed'])
+    .order('enrolled_at', { ascending: false })
+    .limit(1)
+  const cls = one<{ school_id: string | null; delivery_mode: string | null }>(
+    (data?.[0] as { classes?: unknown } | undefined)?.classes as never
+  )
+  if (!cls) return 'international'
+  return classTutoringTier(cls)
 }
 
 /**
