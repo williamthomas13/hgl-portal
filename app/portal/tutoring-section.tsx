@@ -8,6 +8,7 @@ import {
 } from '../utils/tutoring-billing'
 import { loadContactInfo } from '../utils/tutoring-emails'
 import BlockConfirmControl from './block-confirm-control'
+import { continueRatesForStudent } from '../utils/block-confirm'
 import RescheduleRequest from './reschedule-request'
 import { escapeLike } from '../utils/like-escape'
 
@@ -66,7 +67,7 @@ export default async function TutoringSection({ email }: { email: string }) {
       .from('tutoring_engagements')
       .select(
         `id, status, funding, addon_id, hourly_rate, recurrence, location, student_id,
-         block_confirmation,
+         block_confirmation, block_continue_hours, student_id,
          students!inner ( first_name, last_name, family_id ),
          subjects ( name ),
          instructors ( name, timezone, default_meeting_link ),
@@ -112,12 +113,24 @@ export default async function TutoringSection({ email }: { email: string }) {
   // Package draw-down (C3 contract: purchased / remaining / next session).
   // PL-130: remaining comes from the SAME function the billing cycle uses
   // (packageHoursUsedBefore) — one source of truth, never a parallel count.
-  const packageInfo = new Map<string, { purchased: number; remaining: number }>()
+  const packageInfo = new Map<
+    string,
+    { purchased: number; remaining: number; rate1to9: number; rate10plus: number }
+  >()
   for (const e of (engagements as any[]) ?? []) {
     if (e.funding !== 'package' || !e.addon_id) continue
-    const purchased = Number(one<any>(e.enrollment_addons)?.hours ?? 0)
+    const purchased =
+      Number(one<any>(e.enrollment_addons)?.hours ?? 0) + Number(e.block_continue_hours ?? 0)
     const used = await packageHoursUsedBefore(e.id, '2999-01-01')
-    packageInfo.set(e.id, { purchased, remaining: Math.max(0, Number((purchased - used).toFixed(1))) })
+    // PL-323B/D: the chooser quotes the provenance-correct continuing rates
+    // — one source with the price list.
+    const rates = await continueRatesForStudent(e.student_id)
+    packageInfo.set(e.id, {
+      purchased,
+      remaining: Math.max(0, Number((purchased - used).toFixed(1))),
+      rate1to9: rates.rate1to9,
+      rate10plus: rates.rate10plus,
+    })
   }
 
   // PL-130 "Your month at a glance": this month's sessions, the invoice
@@ -255,7 +268,8 @@ export default async function TutoringSection({ email }: { email: string }) {
                   studentFirst={student?.first_name ?? 'your student'}
                   remaining={pkg.remaining}
                   purchased={pkg.purchased}
-                  rate={Number(e.hourly_rate)}
+                  rate1to9={pkg.rate1to9}
+                  rate10plus={pkg.rate10plus}
                 />
               )}
               {e.status === 'paused' && (

@@ -201,6 +201,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   E1_RETURNING_PARENT: '#1-R — Returning-family thank-you (parent)',
   E1_RETURNING_STUDENT: '#1-R — Returning-family thank-you (student)',
   // PL-299: the hours-block confirmation ask.
+  BL_CONTINUE_OUTCOME: 'BL — Continue-tutoring outcome (times reserved / team on it)',
   BL_BLOCK_CONFIRM: 'BL — Hours block ending: confirm to continue (parent)',
   // PL-279: the FO follow-up sequence.
   FO_ANNOUNCE_PARENT: 'FO-1P — Follow-up announcement (parent)',
@@ -231,6 +232,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   CR_CLASSROOM_NUDGE_3: 'CR3 — Classroom request (last call)',
   T3_TUTOR_NOTICE: 'T3-T — Schedule change notice (tutor)',
   T6_NOTES_EOD: 'T6 — Session notes end-of-day reminder (tutor)',
+  T6_NOTES_WEEKLY: 'T6-W — Session notes weekly rollup (tutor)',
   T6_NOTES_NUDGE: 'T6-N — Session notes nudge (tutor)',
   SUB_COVERAGE_OFFER: 'SUB — Coverage request (candidate tutor)',
   SUB_COVERAGE_RESULT: 'SUB — Coverage outcome (requesting tutor)',

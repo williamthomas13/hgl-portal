@@ -59,6 +59,7 @@ const DEDUPE_ALERT_CATEGORY: [string, AlertCategory][] = [
   ['schedule_accept_conflict', 'reschedule_requests'],
   ['schedule_declined', 'reschedule_requests'],
   ['schedule_unconfirmed', 'reschedule_requests'],
+  ['block_continue_staff', 'reschedule_requests'],
   ['tutoring_gen_failures', 'payments_qbo'],
   ['tutoring_invoice_failed', 'payments_qbo'],
   ['tutoring_refund', 'payments_qbo'],

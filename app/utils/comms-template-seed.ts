@@ -506,6 +506,26 @@ See you there? See you there.`,
     // confirms the move to standard monthly billing BEFORE the block runs
     // out. Draft; the code twin (block-confirm.ts blockConfirmEmail) sends
     // byte-equivalent copy until ramped. NO tokenized link by design.
+    // PL-323C: the continue-outcome note — reserved times, or "our team is
+    // on it". Guts ride {blockContinueOutcomeBlock} (composed per decision).
+    template_key: 'BL_CONTINUE_OUTCOME',
+    display_name: 'BL — Continue-tutoring outcome (times reserved / team on it)',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{studentFirstName}'s tutoring continues — here's what happens next",
+    preheader: 'Your continuation is recorded.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+{blockContinueOutcomeBlock}
+
+Thanks!
+
+Higher Ground Learning`,
+  },
+  {
     template_key: 'BL_BLOCK_CONFIRM',
     display_name: 'BL — Hours block ending: confirm to continue (parent)',
     sequence_number: null,
@@ -515,17 +535,19 @@ See you there? See you there.`,
     subject: "{studentFirstName}'s tutoring hours are almost used up — one quick confirmation",
     preheader: '{blockHoursLeft} of {blockHours} hours left — confirm to continue',
     footer_note: null,
+    // PL-323E: Scarlett's copy — shipped WITH the flow it describes
+    // (chooser + auto-drop + reservation), never before it.
     body_markdown: `Hi {parentFirstName},
 
-A quick heads-up: {studentFirstName} has **{blockHoursLeft} of the {blockHours} tutoring hours** you purchased left.
+A quick heads-up: {studentFirstName} has **{blockHoursLeft} left of the {blockHours} tutoring hours** you purchased.
 
-When those hours are used up, tutoring simply continues on our standard 1-on-1 plan — same tutor, same schedule — billed monthly at **{tutoringHourlyRate}/hr**.
+When those hours are used up, tutoring can continue on our standard 1-on-1 plan — same tutor, same schedule — billed monthly at **{tutoringHourlyRate}/hr**.
 
-**Please confirm you'd like to continue**: open your family portal (no password needed) and use the "Continue after the hours" button — or just reply to this email and we'll record it for you.
+**Please confirm if you'd like to continue**: open your family portal (no password needed) and use the "Continue tutoring" button (or just reply to this email) and we'll keep the times reserved for {studentFirstName}. If you're not sure what makes the most sense, please respond to this message; we'll get all the info from {studentTutorName} and make an action plan.
 
 [button:Open your family portal]({portalLink})
 
-If we don't hear from you, nothing bills past the hours you purchased — the sessions simply stop when the hours do.
+If we don't hear from you, nothing bills past the hours you purchased — the sessions simply stop when your prepaid hours are gone.
 
 Thanks!
 
@@ -1674,6 +1696,26 @@ These sessions are still missing their short session note — a line or two on w
 [Add your notes →]({notesLink})
 
 Families can read these notes on their family portal, so keep them parent-friendly. If you just added them, you are all set — this is the only reminder today.`,
+  },
+  {
+    // PL-327: the weekly rollup for tutors whose notes-reminder preference
+    // is 'weekly' — one Monday email instead of the dailies.
+    template_key: 'T6_NOTES_WEEKLY',
+    display_name: 'T6-W — Session notes weekly rollup (tutor)',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Your week's session notes — the open list",
+    preheader: 'One weekly rollup, as you chose.',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+Your weekly rollup (you chose one email a week instead of the daily reminders): these sessions from the past week still need a note.
+
+{missingSessionsBlock}
+
+A quick line per session is plenty — families see these, and timecard approval checks for them.`,
   },
   {
     template_key: 'T6_NOTES_NUDGE',

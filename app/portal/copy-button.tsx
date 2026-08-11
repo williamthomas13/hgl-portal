@@ -18,6 +18,8 @@ export default function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
+      // PL-325: clipboard-only — safe inside the view-as read-only preview.
+      data-viewas-safe
       className="text-xs border border-hgl-blue text-hgl-blue rounded px-2 py-1 font-semibold hover:bg-hgl-blue hover:text-white transition"
     >
       {copied ? 'Copied!' : 'Copy link'}

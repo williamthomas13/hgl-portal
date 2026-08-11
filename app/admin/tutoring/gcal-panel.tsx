@@ -29,7 +29,7 @@ type FailedRow = {
   created_at: string
 }
 
-export default function GcalPanel() {
+export default function GcalPanel({ simulatedManager = false }: { simulatedManager?: boolean } = {}) {
   const [status, setStatus] = useState<Status | null>(null)
   const [failed, setFailed] = useState<FailedRow[]>([])
   const [saJson, setSaJson] = useState('')
@@ -128,7 +128,9 @@ export default function GcalPanel() {
         blocks scheduling; pushes queue and retry.
       </p>
 
-      {status.callerRole === 'admin' && (
+      {/* PL-326: the manager simulation hides admin-only pieces the same
+          way the real role does. */}
+      {status.callerRole === 'admin' && !simulatedManager && (
         <div className="space-y-2">
           <label className="block text-xs text-gray-600 font-semibold">
             Service-account JSON key (from the Google Cloud console — stored encrypted, never shown again)

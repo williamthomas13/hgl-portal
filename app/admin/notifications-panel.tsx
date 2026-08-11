@@ -13,7 +13,13 @@ type Category = { key: string; label: string }
 type StaffRow = { email: string; role: 'admin' | 'manager' }
 type SubRow = { email: string; category: string; granted: boolean; enabled: boolean }
 
-export default function NotificationsPanel() {
+export default function NotificationsPanel({
+  simulatedManager = false,
+}: {
+  /** PL-326: render the manager variant regardless of the caller's real
+   *  role — used by the view-as manager simulation (read-only anyway). */
+  simulatedManager?: boolean
+} = {}) {
   const [data, setData] = useState<{
     role: 'admin' | 'manager'
     self: string
@@ -56,7 +62,7 @@ export default function NotificationsPanel() {
     await load()
   }
 
-  const isAdmin = data.role === 'admin'
+  const isAdmin = data.role === 'admin' && !simulatedManager
 
   return (
     <div className="space-y-6 text-sm">

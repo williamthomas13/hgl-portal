@@ -163,6 +163,14 @@ export default function ClassWizard({
   // PL-316: per-row session editing (same pickers as the add form).
   const [editIdx, setEditIdx] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState<SessionDraft | null>(null)
+  // PL-329: multi-select + bulk apply (Scarlett's case: cloned a weekly
+  // schedule, then realized the TIME was wrong on every row). Pre-save UI
+  // state only — no email implications in the wizard.
+  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set())
+  const [bulkStart, setBulkStart] = useState('')
+  const [bulkEnd, setBulkEnd] = useState('')
+  const [bulkLocation, setBulkLocation] = useState('')
+  const [bulkShiftDays, setBulkShiftDays] = useState('')
   // PL-106: collateral basics are part of creating the class, not an
   // afterthought on the card — the card keeps full editing + regeneration.
   const [shortLink, setShortLink] = useState(initial?.collateral?.short_link ?? '')
@@ -1218,12 +1226,110 @@ export default function ClassWizard({
               No sessions yet — a class needs at least one session before it can be created.
             </p>
           ) : (
+            <>
+            {/* PL-329: select-all + the bulk panel when anything's checked. */}
+            <label className="flex items-center gap-2 text-xs text-gray-500 mb-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bulkSelected.size === sessions.length && sessions.length > 0}
+                onChange={(e) =>
+                  setBulkSelected(e.target.checked ? new Set(sessions.map((_, j) => j)) : new Set())
+                }
+              />
+              Select all {sessions.length} session{sessions.length === 1 ? '' : 's'}
+              {bulkSelected.size > 0 && ` — ${bulkSelected.size} selected`}
+            </label>
+            {bulkSelected.size > 0 && (
+              <div className="border border-hgl-blue/40 bg-blue-50 rounded-md p-3 mb-3 grid grid-cols-4 gap-3 items-start text-sm">
+                <div>
+                  <label className="block text-xs text-gray-600">Start (24h) — blank keeps</label>
+                  <div className="mt-1">
+                    <TimeSelect value={bulkStart} onChange={setBulkStart} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600">End (24h) — blank keeps</label>
+                  <div className="mt-1">
+                    <TimeSelect value={bulkEnd} onChange={setBulkEnd} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600">Location — blank keeps</label>
+                  <input
+                    type="text"
+                    value={bulkLocation}
+                    onChange={(e) => setBulkLocation(e.target.value)}
+                    className="mt-1 w-full border border-gray-300 rounded p-1.5"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600">Shift dates by (days)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    placeholder="0"
+                    value={bulkShiftDays}
+                    onChange={(e) => setBulkShiftDays(e.target.value)}
+                    className="mt-1 w-full border border-gray-300 rounded p-1.5"
+                  />
+                </div>
+                <div className="col-span-4 flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={!bulkStart && !bulkEnd && !bulkLocation.trim() && !Number(bulkShiftDays)}
+                    onClick={() => {
+                      const shift = Number(bulkShiftDays) || 0
+                      setSessions((prev) =>
+                        prev.map((x, j) =>
+                          bulkSelected.has(j)
+                            ? {
+                                ...x,
+                                ...(bulkStart ? { start_time: bulkStart } : {}),
+                                ...(bulkEnd ? { end_time: bulkEnd } : {}),
+                                ...(bulkLocation.trim() ? { location: bulkLocation.trim() } : {}),
+                                ...(shift && x.session_date
+                                  ? { session_date: addDays(x.session_date, shift) }
+                                  : {}),
+                              }
+                            : x
+                        )
+                      )
+                      setBulkSelected(new Set())
+                      setBulkStart('')
+                      setBulkEnd('')
+                      setBulkLocation('')
+                      setBulkShiftDays('')
+                    }}
+                    className="bg-hgl-slate text-white py-1.5 px-4 rounded font-bold hover:opacity-90 disabled:opacity-50"
+                  >
+                    Apply to {bulkSelected.size} session{bulkSelected.size === 1 ? '' : 's'}
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    Blank fields keep each session&apos;s current value.
+                  </span>
+                </div>
+              </div>
+            )}
             <ul className="space-y-2 mb-4">
               {sorted.map((s, i) => (
                 <li
                   key={`${s.session_date}-${i}`}
                   className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
                 >
+                  <input
+                    type="checkbox"
+                    className="mr-2 shrink-0"
+                    checked={bulkSelected.has(sessions.indexOf(s))}
+                    onChange={(e) => {
+                      const idx = sessions.indexOf(s)
+                      setBulkSelected((prev) => {
+                        const next = new Set(prev)
+                        if (e.target.checked) next.add(idx)
+                        else next.delete(idx)
+                        return next
+                      })
+                    }}
+                  />
                   {editIdx === sessions.indexOf(s) && editDraft ? (
                     /* PL-316: fix one session in place — same pickers as the
                        add form; no more remove + re-add. */
@@ -1320,6 +1426,7 @@ export default function ClassWizard({
                 </li>
               ))}
             </ul>
+            </>
           )}
 
           {sessionError && (

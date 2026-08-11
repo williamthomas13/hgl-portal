@@ -28,6 +28,7 @@ type ClassInfo = {
 }
 
 import { friendlyZoneCity, bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
+import { classDisplayLabel } from '../../../utils/class-label'
 
 function formatTime(t: string | null) {
   if (!t) return null
@@ -62,7 +63,7 @@ export default function ClassCalendarPage() {
   // class, or a non-2xx/network failure above all land here).
   if (!info) return <ClassNotFound />
 
-  const label = `${info.schools?.nickname ?? 'HGL'} — ${info.class_type}`
+  const label = classDisplayLabel({ schoolNickname: info.schools?.nickname ?? null, deliveryMode: (info as { delivery_mode?: string | null }).delivery_mode ?? null, shortName: null, classType: info.class_type })
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const icsPath = `/api/classes/${classId}/calendar.ics`
   const icsUrl = `${origin}${icsPath}`

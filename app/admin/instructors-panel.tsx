@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
 import InstructorEditor from './instructor-editor'
+import { ConfirmAction } from './tutoring/confirm'
 
 // Instructor management (PHASE4_SPEC §5/§10). PL-226: THIS is the place to
 // add and edit instructors (instructors = tutors — one table, one profile).
@@ -17,6 +18,10 @@ export type Instructor = {
   phone: string | null
   default_meeting_link: string | null
   comms_enabled: boolean
+  /** PL-327: per-type email preferences (absorbed the Class-emails toggle). */
+  pref_notes_reminders: 'on' | 'weekly' | 'off'
+  pref_class_digests: 'on' | 'weekly' | 'off'
+  pref_fyi_copies: boolean
   /** PL-176: false = hidden from active pickers/rosters; history intact. */
   active: boolean
 }
@@ -37,42 +42,13 @@ export default function InstructorsPanel({
   const inactiveRows = instructors.filter((i) => !i.active)
   const visible = view === 'active' ? activeRows : inactiveRows
 
-  // PL-78: the explicit opt-in switch — flipping ON backfills the welcome
-  // email + calendar events for current assignments (server-side, idempotent).
-  async function handleCommsToggle(i: Instructor) {
-    const enabling = !i.comms_enabled
-    const msg = enabling
-      ? `Turn ON class emails + calendar for ${i.name ?? i.email}? They'll get the welcome email for current classes now, weekly enrollment updates, FYI copies of family logistics emails, and sessions on their Google Calendar.`
-      : `Turn OFF class emails + calendar for ${i.name ?? i.email}? Future sends stop and their upcoming session events are removed.`
-    if (!confirm(msg)) return
-    const res = await fetch('/api/admin/instructor-comms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instructorId: i.id, enabled: enabling }),
-    })
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}))
-      alert(json.error ?? 'Update failed.')
-    }
-    onChange()
-  }
-
   // PL-176: "Remove" read as delete — scary and wrong for people who may
   // return. Inactive = hidden from new scheduling pickers, history (classes,
   // sessions, timecards) untouched, reversible.
   async function handleMakeInactive(i: Instructor) {
-    const commsNote = i.comms_enabled
-      ? ' Their class emails + calendar sync turn OFF as part of this.'
-      : ''
-    if (
-      !confirm(
-        `Make ${i.name ?? i.email} inactive?\n\nThey disappear from new scheduling pickers; every existing class, session, and timecard stays exactly as it is.${commsNote} You can make them active again any time from the Inactive tab.`
-      )
-    )
-      return
-    // Going inactive turns comms off through the existing cascade (welcome/
-    // digest sends stop, upcoming session events removed).
-    if (i.comms_enabled) {
+    // Going inactive turns their preference-able comms off through the
+    // existing cascade (digest sends stop, upcoming session events removed).
+    if (i.pref_class_digests !== 'off' || i.pref_fyi_copies) {
       const res = await fetch('/api/admin/instructor-comms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,18 +56,18 @@ export default function InstructorsPanel({
       })
       if (!res.ok) {
         const json = await res.json().catch(() => ({}))
-        alert(json.error ?? 'Could not turn their comms off — nothing changed.')
+        setMessage(json.error ?? 'Could not turn their comms off — nothing changed.')
         return
       }
     }
     const { error } = await supabase.from('instructors').update({ active: false }).eq('id', i.id)
-    if (error) alert('Error: ' + error.message)
+    if (error) setMessage('Error: ' + error.message)
     else onChange()
   }
 
   async function handleMakeActive(i: Instructor) {
     const { error } = await supabase.from('instructors').update({ active: true }).eq('id', i.id)
-    if (error) alert('Error: ' + error.message)
+    if (error) setMessage('Error: ' + error.message)
     else {
       setMessage(
         `${i.name ?? i.email} is active again — they appear in scheduling pickers. Class emails + calendar stay OFF until you turn them on.`
@@ -130,7 +106,7 @@ export default function InstructorsPanel({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
-              {['Name', 'Email', 'Phone', 'Default meeting link', 'Class emails', 'Actions'].map((h) => (
+              {['Name', 'Email', 'Phone', 'Default meeting link', 'Email prefs', 'Actions'].map((h) => (
                 <th key={h} className="px-4 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -160,16 +136,14 @@ export default function InstructorsPanel({
                     {i.default_meeting_link ?? <span className="italic text-gray-400">none</span>}
                   </span>
                 </td>
-                <td className="px-4 py-2">
-                  <button
-                    onClick={() => handleCommsToggle(i)}
-                    title="PL-78: weekly enrollment digest, milestone pings, FYI copies of family logistics emails, and sessions on their Google Calendar"
-                    className={`text-xs font-bold px-2 py-1 rounded ${
-                      i.comms_enabled ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {i.comms_enabled ? 'on' : 'off'}
-                  </button>
+                <td className="px-4 py-2 text-xs text-gray-600">
+                  {/* PL-327: the Class-emails toggle is absorbed — this shows
+                      each tutor's choices; edit profile changes them. Tutors
+                      self-serve the same three from their portal. */}
+                  <span title="Session-note reminders · class digests+pings · FYI copies. T5 timecards, T3-T schedule changes, and SUB coverage stay mandatory.">
+                    notes {i.pref_notes_reminders} · digests {i.pref_class_digests} · FYI{' '}
+                    {i.pref_fyi_copies ? 'on' : 'off'}
+                  </span>
                 </td>
                 <td className="px-4 py-2 text-left whitespace-nowrap">
                   {/* PL-226: the full profile (identity + tutoring) edits here. */}
@@ -181,13 +155,14 @@ export default function InstructorsPanel({
                     edit profile
                   </button>
                   {i.active ? (
-                    <button
-                      onClick={() => handleMakeInactive(i)}
+                    <ConfirmAction
+                      label="Make inactive"
+                      message={`Make ${i.name ?? i.email} inactive? Hidden from new scheduling pickers; every class, session, and timecard stays; their class emails + calendar turn off. Reversible from the Inactive tab.`}
+                      confirmLabel="Yes, make inactive"
                       className="text-gray-600 text-xs hover:underline"
-                      title="Hidden from new scheduling pickers; history intact; reversible"
-                    >
-                      Make inactive
-                    </button>
+                      confirmClassName="text-red-700 text-xs font-semibold underline"
+                      onConfirm={() => handleMakeInactive(i)}
+                    />
                   ) : (
                     <button onClick={() => handleMakeActive(i)} className="text-green-700 text-xs font-semibold hover:underline">
                       Make active

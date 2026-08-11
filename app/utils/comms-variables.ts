@@ -78,6 +78,11 @@ export type ExtraVars = {
   blockHoursLeft?: string
   blockHours?: string
   tutoringHourlyRate?: string
+  /** PL-323C: pre-rendered continue-outcome guts (reserved list or staff note). */
+  blockContinueOutcomeBlock?: string
+  /** PL-323E: the student's tutor, by name ("Ms. Rivera" reads wrong — use
+   *  the instructor's stored display name). */
+  studentTutorName?: string
   /** Tutor's full name / first name (T8, PL-40/41). */
   tutorName?: string
   tutorFirstName?: string
@@ -702,8 +707,17 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (_c, _a, e) => e.blockHours ?? '',
   },
   tutoringHourlyRate: {
-    description: 'PL-299: the engagement\'s hourly rate, formatted ("$120")',
+    description: 'PL-299: the CONTINUING hourly rate, formatted ("$105") — PL-323D: follows the student\'s domestic/international provenance via the price list',
     resolve: (_c, _a, e) => e.tutoringHourlyRate ?? '',
+  },
+  studentTutorName: {
+    description: "PL-323: the student's tutor's name (BL block-confirm email)",
+    resolve: (_c, _a, e) => e.studentTutorName ?? 'their tutor',
+  },
+  blockContinueOutcomeBlock: {
+    description: 'PL-323C: the continue-outcome guts — reserved session list, or the our-team-is-on-it note',
+    block: true,
+    resolve: (_c, _a, e) => e.blockContinueOutcomeBlock ?? '',
   },
   followOnInfoBlock: {
     description:
@@ -1595,7 +1609,8 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     // PL-299: block-confirmation samples.
     blockHoursLeft: '3',
     blockHours: '15',
-    tutoringHourlyRate: '$120',
+    tutoringHourlyRate: '$105',
+    studentTutorName: 'Jordan Rivera',
     tutoringSubject: 'SAT',
     tutorScheduleBlock:
       '<h3 style="color:#334155;margin:18px 0 6px">Ana — SAT · upcoming sessions</h3><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Wed, Sep 16 · 4:00 PM–5:00 PM</li><li style="margin:2px 0">Mon, Sep 21 · 4:00 PM–5:00 PM</li><li style="margin:2px 0">Mon, Sep 28 · 4:00 PM–5:00 PM</li></ul>',

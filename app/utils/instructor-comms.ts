@@ -21,23 +21,32 @@ export type ClassInstructor = {
   name: string | null
   email: string
   commsEnabled: boolean
+  /** PL-327: 'on' = digest + instant milestone pings · 'weekly' = digest only. */
+  digestPref: 'on' | 'weekly'
+  /** PL-327: FYI copies of family logistics emails. */
+  fyiCopies: boolean
   timezone: string | null
 }
 
-/** The assigned, comms-enabled instructor for a bundle — or null. */
+/** The assigned instructor for a bundle with their PL-327 email
+ *  preferences — or null when digests are OFF (which also stops the class
+ *  calendar events, the same coupling the old comms_enabled toggle had).
+ *  Callers gate finer sends on the returned prefs. */
 export async function loadClassInstructor(bundle: ClassBundle): Promise<ClassInstructor | null> {
   if (!bundle.instructorId) return null
   const { data } = await supabase
     .from('instructors')
-    .select('id, name, email, comms_enabled, timezone')
+    .select('id, name, email, pref_class_digests, pref_fyi_copies, timezone')
     .eq('id', bundle.instructorId)
     .maybeSingle()
-  if (!data?.email || !data.comms_enabled) return null
+  if (!data?.email || data.pref_class_digests === 'off') return null
   return {
     id: data.id,
     name: data.name,
     email: data.email,
     commsEnabled: true,
+    digestPref: (data.pref_class_digests ?? 'on') as 'on' | 'weekly',
+    fyiCopies: data.pref_fyi_copies !== false,
     timezone: data.timezone ?? null,
   }
 }
@@ -248,6 +257,9 @@ export async function sweepInstructorComms(
 export async function sendInstructorMilestones(bundle: ClassBundle): Promise<void> {
   const instructor = await loadClassInstructor(bundle)
   if (!instructor) return
+  // PL-327: 'weekly' = digest only — instant milestone pings are the 'on'
+  // cadence's extra.
+  if (instructor.digestPref !== 'on') return
   const paid = bundle.enrollments.filter(
     (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
   ).length
@@ -281,6 +293,8 @@ export async function maybeSendInstructorFyi(
 ): Promise<void> {
   const instructor = await loadClassInstructor(bundle)
   if (!instructor) return
+  // PL-327: FYI copies are their own preference.
+  if (!instructor.fyiCopies) return
   const day = localDate(bundle.timezone)
   const extras = {
     ...baseExtras(bundle, instructor),

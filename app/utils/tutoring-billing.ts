@@ -342,7 +342,13 @@ export async function generateMonthlyCycle(
     const tz = eng.tutor?.timezone ?? ORG_TZ
     const { fromIso, toIso } = engagementPeriodBounds(month, tz)
 
-    if (Array.isArray(eng.recurrence) && eng.recurrence.length > 0) {
+    // PL-323A: while a block's continue question is open (asked) or answered
+    // no (declined), the cycle materializes NOTHING new — otherwise the
+    // auto-drop would release sessions only for the next generation to
+    // quietly re-create them.
+    if (eng.funding === 'package' && blockHoldActive(eng.block_confirmation)) {
+      // fall through to billing (which holds its own lines) with no new rows
+    } else if (Array.isArray(eng.recurrence) && eng.recurrence.length > 0) {
       const { data: existing } = await supabase
         .from('tutoring_sessions')
         .select('starts_at')

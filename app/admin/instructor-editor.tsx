@@ -41,6 +41,11 @@ export default function InstructorEditor({
   const [picked, setPicked] = useState<string[]>([])
   const [pickedPrep, setPickedPrep] = useState<string[]>([])
   const [timezone, setTimezone] = useState('America/Denver')
+  // PL-327: email preferences (admin/staff override; tutors self-serve the
+  // same three from their portal).
+  const [prefNotes, setPrefNotes] = useState<'on' | 'weekly' | 'off'>('on')
+  const [prefDigests, setPrefDigests] = useState<'on' | 'weekly' | 'off'>('on')
+  const [prefFyi, setPrefFyi] = useState(true)
   const [calendarId, setCalendarId] = useState('')
   // PL-283: per-tutor calendar color ('' = auto-assigned).
   const [calendarColor, setCalendarColor] = useState('')
@@ -70,7 +75,8 @@ export default function InstructorEditor({
             .from('instructors')
             .select(
               `id, email, name, phone, subjects, subjects_with_prep, timezone, google_calendar_id,
-               default_meeting_link, offer_windows, pay_type_titles, pay_type, calendar_color`
+               default_meeting_link, offer_windows, pay_type_titles, pay_type, calendar_color,
+               pref_notes_reminders, pref_class_digests, pref_fyi_copies`
             )
             .eq('id', instructorId)
             .maybeSingle(),
@@ -85,6 +91,9 @@ export default function InstructorEditor({
           setPicked((row.subjects as string[]) ?? [])
           setPickedPrep((row.subjects_with_prep as string[]) ?? [])
           setTimezone(row.timezone ?? 'America/Denver')
+          setPrefNotes(((row as any).pref_notes_reminders as 'on' | 'weekly' | 'off') ?? 'on')
+          setPrefDigests(((row as any).pref_class_digests as 'on' | 'weekly' | 'off') ?? 'on')
+          setPrefFyi((row as any).pref_fyi_copies !== false)
           setCalendarId(row.google_calendar_id ?? '')
           setCalendarColor((row as { calendar_color?: string | null }).calendar_color ?? '')
           setLocation(row.default_meeting_link ?? '')
@@ -124,6 +133,10 @@ export default function InstructorEditor({
       calendar_color: calendarColor || null,
       default_meeting_link: location.trim() || null,
       offer_windows: windows,
+      pref_notes_reminders: prefNotes,
+      pref_class_digests: prefDigests,
+      pref_fyi_copies: prefFyi,
+      comms_enabled: prefDigests !== 'off',
       // Managers must not touch titles or the pay-type flag (the DB trigger
       // refuses the whole update) — only include when the caller may edit.
       ...(isAdmin ? { pay_type_titles: payTitles, pay_type: payType } : {}),
@@ -305,6 +318,36 @@ export default function InstructorEditor({
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">
+                Email preferences{' '}
+                <span className="font-normal text-gray-400">
+                  — informational only; timecard, schedule-change, and coverage emails always send
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-4 text-sm items-end">
+                <label className="block">
+                  <span className="block text-xs text-gray-500">Session-note reminders</span>
+                  <select value={prefNotes} onChange={(e) => setPrefNotes(e.target.value as 'on' | 'weekly' | 'off')} className="mt-1 border border-gray-300 rounded p-1.5 bg-white">
+                    <option value="on">on (daily)</option>
+                    <option value="weekly">weekly digest</option>
+                    <option value="off">off</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="block text-xs text-gray-500">Class digests & milestone pings</span>
+                  <select value={prefDigests} onChange={(e) => setPrefDigests(e.target.value as 'on' | 'weekly' | 'off')} className="mt-1 border border-gray-300 rounded p-1.5 bg-white">
+                    <option value="on">on (digest + instant pings)</option>
+                    <option value="weekly">weekly digest only</option>
+                    <option value="off">off (calendar events stop too)</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 pb-1.5">
+                  <input type="checkbox" checked={prefFyi} onChange={(e) => setPrefFyi(e.target.checked)} />
+                  <span className="text-xs text-gray-600">FYI copies of family emails</span>
+                </label>
+              </div>
+            </div>
             <div>
               <label className="block text-xs text-gray-600 font-semibold mb-1">Timezone</label>
               <TimezoneSelect value={timezone} onChange={setTimezone} />

@@ -375,37 +375,48 @@ export default function EngagementsPanel({
                       admin mirror for answers that arrive by phone/reply. */}
                   {e.funding === 'package' && e.block_confirmation === 'asked' && (
                     <span className="text-xs font-semibold text-amber-700">
-                      awaiting family confirmation to continue past the block
-                      {(['confirmed', 'declined'] as const).map((d) => (
+                      awaiting family confirmation to continue past the block — record their
+                      answer:
+                      {/* PL-323B: the phone/reply answer carries a CHOICE —
+                          the same reservation machinery runs either way. */}
+                      {(['5', '10', '15', 'monthly', 'declined'] as const).map((c) => (
                         <button
-                          key={d}
-                          className="ml-1.5 underline text-hgl-blue font-semibold"
+                          key={c}
+                          className={`ml-1.5 underline font-semibold ${c === 'declined' ? 'text-gray-500' : 'text-hgl-blue'}`}
                           disabled={busyId === e.id}
                           title={
-                            d === 'confirmed'
-                              ? 'The family said continue (phone/reply) — records it and unlocks monthly billing past the block'
-                              : 'The family said stop — nothing schedules or bills past the block'
+                            c === 'declined'
+                              ? 'The family said stop — nothing schedules or bills past the block'
+                              : c === 'monthly'
+                                ? 'Continue monthly until they cancel, at the provenance rate'
+                                : `Continue with ${c} more hours at the provenance rate`
                           }
                           onClick={async () => {
                             setBusyId(e.id)
                             const res = await fetch('/api/admin/tutoring/block-decision', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ engagementId: e.id, decision: d }),
+                              body: JSON.stringify(
+                                c === 'declined'
+                                  ? { engagementId: e.id, decision: 'declined' }
+                                  : { engagementId: e.id, decision: 'confirmed', choice: c }
+                              ),
                             })
                             const json = await res.json().catch(() => ({}))
                             setMessage(
                               res.ok
-                                ? d === 'confirmed'
-                                  ? 'Recorded: family confirmed — tutoring continues monthly past the block.'
-                                  : 'Recorded: family declined — sessions stop when the hours do.'
+                                ? c === 'declined'
+                                  ? 'Recorded: family declined — sessions stop when the hours do.'
+                                  : json.outcome === 'reserved'
+                                    ? `Recorded and reserved: ${(json.sessions ?? []).length} continuing session${(json.sessions ?? []).length === 1 ? '' : 's'} on the calendar.`
+                                    : 'Recorded — the continuing times need a human: a conflict blocked auto-reserve (alert sent, dashboard row up).'
                                 : 'Error: ' + (json.error ?? 'failed')
                             )
                             setBusyId('')
                             if (res.ok) onChange()
                           }}
                         >
-                          {d === 'confirmed' ? 'family confirmed' : 'family declined'}
+                          {c === 'declined' ? 'declined' : c === 'monthly' ? 'monthly' : `+${c}h`}
                         </button>
                       ))}
                     </span>

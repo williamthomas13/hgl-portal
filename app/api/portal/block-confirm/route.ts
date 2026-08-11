@@ -15,7 +15,11 @@ export async function POST(req: Request) {
   } = await session.auth.getUser()
   if (!user?.email) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 })
 
-  let body: { engagementId?: string; decision?: 'confirmed' | 'declined' }
+  let body: {
+    engagementId?: string
+    decision?: 'confirmed' | 'declined'
+    choice?: '5' | '10' | '15' | 'monthly'
+  }
   try {
     body = await req.json()
   } catch {
@@ -38,7 +42,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Not your engagement.' }, { status: 403 })
   }
 
-  const result = await recordBlockDecision(body.engagementId, body.decision, 'portal')
+  const result = await recordBlockDecision(body.engagementId, body.decision, 'portal', body.choice)
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({
+    ok: true,
+    outcome: result.outcome,
+    ...(result.outcome === 'reserved' ? { sessions: result.sessions } : {}),
+  })
 }

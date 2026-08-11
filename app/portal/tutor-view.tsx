@@ -8,6 +8,7 @@ import { one } from './shared'
 import { zonedToUtc } from '../utils/tutoring'
 import { workTypeOptions } from '../utils/work-types'
 import SessionNotesPanel, { type NoteSession } from './session-notes-panel'
+import EmailPrefsPanel from './email-prefs-panel'
 import MyStudentsPanel from './my-students-panel'
 import { ShareMaterialsPanel } from './materials-panel'
 import UpcomingSessions, { type UpcomingRow } from './upcoming-sessions'
@@ -392,6 +393,8 @@ export default async function TutorView({
         timezone={tz}
         salaried={tutor.pay_type === 'salaried'}
       />
+      {/* PL-327: informational-email preferences — self-serve. */}
+      <EmailPrefsPanel />
     </div>
   )
 }

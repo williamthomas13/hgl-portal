@@ -222,7 +222,11 @@ try {
   check('11. sweep asks at the threshold (4.5 of 5h used → 0.5 ≤ 1h left)',
     swept.asked >= 1 && eng2After.block_confirmation === 'asked' && !!eng2After.block_confirmation_asked_at, JSON.stringify(eng2After))
   check('12. the ask email goes to the parent, plain numbers in view',
-    !!askEmail && /0\.5 of the\s+5 tutoring hours/.test(askEmail.html) && /\$110\/hr/.test(askEmail.html), askEmail?.subject)
+    // PL-323D/E: Scarlett's copy + the PROVENANCE continuing rate (post-class
+    // sheet for the student's tier), not the engagement's old block rate.
+    !!askEmail && /0\.5 left of the\s+5 tutoring hours/.test(askEmail.html) &&
+      new RegExp(`\\$${(await bc.continueRatesForStudent(cleanup.students[0])).rate1to9}/hr`).test(askEmail.html),
+    askEmail?.subject)
   const sweep2Start = new Date().toISOString()
   sendLog.length = 0
   await bc.sweepBlockConfirmations()
@@ -264,21 +268,26 @@ try {
     junLines.filter((l) => l.description?.includes('past the prepaid package') && Number(l.rate) === 110).length === 0,
     JSON.stringify(junLines.map((l) => l.description)))
 
-  // The family confirms → the SAME overflow bills on the next cycle (PL-197
-  // Case A IS the standard monthly path — no funding flip needed).
-  const rec = await bc.recordBlockDecision(eng2.id, 'confirmed', 'admin')
-  check('15. decision recorder flips asked → confirmed', rec.ok === true, JSON.stringify(rec))
+  // The family CHOOSES (PL-323B: monthly = until-I-cancel) → the SAME
+  // overflow bills on the next cycle at the provenance continuing rate
+  // (PL-323D: the decision re-rates the engagement forward).
+  const contRates = await bc.continueRatesForStudent(cleanup.students[0])
+  const rec = await bc.recordBlockDecision(eng2.id, 'confirmed', 'admin', 'monthly')
+  check('15. decision recorder flips asked → confirmed (choice=monthly; no recurrence → staff-routed reservation)',
+    rec.ok === true && (rec.outcome === 'staff' || rec.outcome === 'reserved'), JSON.stringify(rec))
   await tb.generateMonthlyCycle(new Date(), '2027-06', [cleanup.families[0]])
   const junLines2 = junInv
     ? (await db.from('tutoring_invoice_lines').select('id, description, rate, amount').eq('invoice_id', junInv.id)).data ?? []
     : []
-  const confirmedCarry = junLines2.filter((l) => l.description?.includes('past the prepaid package') && Number(l.rate) === 110)
-  check('16. CONFIRMED: the held overflow now bills at the engagement rate',
-    confirmedCarry.length === 1 && Number(confirmedCarry[0].amount) === 110,
+  const confirmedCarry = junLines2.filter(
+    (l) => l.description?.includes('past the prepaid package') && Number(l.rate) === contRates.rate1to9
+  )
+  check('16. CONFIRMED: the held overflow now bills at the provenance continuing rate',
+    confirmedCarry.length === 1 && Number(confirmedCarry[0].amount) === contRates.rate1to9,
     JSON.stringify(junLines2.map((l) => `${l.description} @${l.rate}`)))
 
   // A decision can't be recorded before the ask (null → plain refusal).
-  const early = await bc.recordBlockDecision(cleanup.engagements[0], 'confirmed', 'admin')
+  const early = await bc.recordBlockDecision(cleanup.engagements[0], 'confirmed', 'admin', 'monthly')
   check("17. pre-ask decision refused plainly ('the low-hours email goes out first')",
     early.ok === false && /goes out first/.test(early.error), JSON.stringify(early))
 } finally {

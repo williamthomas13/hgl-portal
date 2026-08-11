@@ -77,10 +77,13 @@ async function sendReminder(opts: {
 }): Promise<boolean> {
   const { data: tutor } = await supabase
     .from('instructors')
-    .select('email, name, timezone')
+    .select('email, name, timezone, pref_notes_reminders')
     .eq('id', opts.tutorId)
     .maybeSingle()
   if (!tutor?.email) return false
+  // PL-327: 'weekly' tutors get one Monday rollup instead of the dailies;
+  // 'off' gets nothing (the timecard approval gate stays the backstop).
+  if (tutor.pref_notes_reminders === 'weekly' || tutor.pref_notes_reminders === 'off') return false
   const tz = tutor.timezone ?? PAYROLL_TZ
   const first = tutor.name?.split(' ')[0] ?? 'there'
   const base = emailBaseUrl()
@@ -167,5 +170,83 @@ export async function sweepSessionNoteReminders(now: Date = new Date()): Promise
   } catch (e) {
     console.error('sweepSessionNoteReminders crashed:', e)
     return result
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PL-327: the WEEKLY rollup — tutors who chose 'weekly' get one Monday
+// email covering everything the daily reminders would have said over the
+// past week (still-missing notes only), plain English, deep-linked. The
+// timecard approval gate remains the hard backstop either way.
+// ---------------------------------------------------------------------------
+
+export async function sweepWeeklyNotesDigest(now: Date = new Date()): Promise<number> {
+  try {
+    const today = denverDate(now)
+    const isMonday = new Date(today + 'T12:00:00Z').getUTCDay() === 1
+    if (!isMonday) return 0
+
+    // Union the past 7 Denver dates' missing notes per tutor.
+    const byTutor = new Map<string, MissingSession[]>()
+    for (let i = 1; i <= 7; i++) {
+      const missing = await missingByTutor(shiftDays(today, -i))
+      for (const [tutorId, sessions] of missing) {
+        const list = byTutor.get(tutorId) ?? []
+        list.push(...sessions)
+        byTutor.set(tutorId, list)
+      }
+    }
+    if (byTutor.size === 0) return 0
+
+    let sent = 0
+    for (const [tutorId, sessions] of byTutor) {
+      const { data: tutor } = await supabase
+        .from('instructors')
+        .select('email, name, timezone, pref_notes_reminders')
+        .eq('id', tutorId)
+        .maybeSingle()
+      if (!tutor?.email || tutor.pref_notes_reminders !== 'weekly') continue
+      const tz = tutor.timezone ?? PAYROLL_TZ
+      const first = tutor.name?.split(' ')[0] ?? 'there'
+      const notesLink = `${emailBaseUrl()}/portal?view=tutor`
+      const lines = sessions
+        .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+        .map(
+          (s) =>
+            `${new Date(s.starts_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz })} ${new Date(s.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz })} — ${s.studentName}`
+        )
+      const twin = (): Rendered => ({
+        subject: `Your week's session notes — ${lines.length} still missing`,
+        html: wrap(
+          `<p>Hi ${first},</p>
+           <p>Your weekly rollup (you chose one email a week instead of the daily reminders):
+           these sessions from the past week still need a note.</p>
+           <ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul>
+           <p><a href="${notesLink}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Write the notes</a></p>
+           <p>A quick line per session is plenty — families see these, and timecard approval
+           checks for them.</p>`,
+          { preheader: `${lines.length} session note${lines.length === 1 ? '' : 's'} still open from last week`, footer: footerT() }
+        ),
+      })
+      const email = await renderRegistered(
+        'T6_NOTES_WEEKLY',
+        { parentFirstName: first, parentEmail: tutor.email, studentFirstName: first },
+        { missingSessionsBlock: `<ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul>` },
+        twin
+      )
+      const status = await sendOnce({
+        dedupeKey: `t6_notes_weekly:${tutorId}:${today}`,
+        emailType: 'T6_NOTES_WEEKLY',
+        templateKey: 'T6_NOTES_WEEKLY',
+        to: [tutor.email],
+        subject: email.subject,
+        html: email.html,
+      })
+      if (status === 'sent') sent++
+    }
+    return sent
+  } catch (e) {
+    console.error('sweepWeeklyNotesDigest crashed:', e)
+    return 0
   }
 }

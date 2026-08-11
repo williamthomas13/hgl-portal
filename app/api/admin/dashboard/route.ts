@@ -585,6 +585,7 @@ export async function GET() {
     .from('tutoring_engagements')
     .select(
       `id, addon_id, status, student_id, hourly_rate, overdraw_ack_hours, block_confirmation,
+       block_continue_hours, block_continue_staff_at,
        students ( first_name, last_name, family_id ),
        enrollment_addons ( id, hours )`
     )
@@ -659,14 +660,40 @@ export async function GET() {
           attention.push({
             id: `block-declined-${e.id}`,
             kind: 'Family declined — sessions past the block',
-            text: `${stu.first_name} ${stu.last_name}'s family declined continuing past their ${addon.hours}h block, but ${over.toFixed(1)}h beyond it exist — remove or resolve those sessions (they will not bill).`,
+            // PL-323A: the hourly sweep auto-drops future sessions past the
+            // block; anything still here is past/billed rows worth a look.
+            text: `${stu.first_name} ${stu.last_name}'s family declined continuing past their ${addon.hours}h block, but ${over.toFixed(1)}h beyond it exist. Future unbilled sessions drop automatically on the next sweep; anything remaining needs a human look (they will not bill).`,
             href: `/admin/tutoring?family=${stu.family_id}`,
             urgent: true,
           })
         }
         continue
       }
-      if (e.block_confirmation === 'confirmed') continue // agreed — Case-A billing, nothing to flag
+      if (e.block_confirmation === 'confirmed') {
+        // PL-323C: the family chose to continue but the portal couldn't
+        // reserve the times — a human schedules them. Self-resolves once a
+        // future session created AFTER the routing stamp exists.
+        if (e.block_continue_staff_at) {
+          const { count } = await supabase
+            .from('tutoring_sessions')
+            .select('id', { count: 'exact', head: true })
+            .eq('engagement_id', e.id)
+            .in('status', ['proposed', 'confirmed'])
+            .gt('created_at', e.block_continue_staff_at)
+            .gt('starts_at', new Date().toISOString())
+          if ((count ?? 0) === 0) {
+            attention.push({
+              id: `block-continue-staff-${e.id}`,
+              since: e.block_continue_staff_at,
+              kind: 'Continue-tutoring choice needs scheduling',
+              text: `${stu.first_name} ${stu.last_name}'s family confirmed continuing${e.block_continue_hours ? ` (${Number(e.block_continue_hours)} more hours)` : ' (monthly)'}, but the portal couldn't reserve the times — a conflict or no workable slot. Schedule the continuation; the family was told you'll sort it out with them.`,
+              href: `/admin/tutoring?family=${stu.family_id}`,
+              urgent: true,
+            })
+          }
+        }
+        continue // otherwise agreed — Case-A billing, nothing to flag
+      }
       // PL-197: past the crossing this is a DIFFERENT conversation — "it's
       // happening", not "talk soon" — so the overdraw row REPLACES the
       // PL-163 warning (never both). Clears on new package (renewed, above),

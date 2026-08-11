@@ -56,16 +56,17 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
 
   // The promo code itself never rides the public payload — only whether a
   // "have a discount code?" field is worth showing (PL-279).
-  const { enrollments, capacity, promo_code, school_id, delivery_mode, ...publicClass } =
+  // PL-328: delivery_mode stays in the public payload (families see
+  // online/in-person anyway; the calendar page's label needs it). school_id
+  // stays internal.
+  const { enrollments, capacity, promo_code, school_id, ...publicClass } =
     cls as typeof cls & {
       enrollments: Slot[]
       capacity: number
       promo_code: string | null
       school_id: string | null
-      delivery_mode: string | null
     }
   void school_id
-  void delivery_mode
 
   // PL-279: the emailed auto-apply link carries ?fo=<token>&fe=<enrollment>.
   // Validation is per-cohort (the recipient's feeder class schedule); an

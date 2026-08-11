@@ -17,6 +17,118 @@ import ContactSettingsPanel from './contact-settings-panel'
 import TeamAccessPanel from './team-access-panel'
 import NotificationsPanel from './notifications-panel'
 import PricingPanel from './pricing-panel'
+import ReadOnlyPreview from './view-as/read-only-preview'
+import { classDisplayLabel } from '../utils/class-label'
+
+// PL-326: manager-sim placeholders/wrappers.
+function PassThrough({ children }: { children: React.ReactNode }) {
+  return <>{children}</>
+}
+function SimManagerHidden({ what }: { what: string }) {
+  return (
+    <p className="text-sm text-gray-500 italic bg-white rounded-lg border p-5">
+      {what} is admin-only — a manager sees nothing here.
+    </p>
+  )
+}
+
+// PL-329: the roster's every-session bulk edit — one time/location applied
+// to all sessions; the server composes ONE schedule-update pair per family
+// from the shared differ.
+function BulkSessionEdit({
+  classId,
+  sessionCount,
+  onDone,
+}: {
+  classId: string
+  sessionCount: number
+  onDone: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+  const [location, setLocation] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  if (!open) {
+    return (
+      <p className="mb-1.5 text-xs">
+        <button type="button" onClick={() => setOpen(true)} className="text-hgl-blue underline">
+          Edit every session at once…
+        </button>
+        {note && <span className="ml-2 text-gray-500">{note}</span>}
+      </p>
+    )
+  }
+  return (
+    <div className="mb-2 border border-hgl-blue/40 bg-blue-50 rounded-md p-3 text-xs space-y-2">
+      <p className="font-semibold text-hgl-slate">
+        Apply to all {sessionCount} sessions (blank keeps each session&apos;s current value).
+        Families whose known schedule changes get ONE summary email each.
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block">
+          <span className="block text-gray-500">Start (24h)</span>
+          <TimeSelect value={start} onChange={setStart} />
+        </label>
+        <label className="block">
+          <span className="block text-gray-500">End (24h)</span>
+          <TimeSelect value={end} onChange={setEnd} />
+        </label>
+        <label className="block flex-1 min-w-40">
+          <span className="block text-gray-500">Location</span>
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            className="mt-0.5 w-full border border-gray-300 rounded p-1.5"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy || (!start && !end && !location.trim())}
+          onClick={async () => {
+            setBusy(true)
+            setNote('')
+            const res = await fetch('/api/admin/class-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'bulk_edit',
+                class_id: classId,
+                ...(start ? { start_time: start } : {}),
+                ...(end ? { end_time: end } : {}),
+                ...(location.trim() ? { location: location.trim() } : {}),
+              }),
+            })
+            const json = await res.json().catch(() => ({}))
+            setBusy(false)
+            if (!res.ok) {
+              setNote('Error: ' + (json.error ?? 'failed'))
+              return
+            }
+            setNote(
+              json.changed
+                ? `Applied — ${json.emailed} schedule-update email${json.emailed === 1 ? '' : 's'} sent (one summary per person).`
+                : 'Nothing changed — the sessions already matched.'
+            )
+            setOpen(false)
+            setStart('')
+            setEnd('')
+            setLocation('')
+            onDone()
+          }}
+          className="bg-hgl-slate text-white font-bold py-1.5 px-4 rounded disabled:opacity-50"
+        >
+          Apply to all
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="text-gray-500 underline">
+          cancel
+        </button>
+      </div>
+    </div>
+  )
+}
 import DashboardPanel from './dashboard-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import { ConfirmAction } from './tutoring/confirm'
@@ -573,6 +685,10 @@ export default function AdminDashboard() {
   // QuickBooks section and highlights the failed sync row.
   const [qboOpenSignal, setQboOpenSignal] = useState(0)
   const [deepFocus, setDeepFocus] = useState<string | null>(null)
+  // PL-326: ?viewas=manager renders THIS page as the manager role sees it —
+  // ownership panels hidden exactly as the role hides them, wrapped in the
+  // PL-325 read-only interceptor. Used by View as → Manager (iframe).
+  const [simManager, setSimManager] = useState(false)
   // PL-101: vertical section tabs — one section visible at a time, all of
   // them always MOUNTED (hidden, not unmounted) so deep-link focus polling
   // and data loads behave exactly as before (the PL-99 late-mount lesson).
@@ -597,6 +713,7 @@ export default function AdminDashboard() {
           : NAV_GROUPS[tab].default
       )
     }
+    if (q.get('viewas') === 'manager') setSimManager(true)
     const classId = q.get('class')
     if (classId) {
       setActiveTab(classId)
@@ -770,7 +887,7 @@ export default function AdminDashboard() {
   const fetchInstructors = useCallback(async () => {
     const { data } = await supabase
       .from('instructors')
-      .select('id, email, name, phone, default_meeting_link, comms_enabled, active')
+      .select('id, email, name, phone, default_meeting_link, comms_enabled, active, pref_notes_reminders, pref_class_digests, pref_fyi_copies')
       .order('email')
     if (data) setInstructors(data as Instructor[])
   }, [])
@@ -1013,7 +1130,7 @@ export default function AdminDashboard() {
   } | null>(null)
   function requestAssignInstructor(c: ClassRow, instructorId: string) {
     if ((c.instructor_id ?? '') === instructorId) return
-    const label = `${c.schools?.nickname ?? '—'} ${c.class_type}`
+    const label = classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })
     const inst = instructors.find((i) => i.id === instructorId)
     const msg = instructorId
       ? `Assign ${inst?.name ?? inst?.email} as the instructor for ${label}?`
@@ -1140,7 +1257,7 @@ export default function AdminDashboard() {
         location: s.location ?? '',
       })),
     })
-    setWizardSourceLabel(`${c.schools?.nickname ?? '—'} ${c.class_type} (started ${formatDateAdmin(c.start_date)})`)
+    setWizardSourceLabel(`${classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })} (started ${formatDateAdmin(c.start_date)})`)
     wizardKeySeq.current += 1
     setWizardKey(`copy:${c.id}:${wizardKeySeq.current}`)
     setWizardMode('blank') // picker closes; the pre-filled wizard shows
@@ -1175,7 +1292,7 @@ export default function AdminDashboard() {
       },
     })
     setWizardSourceLabel(
-      `${c.schools?.nickname ?? '—'} ${c.class_type} (started ${formatDateAdmin(c.start_date)}) — sessions not copied`
+      `${classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })} (started ${formatDateAdmin(c.start_date)}) — sessions not copied`
     )
     wizardKeySeq.current += 1
     setWizardKey(`dup:${c.id}:${wizardKeySeq.current}`)
@@ -1341,7 +1458,8 @@ export default function AdminDashboard() {
     const enrolledCount = paidCount + pendingCount
     const waitlistCount =
       c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
-    const schoolLabel = c.schools?.nickname ?? (c.school_id ? '—' : 'Open enrollment')
+    // PL-328: one label source — 'ISD SAT Prep' / 'HGL PSAT Prep' / 'Online SAT Math Deep Dive'.
+    const schoolLabel = c.schools?.nickname ?? (c.school_id ? '—' : c.delivery_mode === 'online' ? 'Online' : 'HGL')
     const sortedSessions = [...(c.sessions ?? [])].sort(bySessionStart)
     const lastSession = sortedSessions[sortedSessions.length - 1] ?? null
     const isCancelled = c.status === 'cancelled'
@@ -1655,7 +1773,7 @@ export default function AdminDashboard() {
                     .filter((other) => other.id !== c.id && other.status !== 'cancelled')
                     .map((other) => (
                       <option key={other.id} value={other.id}>
-                        {(other.schools?.nickname ?? '—') + ' ' + other.class_type} (starts{' '}
+                        {classDisplayLabel({ schoolNickname: other.schools?.nickname ?? null, deliveryMode: other.delivery_mode, shortName: other.fo_short_name, classType: other.class_type })} (starts{' '}
                         {formatDateAdmin(other.start_date)})
                       </option>
                     ))}
@@ -1978,6 +2096,10 @@ export default function AdminDashboard() {
             <p className="text-sm text-gray-500 italic mb-3">No sessions scheduled yet.</p>
           ) : (
             <div className="mb-3 max-w-2xl">
+              {/* PL-329: fix every session at once (Scarlett's cloned-wrong-
+                  time case) — ONE schedule-update pair per family via the
+                  shared differ, never one email per session. */}
+              <BulkSessionEdit classId={c.id} sessionCount={sortedSessions.length} onDone={fetchRosters} />
               <SessionCalendar
                 sessions={sortedSessions}
                 defaultLocation={c.default_location}
@@ -2133,7 +2255,9 @@ export default function AdminDashboard() {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+  const Shell = simManager ? ReadOnlyPreview : PassThrough
   return (
+    <Shell>
     <div className="min-h-screen bg-gray-50 p-10">
       {/* PL-268: the one inline outcome banner — every action result that
           used to be a native alert() lands here, dismissible, never modal. */}
@@ -2178,6 +2302,13 @@ export default function AdminDashboard() {
               cancel
             </button>
           </div>
+        </div>
+      )}
+      {/* PL-326: the manager simulation announces itself and is read-only. */}
+      {simManager && (
+        <div className="bg-purple-700 text-white px-6 py-2 text-sm font-semibold sticky top-0 z-40">
+          Manager view simulation — read-only. Ownership panels are hidden exactly as the manager
+          role hides them.
         </div>
       )}
       <div className="max-w-6xl mx-auto space-y-6">
@@ -2275,7 +2406,7 @@ export default function AdminDashboard() {
                     <li key={c.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
                       <span>
                         <strong className="text-hgl-slate">
-                          {c.schools?.nickname ?? '—'} {c.class_type}
+                          {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })}
                         </strong>
                         <span className="text-gray-500">
                           {' '}· started {formatDateAdmin(c.start_date)} · {c.sessions?.length ?? 0} sessions
@@ -2357,7 +2488,7 @@ export default function AdminDashboard() {
                         : 'bg-gray-50 border-transparent text-gray-500 hover:text-hgl-slate'
                     }`}
                   >
-                    {(c.schools?.nickname ?? '—') + ' ' + c.class_type}
+                    {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })}
                   </button>
                 ))}
                 <button
@@ -2462,7 +2593,7 @@ export default function AdminDashboard() {
               .filter((c) => c.status !== 'cancelled')
               .map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.schools?.nickname ?? '—'} {c.class_type} · starts {c.start_date}
+                  {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })} · starts {c.start_date}
                   {c.collateral_reminder_at && !c.short_link ? ' — collateral not set up' : ''}
                 </option>
               ))}
@@ -2508,7 +2639,10 @@ export default function AdminDashboard() {
           defaultOpen
           openSignal={qboOpenSignal}
         >
-          <QboPanel status={qboStatus} onStatusChange={fetchQboStatus} />
+          <QboPanel
+            status={simManager && qboStatus ? { ...qboStatus, callerRole: 'manager' } : qboStatus}
+            onStatusChange={fetchQboStatus}
+          />
         </CollapsibleSection>
 
         {/* PL-33: owner-level config, grouped with QuickBooks here rather
@@ -2522,19 +2656,19 @@ export default function AdminDashboard() {
           subtitle="Service-account connection and push queue for tutoring sessions"
           defaultOpen
         >
-          <GcalPanel />
+          <GcalPanel simulatedManager={simManager} />
         </CollapsibleSection>
 
         </div>
 
         {/* PL-50: renders only for admins (the API 403s managers). */}
         <div className={activeSection === 'settings' ? '' : 'hidden'}>
-        <ContactSettingsPanel />
+        {simManager ? <SimManagerHidden what="Contact settings" /> : <ContactSettingsPanel />}
         </div>
 
         {/* PL-213: Team access — admin-only (same self-gating pattern). */}
         <div className={activeSection === 'team' ? '' : 'hidden'}>
-        <TeamAccessPanel />
+        {simManager ? <SimManagerHidden what="Team access" /> : <TeamAccessPanel />}
         </div>
 
         {/* PL-309: who receives which [HGL Admin] alert family. */}
@@ -2544,7 +2678,7 @@ export default function AdminDashboard() {
             subtitle="Which [HGL Admin] alerts reach which staff member — per category"
             defaultOpen
           >
-            <NotificationsPanel />
+            <NotificationsPanel simulatedManager={simManager} />
           </CollapsibleSection>
         </div>
 
@@ -2555,7 +2689,7 @@ export default function AdminDashboard() {
             subtitle="Base rates + derived tier discounts — every future price resolves from here"
             defaultOpen
           >
-            <PricingPanel />
+            {simManager ? <SimManagerHidden what="The price list" /> : <PricingPanel />}
           </CollapsibleSection>
         </div>
 
@@ -2563,5 +2697,6 @@ export default function AdminDashboard() {
         </div>
       </div>
     </div>
+    </Shell>
   )
 }

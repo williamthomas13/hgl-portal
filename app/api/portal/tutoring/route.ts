@@ -27,6 +27,15 @@ type Body =
   | { action: 'respond_coverage'; request_id: string; response: 'accept' | 'decline' }
   | { action: 'cancel_coverage'; request_id: string }
   | { action: 'student_notes'; student_id: string }
+  | { action: 'get_email_prefs' }
+  | {
+      action: 'set_email_prefs'
+      prefs: {
+        pref_notes_reminders?: 'on' | 'weekly' | 'off'
+        pref_class_digests?: 'on' | 'weekly' | 'off'
+        pref_fyi_copies?: boolean
+      }
+    }
 
 async function timecardLocked(timecardId: string | null): Promise<boolean> {
   if (!timecardId) return false
@@ -49,6 +58,49 @@ export async function POST(req: Request) {
     // PL-261: adjust_duration is GONE — a session bills and pays at its
     // scheduled length, so nothing may rewrite ends_at after the fact
     // (variable actuals made billing and payroll drift apart).
+    // PL-327: tutors self-serve their informational-email preferences.
+    // Operational emails (T5 timecards, T3-T schedule changes, SUB coverage)
+    // are mandatory and have no switch.
+    if (body.action === 'get_email_prefs') {
+      const { data } = await supabase
+        .from('instructors')
+        .select('pref_notes_reminders, pref_class_digests, pref_fyi_copies')
+        .in('id', caller.instructorIds)
+        .limit(1)
+        .maybeSingle()
+      return NextResponse.json({
+        prefs: {
+          pref_notes_reminders: data?.pref_notes_reminders ?? 'on',
+          pref_class_digests: data?.pref_class_digests ?? 'on',
+          pref_fyi_copies: data?.pref_fyi_copies !== false,
+        },
+      })
+    }
+    if (body.action === 'set_email_prefs') {
+      const p = body.prefs ?? {}
+      const patch: Record<string, unknown> = {}
+      if (p.pref_notes_reminders !== undefined) {
+        if (!['on', 'weekly', 'off'].includes(p.pref_notes_reminders)) {
+          return NextResponse.json({ error: 'Notes reminders: on, weekly, or off.' }, { status: 400 })
+        }
+        patch.pref_notes_reminders = p.pref_notes_reminders
+      }
+      if (p.pref_class_digests !== undefined) {
+        if (!['on', 'weekly', 'off'].includes(p.pref_class_digests)) {
+          return NextResponse.json({ error: 'Class digests: on, weekly, or off.' }, { status: 400 })
+        }
+        patch.pref_class_digests = p.pref_class_digests
+        patch.comms_enabled = p.pref_class_digests !== 'off'
+      }
+      if (p.pref_fyi_copies !== undefined) patch.pref_fyi_copies = p.pref_fyi_copies === true
+      if (Object.keys(patch).length === 0) {
+        return NextResponse.json({ error: 'Nothing to change.' }, { status: 400 })
+      }
+      const { error } = await supabase.from('instructors').update(patch).in('id', caller.instructorIds)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+
     if (body.action === 'no_show') {
       const { data: session } = await supabase
         .from('tutoring_sessions')

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
-import { loadClassBundles, emailContext, classDetailsSnapshot } from '../../../utils/lifecycle'
+import { loadClassBundles, emailContext, classDetailsSnapshot, sessionListChanges } from '../../../utils/lifecycle'
 import { renderEmail } from '../../../utils/comms-db-render'
 import { scheduleUpdateEmail, scheduleChangeLi, sendOnce, formatDate } from '../../../utils/email'
 import { maybeSendInstructorFyi } from '../../../utils/instructor-comms'
@@ -26,14 +26,25 @@ import { maybeSendInstructorFyi } from '../../../utils/instructor-comms'
 const one = <T,>(v: T | T[] | null | undefined): T | null =>
   v == null ? null : Array.isArray(v) ? ((v[0] as T) ?? null) : v
 
-type Body = {
-  action: 'edit'
-  id: string
-  session_date: string
-  start_time: string | null
-  end_time: string | null
-  location: string | null
-}
+type Body =
+  | {
+      action: 'edit'
+      id: string
+      session_date: string
+      start_time: string | null
+      end_time: string | null
+      location: string | null
+    }
+  | {
+      /** PL-329: bulk time/location edit — ONE schedule-update pair per
+       *  family summarizing every changed session via the shared differ,
+       *  never one email per session. */
+      action: 'bulk_edit'
+      class_id: string
+      start_time?: string | null
+      end_time?: string | null
+      location?: string | null
+    }
 
 const fmtT = (t: string | null) => (t ? t.slice(0, 5) : null)
 
@@ -47,6 +58,137 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
   }
+  // ------------------------------------------------------------------
+  // PL-329: bulk edit — apply one time/location to EVERY session of a
+  // class, then notify each informed family ONCE with the full change
+  // list from the shared PL-314 differ.
+  if (body.action === 'bulk_edit') {
+    if (!body.class_id || (body.start_time == null && body.end_time == null && body.location === undefined)) {
+      return NextResponse.json({ error: 'Pass class_id and at least one field to apply.' }, { status: 400 })
+    }
+    if (body.start_time && body.end_time && body.end_time <= body.start_time) {
+      return NextResponse.json({ error: 'End time must be after the start time.' }, { status: 400 })
+    }
+    const { data: clsRow } = await supabase
+      .from('classes')
+      .select('id, status')
+      .eq('id', body.class_id)
+      .maybeSingle()
+    if (!clsRow) return NextResponse.json({ error: 'Unknown class.' }, { status: 404 })
+    if (clsRow.status === 'cancelled') {
+      return NextResponse.json({ error: 'This class is cancelled — its sessions are read-only.' }, { status: 400 })
+    }
+    const beforeBundle = (await loadClassBundles()).find((b) => b.id === body.class_id)
+    if (!beforeBundle) return NextResponse.json({ error: 'Unknown class.' }, { status: 404 })
+    const beforeSessions = classDetailsSnapshot(beforeBundle).sessions
+
+    const patch: Record<string, unknown> = {}
+    if (body.start_time != null) patch.start_time = body.start_time
+    if (body.end_time != null) patch.end_time = body.end_time
+    if (body.location !== undefined) patch.location = body.location
+    const { error: bulkErr } = await supabase.from('sessions').update(patch).eq('class_id', body.class_id)
+    if (bulkErr) return NextResponse.json({ error: bulkErr.message }, { status: 500 })
+
+    const bundle = (await loadClassBundles()).find((b) => b.id === body.class_id)
+    if (!bundle) return NextResponse.json({ ok: true, changed: true, emailed: 0 })
+    const afterSessions = classDetailsSnapshot(bundle).sessions
+    const changes = sessionListChanges(beforeSessions, afterSessions)
+    if (changes.length === 0) return NextResponse.json({ ok: true, changed: false, emailed: 0 })
+
+    const enrollmentIds = bundle.enrollments.map((e) => e.id)
+    const { data: sentDetails } = enrollmentIds.length
+      ? await supabase
+          .from('email_sends')
+          .select('enrollment_id, payload')
+          .eq('template_key', 'E4_CLASS_DETAILS')
+          .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+          .in('enrollment_id', enrollmentIds)
+      : { data: [] }
+    const e4Informed = new Set(((sentDetails as any[]) ?? []).map((r) => r.enrollment_id))
+    const informed = new Set(e4Informed)
+    const { data: regRows } = enrollmentIds.length
+      ? await supabase
+          .from('enrollments')
+          .select('id, schedule_snapshot')
+          .in('id', enrollmentIds)
+          .not('schedule_snapshot', 'is', null)
+      : { data: [] }
+    for (const r of (regRows as any[]) ?? []) informed.add(r.id)
+
+    const bulkHash = createHash('md5')
+      .update(JSON.stringify(changes.map((c) => c.sentence)))
+      .digest('hex')
+      .slice(0, 8)
+    const changesBlock = `<ul style="padding-left:20px">${changes.map(scheduleChangeLi).join('')}</ul>`
+    let emailed = 0
+    let lastHtml: { subject: string; html: string } | null = null
+    for (const e of bundle.enrollments) {
+      if (!informed.has(e.id)) continue
+      if (e.payment_status !== 'Paid' && e.payment_status !== 'Completed') continue
+      const ctx = emailContext(bundle, e)
+      const parent = await renderEmail('SU_SCHEDULE_UPDATE', ctx, 'parent', { changesBlock }, () =>
+        scheduleUpdateEmail(ctx, 'parent', changes)
+      )
+      const pStatus = await sendOnce({
+        dedupeKey: `su_bulk_p:${e.id}:${bulkHash}`,
+        emailType: 'schedule_update',
+        templateKey: 'SU_SCHEDULE_UPDATE',
+        to: [ctx.parentEmail],
+        subject: parent.subject,
+        html: parent.html,
+      })
+      if (pStatus === 'sent') emailed++
+      lastHtml = parent
+      if (ctx.studentEmail) {
+        const student = await renderEmail('SU_SCHEDULE_UPDATE', ctx, 'student', { changesBlock }, () =>
+          scheduleUpdateEmail(ctx, 'student', changes)
+        )
+        const sStatus = await sendOnce({
+          dedupeKey: `su_bulk_s:${e.id}:${bulkHash}`,
+          emailType: 'schedule_update',
+          templateKey: 'SU_SCHEDULE_UPDATE',
+          to: [ctx.studentEmail],
+          subject: student.subject,
+          html: student.html,
+        })
+        if (sStatus === 'sent') emailed++
+      }
+    }
+    if (emailed > 0 && lastHtml) {
+      await maybeSendInstructorFyi(bundle, 'SU_SCHEDULE_UPDATE', lastHtml.subject, lastHtml.html).catch(
+        (err) => console.error('bulk-edit instructor FYI failed:', err)
+      )
+    }
+    // Refresh both baseline kinds so the sweep doesn't re-announce.
+    const freshSessions = afterSessions
+    const newFirst = bundle.firstSession
+    for (const row of (sentDetails as any[]) ?? []) {
+      if (!row.payload) continue
+      await supabase
+        .from('email_sends')
+        .update({
+          payload: {
+            ...row.payload,
+            first_session: newFirst,
+            ...(Array.isArray(row.payload.sessions) ? { sessions: freshSessions } : {}),
+          },
+        })
+        .eq('template_key', 'E4_CLASS_DETAILS')
+        .eq('enrollment_id', row.enrollment_id)
+        .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+    }
+    for (const row of (regRows as any[]) ?? []) {
+      if (e4Informed.has(row.id)) continue
+      await supabase
+        .from('enrollments')
+        .update({
+          schedule_snapshot: { ...row.schedule_snapshot, first_session: newFirst, sessions: freshSessions },
+        })
+        .eq('id', row.id)
+    }
+    return NextResponse.json({ ok: true, changed: true, emailed, changes: changes.map((c) => c.sentence) })
+  }
+
   if (body.action !== 'edit' || !body.id || !body.session_date) {
     return NextResponse.json({ error: 'Pass action=edit, id, and session_date.' }, { status: 400 })
   }

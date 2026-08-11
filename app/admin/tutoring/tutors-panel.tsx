@@ -26,11 +26,12 @@ const TZ_REGION_LABELS: Record<string, string> = {
   apac: 'Asia-Pacific',
 }
 
-// PL-320: subjects render as a grouped category summary ("Math (9) · Test
-// prep (7)"), expanding to a chip grid — Billy's ~35-subject comma wall made
-// the row a screen tall. Grouping is the ONE shared source
-// (utils/subject-groups); an active subject filter auto-expands and
-// highlights the matching chip.
+// PL-320/PL-324: subjects render as a grouped category summary ("Math (9) ·
+// Test prep (7)") where EACH heading expands independently — clicking
+// "Math (11)" opens only Math; several can be open at once; clicking again
+// collapses that one. An active subject filter auto-opens ONLY the matching
+// category and highlights its chip. Grouping is the ONE shared source
+// (utils/subject-groups).
 function SubjectSummaryCell({
   tutor,
   subjects,
@@ -40,68 +41,82 @@ function SubjectSummaryCell({
   subjects: Subject[]
   filter: string
 }) {
-  const [openManual, setOpenManual] = useState(false)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const catByName = new Map(subjects.map((s) => [s.name, s.category]))
   const ready = groupSubjects(tutor.subjects.map((name) => ({ name, category: catByName.get(name) })))
   const prep = tutor.subjects_with_prep ?? []
-  const filterMatches =
-    !!filter && (tutor.subjects.includes(filter) || prep.includes(filter))
-  const open = openManual || filterMatches
   if (tutor.subjects.length === 0 && prep.length === 0) {
     return <span className="italic text-gray-400">none set</span>
   }
-  const summary = ready.map((g) => `${g.group} (${g.names.length})`).join(' · ')
+  // The filter opens exactly the category that holds the filtered subject.
+  const filterGroup = filter
+    ? tutor.subjects.includes(filter)
+      ? ready.find((g) => g.names.includes(filter))?.group ?? null
+      : prep.includes(filter)
+        ? 'prep'
+        : null
+    : null
+  const isOpen = (key: string) => openGroups[key] === true || filterGroup === key
+  const toggle = (key: string) => setOpenGroups((o) => ({ ...o, [key]: !isOpen(key) }))
+
+  const chip = (n: string, flavor: 'ready' | 'prep') => (
+    <span
+      key={n}
+      className={`rounded-full px-2 py-0.5 border ${
+        filter === n
+          ? flavor === 'ready'
+            ? 'bg-hgl-blue text-white border-hgl-blue font-semibold'
+            : 'bg-amber-600 text-white border-amber-600 font-semibold'
+          : flavor === 'ready'
+            ? 'bg-gray-100 border-gray-200 text-gray-600'
+            : 'bg-amber-50 border-amber-200 text-amber-800'
+      }`}
+    >
+      {n}
+    </span>
+  )
+
   return (
     <div className="text-xs">
-      <button
-        type="button"
-        onClick={() => setOpenManual((o) => !o)}
-        className="text-left text-gray-600 hover:text-hgl-slate"
-        title={open ? 'Collapse' : 'Show every subject'}
-      >
-        {summary || 'no ready subjects'}
-        {prep.length > 0 && `${summary ? ' · ' : ''}with prep (${prep.length})`}
-        <span className="ml-1 text-gray-400">{open ? '▾' : '▸'}</span>
-      </button>
-      {open && (
+      <span className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-gray-600">
+        {ready.map((g, i) => (
+          <button
+            key={g.group}
+            type="button"
+            onClick={() => toggle(g.group)}
+            className={`hover:text-hgl-slate ${isOpen(g.group) ? 'font-semibold text-hgl-slate' : ''}`}
+            title={isOpen(g.group) ? `Collapse ${g.group}` : `Show the ${g.group} subjects`}
+          >
+            {i > 0 && <span className="text-gray-300 font-normal mr-1.5">·</span>}
+            {g.group} ({g.names.length}) {isOpen(g.group) ? '▾' : '▸'}
+          </button>
+        ))}
+        {prep.length > 0 && (
+          <button
+            key="prep"
+            type="button"
+            onClick={() => toggle('prep')}
+            className={`text-amber-700 hover:text-amber-900 ${isOpen('prep') ? 'font-semibold' : ''}`}
+            title="Capable with prep — confirm with the tutor first"
+          >
+            {ready.length > 0 && <span className="text-gray-300 font-normal mr-1.5">·</span>}
+            with prep ({prep.length}) {isOpen('prep') ? '▾' : '▸'}
+          </button>
+        )}
+      </span>
+      {(ready.some((g) => isOpen(g.group)) || isOpen('prep')) && (
         <div className="mt-1.5 space-y-1.5">
-          {ready.map((g) => (
+          {ready.filter((g) => isOpen(g.group)).map((g) => (
             <div key={g.group}>
               <span className="font-semibold text-gray-500">{g.group}</span>
-              <span className="flex flex-wrap gap-1 mt-0.5">
-                {g.names.map((n) => (
-                  <span
-                    key={n}
-                    className={`rounded-full px-2 py-0.5 border ${
-                      filter === n
-                        ? 'bg-hgl-blue text-white border-hgl-blue font-semibold'
-                        : 'bg-gray-100 border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {n}
-                  </span>
-                ))}
-              </span>
+              <span className="flex flex-wrap gap-1 mt-0.5">{g.names.map((n) => chip(n, 'ready'))}</span>
             </div>
           ))}
           {/* PL-35a: capable-but-confirm-first set, visually distinct. */}
-          {prep.length > 0 && (
+          {isOpen('prep') && prep.length > 0 && (
             <div>
               <span className="font-semibold text-amber-700">With prep — confirm first</span>
-              <span className="flex flex-wrap gap-1 mt-0.5">
-                {prep.map((n) => (
-                  <span
-                    key={n}
-                    className={`rounded-full px-2 py-0.5 border ${
-                      filter === n
-                        ? 'bg-amber-600 text-white border-amber-600 font-semibold'
-                        : 'bg-amber-50 border-amber-200 text-amber-800'
-                    }`}
-                  >
-                    {n}
-                  </span>
-                ))}
-              </span>
+              <span className="flex flex-wrap gap-1 mt-0.5">{prep.map((n) => chip(n, 'prep'))}</span>
             </div>
           )}
         </div>

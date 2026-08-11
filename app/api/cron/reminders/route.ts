@@ -6,7 +6,7 @@ import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../..
 import { auditXclDrift, processGcalQueue, syncTutoringDriftTable } from '../../../utils/gcal-sync'
 import { auditInternationalCalendar, syncInternationalCalendar } from '../../../utils/intl-calendar'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
-import { sweepSessionNoteReminders } from '../../../utils/session-notes'
+import { sweepSessionNoteReminders, sweepWeeklyNotesDigest } from '../../../utils/session-notes'
 import { generateMonthlyCycle, generationDueFor, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
@@ -2089,6 +2089,8 @@ export async function GET(req: Request) {
   try {
     const bc = await sweepBlockConfirmations()
     if (bc.asked > 0) counters.block_confirmations_asked = bc.asked
+    if (bc.reasked > 0) counters.block_continuations_reasked = bc.reasked
+    if (bc.dropped > 0) counters.block_sessions_dropped = bc.dropped
   } catch (e) {
     console.error('block-confirmation sweep failed:', e)
   }
@@ -2113,6 +2115,13 @@ export async function GET(req: Request) {
   // something is missing) plus one nudge 3 days later. The timecard approval
   // gate is the backstop; no nagging beyond these two.
   const noteReminders = await sweepSessionNoteReminders()
+  // PL-327: the once-a-week rollup for tutors who chose 'weekly'.
+  try {
+    const weeklyNotes = await sweepWeeklyNotesDigest()
+    if (weeklyNotes > 0) counters.t6_weekly_digests = weeklyNotes
+  } catch (e) {
+    console.error('weekly notes digest failed:', e)
+  }
   if (noteReminders.eod > 0) counters.session_note_eod_sent = noteReminders.eod
   if (noteReminders.nudge > 0) counters.session_note_nudges_sent = noteReminders.nudge
 

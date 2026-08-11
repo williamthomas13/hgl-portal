@@ -4,6 +4,7 @@ import ParentView from '../../portal/parent-view'
 import TutoringSection from '../../portal/tutoring-section'
 import TutorView from '../../portal/tutor-view'
 import CounselorView from '../../portal/counselor-view'
+import ReadOnlyPreview from './read-only-preview'
 import {
   CLASS_WORK_TYPE,
   DEFAULT_TUTORING_WORK_TYPE,
@@ -244,49 +245,65 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
           </p>
         )}
 
-        {/* The preview — the REAL portal components, pointer events off. */}
+        {/* The preview — the REAL components; PL-325: a capture-phase
+            interceptor allows read-only interactions (expanders, copy,
+            downloads, read-only links in a new tab) and blocks mutations. */}
         {role === 'manager' ? (
           <div className="space-y-4">
-            <div className="bg-white rounded-lg border p-5 text-sm text-gray-700 space-y-2">
-              <h2 className="font-bold text-hgl-slate">What a manager sees</h2>
-              <p>
-                Managers use the same admin pages as you, minus the ownership-level pieces:
-                QuickBooks connect/disconnect and item mapping, the contact settings panel, and
-                editing a tutor&apos;s pay-type title list (read-only for managers; a database
-                rule refuses the write regardless of the screen).
-              </p>
-              <p className="text-gray-500">
-                On pay: the portal stores pay-type <strong>titles</strong>{' '}and <strong>hours</strong>{' '}only
-                — no rates, no dollar amounts, for anyone. What a manager sees on a timecard is
-                exactly what you see below. Family <em>billing</em>{' '}amounts stay visible to
-                managers by design (that&apos;s invoicing, not payroll).
-              </p>
-            </div>
-            <div className="bg-white rounded-lg border p-5 text-sm">
-              <h3 className="font-bold text-hgl-slate mb-2">The pay surface, as a manager sees it</h3>
-              {managerPay.length === 0 ? (
-                <p className="text-gray-500 italic">No timecards yet.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {managerPay.map((c, i) => (
-                    <li key={i}>
-                      <span className="font-semibold text-hgl-slate">{c.tutor}</span>{' '}
-                      <span className="text-gray-500">{c.period}</span>
-                      <span className="block text-xs text-gray-600">
-                        {c.lines.length === 0
-                          ? 'no hours'
-                          : c.lines.map((l) => `${l.workType}: ${l.hours} h`).join(' · ')}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            {/* PL-326: the explainer survives as a dismissible intro — the
+                real portal renders below it. */}
+            <details open className="bg-white rounded-lg border p-5 text-sm text-gray-700">
+              <summary className="font-bold text-hgl-slate cursor-pointer">
+                What a manager sees (click to dismiss)
+              </summary>
+              <div className="space-y-2 mt-2">
+                <p>
+                  Managers use the same admin pages as you, minus the ownership-level pieces:
+                  QuickBooks connect/disconnect and item mapping, contact settings, team access,
+                  the price list, and editing a tutor&apos;s pay-type title list (a database rule
+                  refuses the write regardless of the screen). Their Notifications pane shows
+                  only their own granted categories.
+                </p>
+                <p className="text-gray-500">
+                  On pay: the portal stores pay-type <strong>titles</strong>{' '}and{' '}
+                  <strong>hours</strong>{' '}only — no rates, no dollar amounts, for anyone.
+                  Family <em>billing</em>{' '}amounts stay visible to managers by design
+                  (that&apos;s invoicing, not payroll). No manager account exists yet — the view
+                  below renders the ROLE generically; once Kelsie&apos;s profile is created her
+                  own grants appear (PL-309 seeds them automatically).
+                </p>
+                {managerPay.length > 0 && (
+                  <div>
+                    <p className="font-semibold text-hgl-slate">A timecard, as a manager sees it:</p>
+                    <ul className="space-y-1 mt-1">
+                      {managerPay.map((c, i) => (
+                        <li key={i} className="text-xs text-gray-600">
+                          <span className="font-semibold text-hgl-slate">{c.tutor}</span>{' '}
+                          {c.period} —{' '}
+                          {c.lines.length === 0
+                            ? 'no hours'
+                            : c.lines.map((l) => `${l.workType}: ${l.hours} h`).join(' · ')}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </details>
+            {/* PL-326: the REAL admin portal in manager simulation —
+                /admin?viewas=manager hides ownership pieces exactly as the
+                role does and wraps itself in the PL-325 interceptor. */}
+            <iframe
+              src="/admin?viewas=manager"
+              title="The admin portal as the manager role sees it (read-only)"
+              className="w-full bg-white rounded-lg border"
+              style={{ height: '75vh' }}
+            />
           </div>
         ) : !pickedEmail ? (
           <p className="text-sm text-gray-500 italic">Pick a record above to render their portal.</p>
         ) : (
-          <div className="pointer-events-none select-text opacity-[0.99]" aria-label="Read-only preview">
+          <ReadOnlyPreview>
             {role === 'parent' && (
               <>
                 <ParentView supabase={supabaseAdmin} email={pickedEmail} />
@@ -295,7 +312,7 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
             )}
             {role === 'tutor' && <TutorView supabase={supabaseAdmin} email={pickedEmail} />}
             {role === 'school-contact' && <CounselorView supabase={supabaseAdmin} email={pickedEmail} />}
-          </div>
+          </ReadOnlyPreview>
         )}
 
         {/* PL-123: "what they receive" — the emails ARE most of the counselor

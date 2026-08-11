@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { classDisplayLabel } from '../../utils/class-label'
 import { supabase } from '../../utils/supabase'
 import { templateLabel } from '../../utils/comms'
 import { FamilyCommsList, type FamilyCommsItem } from '../family-comms'
@@ -64,7 +65,7 @@ const SELECT = `
   open_count, click_count, subject_rendered, hold_reason, cancel_reason,
   cancelled_by, created_at,
   enrollments ( students ( first_name, last_name, family_id ) ),
-  classes ( class_type, schools ( nickname, timezone ) )
+  classes ( class_type, school_id, delivery_mode, fo_short_name, schools ( nickname, timezone ) )
 `
 
 function fmtInZone(iso: string | null, tz: string | undefined) {
@@ -88,7 +89,14 @@ function studentName(r: SendRow) {
 }
 
 function classLabel(r: SendRow) {
-  return r.classes ? `${r.classes.schools?.nickname ?? '—'} ${r.classes.class_type}` : '—'
+  if (!r.classes) return '—'
+  // PL-328: one label source — HGL/Online prefixes for no-school classes.
+  return classDisplayLabel({
+    schoolNickname: r.classes.schools?.nickname ?? null,
+    deliveryMode: (r.classes as { delivery_mode?: string | null }).delivery_mode ?? null,
+    shortName: (r.classes as { fo_short_name?: string | null }).fo_short_name ?? null,
+    classType: r.classes.class_type,
+  })
 }
 
 export default function CommunicationsDashboard() {
