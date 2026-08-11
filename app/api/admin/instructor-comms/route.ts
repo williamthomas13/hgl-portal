@@ -47,7 +47,6 @@ export async function POST(req: Request) {
   if (typeof body.enabled === 'boolean') {
     patch.pref_class_digests = body.enabled ? 'on' : 'off'
     patch.pref_fyi_copies = body.enabled
-    patch.comms_enabled = body.enabled // keeps the not-yet-dropped column honest
   }
   if (body.prefs) {
     const p = body.prefs
@@ -62,7 +61,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Class digests: on, weekly, or off.' }, { status: 400 })
       }
       patch.pref_class_digests = p.pref_class_digests
-      patch.comms_enabled = p.pref_class_digests !== 'off'
     }
     if (p.pref_fyi_copies !== undefined) patch.pref_fyi_copies = p.pref_fyi_copies === true
   }

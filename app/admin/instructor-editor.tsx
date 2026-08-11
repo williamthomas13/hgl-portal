@@ -136,7 +136,6 @@ export default function InstructorEditor({
       pref_notes_reminders: prefNotes,
       pref_class_digests: prefDigests,
       pref_fyi_copies: prefFyi,
-      comms_enabled: prefDigests !== 'off',
       // Managers must not touch titles or the pay-type flag (the DB trigger
       // refuses the whole update) — only include when the caller may edit.
       ...(isAdmin ? { pay_type_titles: payTitles, pay_type: payType } : {}),

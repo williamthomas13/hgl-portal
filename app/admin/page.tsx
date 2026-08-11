@@ -887,7 +887,7 @@ export default function AdminDashboard() {
   const fetchInstructors = useCallback(async () => {
     const { data } = await supabase
       .from('instructors')
-      .select('id, email, name, phone, default_meeting_link, comms_enabled, active, pref_notes_reminders, pref_class_digests, pref_fyi_copies')
+      .select('id, email, name, phone, default_meeting_link, active, pref_notes_reminders, pref_class_digests, pref_fyi_copies')
       .order('email')
     if (data) setInstructors(data as Instructor[])
   }, [])

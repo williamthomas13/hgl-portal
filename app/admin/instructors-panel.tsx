@@ -17,7 +17,6 @@ export type Instructor = {
   name: string | null
   phone: string | null
   default_meeting_link: string | null
-  comms_enabled: boolean
   /** PL-327: per-type email preferences (absorbed the Class-emails toggle). */
   pref_notes_reminders: 'on' | 'weekly' | 'off'
   pref_class_digests: 'on' | 'weekly' | 'off'
