@@ -311,6 +311,9 @@ export default function TutorsPanel({
         </p>
       )}
       {shown.length > 0 && (
+        /* PL-342 sweep: scroll container — 7 columns incl. Matching notes
+           pushed the row tail off-card with no cue at normal widths. */
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
@@ -426,6 +429,7 @@ export default function TutorsPanel({
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
 

@@ -398,7 +398,9 @@ export default function CampaignsPage() {
                   {preview.summary} → {preview.recipients.length} famil{preview.recipients.length === 1 ? 'y' : 'ies'}
                   {excluded.size > 0 && ` (${excluded.size} unticked → sending to ${finalCount})`}
                 </p>
-                <div className="max-h-72 overflow-y-auto border border-gray-200 rounded">
+                {/* PL-342 sweep: overflow-auto (was y-only) — wide recipient
+                    rows scroll instead of clipping at the card edge. */}
+                <div className="max-h-72 overflow-auto border border-gray-200 rounded">
                   <table className="min-w-full text-xs">
                     <thead className="bg-gray-50 sticky top-0">
                       <tr className="text-left text-gray-500">

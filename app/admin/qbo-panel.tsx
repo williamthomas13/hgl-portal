@@ -622,6 +622,9 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
             Nothing here yet — rows appear when payments sync to QuickBooks.
           </p>
         ) : (
+          /* PL-342 sweep: same off-card-tail risk as the instructors table —
+             a scroll container instead of silently clipped columns. */
+          <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-100">
               <tr>
@@ -766,6 +769,7 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

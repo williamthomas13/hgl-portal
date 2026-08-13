@@ -105,7 +105,10 @@ export default function InstructorsPanel({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-100">
             <tr>
-              {['Name', 'Email', 'Phone', 'Default meeting link', 'Email prefs', 'Actions'].map((h) => (
+              {/* PL-342: five columns that FIT — the meeting link rides under
+                  the email (a width hog gone), phone and prefs never wrap, so
+                  Actions is plainly on-card at normal widths. */}
+              {['Name', 'Email & meeting link', 'Phone', 'Email prefs', 'Actions'].map((h) => (
                 <th key={h} className="px-4 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
@@ -115,13 +118,22 @@ export default function InstructorsPanel({
           <tbody className="divide-y divide-gray-200">
             {visible.map((i) => (
               <tr key={i.id} className="hover:bg-gray-50 transition text-sm">
-                <td className="px-4 py-2 font-semibold text-hgl-slate">{i.name ?? '—'}</td>
+                <td className="px-4 py-2 font-semibold text-hgl-slate whitespace-nowrap">{i.name ?? '—'}</td>
                 <td className="px-4 py-2">
                   <a href={`mailto:${i.email}`} className="text-hgl-blue hover:underline">
                     {i.email}
                   </a>
+                  {/* PL-342: the default Zoom link lives under the email now. */}
+                  {i.default_meeting_link && (
+                    <span
+                      className="block text-[11px] text-gray-400 truncate max-w-64"
+                      title={i.default_meeting_link}
+                    >
+                      {i.default_meeting_link}
+                    </span>
+                  )}
                 </td>
-                <td className="px-4 py-2 text-gray-600">
+                <td className="px-4 py-2 text-gray-600 whitespace-nowrap">
                   {i.phone ? (
                     <a href={`tel:${i.phone.replace(/[^\d+]/g, '')}`} className="text-hgl-blue hover:underline">
                       {i.phone}
@@ -130,18 +142,32 @@ export default function InstructorsPanel({
                     <span className="italic text-gray-400">—</span>
                   )}
                 </td>
-                <td className="px-4 py-2 text-gray-600">
-                  <span className="truncate inline-block max-w-72 align-bottom">
-                    {i.default_meeting_link ?? <span className="italic text-gray-400">none</span>}
-                  </span>
-                </td>
-                <td className="px-4 py-2 text-xs text-gray-600">
-                  {/* PL-327: the Class-emails toggle is absorbed — this shows
-                      each tutor's choices; edit profile changes them. Tutors
+                <td className="px-4 py-2 text-xs whitespace-nowrap">
+                  {/* PL-327/342: ONE line of compact chips — the full
+                      three-control detail lives in the profile editor; tutors
                       self-serve the same three from their portal. */}
-                  <span title="Session-note reminders · class digests+pings · FYI copies. T5 timecards, T3-T schedule changes, and SUB coverage stay mandatory.">
-                    notes {i.pref_notes_reminders} · digests {i.pref_class_digests} · FYI{' '}
-                    {i.pref_fyi_copies ? 'on' : 'off'}
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title="Session-note reminders · class digests+pings · FYI copies of family emails. Change them in the profile editor. T5 timecards, T3-T schedule changes, and SUB coverage stay mandatory."
+                  >
+                    {(
+                      [
+                        ['notes', i.pref_notes_reminders],
+                        ['digests', i.pref_class_digests],
+                        ['FYI', i.pref_fyi_copies ? 'on' : 'off'],
+                      ] as const
+                    ).map(([label, value]) => (
+                      <span
+                        key={label}
+                        className={`inline-block px-1.5 py-0.5 rounded-full border text-[10px] leading-none ${
+                          value === 'off'
+                            ? 'bg-gray-100 border-gray-200 text-gray-400'
+                            : 'bg-white border-gray-300 text-gray-600'
+                        }`}
+                      >
+                        {label} {value}
+                      </span>
+                    ))}
                   </span>
                 </td>
                 <td className="px-4 py-2 text-left whitespace-nowrap">

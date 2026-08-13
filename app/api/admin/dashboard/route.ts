@@ -4,6 +4,7 @@ import { auditXclDrift } from '../../../utils/gcal-sync'
 import { sessionRole } from '../../../utils/staff-gate'
 import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../utils/dates'
 import { computeSystemHealth } from '../../../utils/system-health'
+import { loadActivity } from '../../../utils/dashboard-activity'
 
 // PL-100: the dashboard's data. Needs Attention mirrors the internal alert
 // family but is STATE-DRIVEN, never send-driven (Scarlett's explicit
@@ -102,11 +103,6 @@ export async function GET() {
     { data: strandedProposals },
     { data: availStudents },
     { data: refundRequests },
-    { data: recentEnrollments },
-    { data: recentPaidInvoices },
-    { data: recentAvail },
-    { data: recentTimecards },
-    { data: recentLeads },
     { data: brokenTemplateSends },
   ] = await Promise.all([
     supabase
@@ -155,34 +151,6 @@ export async function GET() {
       .select('id, class_id, refund_requested_at, students ( first_name, last_name ), classes ( class_type, schools ( nickname ) )')
       .eq('cancellation_outcome', 'refund_requested')
       .neq('payment_status', 'Refunded'),
-    supabase
-      .from('enrollments')
-      .select('id, enrolled_at, class_id, payment_status, students ( first_name, last_name ), classes ( class_type, schools ( nickname ) )')
-      .order('enrolled_at', { ascending: false })
-      .limit(25), // PL-134: grouping needs a day's worth to collapse
-    supabase
-      .from('tutoring_invoices')
-      .select('id, paid_at, total, families ( parent_first_name, parent_last_name )')
-      .not('paid_at', 'is', null)
-      .order('paid_at', { ascending: false })
-      .limit(15),
-    supabase
-      .from('student_availability')
-      .select('student_id, updated_at, students ( first_name, last_name )')
-      .eq('source', 'parent')
-      .order('updated_at', { ascending: false })
-      .limit(8),
-    supabase
-      .from('timecards')
-      .select('id, tutor_confirmed_at, total_hours, instructors ( name, email )')
-      .not('tutor_confirmed_at', 'is', null)
-      .order('tutor_confirmed_at', { ascending: false })
-      .limit(5),
-    supabase
-      .from('leads')
-      .select('id, student_name, created_at, source')
-      .order('created_at', { ascending: false })
-      .limit(15),
     // PL-155a: real sends whose body still carried {placeholders} — a broken
     // template keeps breaking every send until someone fixes it, so this is
     // a live condition, not a past event. Clears when no recent send has any.
@@ -925,156 +893,25 @@ export async function GET() {
   }
 
   // --- Recent Activity (read-only) ------------------------------------------
-  for (const e of (recentEnrollments as any[]) ?? []) {
-    const st = one<any>(e.students)
-    const cls = one<any>(e.classes)
-    activity.push({
-      id: `en-${e.id}`,
-      type: 'Registrations',
-      // PL-134: same day + same type + same class collapses to one row.
-      groupKey: `Registrations|${e.class_id}`,
-      when: e.enrolled_at,
-      text: `${st ? `${st.first_name} ${st.last_name}` : 'A student'} registered for ${one<any>(cls?.schools)?.nickname ?? ''} ${cls?.class_type ?? 'a class'} (${e.payment_status}).`,
-      groupLabel: `${one<any>(cls?.schools)?.nickname ?? ''} ${cls?.class_type ?? 'a class'}`.trim(),
-      href: `/admin?class=${e.class_id}`,
-    })
-  }
-  for (const i of (recentPaidInvoices as any[]) ?? []) {
-    const fam = one<any>(i.families)
-    activity.push({
-      id: `paid-${i.id}`,
-      type: 'Payments',
-      groupKey: 'Payments',
-      when: i.paid_at,
-      text: `Payment received — ${fam ? `${fam.parent_first_name} ${fam.parent_last_name}` : 'a family'} paid $${Number(i.total).toFixed(2)}.`,
-      href: `/admin/tutoring?invoice=${i.id}`,
-    })
-  }
-  const seenAvail = new Set<string>()
-  for (const a of (recentAvail as any[]) ?? []) {
-    if (seenAvail.has(a.student_id)) continue
-    seenAvail.add(a.student_id)
-    const st = one<any>(a.students)
-    activity.push({
-      id: `av-${a.student_id}`,
-      type: 'Availability',
-      groupKey: 'Availability',
-      when: a.updated_at,
-      text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'}'s family shared availability.`,
-      href: `/admin/tutoring?schedule=${a.student_id}`,
-    })
-  }
-  for (const t of (recentTimecards as any[]) ?? []) {
-    const ins = one<any>(t.instructors)
-    activity.push({
-      id: `tc-${t.id}`,
-      type: 'Timecards',
-      groupKey: 'Timecards',
-      when: t.tutor_confirmed_at,
-      text: `${ins?.name ?? ins?.email ?? 'A tutor'} confirmed their timecard (${Number(t.total_hours)} hours).`,
-      href: `/admin/tutoring`,
-    })
-  }
-  for (const l of (recentLeads as any[]) ?? []) {
-    activity.push({
-      id: `lead-${l.id}`,
-      type: 'Prospective students',
-      groupKey: 'Prospective students',
-      when: l.created_at,
-      text: `New prospective student — ${l.student_name ?? 'name pending'}${l.source ? ` (via ${l.source})` : ''}.`,
-      href: `/admin/leads?lead=${l.id}`,
-    })
-  }
-  // PL-336: pipeline wins join the feed — the sweep (or a manual pick)
-  // marked a lead Enrolled. Ages out of the 40-row window naturally.
-  const { data: convertedLeads } = await supabase
-    .from('leads')
-    .select('id, student_name, contact_name, converted_at, converted_label')
-    .not('converted_at', 'is', null)
-    .order('converted_at', { ascending: false })
-    .limit(10)
-  for (const l of (convertedLeads as any[]) ?? []) {
-    activity.push({
-      id: `lead-converted-${l.id}`,
-      type: 'Prospective students',
-      groupKey: 'Prospective students',
-      when: l.converted_at,
-      text: `${l.student_name ?? l.contact_name ?? 'A prospective student'} enrolled${
-        l.converted_label ? ` — ${l.converted_label}` : ''
-      } — their pipeline row is marked Enrolled.`,
-      href: `/admin/leads?lead=${l.id}`,
-    })
-  }
-
-  // PL-191: Schedule events join the feed — proposals sent, confirmations,
-  // family reschedules, cancellations. The chip derives automatically from
-  // the type (PL-134); the tutoring page keeps its family-scoped subset.
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString()
-  const [{ data: schedEngs }, { data: schedMoves }] = await Promise.all([
-    supabase
-      .from('tutoring_engagements')
-      .select(
-        `id, status, approval_requested_at, parent_approved_at, updated_at,
-         students ( first_name, last_name, family_id ), subjects ( name )`
-      )
-      .or(`approval_requested_at.gte.${fourteenDaysAgo},parent_approved_at.gte.${fourteenDaysAgo}`)
-      .limit(30),
-    supabase
-      .from('tutoring_sessions')
-      .select(
-        `id, status, starts_at, updated_at, parent_rescheduled_at,
-         students ( first_name, last_name, family_id ),
-         replacement:rescheduled_to_id ( starts_at )`
-      )
-      .in('status', ['rescheduled', 'cancelled'])
-      .gte('updated_at', fourteenDaysAgo)
-      .order('updated_at', { ascending: false })
-      .limit(20),
-  ])
-  for (const eng of (schedEngs as any[]) ?? []) {
-    const st = one<any>(eng.students)
-    const who = st ? `${st.first_name} ${st.last_name}` : 'a student'
-    const subj = one<any>(eng.subjects)?.name ?? 'tutoring'
-    const href = `/admin/tutoring?family=${st?.family_id ?? ''}`
-    if (eng.approval_requested_at && eng.approval_requested_at >= fourteenDaysAgo) {
-      activity.push({
-        id: `sched-prop-${eng.id}`,
-        type: 'Schedule',
-        groupKey: 'Schedule',
-        when: eng.approval_requested_at,
-        text: `Schedule proposed to ${who}'s family (${subj}) — awaiting their confirmation.`,
-        href,
-      })
-    }
-    if (eng.parent_approved_at && eng.parent_approved_at >= fourteenDaysAgo) {
-      activity.push({
-        id: `sched-conf-${eng.id}`,
-        type: 'Schedule',
-        groupKey: 'Schedule',
-        when: eng.parent_approved_at,
-        text: `${who}'s family confirmed the ${subj} schedule.`,
-        href,
-      })
-    }
-  }
-  for (const s of (schedMoves as any[]) ?? []) {
-    const st = one<any>(s.students)
-    const who = st ? `${st.first_name} ${st.last_name}` : 'a student'
-    const moved = one<any>(s.replacement)
-    activity.push({
-      id: `sched-${s.status}-${s.id}`,
-      type: 'Schedule',
-      groupKey: 'Schedule',
-      when: s.updated_at,
-      text:
-        s.status === 'rescheduled'
-          ? `${who}'s session moved${moved ? ` to ${new Date(moved.starts_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })}` : ''}${s.parent_rescheduled_at ? ' (family self-serve)' : ''}.`
-          : `${who}'s session was cancelled.`,
-      href: `/admin/tutoring?family=${st?.family_id ?? ''}`,
-    })
-  }
-
+  // PL-344: ONE builder (utils/dashboard-activity) serves this first page
+  // and the "Show earlier activity" pages. The default window is min(most
+  // recent 20, this calendar month) — except a near-empty month (< 5 rows)
+  // extends into the previous month so a quiet month never reads as a dead
+  // feed. Display window only: nothing is deleted, history pages on demand.
+  const firstPage = await loadActivity({ limit: 20 })
+  activity.push(...firstPage.rows)
   activity.sort((a, b) => String(b.when).localeCompare(String(a.when)))
+  const denverMonthOf = (iso: string | Date) =>
+    new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7)
+  const thisMonth = denverMonthOf(now)
+  const [ty, tm] = thisMonth.split('-').map(Number)
+  const prevMonth = tm === 1 ? `${ty - 1}-12` : `${ty}-${String(tm - 1).padStart(2, '0')}`
+  let windowedActivity = activity.filter((r) => denverMonthOf(r.when) === thisMonth)
+  if (windowedActivity.length < 5) {
+    windowedActivity = activity.filter((r) => [thisMonth, prevMonth].includes(denverMonthOf(r.when)))
+  }
+  windowedActivity = windowedActivity.slice(0, 20)
+  const activityHasMore = firstPage.hasMore || activity.length > windowedActivity.length
 
   // --- Restrained extras ------------------------------------------------------
   // PL-334 B: the Unpaid-invoices tile — issued, unsettled, past their due
@@ -1121,7 +958,8 @@ export async function GET() {
 
   return NextResponse.json({
     attention,
-    activity: activity.slice(0, 40), // PL-134: grouping collapses these
+    activity: windowedActivity, // PL-344: min(20, this month), quiet-month extend
+    activityHasMore,
     upcoming,
     weekSessions: weekSessions ?? 0,
     weekProposed: weekProposed ?? 0,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVisibleInterval } from '../components/use-visible-interval'
 import { SystemHealthBody, type SystemHealth } from './system-health-card'
 
@@ -138,6 +138,11 @@ export default function DashboardPanel({
   // PL-134: client-side only, defaults to All, no persistence needed.
   const [activityFilter, setActivityFilter] = useState('All')
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
+  // PL-344: history loaded via "Show earlier activity" — kept separate from
+  // the windowed first page so the 60s refresh can't wipe it.
+  const [earlier, setEarlier] = useState<ActivityRow[]>([])
+  const [activityHasMore, setActivityHasMore] = useState(false)
+  const [earlierBusy, setEarlierBusy] = useState(false)
 
   // PL-153c: a failed load must SAY so and offer a retry. This is the admin
   // landing page — leaving "Checking every condition…" pulsing forever reads
@@ -156,6 +161,7 @@ export default function DashboardPanel({
       }
       setAttention(json.attention ?? [])
       setActivity(json.activity ?? [])
+      setActivityHasMore(json.activityHasMore === true)
       setUpcoming(json.upcoming ?? [])
       setWeekSessions(json.weekSessions ?? 0)
       setWeekProposed(json.weekProposed ?? 0)
@@ -208,9 +214,48 @@ export default function DashboardPanel({
   }
   const clearNote = (id: string) => noteAction({ action: 'clear', id })
 
-  const activityTypes = [...new Set(activity.map((r) => r.type).filter(Boolean))] as string[]
+  // PL-344: the feed = the windowed first page + any loaded history pages,
+  // deduped (the 60s refresh replaces only the first page).
+  const combinedActivity = useMemo(() => {
+    const seen = new Set<string>()
+    const out: ActivityRow[] = []
+    for (const r of [...activity, ...earlier]) {
+      if (seen.has(r.id)) continue
+      seen.add(r.id)
+      out.push(r)
+    }
+    out.sort((a, b) => String(b.when).localeCompare(String(a.when)))
+    return out
+  }, [activity, earlier])
+  const activityTypes = [...new Set(combinedActivity.map((r) => r.type).filter(Boolean))] as string[]
   const visibleActivity =
-    activityFilter === 'All' ? activity : activity.filter((r) => r.type === activityFilter)
+    activityFilter === 'All'
+      ? combinedActivity
+      : combinedActivity.filter((r) => r.type === activityFilter)
+
+  // PL-344: server-paged history; a chip filter pages that TYPE's history.
+  async function showEarlier() {
+    setEarlierBusy(true)
+    try {
+      const pool = activityFilter === 'All' ? combinedActivity : visibleActivity
+      const oldest = pool[pool.length - 1]?.when
+      const params = new URLSearchParams()
+      if (oldest) params.set('before', oldest)
+      if (activityFilter !== 'All') params.set('type', activityFilter)
+      const res = await fetch(`/api/admin/dashboard/activity?${params}`)
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json) {
+        setError('Could not load earlier activity — try again.')
+        return
+      }
+      setEarlier((prev) => [...prev, ...(json.rows ?? [])])
+      setActivityHasMore(json.hasMore === true)
+    } catch {
+      setError("Couldn't reach the server — earlier activity didn't load.")
+    } finally {
+      setEarlierBusy(false)
+    }
+  }
 
   const fmtWhen = (iso: string) =>
     new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -538,6 +583,17 @@ export default function DashboardPanel({
               )
             })}
           </ul>
+        )}
+        {/* PL-344: nothing is deleted — history pages in on demand. */}
+        {activityHasMore && (
+          <button
+            type="button"
+            onClick={showEarlier}
+            disabled={earlierBusy}
+            className="mt-3 text-xs text-hgl-blue underline disabled:opacity-50"
+          >
+            {earlierBusy ? 'Loading…' : 'Show earlier activity'}
+          </button>
         )}
       </div>
 

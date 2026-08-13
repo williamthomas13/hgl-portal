@@ -350,6 +350,8 @@ export default function TimecardsPanel() {
                 </span>
               )}
             </div>
+            {/* PL-342 sweep: scroll container instead of an off-card tail. */}
+            <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
                 <tr className="text-left text-xs text-gray-400 uppercase tracking-wide">
@@ -526,6 +528,7 @@ export default function TimecardsPanel() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )
       })}

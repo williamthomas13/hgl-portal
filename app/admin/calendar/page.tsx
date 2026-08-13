@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CALENDAR_COLORS, textOnColor, type CalendarStatus } from '../../utils/calendar-colors'
+import { formatDateOnly } from '../../utils/dates'
 import { ConfirmAction } from '../tutoring/confirm'
 import { SidebarNav, CLASSES_SIDEBAR } from '../sidebar'
 
@@ -328,6 +329,75 @@ export default function AdminCalendarPage() {
     )
   }
 
+  // PL-343: the controls card as ONE const — normal mode renders it above
+  // the legends (unchanged order); who-could-teach mode renders it below the
+  // suggestions panel, adjacent to the grid it drives.
+  const controlsCard = (
+    <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap items-center gap-2 text-sm">
+      <div className="flex rounded-md overflow-hidden border border-gray-300">
+        {(['week', 'month'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`px-3 py-1.5 text-xs font-semibold ${view === v ? 'bg-hgl-slate text-white' : 'bg-white text-gray-600'}`}
+          >
+            {v === 'week' ? 'Week' : 'Month'}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => step(-1)} className="border rounded px-2 py-1">
+        ‹
+      </button>
+      <button
+        onClick={() => {
+          // Always refetch — a status change elsewhere must recolor even
+          // when the anchor doesn't move.
+          setAnchor(dayIso(new Date()))
+          load()
+        }}
+        className="border rounded px-2 py-1 text-xs font-semibold"
+      >
+        today
+      </button>
+      <button onClick={() => step(1)} className="border rounded px-2 py-1">
+        ›
+      </button>
+      <span className="font-semibold text-hgl-slate">
+        {/* PL-343: plain-English week heading — "Week of November 9, 2026",
+            never the raw ISO (same family as PL-330/335E). */}
+        {view === 'week'
+          ? `Week of ${formatDateOnly(rangeStartIso, { month: 'long', day: 'numeric', year: 'numeric' })}`
+          : monthLabel}
+      </span>
+      <span className="text-xs text-gray-400">· America/Denver</span>
+      <span className="flex-1" />
+      <select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} className="border rounded p-1.5">
+        <option value="">everyone</option>
+        {people.map(([id, p]) => (
+          <option key={id} value={id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <select value={placeFilter} onChange={(e) => setPlaceFilter(e.target.value)} className="border rounded p-1.5 max-w-56">
+        <option value="">all schools & classes</option>
+        {places.map(([key, label]) => (
+          <option key={key} value={key}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border rounded p-1.5">
+        <option value="">all statuses</option>
+        {(Object.keys(CALENDAR_COLORS) as CalendarStatus[]).map((s) => (
+          <option key={s} value={s}>
+            {CALENDAR_COLORS[s].label}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       {/* PL-284: Classes sidebar chrome — the calendar files under Classes
@@ -361,66 +431,11 @@ export default function AdminCalendarPage() {
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap items-center gap-2 text-sm">
-          <div className="flex rounded-md overflow-hidden border border-gray-300">
-            {(['week', 'month'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1.5 text-xs font-semibold ${view === v ? 'bg-hgl-slate text-white' : 'bg-white text-gray-600'}`}
-              >
-                {v === 'week' ? 'Week' : 'Month'}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => step(-1)} className="border rounded px-2 py-1">
-            ‹
-          </button>
-          <button
-            onClick={() => {
-              // Always refetch — a status change elsewhere must recolor even
-              // when the anchor doesn't move.
-              setAnchor(dayIso(new Date()))
-              load()
-            }}
-            className="border rounded px-2 py-1 text-xs font-semibold"
-          >
-            today
-          </button>
-          <button onClick={() => step(1)} className="border rounded px-2 py-1">
-            ›
-          </button>
-          <span className="font-semibold text-hgl-slate">
-            {view === 'week' ? `Week of ${rangeStartIso}` : monthLabel}
-          </span>
-          <span className="text-xs text-gray-400">· America/Denver</span>
-          <span className="flex-1" />
-          <select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} className="border rounded p-1.5">
-            <option value="">everyone</option>
-            {people.map(([id, p]) => (
-              <option key={id} value={id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select value={placeFilter} onChange={(e) => setPlaceFilter(e.target.value)} className="border rounded p-1.5 max-w-56">
-            <option value="">all schools & classes</option>
-            {places.map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border rounded p-1.5">
-            <option value="">all statuses</option>
-            {(Object.keys(CALENDAR_COLORS) as CalendarStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {CALENDAR_COLORS[s].label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Controls. PL-343: in who-could-teach mode this card renders BELOW
+            the suggestions panel instead (paging the calendar shouldn't mean
+            scrolling past twenty instructor rows every time) — one JSX const,
+            the mode picks its slot. */}
+        {!suggestClassId && controlsCard}
 
         {/* Legend — Kelsie's color language, verbatim (classes) */}
         <div className="flex flex-wrap gap-3 text-xs text-gray-600">
@@ -564,6 +579,10 @@ export default function AdminCalendarPage() {
             </p>
           </div>
         )}
+
+        {/* PL-343: who-could-teach mode — the controls sit right above the
+            grid, so paging never means scrolling past the suggestions. */}
+        {suggestClassId && controlsCard}
 
         {error && <div className="p-3 rounded bg-red-100 text-red-700 text-sm font-semibold">{error}</div>}
         {loading && <p className="text-sm text-gray-400 animate-pulse">Loading…</p>}
