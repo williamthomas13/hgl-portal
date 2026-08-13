@@ -221,6 +221,34 @@ export function t2InvoiceEmail(opts: {
   return { subject, html }
 }
 
+/** PL-334: the repeating unpaid-invoice reminder's code twin (draft until
+ *  Scarlett flips T2B_PAYMENT_REMINDER live). Same copy shape as the seed:
+ *  a payment reminder, financial facts only, never marketing. */
+export function t2bPaymentReminderEmail(opts: {
+  monthLabel: string
+  total: number
+  hostedUrl: string
+  dueLabel: string // "August 31"
+  contact: ContactInfo
+}): { subject: string; html: string } {
+  const subject = `Reminder: your HGL tutoring invoice for ${opts.monthLabel} — ${money(opts.total)}`
+  const html = wrap(
+    `<h2 style="color:#334155">${opts.monthLabel} tutoring invoice — friendly reminder</h2>
+     <p>The ${opts.monthLabel} tutoring invoice (<strong>${money(opts.total)}</strong>, due
+     ${opts.dueLabel}) is still open.</p>
+     <p style="margin:24px 0">
+       <a href="${opts.hostedUrl}" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">View &amp; pay invoice</a>
+     </p>
+     <p style="color:#64748b;font-size:13px">Pay by card or directly from a US bank account (ACH) —
+     both options are on the invoice page. If the payment is already on its way — thank you,
+     please ignore this. And if anything on the invoice looks off, just reply and we'll sort it
+     out.</p>
+     ${contactBlockHtml(opts.contact)}`,
+    { preheader: `${money(opts.total)} — originally due ${opts.dueLabel}`, footer: footerT() }
+  )
+  return { subject, html }
+}
+
 export function t3ScheduleChangeEmail(opts: {
   studentFirst: string
   changeLines: string[] // plain-English before/after lines

@@ -116,6 +116,11 @@ export default function InvoicesPanel() {
   const [generateDay, setGenerateDay] = useState(20)
   const [offCycleOpen, setOffCycleOpen] = useState(false)
   const [preview, setPreview] = useState<CyclePreview | null>(null)
+  // PL-334 B: the dashboard tile deep-links ?unpaid=1 — the panel opens
+  // pre-filtered to unpaid issued invoices; the chip clears it.
+  const [unpaidOnly, setUnpaidOnly] = useState(
+    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('unpaid') === '1'
+  )
   useEffect(() => {
     supabase
       .from('app_settings')
@@ -206,7 +211,11 @@ export default function InvoicesPanel() {
   const invoiceCall = (body: Record<string, unknown>, done: string) =>
     call('/api/admin/tutoring/invoice', body, done)
 
-  const periods = [...new Set(rows.map((r) => String(r.period)))]
+  // PL-334 B: the unpaid view = issued and not yet settled.
+  const visibleRows = unpaidOnly
+    ? rows.filter((r) => r.status === 'invoiced' || r.status === 'past_due')
+    : rows
+  const periods = [...new Set(visibleRows.map((r) => String(r.period)))]
 
   return (
     <div className="space-y-5 text-sm">
@@ -219,10 +228,25 @@ export default function InvoicesPanel() {
         to avoid waiting for tomorrow&apos;s run.
       </p>
 
+      {/* PL-334 B: the unpaid filter chip — set by the dashboard tile's deep
+          link, clearable here. */}
+      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer w-fit">
+        <input type="checkbox" checked={unpaidOnly} onChange={(e) => setUnpaidOnly(e.target.checked)} />
+        Unpaid only — issued invoices that haven&apos;t been paid or voided
+        {unpaidOnly && (
+          <span className="font-semibold text-amber-700">
+            ({visibleRows.length} · ${visibleRows.reduce((s, r) => s + Number(r.total), 0).toFixed(2)})
+          </span>
+        )}
+      </label>
+
       {rows.length === 0 && (
         <p className="text-gray-500 italic">
           No invoices yet — the first generation run creates a draft per family with sessions next month.
         </p>
+      )}
+      {rows.length > 0 && unpaidOnly && visibleRows.length === 0 && (
+        <p className="text-gray-500 italic">Nothing unpaid — every issued invoice is settled.</p>
       )}
 
       {/* PL-333 A: the upcoming month BEFORE its generation run — a read-only
@@ -295,7 +319,7 @@ export default function InvoicesPanel() {
           collapsed month still informs. Upcoming + current open, past
           collapsed (a deep-linked invoice forces its month open). */}
       {periods.map((p) => {
-        const monthRows = rows.filter((r) => String(r.period) === p)
+        const monthRows = visibleRows.filter((r) => String(r.period) === p)
         const monthTotal = monthRows
           .filter((r) => r.status !== 'void')
           .reduce((s, r) => s + Number(r.total), 0)
@@ -307,7 +331,7 @@ export default function InvoicesPanel() {
         return (
         <details
           key={p}
-          open={String(p).slice(0, 10) >= currentPeriod || deepLinked}
+          open={String(p).slice(0, 10) >= currentPeriod || deepLinked || unpaidOnly}
           className="border border-gray-200 rounded-lg p-4"
         >
           <summary className="cursor-pointer font-bold text-hgl-slate mb-2 flex flex-wrap items-baseline gap-x-3">
@@ -410,6 +434,34 @@ export default function InvoicesPanel() {
                           >
                             retry charge
                           </button>
+                        )}
+                        {/* PL-334 C: the unpaid-invoice reminder controls,
+                            beside charge/void. Manual send dedupes per day;
+                            restart re-stamps the automatic cadence's clock. */}
+                        {(r.status === 'invoiced' || r.status === 'past_due') && (
+                          <>
+                            <button
+                              disabled={busy}
+                              onClick={() => invoiceCall({ action: 'send_reminder', id: r.id }, 'Reminder sent to the family.')}
+                              className="text-hgl-blue underline"
+                              title="One payment-reminder email now (at most one manual send per day)"
+                            >
+                              send reminder now
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                invoiceCall(
+                                  { action: 'restart_reminders', id: r.id },
+                                  'Reminder clock restarted — the automatic cadence begins again from today.'
+                                )
+                              }
+                              className="text-gray-600 underline"
+                              title="Re-stamp the cycle clock — automatic reminders start counting from now (they still stop at the 30-day late-fee point)"
+                            >
+                              restart reminders
+                            </button>
+                          </>
                         )}
                         {r.stripe_hosted_invoice_url && (
                           <a href={r.stripe_hosted_invoice_url} target="_blank" rel="noopener" className="text-gray-500 underline">

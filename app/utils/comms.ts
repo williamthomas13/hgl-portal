@@ -168,6 +168,8 @@ export function templateMetaFor(
       return { key: 'T1B_PROPOSAL_NUDGE', role: 'parent' }
     case 'T2_INVOICE':
       return { key: 'T2_INVOICE', role: 'parent' }
+    case 'T2B_PAYMENT_REMINDER': // PL-334: repeating unpaid-invoice reminder
+      return { key: 'T2B_PAYMENT_REMINDER', role: 'parent' }
     case 'E1_RETURNING_PARENT':
       return { key: 'E1_RETURNING_PARENT', role: 'parent' }
     case 'E1_RETURNING_STUDENT':

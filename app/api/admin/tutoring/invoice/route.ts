@@ -7,7 +7,8 @@ import {
   confirmInvoice,
   recomputeInvoiceTotals,
 } from '../../../../utils/tutoring-billing'
-import { issueOrCharge } from '../../../../utils/tutoring-stripe'
+import { issueOrCharge, sendPaymentReminder } from '../../../../utils/tutoring-stripe'
+import { loadContactInfo } from '../../../../utils/tutoring-emails'
 
 // Staff invoice actions (Phase 7c §6): manual lines (adjustment / credit /
 // the staff-applied 10% late fee — never automatic), confirm on a family's
@@ -26,6 +27,10 @@ type Body =
   | { action: 'retry_charge'; id: string }
   | { action: 'void'; id: string }
   | { action: 'mark_change_handled'; id: string }
+  // PL-334 C: one manual reminder (deduped for the day) · restart the
+  // automatic cadence (re-stamps the cycle clock).
+  | { action: 'send_reminder'; id: string }
+  | { action: 'restart_reminders'; id: string }
 
 async function reissueStripeInvoiceIfNeeded(invoiceId: string) {
   const { data: inv } = await supabase
@@ -231,6 +236,59 @@ export async function POST(req: Request) {
         .update({ change_requested_at: null, updated_at: new Date().toISOString() })
         .eq('id', invoice.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+
+    // PL-334 C: the row's reminder controls. Operational per Phase 3.1 —
+    // managers can do both (the route is staff-gated above).
+    if (body.action === 'send_reminder' || body.action === 'restart_reminders') {
+      if (!['invoiced', 'past_due'].includes(invoice.status)) {
+        return NextResponse.json(
+          { error: 'Reminders apply to unpaid issued invoices only.' },
+          { status: 400 }
+        )
+      }
+      if (body.action === 'restart_reminders') {
+        // The re-stamp pattern (schedule-approval's): a fresh anchor mints
+        // fresh dedupe keys, so the automatic cadence begins again from now.
+        const { error } = await supabase
+          .from('tutoring_invoices')
+          .update({ reminder_cycle_started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq('id', invoice.id)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+      const { data: full } = await supabase
+        .from('tutoring_invoices')
+        .select('id, period, total, due_at, stripe_hosted_invoice_url, families ( parent_first_name, parent_email, billing_email, billing_cc_emails )')
+        .eq('id', invoice.id)
+        .maybeSingle()
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const fam = full ? ((Array.isArray((full as any).families) ? (full as any).families[0] : (full as any).families) as any) : null
+      if (!full?.due_at || !fam) {
+        return NextResponse.json({ error: 'This invoice has no due date or family on file.' }, { status: 400 })
+      }
+      const day = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+      const status = await sendPaymentReminder(
+        full as never,
+        fam,
+        await loadContactInfo(),
+        `t2b_manual:${invoice.id}:${day}` // one manual send per day
+      )
+      if (status === 'duplicate') {
+        return NextResponse.json(
+          { error: 'A reminder already went out today — one per day keeps it a nudge, not a barrage.' },
+          { status: 400 }
+        )
+      }
+      if (status !== 'sent') {
+        return NextResponse.json({ error: `The reminder did not send (${status}).` }, { status: 500 })
+      }
+      // PL-83: badge the by-hand send on the family timeline.
+      await supabase
+        .from('email_sends')
+        .update({ sender_email: caller.email })
+        .eq('dedupe_key', `t2b_manual:${invoice.id}:${day}`)
       return NextResponse.json({ ok: true })
     }
 

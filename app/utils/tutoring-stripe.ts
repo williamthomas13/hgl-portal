@@ -8,9 +8,18 @@ import {
   autopayToken,
   billingMonth,
   currentMonthEnd,
+  loadCycleSettings,
   registerConfirmFollowUp,
 } from './tutoring-billing'
-import { contactBlockHtml, loadContactInfo, money as fmtMoney, t2InvoiceEmail, t4PaymentFailedEmail } from './tutoring-emails'
+import {
+  contactBlockHtml,
+  loadContactInfo,
+  money as fmtMoney,
+  t2InvoiceEmail,
+  t2bPaymentReminderEmail,
+  t4PaymentFailedEmail,
+  type ContactInfo,
+} from './tutoring-emails'
 import { renderRegistered } from './comms-registered'
 
 // Phase 7c payment leg (spec §6.4): Stripe is the single payment rail.
@@ -575,6 +584,58 @@ export type CollectionSweepResult = {
   lateFeeFlags: number
 }
 
+// PL-334: ONE composer for the repeating unpaid-invoice reminder — the daily
+// cadence and the row's "Send reminder now" both go through here, differing
+// only in the dedupe key. Registered template T2B_PAYMENT_REMINDER (draft →
+// the code twin sends the same copy shape until Scarlett flips it live).
+export async function sendPaymentReminder(
+  inv: { id: string; period: string; total: number; due_at: string; stripe_hosted_invoice_url: string | null },
+  fam: { parent_first_name: string | null; parent_email: string; billing_email: string | null; billing_cc_emails: string[] | null },
+  contact: ContactInfo,
+  dedupeKey: string
+): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
+  const month = billingMonth(String(inv.period).slice(0, 7))
+  const opts = {
+    monthLabel: month.label,
+    total: Number(inv.total),
+    hostedUrl: inv.stripe_hosted_invoice_url ?? '',
+    dueLabel: new Date(inv.due_at).toLocaleDateString('en-US', {
+      timeZone: 'America/Denver',
+      month: 'long',
+      day: 'numeric',
+    }),
+    contact,
+  }
+  const email = await renderRegistered(
+    'T2B_PAYMENT_REMINDER',
+    { parentFirstName: fam.parent_first_name ?? 'there', parentEmail: fam.parent_email },
+    {
+      tutoringMonthLabel: opts.monthLabel,
+      invoiceTotal: fmtMoney(opts.total),
+      invoiceDueDate: opts.dueLabel,
+      invoiceUrl: opts.hostedUrl,
+      contactBlock: contactBlockHtml(contact),
+    },
+    () => t2bPaymentReminderEmail(opts)
+  )
+  const status = await sendOnce({
+    dedupeKey,
+    emailType: 'T2B_PAYMENT_REMINDER',
+    templateKey: 'T2B_PAYMENT_REMINDER',
+    to: [fam.billing_email ?? fam.parent_email],
+    cc: fam.billing_cc_emails?.length ? fam.billing_cc_emails : undefined,
+    subject: email.subject,
+    html: email.html,
+  })
+  if (status === 'sent') {
+    await supabase
+      .from('tutoring_invoices')
+      .update({ reminder_sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', inv.id)
+  }
+  return status
+}
+
 export async function sweepCollections(now: Date = new Date()): Promise<CollectionSweepResult> {
   const result: CollectionSweepResult = { issued: 0, retried: 0, reminders: 0, lateFeeFlags: 0 }
   try {
@@ -623,43 +684,44 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
     // Escalation (§6.4, signed policy automated — money never moves itself).
     const { data: overdue } = await supabase
       .from('tutoring_invoices')
-      .select('id, period, total, due_at, reminder_sent_at, late_fee_flagged_at, stripe_hosted_invoice_url, families ( id, parent_first_name, parent_last_name, parent_email, billing_email, billing_cc_emails )')
+      .select('id, period, status, total, due_at, reminder_sent_at, reminder_cycle_started_at, late_fee_flagged_at, stripe_hosted_invoice_url, families ( id, parent_first_name, parent_last_name, parent_email, billing_email, billing_cc_emails, autopay )')
       .in('status', ['invoiced', 'past_due'])
       .not('due_at', 'is', null)
     const contact = await loadContactInfo()
+    const { paymentReminderDays } = await loadCycleSettings()
     for (const inv of (overdue as any[]) ?? []) {
       const fam = one<any>(inv.families)
       if (!fam) continue
       const overdueDays = (now.getTime() - new Date(inv.due_at).getTime()) / 86_400_000
       const month = billingMonth(String(inv.period).slice(0, 7))
 
-      if (overdueDays >= 10 && !inv.reminder_sent_at) {
-        const t2rOpts = {
-          monthLabel: month.label,
-          total: Number(inv.total),
-          hostedUrl: inv.stripe_hosted_invoice_url ?? '',
-          dueLabel: new Date(inv.due_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'long', day: 'numeric' }),
-          autopayLink: null,
-          contact,
-          reminder: true,
+      // PL-334 A: the repeating payment reminder — non-autopay only (autopay
+      // families are in the dunning loop above, unchanged), every
+      // paymentReminderDays past due, capped at the 30-day late-fee point
+      // (from there it's a staff decision — never perpetuity). The cycle
+      // clock anchors on due_at until staff "Restart reminders" re-stamps
+      // reminder_cycle_started_at; the anchor rides the dedupe key, so a
+      // restart re-arms cleanly while plain sweep re-runs dedupe.
+      if (!fam.autopay && overdueDays > 0 && overdueDays < 30 && !inv.late_fee_flagged_at) {
+        const anchorIso = inv.reminder_cycle_started_at ?? inv.due_at
+        const sinceAnchorDays = (now.getTime() - new Date(anchorIso).getTime()) / 86_400_000
+        const cycle = Math.floor(sinceAnchorDays / paymentReminderDays)
+        if (cycle >= 1) {
+          const status = await sendPaymentReminder(
+            inv,
+            fam,
+            contact,
+            `t2b_reminder:${inv.id}:${anchorIso}:${cycle}`
+          )
+          if (status === 'sent') result.reminders++
         }
-        const email = await renderRegistered(
-          'T2_INVOICE',
-          { parentFirstName: fam.parent_first_name ?? 'there', parentEmail: fam.parent_email },
-          { ...t2Extras(t2rOpts), contactBlock: contactBlockHtml(contact) },
-          () => t2InvoiceEmail(t2rOpts)
-        )
-        await sendOnce({
-          dedupeKey: `t2_reminder:${inv.id}`,
-          emailType: 'T2_INVOICE',
-          to: [fam.billing_email ?? fam.parent_email],
-          cc: fam.billing_cc_emails?.length ? fam.billing_cc_emails : undefined,
-          subject: email.subject,
-          html: email.html,
-        })
+      }
+
+      if (overdueDays >= 10 && inv.status === 'invoiced') {
         // PL-92: the 10-day alert carries the automatic-steps recap and the
         // action row — buttons land on admin-authed pages, never act from
-        // the email.
+        // the email. PL-334: the status flip is its own latch now (the
+        // family reminder became the repeating cadence above).
         const parentName10 = `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim()
         const invoiceStatus10 = await invoiceEmailStatus(`t2_invoice:${inv.id}:%`)
         const overdueDays10 = Math.floor(overdueDays)
@@ -672,18 +734,18 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
           body: `<p><strong>${parentName10} — ${month.label} tutoring invoice: $${Number(inv.total).toFixed(2)}</strong>,
             due <strong>${new Date(inv.due_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'long', day: 'numeric' })}</strong>
             (${overdueDays10} days past due).</p>
-            <p>Already handled automatically: invoice ${invoiceStatus10} · past-due reminder sent to the family just now.</p>
+            <p>Already handled automatically: invoice ${invoiceStatus10} · payment reminders go to
+            the family every ${paymentReminderDays} days until the 30-day mark.</p>
             <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See ${fam.parent_first_name}'s recent activity</a></p>
-            <p><a href="${emailBaseUrl()}/admin/tutoring?invoice=${inv.id}" style="color:#00AEEE">Re-send the invoice reminder now</a>
-            — the send-now control on the invoice row (logged as sent-by-hand on the family timeline).</p>
+            <p><a href="${emailBaseUrl()}/admin/tutoring?invoice=${inv.id}" style="color:#00AEEE">Send a reminder now</a>
+            — the send-now control on the invoice row.</p>
             <p>Nothing else happens automatically until the <strong>30-day mark</strong>, which adds
             the late-fee flag — that alert is where you decide.</p>`,
         }).catch(() => {})
         await supabase
           .from('tutoring_invoices')
-          .update({ status: 'past_due', reminder_sent_at: now.toISOString(), updated_at: now.toISOString() })
+          .update({ status: 'past_due', updated_at: now.toISOString() })
           .eq('id', inv.id)
-        result.reminders++
       }
 
       if (overdueDays >= 30 && !inv.late_fee_flagged_at) {
@@ -696,7 +758,8 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
         const parentName30 = `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim()
         const [invoiceStatus30, reminderStatus30] = await Promise.all([
           invoiceEmailStatus(`t2_invoice:${inv.id}:%`),
-          invoiceEmailStatus(`t2_reminder:${inv.id}`),
+          // PL-334: the repeating cadence's sends (any cycle, any anchor).
+          invoiceEmailStatus(`t2b_reminder:${inv.id}:%`),
         ])
         await sendAdminAlert({
           dedupeKey: `overdue30:${inv.id}`,
@@ -710,8 +773,8 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
             due ${new Date(inv.due_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'long', day: 'numeric' })}
             (30+ days past due). Per the signed policy you MAY apply the 10% late fee — never
             automatic — and consider pausing the schedule.</p>
-            <p>Already handled automatically: invoice ${invoiceStatus30} · 10-day reminder ${reminderStatus30}.
-            Nothing further happens automatically.</p>
+            <p>Already handled automatically: invoice ${invoiceStatus30} · repeating payment reminder ${reminderStatus30}
+            (the automatic cadence stops here — 30 days is the staff-decision point).</p>
             <p style="margin:20px 0">
               <a href="${emailBaseUrl()}/admin/tutoring?invoice=${inv.id}" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Apply the 10% late fee</a>
               &nbsp;&nbsp;<a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See ${fam.parent_first_name}'s recent activity</a>

@@ -43,18 +43,31 @@ async function lateRescheduleFeePerHour(): Promise<number> {
 // Settings (app_settings; §10.4 cycle dates are configuration, not code)
 // ---------------------------------------------------------------------------
 
-export type CycleSettings = { generateDay: number; nudgeDays: number; autoconfirmDays: number }
+export type CycleSettings = {
+  generateDay: number
+  nudgeDays: number
+  autoconfirmDays: number
+  /** PL-334: days between unpaid-invoice payment reminders (and before the
+   *  first one), while past due and under the 30-day late-fee point. */
+  paymentReminderDays: number
+}
 
 export async function loadCycleSettings(): Promise<CycleSettings> {
   const { data } = await supabase
     .from('app_settings')
     .select('key, value')
-    .in('key', ['tutoring_generate_day', 'tutoring_nudge_days', 'tutoring_autoconfirm_days'])
+    .in('key', [
+      'tutoring_generate_day',
+      'tutoring_nudge_days',
+      'tutoring_autoconfirm_days',
+      'tutoring_payment_reminder_days',
+    ])
   const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]))
   return {
     generateDay: Number(map.tutoring_generate_day ?? 20),
     nudgeDays: Number(map.tutoring_nudge_days ?? 2),
     autoconfirmDays: Number(map.tutoring_autoconfirm_days ?? 5),
+    paymentReminderDays: Math.max(1, Number(map.tutoring_payment_reminder_days ?? 7)),
   }
 }
 

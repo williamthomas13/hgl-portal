@@ -1025,6 +1025,30 @@ Pay by card or directly from a US bank account (ACH) — both options are on the
 
 {contactBlock}`,
   },
+  // PL-334: the repeating unpaid-invoice reminder (replaces the one-shot
+  // 10-day T2 re-send). Settings-driven cadence on the daily sweep, stops on
+  // paid/void, caps at the 30-day late-fee point. A payment reminder, not
+  // marketing — financial facts only.
+  {
+    template_key: 'T2B_PAYMENT_REMINDER',
+    display_name: 'T2b — Unpaid invoice payment reminder',
+    sequence_number: 'T2b',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Reminder: your HGL tutoring invoice for {tutoringMonthLabel} — {invoiceTotal}',
+    footer_note: null,
+    preheader: '{invoiceTotal} — originally due {invoiceDueDate}',
+    body_markdown: `## {tutoringMonthLabel} tutoring invoice — friendly reminder
+
+The {tutoringMonthLabel} tutoring invoice (**{invoiceTotal}**, due {invoiceDueDate}) is still open.
+
+[button:View & pay invoice]({invoiceUrl})
+
+Pay by card or directly from a US bank account (ACH) — both options are on the invoice page. If the payment is already on its way — thank you, please ignore this. And if anything on the invoice looks off, just reply and we'll sort it out.
+
+{contactBlock}`,
+  },
   {
     template_key: 'T3_SCHEDULE_CHANGE',
     display_name: 'T3 — Schedule change confirmation',

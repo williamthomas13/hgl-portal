@@ -1059,6 +1059,17 @@ export async function GET() {
   activity.sort((a, b) => String(b.when).localeCompare(String(a.when)))
 
   // --- Restrained extras ------------------------------------------------------
+  // PL-334 B: the Unpaid-invoices tile — issued, unsettled, past their due
+  // date. Same rows the escalation sweep walks; state-driven (payment or
+  // void anywhere clears it on the next refresh).
+  const overdueUnpaid = ((invoices as any[]) ?? []).filter(
+    (inv) => inv.due_at && new Date(inv.due_at).getTime() < now.getTime()
+  )
+  const unpaid = {
+    count: overdueUnpaid.length,
+    total: Number(overdueUnpaid.reduce((s, inv) => s + Number(inv.total ?? 0), 0).toFixed(2)),
+  }
+
   // PL-330: the card speaks plain English ("starts September 2"), never raw
   // ISO, and "starts" means the class's real first day (PL-1).
   const upcoming = liveClasses
@@ -1096,6 +1107,7 @@ export async function GET() {
     upcoming,
     weekSessions: weekSessions ?? 0,
     weekProposed: weekProposed ?? 0,
+    unpaid, // PL-334 B
     health,
     // PL-331: the panel hides the System health card for managers (it lives
     // under Settings → System health for that role instead).

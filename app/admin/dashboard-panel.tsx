@@ -128,6 +128,8 @@ export default function DashboardPanel({
   const [upcoming, setUpcoming] = useState<UpcomingClass[]>([])
   const [weekSessions, setWeekSessions] = useState(0)
   const [weekProposed, setWeekProposed] = useState(0)
+  // PL-334 B: overdue unpaid invoices — count + $ total, its own tile.
+  const [unpaid, setUnpaid] = useState<{ count: number; total: number }>({ count: 0, total: 0 })
   const [error, setError] = useState('')
   const [health, setHealth] = useState<SystemHealth | null>(null)
   // PL-331: the API reports the caller's role — managers get no System
@@ -157,6 +159,7 @@ export default function DashboardPanel({
       setUpcoming(json.upcoming ?? [])
       setWeekSessions(json.weekSessions ?? 0)
       setWeekProposed(json.weekProposed ?? 0)
+      setUnpaid(json.unpaid ?? { count: 0, total: 0 })
       setHealth(json.health ?? null)
       setRole(json.role === 'manager' ? 'manager' : 'admin')
       setError('')
@@ -416,6 +419,22 @@ export default function DashboardPanel({
           )}
           <a href="/admin/tutoring" className="text-xs text-hgl-blue underline">
             open the tutoring page →
+          </a>
+        </div>
+        {/* PL-334 B: unpaid invoices — its own tile, separate from Needs
+            Attention. State-driven: payment or void anywhere clears it. */}
+        <div className={`bg-white rounded-lg shadow-md border-t-4 p-5 ${unpaid.count > 0 ? 'border-amber-500' : 'border-gray-200'}`}>
+          <h2 className="text-sm font-bold text-hgl-slate mb-2">Unpaid invoices</h2>
+          <p className={`text-3xl font-bold ${unpaid.count > 0 ? 'text-amber-700' : 'text-hgl-slate'}`}>
+            {unpaid.count}
+          </p>
+          <p className="text-xs text-gray-400">
+            {unpaid.count > 0
+              ? `$${unpaid.total.toFixed(2)} past due across ${unpaid.count === 1 ? 'one family' : 'these invoices'} — reminders go out automatically until the 30-day mark`
+              : 'nothing past due — every issued invoice is settled'}
+          </p>
+          <a href="/admin/tutoring?section=billing&unpaid=1" className="text-xs text-hgl-blue underline">
+            open the unpaid list →
           </a>
         </div>
       </div>
