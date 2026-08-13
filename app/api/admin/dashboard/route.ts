@@ -879,6 +879,24 @@ export async function GET() {
     })
   }
 
+  // PL-338 D: ONE generic row for saved schedule drafts — "{X} student
+  // schedules in progress", never one row per student (Scarlett explicit).
+  // State-driven: count hits 0 → row gone.
+  const { data: scheduleDrafts } = await supabase
+    .from('tutoring_schedule_drafts')
+    .select('id, created_at')
+    .order('created_at')
+  if ((scheduleDrafts ?? []).length > 0) {
+    const n = scheduleDrafts!.length
+    attention.push({
+      id: 'schedule-drafts',
+      kind: 'Tutoring schedules in progress',
+      text: `${n} student schedule${n === 1 ? '' : 's'} in progress — pick them back up.`,
+      href: '/admin/tutoring?section=schedule',
+      since: scheduleDrafts![0].created_at,
+    })
+  }
+
   // PL-135: oldest-first WITHIN severity — triage self-ranks without any
   // sorting controls. Notes carry no age, so they sort by when they were
   // pinned. Undated rows keep their existing relative order.

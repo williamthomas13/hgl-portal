@@ -7,7 +7,8 @@ import { SidebarLayout, SidebarPanel } from '../sidebar'
 import TutorsPanel from './tutors-panel'
 import TimecardsPanel from './timecards-panel'
 import InvoicesPanel from './invoices-panel'
-import EngagementWizard from './engagement-wizard'
+import EngagementWizard, { type ScheduleDraftRow } from './engagement-wizard'
+import ScheduleDraftsCard from './schedule-drafts-card'
 import EngagementsPanel from './engagements-panel'
 import ScheduleView from './schedule-view'
 import ActivityFeed from './activity-feed'
@@ -57,6 +58,10 @@ export default function TutoringAdmin() {
   // ?session={id} (+ &ack=1 or &reschedule=1) opens its dialog ready to act.
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null)
   const [focusSessionAction, setFocusSessionAction] = useState<'ack' | 'reschedule' | null>(null)
+  // PL-338: saved schedule drafts — the card lists them, Resume hands one to
+  // the wizard, and any change bumps the version so the list recounts.
+  const [draftToResume, setDraftToResume] = useState<ScheduleDraftRow | null>(null)
+  const [draftsVersion, setDraftsVersion] = useState(0)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
@@ -260,9 +265,23 @@ export default function TutoringAdmin() {
                     tutors={tutors}
                     tutorNotes={tutorNotes}
                     preloadStudentId={wizardPreload}
+                    serverDraft={draftToResume}
+                    onServerDraftConsumed={() => setDraftToResume(null)}
+                    onDraftsChanged={() => setDraftsVersion((v) => v + 1)}
                     onCreated={refresh}
                   />
                 </CollapsibleSection>
+
+                {/* PL-338 C: saved drafts, right under the wizard they feed. */}
+                <ScheduleDraftsCard
+                  version={draftsVersion}
+                  tutors={tutors}
+                  onResume={(d) => {
+                    setDraftToResume(d)
+                    setWizardOpenSignal((n) => n + 1)
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                />
 
                 <div className="mt-6">
                   <CollapsibleSection

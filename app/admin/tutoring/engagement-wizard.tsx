@@ -47,6 +47,38 @@ type AddonOption = {
 
 type BusyBlockUI = { start: string; end: string; title: string | null; private: boolean; allDay?: boolean }
 
+// PL-171/PL-338: ONE draft payload shape, two lifetimes — the localStorage
+// auto-draft (unsaved-work safety net) and the server-side saved drafts
+// (tutoring_schedule_drafts.payload; deliberate "Save as draft", any number,
+// survive browsers/devices, dashboard-countable). PL-337 calendar proposals
+// save through the same shape (tutor + slots + start date filled).
+export type WizardDraft = {
+  savedAt: string
+  studentId: string
+  subjectId: string
+  tutorId: string
+  rate: string
+  funding: 'monthly_billed' | 'package'
+  addonId: string
+  slots: RecurrenceSlotUI[]
+  location: string
+  locationMode: 'online' | 'in_person'
+  startDate: string
+  notes: string
+  sessionsPerWeek: number
+  durationMinutes: number
+  requireApproval: boolean
+}
+
+export type ScheduleDraftRow = {
+  id: string
+  created_by: string
+  student_label: string | null
+  payload: Partial<WizardDraft>
+  created_at: string
+  updated_at: string
+}
+
 /** 'HH:MM' (24h wall clock) → "4:00 PM" for chip labels. */
 function fmtHHMM(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number)
@@ -61,6 +93,9 @@ export default function EngagementWizard({
   tutors,
   tutorNotes,
   preloadStudentId,
+  serverDraft,
+  onServerDraftConsumed,
+  onDraftsChanged,
   onCreated,
 }: {
   students: StudentOption[]
@@ -70,6 +105,11 @@ export default function EngagementWizard({
   /** PL-92: the availability-shared alert's "Schedule {student} now" —
    *  preselects the student so their shared windows load on arrival. */
   preloadStudentId?: string | null
+  /** PL-338: a saved draft the Schedules-in-progress card asked to resume. */
+  serverDraft?: ScheduleDraftRow | null
+  onServerDraftConsumed?: () => void
+  /** PL-338: saved/discarded/created — the card and dashboard recount. */
+  onDraftsChanged?: () => void
   onCreated: () => void
 }) {
   const [studentFilter, setStudentFilter] = useState('')
@@ -109,26 +149,6 @@ export default function EngagementWizard({
   const [sessionsPerWeek, setSessionsPerWeek] = useState(1)
   const [durationMinutes, setDurationMinutes] = useState(60)
 
-  // PL-171: the in-progress form persists per admin (localStorage) so a
-  // phone call and a navigation away don't cost the half-built schedule.
-  // Interruptions are normal ops, not an edge case.
-  type WizardDraft = {
-    savedAt: string
-    studentId: string
-    subjectId: string
-    tutorId: string
-    rate: string
-    funding: 'monthly_billed' | 'package'
-    addonId: string
-    slots: RecurrenceSlotUI[]
-    location: string
-    locationMode: 'online' | 'in_person'
-    startDate: string
-    notes: string
-    sessionsPerWeek: number
-    durationMinutes: number
-    requireApproval: boolean
-  }
   const DRAFT_KEY = 'hgl-schedule-wizard-draft'
   const [draftOffer, setDraftOffer] = useState<WizardDraft | null>(null)
   // One-shot restore values, consumed by the derived-state effects so a
@@ -200,13 +220,11 @@ export default function EngagementWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seenPreload, studentId, subjectId, subjects])
 
-  function resumeDraft() {
-    const d = draftOffer
-    if (!d) return
+  function applyDraft(d: Partial<WizardDraft>) {
     restoreRef.current = { rate: d.rate, funding: d.funding, addonId: d.addonId, location: d.location }
-    setStudentId(d.studentId)
-    setSubjectId(d.subjectId)
-    setTutorId(d.tutorId)
+    setStudentId(d.studentId ?? '')
+    setSubjectId(d.subjectId ?? '')
+    setTutorId(d.tutorId ?? '')
     setSlots(d.slots ?? [])
     setLocationMode(d.locationMode ?? 'online')
     setStartDate(d.startDate ?? '')
@@ -217,6 +235,10 @@ export default function EngagementWizard({
     setDraftOffer(null)
   }
 
+  function resumeDraft() {
+    if (draftOffer) applyDraft(draftOffer)
+  }
+
   function discardDraft() {
     try {
       localStorage.removeItem(DRAFT_KEY)
@@ -224,6 +246,98 @@ export default function EngagementWizard({
       /* ignore */
     }
     setDraftOffer(null)
+  }
+
+  // PL-338: which SAVED draft this form is a continuation of — resuming one
+  // adopts its id, so Save-as-draft updates in place and Create retires it.
+  const [serverDraftId, setServerDraftId] = useState<string | null>(null)
+  const seenServerDraftRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!serverDraft) {
+      // Consumed — the same draft can be resumed again later.
+      seenServerDraftRef.current = null
+      return
+    }
+    if (serverDraft.id === seenServerDraftRef.current) return
+    seenServerDraftRef.current = serverDraft.id
+    applyDraft(serverDraft.payload ?? {})
+    setServerDraftId(serverDraft.id)
+    onServerDraftConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverDraft])
+
+  function currentDraftPayload(): WizardDraft {
+    return {
+      savedAt: new Date().toISOString(),
+      studentId,
+      subjectId,
+      tutorId,
+      rate,
+      funding,
+      addonId,
+      slots,
+      location,
+      locationMode,
+      startDate,
+      notes,
+      sessionsPerWeek,
+      durationMinutes,
+      requireApproval,
+    }
+  }
+
+  // PL-338 A/B: the deliberate save — named, kept, listed; any number of
+  // them. Clears the form (and the auto-draft) so the next student's
+  // schedule can start immediately — the exact Bunjibrother failure.
+  async function saveAsDraft() {
+    const meaningful = studentId || subjectId || tutorId || slots.length > 0 || notes.trim()
+    if (!meaningful) {
+      setMessage('Nothing to save yet — pick at least a student, subject, tutor, or a weekly time.')
+      return
+    }
+    const student = students.find((s) => s.id === studentId)
+    const row = {
+      student_label: student ? `${student.first_name} ${student.last_name}`.trim() : null,
+      payload: currentDraftPayload(),
+      updated_at: new Date().toISOString(),
+    }
+    const { data: auth } = await supabase.auth.getUser()
+    const { error } = serverDraftId
+      ? await supabase.from('tutoring_schedule_drafts').update(row).eq('id', serverDraftId)
+      : await supabase
+          .from('tutoring_schedule_drafts')
+          .insert({ ...row, created_by: auth.user?.email ?? 'staff' })
+    if (error) {
+      setMessage('Error: the draft did not save — ' + error.message)
+      return
+    }
+    setServerDraftId(null)
+    clearForm()
+    setMessage(
+      `Draft saved${row.student_label ? ` for ${row.student_label}` : ''} — it's listed under Schedules in progress below, and the form is clear for the next one.`
+    )
+    onDraftsChanged?.()
+  }
+
+  function clearForm() {
+    setStudentId('')
+    setSubjectId('')
+    setTutorId('')
+    setRate('')
+    setFunding('monthly_billed')
+    setAddonId('')
+    setSlots([])
+    setLocation('')
+    setStartDate('')
+    setNotes('')
+    setSessionsPerWeek(1)
+    setDurationMinutes(60)
+    setRequireApproval(true)
+    try {
+      localStorage.removeItem(DRAFT_KEY)
+    } catch {
+      /* ignore */
+    }
   }
 
   // PL-76: surface a cancellation credit while proposing the first month —
@@ -404,24 +518,8 @@ export default function EngagementWizard({
       const meaningful = studentId || subjectId || slots.length > 0 || notes.trim()
       try {
         if (meaningful) {
-          const draft: WizardDraft = {
-            savedAt: new Date().toISOString(),
-            studentId,
-            subjectId,
-            tutorId,
-            rate,
-            funding,
-            addonId,
-            slots,
-            location,
-            locationMode,
-            startDate,
-            notes,
-            sessionsPerWeek,
-            durationMinutes,
-            requireApproval,
-          }
-          localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+          // PL-338: same payload shape the saved drafts store — one source.
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(currentDraftPayload()))
         } else {
           localStorage.removeItem(DRAFT_KEY)
         }
@@ -877,6 +975,12 @@ export default function EngagementWizard({
         localStorage.removeItem(DRAFT_KEY)
       } catch {
         /* ignore */
+      }
+      // PL-338: creating from a resumed saved draft retires the draft.
+      if (serverDraftId) {
+        await supabase.from('tutoring_schedule_drafts').delete().eq('id', serverDraftId)
+        setServerDraftId(null)
+        onDraftsChanged?.()
       }
       onCreated()
     }
@@ -1511,13 +1615,25 @@ export default function EngagementWizard({
         </div>
       )}
 
-      <button
-        onClick={() => submit()}
-        disabled={!ready || saving}
-        className="bg-hgl-slate text-white py-2 px-6 rounded hover:opacity-90 disabled:opacity-50"
-      >
-        Create student schedule{slots.length > 0 ? ' + sessions' : ''}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => submit()}
+          disabled={!ready || saving}
+          className="bg-hgl-slate text-white py-2 px-6 rounded hover:opacity-90 disabled:opacity-50"
+        >
+          Create student schedule{slots.length > 0 ? ' + sessions' : ''}
+        </button>
+        {/* PL-338 A: the deliberate save — the auto-draft still catches
+            unsaved work, but this one is named, kept, and listed. */}
+        <button
+          onClick={saveAsDraft}
+          disabled={saving}
+          className="border border-hgl-slate text-hgl-slate py-2 px-4 rounded hover:bg-gray-50 disabled:opacity-50"
+          title="Keep this half-built schedule under Schedules in progress and clear the form for the next one"
+        >
+          Save as draft
+        </button>
+      </div>
       {!ready && (
         <p className="text-xs text-gray-500 -mt-2">
           To enable Create: {missing.join(' · ')}.
