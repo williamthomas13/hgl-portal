@@ -502,7 +502,7 @@ export async function activatePendingEngagement(
       .from('leads')
       .update({ status: 'scheduled', updated_at: new Date().toISOString() })
       .eq('student_id', engStudent.student_id)
-      .not('status', 'in', '("scheduled","lost")')
+      .not('status', 'in', '("scheduled","lost","converted")')
   }
   return { ok: true }
 }

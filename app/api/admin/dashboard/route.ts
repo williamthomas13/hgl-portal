@@ -967,6 +967,26 @@ export async function GET() {
       href: `/admin/leads?lead=${l.id}`,
     })
   }
+  // PL-336: pipeline wins join the feed — the sweep (or a manual pick)
+  // marked a lead Enrolled. Ages out of the 40-row window naturally.
+  const { data: convertedLeads } = await supabase
+    .from('leads')
+    .select('id, student_name, contact_name, converted_at, converted_label')
+    .not('converted_at', 'is', null)
+    .order('converted_at', { ascending: false })
+    .limit(10)
+  for (const l of (convertedLeads as any[]) ?? []) {
+    activity.push({
+      id: `lead-converted-${l.id}`,
+      type: 'Prospective students',
+      groupKey: 'Prospective students',
+      when: l.converted_at,
+      text: `${l.student_name ?? l.contact_name ?? 'A prospective student'} enrolled${
+        l.converted_label ? ` — ${l.converted_label}` : ''
+      } — their pipeline row is marked Enrolled.`,
+      href: `/admin/leads?lead=${l.id}`,
+    })
+  }
 
   // PL-191: Schedule events join the feed — proposals sent, confirmations,
   // family reschedules, cancellations. The chip derives automatically from

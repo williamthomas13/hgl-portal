@@ -14,6 +14,8 @@ export const LEAD_STATUS_LABELS: Record<string, string> = {
   consult_done: 'Consult done',
   proposal_sent: 'Proposal sent',
   scheduled: 'Started',
+  /** PL-336: the WON ending — enrolled in a group class. */
+  converted: 'Enrolled',
   lost: 'Closed — not now',
 }
 

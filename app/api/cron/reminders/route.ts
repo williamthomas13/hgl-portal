@@ -12,6 +12,7 @@ import { sweepCollections } from '../../../utils/tutoring-stripe'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
 import { sweepConversionFollowups } from '../../../utils/convert-tutoring'
+import { sweepLeadOutcomes } from '../../../utils/lead-outcomes'
 import { chaseLine, classroomChaseRounds } from '../../../utils/classroom-chase'
 import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
@@ -2183,6 +2184,18 @@ export async function GET(req: Request) {
     if (cxFollowups > 0) counters.conversion_followups = cxFollowups
   } catch (e) {
     console.error('tutoring billing sweep failed (continuing):', e)
+  }
+
+  // PL-336: the pipeline's happy endings flip themselves — a linked student
+  // with a Paid class enrollment marks the lead Enrolled (converted), an
+  // active 1-on-1 engagement marks it Started (the catch-all behind the
+  // inline flips). State-driven like Needs Attention: nobody has to remember.
+  try {
+    const outcomes = await sweepLeadOutcomes()
+    if (outcomes.converted > 0) counters.leads_converted = outcomes.converted
+    if (outcomes.started > 0) counters.leads_started = outcomes.started
+  } catch (e) {
+    console.error('lead outcome sweep failed (continuing):', e)
   }
 
   // PL-136: only a sweep that reached here finished. (A throw above leaves

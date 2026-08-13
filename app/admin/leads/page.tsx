@@ -46,6 +46,10 @@ type Lead = {
   intake: Record<string, any> | null
   family_id: string | null
   student_id: string | null
+  /** PL-336: the WON ending — set by the sweep (or a manual status pick). */
+  converted_at: string | null
+  converted_class_id: string | null
+  converted_label: string | null
   created_at: string
   updated_at: string
 }
@@ -68,6 +72,8 @@ const STATUS_ORDER = [
   'consult_done',
   'proposal_sent',
   'scheduled',
+  // PL-336: the WON ending — enrolled in a group class. Terminal + positive.
+  'converted',
   'lost',
 ] as const
 
@@ -181,7 +187,7 @@ const fmtWhen = (iso: string) =>
   })
 
 function isStale(lead: Lead): boolean {
-  if (lead.status === 'scheduled' || lead.status === 'lost') return false
+  if (lead.status === 'scheduled' || lead.status === 'lost' || lead.status === 'converted') return false
   return Date.now() - new Date(lead.updated_at).getTime() > STALE_DAYS * 86_400_000
 }
 
@@ -595,6 +601,14 @@ function NextStepButton({ lead, onChange }: { lead: Lead; onChange: () => void }
       </a>
     )
   }
+  // PL-336: the WON ending's door — the family record (enrollment lives there).
+  if (lead.status === 'converted' && lead.family_id) {
+    return (
+      <a href={`/admin/families/${lead.family_id}`} onClick={stop} className="text-xs text-gray-500 underline">
+        see the family
+      </a>
+    )
+  }
   return null
 }
 
@@ -833,6 +847,22 @@ function LeadDetail({
         <p className="text-xs text-gray-500">
           Closed — not now: <span className="font-semibold">{LOST_REASONS[lead.lost_reason_kind] ?? lead.lost_reason_kind}</span>
           {lead.lost_reason ? ` — ${lead.lost_reason}` : ''}
+        </p>
+      )}
+      {/* PL-336: the WON banner — distinct from Closed, and a door. */}
+      {lead.status === 'converted' && (
+        <p className="text-xs text-green-800 bg-green-50 border border-green-200 rounded p-2">
+          <span className="font-semibold">
+            Enrolled{lead.converted_label ? ` — ${lead.converted_label}` : ''}
+          </span>
+          {lead.family_id && (
+            <>
+              {' · '}
+              <a href={`/admin/families/${lead.family_id}`} className="underline">
+                open the family record →
+              </a>
+            </>
+          )}
         </p>
       )}
       {/* PL-300: the same fields as "Add a prospective student", editable in
@@ -1452,14 +1482,16 @@ export default function LeadsAdmin() {
   useEffect(() => {
     if (!focusLead || !loaded) return
     const lead = leads.find((l) => `lead-${l.id}` === focusLead)
-    if (lead && (lead.status === 'scheduled' || lead.status === 'lost')) setShowClosed(true)
+    if (lead && ['scheduled', 'lost', 'converted'].includes(lead.status)) setShowClosed(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, focusLead])
 
-  const open = leads.filter((l) => l.status !== 'scheduled' && l.status !== 'lost')
+  // PL-336: converted ("Enrolled") is terminal like scheduled/lost — out of
+  // the open counts and the staleness math, hidden behind the same toggle.
+  const open = leads.filter((l) => !['scheduled', 'lost', 'converted'].includes(l.status))
   const staleCount = open.filter(isStale).length
   const visibleStatuses = STATUS_ORDER.filter((s) =>
-    showClosed ? true : s !== 'scheduled' && s !== 'lost'
+    showClosed ? true : !['scheduled', 'lost', 'converted'].includes(s)
   )
 
   return (
@@ -1522,7 +1554,7 @@ export default function LeadsAdmin() {
                   checked={showClosed}
                   onChange={(e) => setShowClosed(e.target.checked)}
                 />
-                Show started &amp; closed
+                Show started, enrolled &amp; closed
               </label>
               {open.length === 0 && !showClosed && (
                 <p className="text-sm text-gray-500 italic">No open prospective students — nice and quiet.</p>
@@ -1575,6 +1607,24 @@ export default function LeadsAdmin() {
                                 <span className="text-xs bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 font-semibold">
                                   no touch in {STALE_DAYS}+ days
                                 </span>
+                              )}
+                              {/* PL-336: the WON chip — distinct from Closed;
+                                  names are doors, so it opens the family. */}
+                              {lead.status === 'converted' && (
+                                lead.family_id ? (
+                                  <a
+                                    href={`/admin/families/${lead.family_id}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-xs bg-green-100 text-green-800 rounded-full px-2 py-0.5 font-semibold hover:bg-green-200"
+                                    title="Enrolled in a group class — open the family record"
+                                  >
+                                    Enrolled{lead.converted_label ? ` — ${lead.converted_label}` : ''}
+                                  </a>
+                                ) : (
+                                  <span className="text-xs bg-green-100 text-green-800 rounded-full px-2 py-0.5 font-semibold">
+                                    Enrolled{lead.converted_label ? ` — ${lead.converted_label}` : ''}
+                                  </span>
+                                )
                               )}
                               {/* PL-108: the reason travels with the row. */}
                               {lead.status === 'lost' && lead.lost_reason_kind && (

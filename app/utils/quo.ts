@@ -173,7 +173,7 @@ export async function processCallEvent(
       .from('leads')
       .select('id, contact_phone, status, notes')
       .not('contact_phone', 'is', null)
-      .not('status', 'in', '("scheduled","lost")')
+      .not('status', 'in', '("scheduled","lost","converted")')
     const open = (leads ?? []).find((l) => normalizePhone(l.contact_phone) === ev.phone)
     const line = `${ev.eventType === 'missed' ? 'Missed call' : ev.eventType === 'voicemail' ? 'Voicemail' : 'Call'} ${fmtWhen(ev.occurredAt)}${
       ev.durationSeconds ? ` — ${Math.max(1, Math.round(ev.durationSeconds / 60))} min` : ''

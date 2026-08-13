@@ -270,7 +270,7 @@ export default function EngagementWizard({
     supabase
       .from('leads')
       .select('id, student_name, contact_name, contact_email, status')
-      .not('status', 'in', '("scheduled","lost")')
+      .not('status', 'in', '("scheduled","lost","converted")')
       .is('student_id', null)
       .then(({ data }) => setLeadOptions((data as LeadOption[]) ?? []))
   }, [])

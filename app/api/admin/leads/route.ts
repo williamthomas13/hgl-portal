@@ -11,6 +11,7 @@ import { sendAdminAlert, sendOnce } from '../../../utils/email'
 import { LEAD_STATUS_LABELS, leadAssignedDetails, leadAssignedSubject } from '../../../utils/lead-assign-copy'
 import { escapeLike } from '../../../utils/like-escape'
 import { scanCloseMatches } from '../../../utils/close-match'
+import { classDisplayLabel } from '../../../utils/class-label'
 import {
   loadGcalConnection,
   createGcalEvent,
@@ -140,6 +141,60 @@ export async function POST(req: Request) {
       if (Object.keys(patch).length === 0) {
         return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
       }
+      // PL-336: a manual "Enrolled" set stamps the same fields the sweep
+      // stamps — class resolved best-effort from the linked student's most
+      // recent paid enrollment (blank chip when there isn't one yet; the
+      // sweep fills it in as soon as a paid enrollment exists).
+      let convertedStamp: Record<string, unknown> = {}
+      if (body.status === 'converted') {
+        const { data: cur } = await supabase
+          .from('leads')
+          .select('status, student_id, converted_at')
+          .eq('id', body.id)
+          .maybeSingle()
+        if (cur && cur.status !== 'converted') {
+          convertedStamp = { converted_at: new Date().toISOString() }
+          if (cur.student_id) {
+            const { data: enr } = await supabase
+              .from('enrollments')
+              .select(
+                'class_id, paid_at, enrolled_at, classes ( class_type, delivery_mode, fo_short_name, schools ( nickname ) )'
+              )
+              .eq('student_id', cur.student_id)
+              .in('payment_status', ['Paid', 'Completed'])
+              .order('enrolled_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            if (enr) {
+              /* eslint-disable @typescript-eslint/no-explicit-any */
+              const one = <T,>(v: T | T[] | null | undefined): T | null =>
+                v == null ? null : Array.isArray(v) ? ((v[0] as T) ?? null) : v
+              const cls = one<any>(enr.classes)
+              const label = cls
+                ? classDisplayLabel({
+                    schoolNickname: one<any>(cls.schools)?.nickname ?? null,
+                    deliveryMode: cls.delivery_mode ?? null,
+                    shortName: cls.fo_short_name ?? null,
+                    classType: cls.class_type,
+                  })
+                : null
+              const when = (enr.paid_at ?? enr.enrolled_at) as string | null
+              if (label && when) {
+                const day = new Date(when).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  timeZone: 'America/Denver',
+                })
+                convertedStamp = {
+                  converted_at: when,
+                  converted_class_id: enr.class_id,
+                  converted_label: `${label}, ${day}`,
+                }
+              }
+            }
+          }
+        }
+      }
       // PL-174: assignment now DOES something — read the pre-update state so
       // a real handoff (new assignee, not yourself) can be noticed below.
       const { data: beforeLead } =
@@ -152,7 +207,7 @@ export async function POST(req: Request) {
           : { data: null }
       const { error } = await supabase
         .from('leads')
-        .update({ ...patch, updated_at: new Date().toISOString() })
+        .update({ ...patch, ...convertedStamp, updated_at: new Date().toISOString() })
         .eq('id', body.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

@@ -426,7 +426,7 @@ export async function POST(req: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('student_id', student_id)
-        .not('status', 'in', '("scheduled","lost")')
+        .not('status', 'in', '("scheduled","lost","converted")')
       if (leadAdvanceError) {
         console.error('PL-10 lead auto-advance failed (schedule stands):', leadAdvanceError.message)
       }
