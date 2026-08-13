@@ -140,6 +140,31 @@ try {
   const { data: invB2 } = await db.from('tutoring_invoices').select('id, status')
     .eq('family_id', famB.familyId).eq('period', QA_PERIOD).maybeSingle()
   check('15. recovered family has its invoice', invB2?.status === 'proposed', JSON.stringify(invB2))
+
+  // ---- 4. PL-333: preview parity — the drift guard --------------------------
+  // A fresh family: preview BEFORE generation must equal what generation then
+  // actually creates (total AND hours), and a family whose invoice exists
+  // must drop out of the preview.
+  const famC = await mkFamilyWithStudent('Preview')
+  const engC = await mkEngagement(famC.studentId, tutorOk, subj.id)
+  const pv = await tb.previewMonthlyCycle(new Date(), QA_MONTH, [famC.familyId])
+  const pvRow = pv.rows.find((r) => r.familyId === famC.familyId)
+  check('16. preview projects the fresh family', !!pvRow && pvRow.projectedTotal > 0, JSON.stringify(pvRow))
+  const run3 = await tb.generateMonthlyCycle(new Date(), QA_MONTH, [famC.familyId])
+  check('17. preview family generated cleanly', run3.familiesFailed === 0, JSON.stringify(run3))
+  const { data: invC } = await db.from('tutoring_invoices').select('id, total')
+    .eq('family_id', famC.familyId).eq('period', QA_PERIOD).maybeSingle()
+  check('18. preview total === generated invoice total (no drift)',
+    invC && Number(invC.total).toFixed(2) === pvRow.projectedTotal.toFixed(2),
+    `preview=${pvRow?.projectedTotal} invoice=${invC?.total}`)
+  const { data: cLines } = await db.from('tutoring_invoice_lines').select('qty_hours, kind')
+    .eq('invoice_id', invC?.id ?? '00000000-0000-4000-8000-000000000000').eq('kind', 'session')
+  const genHours = (cLines ?? []).reduce((s, l) => s + Number(l.qty_hours), 0)
+  check('19. preview hours === generated session hours', genHours.toFixed(2) === pvRow.projectedHours.toFixed(2),
+    `preview=${pvRow?.projectedHours} generated=${genHours}`)
+  const pvAfter = await tb.previewMonthlyCycle(new Date(), QA_MONTH, [famC.familyId])
+  check('20. once the invoice exists, the family drops out of the preview',
+    !pvAfter.rows.some((r) => r.familyId === famC.familyId), JSON.stringify(pvAfter.rows))
 } catch (e) {
   check('flow ran without crashing', false, e.stack?.slice(0, 400) ?? e.message)
 } finally {

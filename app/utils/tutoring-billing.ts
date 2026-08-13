@@ -787,6 +787,223 @@ export async function generateMonthlyCycle(
   return result
 }
 
+// ---------------------------------------------------------------------------
+// PL-333 A: the read-only UPCOMING-MONTH projection — what the generator
+// above WILL do on the generate day, computed from the same inputs and the
+// same building blocks (loadActiveEngagements, engagementPeriodBounds,
+// generateOccurrences, blockHoldActive, the package-drawdown walk), with
+// zero writes. It deliberately mirrors phases 1–2 of generateMonthlyCycle
+// line for line — change a billing rule THERE and change it HERE, and the
+// regress:monthly-generation harness asserts preview total === generated
+// invoice total so a drift fails the gate instead of lying to Kelsie.
+// Families that already HAVE an invoice row for the month are skipped: their
+// reality is on the panel already (preview is only for what doesn't exist).
+// ---------------------------------------------------------------------------
+
+export type PreviewLine = {
+  studentFirst: string
+  subjectName: string
+  tutorName: string | null
+  /** Billable hours (for packages: only the uncovered overflow). */
+  hours: number
+  /** Hours the prepaid package covers this month (informational). */
+  coveredHours: number
+  rate: number
+  amount: number
+  /** PL-323: block hold (asked/declined) — nothing new materializes or bills. */
+  held: boolean
+}
+
+export type PreviewFamilyRow = {
+  familyId: string
+  familyName: string
+  parentEmail: string
+  autopay: boolean
+  lines: PreviewLine[]
+  /** Carried late-reschedule fees the generator would append (§6.5). */
+  carriedFees: number
+  projectedHours: number
+  projectedTotal: number
+}
+
+export type CyclePreview = { month: string; monthLabel: string; rows: PreviewFamilyRow[] }
+
+export async function previewMonthlyCycle(
+  now: Date = new Date(),
+  monthOverride?: string,
+  familyScope?: string[]
+): Promise<CyclePreview> {
+  const month = monthOverride ? billingMonth(monthOverride) : nextBillingMonth(now)
+  const engagements = (await loadActiveEngagements())
+    .filter((e) => e.family && e.student && e.subject)
+    .filter((e) => !familyScope || familyScope.includes(e.family!.id))
+
+  type SimSession = { starts_at: string; duration_minutes: number; existing: boolean }
+  const byFamily = new Map<
+    string,
+    { family: NonNullable<EngagementFull['family']>; engagements: { eng: EngagementFull; sessions: SimSession[] }[] }
+  >()
+
+  for (const eng of engagements) {
+    const tz = eng.tutor?.timezone ?? ORG_TZ
+    const { fromIso, toIso } = engagementPeriodBounds(month, tz)
+    const held = eng.funding === 'package' && blockHoldActive(eng.block_confirmation)
+
+    // Mirror of phase 1: what already exists + what the run would create.
+    const { data: existing } = await supabase
+      .from('tutoring_sessions')
+      .select('starts_at, duration_minutes, status')
+      .eq('engagement_id', eng.id)
+      .gte('starts_at', fromIso)
+      .lt('starts_at', toIso)
+      .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled'])
+    const billableExisting: SimSession[] = ((existing as any[]) ?? [])
+      .filter((s) => ['proposed', 'confirmed'].includes(s.status))
+      .map((s) => ({ starts_at: s.starts_at, duration_minutes: s.duration_minutes, existing: true }))
+    const taken = new Set(((existing as any[]) ?? []).map((s) => new Date(s.starts_at).getTime()))
+    let simulated: SimSession[] = []
+    if (!held && Array.isArray(eng.recurrence) && eng.recurrence.length > 0) {
+      const occFrom =
+        eng.start_date && eng.start_date > month.firstDay ? eng.start_date : month.firstDay
+      simulated = generateOccurrences(eng.recurrence, occFrom, month.lastDay, tz)
+        .filter((o) => !taken.has(o.startsAt.getTime()) && o.startsAt.getTime() > now.getTime())
+        .map((o) => ({
+          starts_at: o.startsAt.toISOString(),
+          duration_minutes: Math.round((o.endsAt.getTime() - o.startsAt.getTime()) / 60_000),
+          existing: false,
+        }))
+    }
+    const famId = eng.family!.id
+    if (!byFamily.has(famId)) byFamily.set(famId, { family: eng.family!, engagements: [] })
+    byFamily.get(famId)!.engagements.push({
+      eng,
+      sessions: [...billableExisting, ...simulated].sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
+    })
+  }
+
+  const rows: PreviewFamilyRow[] = []
+  for (const [familyId, bucket] of byFamily) {
+    if (bucket.engagements.every((b) => b.sessions.length === 0)) continue
+    // A real invoice for the month exists → it renders as itself on the
+    // panel; the preview only speaks for what hasn't generated yet.
+    const { data: invoice } = await supabase
+      .from('tutoring_invoices')
+      .select('id')
+      .eq('family_id', familyId)
+      .eq('period', month.period)
+      .maybeSingle()
+    if (invoice) continue
+
+    const lines: PreviewLine[] = []
+    for (const { eng, sessions } of bucket.engagements) {
+      const held = eng.funding === 'package' && blockHoldActive(eng.block_confirmation)
+      let billableHours = 0
+      let coveredHours = 0
+      if (eng.funding === 'package' && eng.addon_id) {
+        // Mirror of phase 2's drawdown: the whole consuming history — with
+        // the would-be sessions folded in chronologically — draws the
+        // prepaid balance down; only in-period overflow bills (plus
+        // pre-period overflow that slipped a cycle and has no line yet).
+        const { data: addon } = await supabase
+          .from('enrollment_addons')
+          .select('hours')
+          .eq('id', eng.addon_id)
+          .maybeSingle()
+        let running = Number(addon?.hours ?? 0)
+        const { data: allConsuming } = await supabase
+          .from('tutoring_sessions')
+          .select('id, starts_at, duration_minutes, status, reschedule_notice')
+          .eq('engagement_id', eng.id)
+          .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
+          .order('starts_at')
+        const tz = eng.tutor?.timezone ?? ORG_TZ
+        const { fromIso } = engagementPeriodBounds(month, tz)
+        const consuming: { id: string | null; starts_at: string; duration_minutes: number; status: string }[] = [
+          ...(((allConsuming as any[]) ?? []).filter(
+            (s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late'
+          ) as any[]),
+          ...sessions.filter((s) => !s.existing).map((s) => ({ id: null, status: 'proposed', ...s })),
+        ].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+        for (const s of consuming) {
+          const h = s.duration_minutes / 60
+          if (running >= h) {
+            running -= h
+            if (s.starts_at >= fromIso) coveredHours += h
+            continue
+          }
+          running = 0
+          if (held) continue
+          if (s.starts_at >= fromIso) {
+            // The generator's in-period billing loop covers proposed/confirmed
+            // only (its periodSessions select) — mirror it exactly.
+            if (s.status === 'proposed' || s.status === 'confirmed') billableHours += h
+            continue
+          }
+          // Pre-period slipped overflow, carried once (tombstones never).
+          if (s.status === 'rescheduled' || !s.id) continue
+          const { data: hasLine } = await supabase
+            .from('tutoring_invoice_lines')
+            .select('id')
+            .eq('session_id', s.id)
+            .eq('kind', 'session')
+            .limit(1)
+          if (!hasLine?.length) billableHours += h
+        }
+      } else {
+        billableHours = sessions.reduce((sum, s) => sum + s.duration_minutes / 60, 0)
+      }
+      if (billableHours === 0 && coveredHours === 0 && sessions.length === 0) continue
+      lines.push({
+        studentFirst: eng.student!.first_name,
+        subjectName: eng.subject!.name,
+        tutorName: eng.tutor?.name ?? null,
+        hours: Number(billableHours.toFixed(2)),
+        coveredHours: Number(coveredHours.toFixed(2)),
+        rate: eng.hourly_rate,
+        amount: Number((billableHours * eng.hourly_rate).toFixed(2)),
+        held,
+      })
+    }
+
+    // Mirror of the carried late-reschedule fees (§6.5), read-only.
+    let carriedFees = 0
+    const { data: lateOnes } = await supabase
+      .from('tutoring_sessions')
+      .select('id, duration_minutes')
+      .eq('status', 'rescheduled')
+      .eq('reschedule_notice', 'late')
+      .lt('starts_at', zonedToUtc(month.firstDay, '00:00', ORG_TZ).toISOString())
+      .in('engagement_id', bucket.engagements.map((b) => b.eng.id))
+    for (const s of (lateOnes as any[]) ?? []) {
+      const { data: charged } = await supabase
+        .from('tutoring_invoice_lines')
+        .select('id')
+        .eq('session_id', s.id)
+        .eq('kind', 'late_reschedule_fee')
+        .limit(1)
+      if (charged?.length) continue
+      carriedFees += (s.duration_minutes / 60) * (await lateRescheduleFeePerHour())
+    }
+
+    if (lines.length === 0 && carriedFees === 0) continue
+    const projectedTotal = Number(
+      (lines.reduce((sum, l) => sum + l.amount, 0) + carriedFees).toFixed(2)
+    )
+    rows.push({
+      familyId,
+      familyName: `${bucket.family.parent_first_name} ${bucket.family.parent_last_name ?? ''}`.trim(),
+      parentEmail: bucket.family.parent_email,
+      autopay: bucket.family.autopay === true,
+      lines,
+      carriedFees: Number(carriedFees.toFixed(2)),
+      projectedHours: Number(lines.reduce((sum, l) => sum + l.hours, 0).toFixed(2)),
+      projectedTotal,
+    })
+  }
+  rows.sort((a, b) => a.familyName.localeCompare(b.familyName))
+  return { month: month.period, monthLabel: month.label, rows }
+}
+
 /**
  * PL-200: a monthly-billed engagement that starts mid-month must bill its
  * current-month remainder IMMEDIATELY — the cycle only ever targets the next

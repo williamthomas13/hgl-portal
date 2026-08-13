@@ -81,6 +81,30 @@ function generateDayLabel(day: number): string {
   return `${day}${suffix}`
 }
 
+// PL-333 A: the upcoming-month projection (shape from tutoring-billing's
+// previewMonthlyCycle, delivered by /api/admin/tutoring/invoice-preview).
+type PreviewLine = {
+  studentFirst: string
+  subjectName: string
+  tutorName: string | null
+  hours: number
+  coveredHours: number
+  rate: number
+  amount: number
+  held: boolean
+}
+type PreviewRow = {
+  familyId: string
+  familyName: string
+  parentEmail: string
+  autopay: boolean
+  lines: PreviewLine[]
+  carriedFees: number
+  projectedHours: number
+  projectedTotal: number
+}
+type CyclePreview = { month: string; monthLabel: string; rows: PreviewRow[] }
+
 export default function InvoicesPanel() {
   const [rows, setRows] = useState<InvoiceRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -91,6 +115,7 @@ export default function InvoicesPanel() {
   // PL-162: the trust line quotes the real settings day, not a hardcoded one.
   const [generateDay, setGenerateDay] = useState(20)
   const [offCycleOpen, setOffCycleOpen] = useState(false)
+  const [preview, setPreview] = useState<CyclePreview | null>(null)
   useEffect(() => {
     supabase
       .from('app_settings')
@@ -100,6 +125,15 @@ export default function InvoicesPanel() {
       .then(({ data }) => {
         if (data?.value) setGenerateDay(Number(data.value))
       })
+    // PL-333 A: the forward look — read-only, self-empties once generation
+    // runs (generated families render as real invoices instead).
+    fetch('/api/admin/tutoring/invoice-preview')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json?.preview) setPreview(json.preview)
+        if (json?.generateDay) setGenerateDay(Number(json.generateDay))
+      })
+      .catch(() => setPreview(null))
   }, [])
 
   const load = useCallback(async () => {
@@ -191,12 +225,99 @@ export default function InvoicesPanel() {
         </p>
       )}
 
-      {periods.map((p) => (
-        <div key={p} className="border border-gray-200 rounded-lg p-4">
-          <div className="font-bold text-hgl-slate mb-2">{monthLabel(p)}</div>
+      {/* PL-333 A: the upcoming month BEFORE its generation run — a read-only
+          projection from the generator's own logic. Visually distinct
+          (dashed, tinted), no actions, replaced by the real drafts once the
+          run happens (generated families drop out of the preview). */}
+      {preview && preview.rows.length > 0 && (
+        <details open className="border-2 border-dashed border-sky-300 bg-sky-50/50 rounded-lg p-4">
+          <summary className="cursor-pointer font-bold text-hgl-slate flex flex-wrap items-baseline gap-x-3">
+            <span>Coming up — {preview.monthLabel}</span>
+            <span className="text-xs font-normal text-gray-500">
+              preview · {preview.rows.length} famil{preview.rows.length === 1 ? 'y' : 'ies'} · $
+              {preview.rows.reduce((s, r) => s + r.projectedTotal, 0).toFixed(2)}
+            </span>
+          </summary>
+          <p className="text-xs text-gray-500 mt-1 mb-2">
+            These will generate automatically on the {generateDayLabel(generateDay)} — nothing to
+            do. Projected from each family&apos;s active schedules (prepaid hours, block holds,
+            and current rates included), so it matches what the run will create.
+          </p>
           <div className="space-y-2">
-            {rows
-              .filter((r) => String(r.period) === p)
+            {preview.rows.map((r) => (
+              <div key={r.familyId} className="rounded border border-sky-200 bg-white/70 p-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <a
+                    href={`/admin/families/${r.familyId}?section=billing`}
+                    className="font-semibold text-hgl-slate hover:text-hgl-blue hover:underline"
+                  >
+                    {r.familyName}
+                  </a>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-semibold">
+                    projected
+                  </span>
+                  {r.autopay && <span className="text-xs text-gray-400">autopay</span>}
+                  <span className="ml-auto font-bold text-hgl-slate">
+                    ${r.projectedTotal.toFixed(2)}
+                  </span>
+                </div>
+                <ul className="mt-1 text-xs text-gray-600 space-y-0.5">
+                  {r.lines.map((l, i) => (
+                    <li key={i}>
+                      {l.studentFirst} — {l.subjectName}
+                      {l.tutorName ? ` with ${l.tutorName}` : ''}:{' '}
+                      {l.held ? (
+                        <span className="text-amber-700">
+                          on hold — waiting on the family&apos;s answer about continuing past
+                          their prepaid hours (nothing new is scheduled or billed)
+                        </span>
+                      ) : (
+                        <>
+                          {l.hours > 0 && `${l.hours} h × $${l.rate}/hr`}
+                          {l.hours > 0 && l.coveredHours > 0 && ' · '}
+                          {l.coveredHours > 0 && `${l.coveredHours} h covered by their prepaid package`}
+                          {l.hours === 0 && l.coveredHours === 0 && 'no billable sessions projected'}
+                        </>
+                      )}
+                    </li>
+                  ))}
+                  {r.carriedFees > 0 && (
+                    <li>Carried late-reschedule fees: ${r.carriedFees.toFixed(2)}</li>
+                  )}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {/* PL-333 B: collapsible months — count + total in the header so a
+          collapsed month still informs. Upcoming + current open, past
+          collapsed (a deep-linked invoice forces its month open). */}
+      {periods.map((p) => {
+        const monthRows = rows.filter((r) => String(r.period) === p)
+        const monthTotal = monthRows
+          .filter((r) => r.status !== 'void')
+          .reduce((s, r) => s + Number(r.total), 0)
+        const currentPeriod =
+          new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7) + '-01'
+        const deepLinked =
+          typeof window !== 'undefined' &&
+          monthRows.some((r) => r.id === new URLSearchParams(window.location.search).get('invoice'))
+        return (
+        <details
+          key={p}
+          open={String(p).slice(0, 10) >= currentPeriod || deepLinked}
+          className="border border-gray-200 rounded-lg p-4"
+        >
+          <summary className="cursor-pointer font-bold text-hgl-slate mb-2 flex flex-wrap items-baseline gap-x-3">
+            <span>{monthLabel(p)}</span>
+            <span className="text-xs font-normal text-gray-500">
+              {monthRows.length} invoice{monthRows.length === 1 ? '' : 's'} · ${monthTotal.toFixed(2)}
+            </span>
+          </summary>
+          <div className="space-y-2">
+            {monthRows
               .map((r) => (
                 <div key={r.id} id={`invoice-${r.id}`} className={`rounded p-3 ${r.status === 'void' ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -391,8 +512,9 @@ export default function InvoicesPanel() {
                 </div>
               ))}
           </div>
-        </div>
-      ))}
+        </details>
+        )
+      })}
 
       {/* PL-162: off-cycle controls, demoted to a footnote. Each button says
           its actual use case — the automation covers everything else. */}
