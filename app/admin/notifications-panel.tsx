@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react'
 
 // PL-309: Settings → Notifications — who receives which [HGL Admin] alert
 // family. The admin grants/revokes categories per staff member and can
-// toggle receipt; a manager sees only her own list and can switch her
-// granted categories on/off (never self-grant). Every alert send resolves
-// its recipients from these rows; zero subscribers for a category falls
-// back to the legacy ops address so alerts never go nowhere.
+// toggle receipt; a manager (PL-332) can switch granted categories on/off
+// for herself and other non-admin staff — an admin's rows render read-only
+// with the explainer, and the API refuses them regardless. Every alert send
+// resolves its recipients from these rows; zero subscribers for a category
+// falls back to the legacy ops address so alerts never go nowhere.
 
 type Category = { key: string; label: string }
-type StaffRow = { email: string; role: 'admin' | 'manager' }
+type StaffRow = { email: string; role: 'admin' | 'manager'; name: string | null }
 type SubRow = { email: string; category: string; granted: boolean; enabled: boolean }
 
 export default function NotificationsPanel({
@@ -71,7 +72,7 @@ export default function NotificationsPanel({
         below. Checked = that person receives those alerts.{' '}
         {isAdmin
           ? 'Granting a category lets a manager switch it on and off themselves; revoking takes it away entirely.'
-          : 'You can switch your granted categories on and off — ask the admin to grant new ones.'}{' '}
+          : 'You can switch granted categories on and off for yourself and other staff — granting new ones is the admin’s, and an admin’s own rows are read-only here.'}{' '}
         If nobody subscribes to a category, its alerts still go to the ops address — they never
         go nowhere.
       </p>
@@ -81,13 +82,21 @@ export default function NotificationsPanel({
             {s.email}{' '}
             <span className="text-xs font-normal text-gray-400 uppercase">{s.role}</span>
           </p>
+          {/* PL-332: the plain-English explainer where the control would be. */}
+          {!isAdmin && s.role === 'admin' && (
+            <p className="text-xs text-gray-500 italic mb-2">
+              Only {s.name ?? s.email} can change an owner&apos;s notifications.
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
             {data.categories.map((c) => {
               const row = rowFor(s.email, c.key)
               const granted = row?.granted ?? false
               const enabled = (row?.enabled ?? false) && granted
               const key = `${s.email}:${c.key}`
-              const canToggle = isAdmin || (s.email === data.self && granted)
+              // PL-332: managers toggle granted categories for any NON-ADMIN
+              // staff member (self included); an admin's rows are read-only.
+              const canToggle = isAdmin || (granted && s.role !== 'admin')
               return (
                 <div key={c.key} className="flex items-center gap-2">
                   <label className={`flex items-center gap-2 ${canToggle ? '' : 'opacity-60'}`}>
@@ -109,7 +118,7 @@ export default function NotificationsPanel({
                   {granted && !enabled && (
                     <span className="text-xs text-gray-400">granted — switched off</span>
                   )}
-                  {!granted && !isAdmin && (
+                  {!granted && !isAdmin && s.role !== 'admin' && (
                     <span className="text-xs text-gray-400">not granted</span>
                   )}
                   {isAdmin && s.role === 'manager' && granted && (

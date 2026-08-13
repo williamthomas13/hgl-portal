@@ -9,11 +9,13 @@ import {
 } from '../../../utils/alert-categories'
 
 // PL-309: the Settings → Notifications panel's API.
-// Permissions: the admin grants/revokes categories for anyone and can
-// toggle anything; a manager can toggle her OWN `enabled` inside categories
-// an admin granted her — never self-grant. First load self-heals defaults:
-// an admin profile with no rows gets everything ON (today's behavior); a
-// manager profile with no rows gets the tutoring subset + close-match.
+// Permissions (PL-332): the admin grants/revokes categories for anyone and
+// can toggle anything; a manager can toggle `enabled` inside granted
+// categories for HERSELF and other NON-ADMIN staff — never an admin's rows
+// (read-only to her, refused here regardless of the screen), and never
+// grant. First load self-heals defaults: an admin profile with no rows gets
+// everything ON (today's behavior); a manager profile with no rows gets the
+// tutoring subset + close-match.
 
 type Row = { email: string; category: string; granted: boolean; enabled: boolean }
 
@@ -36,11 +38,14 @@ export async function GET() {
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('email, role')
+    .select('email, role, full_name')
     .in('role', ['admin', 'manager'])
-  const staff = ((profiles as { email: string; role: 'admin' | 'manager' }[]) ?? []).map((p) => ({
+  const staff = (
+    (profiles as { email: string; role: 'admin' | 'manager'; full_name: string | null }[]) ?? []
+  ).map((p) => ({
     email: p.email.toLowerCase(),
     role: p.role,
+    name: p.full_name ?? null,
   }))
   for (const s of staff) await seedDefaults(s.email, s.role)
 
@@ -50,12 +55,14 @@ export async function GET() {
   const all = ((rows as Row[]) ?? []).map((r) => ({ ...r, email: r.email.toLowerCase() }))
   const mine = caller.email.toLowerCase()
 
+  // PL-332: managers see everyone too — the panel renders an admin's rows
+  // read-only with the plain-English explainer; POST refuses them anyway.
   return NextResponse.json({
     role: caller.role,
     self: mine,
     categories: ALERT_CATEGORIES,
-    staff: caller.role === 'admin' ? staff : staff.filter((s) => s.email === mine),
-    rows: caller.role === 'admin' ? all : all.filter((r) => r.email === mine),
+    staff,
+    rows: all,
   })
 }
 
@@ -76,10 +83,26 @@ export async function POST(req: Request) {
   }
 
   if (caller.role !== 'admin') {
-    // A manager: own row, enabled only, and only where granted.
-    if (email !== caller.email.toLowerCase() || body.granted !== undefined) {
+    // A manager: enabled only, inside granted categories, for herself and
+    // other NON-ADMIN staff (PL-332) — never grant, never an admin's rows.
+    if (body.granted !== undefined) {
       return NextResponse.json(
-        { error: 'You can switch your own granted categories on and off — granting is the admin’s.' },
+        { error: 'You can switch granted categories on and off — granting is the admin’s.' },
+        { status: 403 }
+      )
+    }
+    const { data: target } = await supabase
+      .from('profiles')
+      .select('role, full_name')
+      .ilike('email', email)
+      .maybeSingle()
+    if (!target || !['admin', 'manager'].includes(target.role)) {
+      return NextResponse.json({ error: 'That email isn’t a staff member.' }, { status: 400 })
+    }
+    if (target.role === 'admin') {
+      // PL-332: enforced here regardless of what any screen shows.
+      return NextResponse.json(
+        { error: `Only ${target.full_name ?? email} can change an owner's notifications.` },
         { status: 403 }
       )
     }
@@ -91,7 +114,7 @@ export async function POST(req: Request) {
       .maybeSingle()
     if (!row?.granted) {
       return NextResponse.json(
-        { error: 'That category isn’t granted to you — ask the admin to add it.' },
+        { error: 'That category isn’t granted — ask the admin to add it.' },
         { status: 403 }
       )
     }

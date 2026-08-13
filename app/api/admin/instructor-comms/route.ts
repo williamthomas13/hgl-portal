@@ -1,6 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
+import { adminOwners, ownerFor, ownerRefusal } from '../../../utils/admin-owner'
 import { loadClassBundles, localDate } from '../../../utils/lifecycle'
 import {
   loadClassInstructor,
@@ -19,6 +20,15 @@ import {
 
 const NOTE_PREFS = ['on', 'weekly', 'off'] as const
 const DIGEST_PREFS = ['on', 'weekly', 'off'] as const
+
+// PL-332: the instructor editor asks who the owners are, so it can render
+// an admin-owned instructor's pref controls read-only with the explainer
+// (managers can only read their OWN profiles row — this is their window).
+export async function GET() {
+  const caller = await sessionRole('staff')
+  if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
+  return NextResponse.json({ role: caller.role, admins: await adminOwners() })
+}
 
 export async function POST(req: Request) {
   const caller = await sessionRole('staff')
@@ -41,6 +51,18 @@ export async function POST(req: Request) {
   }
   if (!body.instructorId || (typeof body.enabled !== 'boolean' && !body.prefs)) {
     return NextResponse.json({ error: 'Missing instructor or preferences.' }, { status: 400 })
+  }
+
+  // PL-332: a manager never edits an admin-owned instructor's notification
+  // prefs (server refuses regardless of the screen; admin edits everyone).
+  if (caller.role !== 'admin') {
+    const { data: inst } = await supabase
+      .from('instructors')
+      .select('email')
+      .eq('id', body.instructorId)
+      .maybeSingle()
+    const owner = ownerFor(await adminOwners(), inst?.email)
+    if (owner) return NextResponse.json({ error: ownerRefusal(owner) }, { status: 403 })
   }
 
   const patch: Record<string, unknown> = {}

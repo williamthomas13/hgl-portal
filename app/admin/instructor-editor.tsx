@@ -32,6 +32,10 @@ export default function InstructorEditor({
   const [isAdmin, setIsAdmin] = useState(false)
   const [subjects, setSubjects] = useState<SubjectRow[]>([])
   const [originalEmail, setOriginalEmail] = useState('')
+  // PL-332: the admin profiles (email + name) — a manager's pref controls go
+  // read-only when the instructor row belongs to one (a DB trigger refuses
+  // the write regardless of this screen).
+  const [adminList, setAdminList] = useState<{ email: string; name: string | null }[]>([])
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -68,6 +72,17 @@ export default function InstructorEditor({
       if (auth.user) {
         const { data: p } = await supabase.from('profiles').select('role').eq('id', auth.user.id).single()
         setIsAdmin(p?.role === 'admin')
+        // PL-332: managers can't read other profiles rows — the staff-gated
+        // route reports who the owners are.
+        if (p?.role !== 'admin') {
+          try {
+            const res = await fetch('/api/admin/instructor-comms')
+            const j = await res.json().catch(() => null)
+            setAdminList(j?.admins ?? [])
+          } catch {
+            setAdminList([])
+          }
+        }
       }
       if (instructorId) {
         const [{ data: row }, { data: noteRow }] = await Promise.all([
@@ -108,6 +123,11 @@ export default function InstructorEditor({
   }, [instructorId])
 
   const emailChanged = instructorId != null && email.trim().toLowerCase() !== originalEmail.toLowerCase()
+  // PL-332: this instructor row belongs to an admin profile, and the caller
+  // is a manager — email-pref controls are read-only and excluded from save.
+  const prefOwner = isAdmin
+    ? null
+    : (adminList.find((a) => a.email === originalEmail.trim().toLowerCase()) ?? null)
 
   async function save() {
     const cleanEmail = email.trim().toLowerCase()
@@ -133,9 +153,15 @@ export default function InstructorEditor({
       calendar_color: calendarColor || null,
       default_meeting_link: location.trim() || null,
       offer_windows: windows,
-      pref_notes_reminders: prefNotes,
-      pref_class_digests: prefDigests,
-      pref_fyi_copies: prefFyi,
+      // PL-332: an admin-owned instructor's email prefs are the owner's —
+      // excluded from a manager's save (the DB trigger refuses them anyway).
+      ...(prefOwner
+        ? {}
+        : {
+            pref_notes_reminders: prefNotes,
+            pref_class_digests: prefDigests,
+            pref_fyi_copies: prefFyi,
+          }),
       // Managers must not touch titles or the pay-type flag (the DB trigger
       // refuses the whole update) — only include when the caller may edit.
       ...(isAdmin ? { pay_type_titles: payTitles, pay_type: payType } : {}),
@@ -324,10 +350,10 @@ export default function InstructorEditor({
                   — informational only; timecard, schedule-change, and coverage emails always send
                 </span>
               </label>
-              <div className="flex flex-wrap gap-4 text-sm items-end">
+              <div className={`flex flex-wrap gap-4 text-sm items-end ${prefOwner ? 'opacity-60' : ''}`}>
                 <label className="block">
                   <span className="block text-xs text-gray-500">Session-note reminders</span>
-                  <select value={prefNotes} onChange={(e) => setPrefNotes(e.target.value as 'on' | 'weekly' | 'off')} className="mt-1 border border-gray-300 rounded p-1.5 bg-white">
+                  <select value={prefNotes} disabled={!!prefOwner} onChange={(e) => setPrefNotes(e.target.value as 'on' | 'weekly' | 'off')} className="mt-1 border border-gray-300 rounded p-1.5 bg-white">
                     <option value="on">on (daily)</option>
                     <option value="weekly">weekly digest</option>
                     <option value="off">off</option>
@@ -335,17 +361,23 @@ export default function InstructorEditor({
                 </label>
                 <label className="block">
                   <span className="block text-xs text-gray-500">Class digests & milestone pings</span>
-                  <select value={prefDigests} onChange={(e) => setPrefDigests(e.target.value as 'on' | 'weekly' | 'off')} className="mt-1 border border-gray-300 rounded p-1.5 bg-white">
+                  <select value={prefDigests} disabled={!!prefOwner} onChange={(e) => setPrefDigests(e.target.value as 'on' | 'weekly' | 'off')} className="mt-1 border border-gray-300 rounded p-1.5 bg-white">
                     <option value="on">on (digest + instant pings)</option>
                     <option value="weekly">weekly digest only</option>
                     <option value="off">off (calendar events stop too)</option>
                   </select>
                 </label>
                 <label className="flex items-center gap-2 pb-1.5">
-                  <input type="checkbox" checked={prefFyi} onChange={(e) => setPrefFyi(e.target.checked)} />
+                  <input type="checkbox" checked={prefFyi} disabled={!!prefOwner} onChange={(e) => setPrefFyi(e.target.checked)} />
                   <span className="text-xs text-gray-600">FYI copies of family emails</span>
                 </label>
               </div>
+              {/* PL-332: the plain-English explainer where the control would be. */}
+              {prefOwner && (
+                <p className="text-[11px] text-gray-500 italic mt-1">
+                  Only {prefOwner.name ?? prefOwner.email} can change an owner&apos;s notifications.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs text-gray-600 font-semibold mb-1">Timezone</label>

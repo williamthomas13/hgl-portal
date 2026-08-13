@@ -261,8 +261,10 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
                   Managers use the same admin pages as you, minus the ownership-level pieces:
                   QuickBooks connect/disconnect and item mapping, contact settings, team access,
                   the price list, and editing a tutor&apos;s pay-type title list (a database rule
-                  refuses the write regardless of the screen). Their Notifications pane shows
-                  only their own granted categories.
+                  refuses the write regardless of the screen). Their dashboard drops the System
+                  health card — the same three numbers live under Settings → System health for
+                  them. In Notifications they can adjust their own and other non-admin staff
+                  members&apos; categories, but an admin&apos;s rows are read-only to them.
                 </p>
                 <p className="text-gray-500">
                   On pay: the portal stores pay-type <strong>titles</strong>{' '}and{' '}

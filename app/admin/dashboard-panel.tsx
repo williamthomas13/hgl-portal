@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useVisibleInterval } from '../components/use-visible-interval'
+import { SystemHealthBody, type SystemHealth } from './system-health-card'
 
 // PL-100: the landing dashboard. Needs Attention mirrors the alert family
 // but is STATE-DRIVEN — the API recomputes every row from live state, and
@@ -61,11 +62,6 @@ function groupActivity(rows: ActivityRow[]): FeedGroup[] {
   }
   return groups
 }
-type SystemHealth = {
-  sends: { today: number; cap: number; state: 'ok' | 'warn' | 'full' }
-  qbo: { pending: number; failed: number }
-  sweep: { lastFinishedAt: string | null; stale: boolean; hanging: boolean }
-}
 
 // PL-135: "waiting 3 days" — from the condition's own start, never from when
 // the dashboard first noticed. Local day math (the audit's F/dashboard note).
@@ -120,7 +116,13 @@ type UpcomingClass = {
   href: string
 }
 
-export default function DashboardPanel() {
+export default function DashboardPanel({
+  simulatedManager = false,
+}: {
+  /** PL-331: render the manager variant (no System health card) regardless
+   *  of the caller's real role — used by the view-as manager simulation. */
+  simulatedManager?: boolean
+} = {}) {
   const [attention, setAttention] = useState<AttentionRow[] | null>(null)
   const [activity, setActivity] = useState<ActivityRow[]>([])
   const [upcoming, setUpcoming] = useState<UpcomingClass[]>([])
@@ -128,6 +130,9 @@ export default function DashboardPanel() {
   const [weekProposed, setWeekProposed] = useState(0)
   const [error, setError] = useState('')
   const [health, setHealth] = useState<SystemHealth | null>(null)
+  // PL-331: the API reports the caller's role — managers get no System
+  // health card here (the same numbers live under Settings → System health).
+  const [role, setRole] = useState<'admin' | 'manager'>('admin')
   // PL-134: client-side only, defaults to All, no persistence needed.
   const [activityFilter, setActivityFilter] = useState('All')
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
@@ -153,6 +158,7 @@ export default function DashboardPanel() {
       setWeekSessions(json.weekSessions ?? 0)
       setWeekProposed(json.weekProposed ?? 0)
       setHealth(json.health ?? null)
+      setRole(json.role === 'manager' ? 'manager' : 'admin')
       setError('')
     } catch {
       setError("Could not reach the server — check your connection.")
@@ -425,84 +431,17 @@ export default function DashboardPanel() {
       <div className="space-y-6">
       {/* PL-136: system health — three live numbers, shipped BEFORE launch.
           The July 23 quota exhaustion is why: sends failed silently until an
-          external email happened to arrive. */}
-      <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-5">
-        <h2 className="text-lg font-bold text-hgl-slate mb-1">System health</h2>
-        <p className="text-xs text-gray-400 mb-3">
-          Three numbers that fail quietly when they fail.
-        </p>
-        {health ? (
-          <ul className="space-y-2 text-sm">
-            <li className="flex items-baseline justify-between gap-3">
-              <span className="text-gray-600">
-                Emails sent today
-                {(health.sends as any).campaignToday > 0 && (
-                  <span className="text-gray-400"> ({(health.sends as any).campaignToday} campaign)</span>
-                )}
-              </span>
-              <span
-                className={`font-bold ${
-                  health.sends.state === 'full'
-                    ? 'text-red-700'
-                    : health.sends.state === 'warn'
-                      ? 'text-amber-700'
-                      : 'text-gray-800'
-                }`}
-              >
-                {health.sends.today} / {health.sends.cap}
-                {health.sends.state === 'full' && (
-                  <span className="block text-[11px] font-normal">
-                    at the daily cap — sends are failing
-                  </span>
-                )}
-                {health.sends.state === 'warn' && (
-                  <span className="block text-[11px] font-normal">approaching the daily cap</span>
-                )}
-              </span>
-            </li>
-            <li className="flex items-baseline justify-between gap-3">
-              <span className="text-gray-600">QuickBooks queue</span>
-              <span className="font-bold text-gray-800 text-right">
-                {health.qbo.pending} waiting
-                {health.qbo.failed > 0 && (
-                  <>
-                    {' · '}
-                    {/* PL-298 audit: ?section= without ?tab= landed back on
-                        the dashboard — the tab must ride along. */}
-                    <a href="/admin?tab=settings&section=qbo" className="text-red-700 underline">
-                      {health.qbo.failed} failed
-                    </a>
-                  </>
-                )}
-              </span>
-            </li>
-            <li className="flex items-baseline justify-between gap-3">
-              <span className="text-gray-600">Hourly sweep</span>
-              <span
-                className={`font-bold text-right ${
-                  health.sweep.stale || health.sweep.hanging ? 'text-red-700' : 'text-gray-800'
-                }`}
-              >
-                {health.sweep.lastFinishedAt
-                  ? `last ran ${fmtWhen(health.sweep.lastFinishedAt)}`
-                  : 'never recorded'}
-                {health.sweep.hanging && (
-                  <span className="block text-[11px] font-normal">
-                    a run started and hasn&apos;t finished
-                  </span>
-                )}
-                {health.sweep.stale && !health.sweep.hanging && (
-                  <span className="block text-[11px] font-normal">
-                    overdue — emails stop going out while it&apos;s down
-                  </span>
-                )}
-              </span>
-            </li>
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-400">—</p>
-        )}
-      </div>
+          external email happened to arrive. PL-331: admin only — for the
+          manager role the same numbers live under Settings → System health. */}
+      {role !== 'manager' && !simulatedManager && (
+        <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-5">
+          <h2 className="text-lg font-bold text-hgl-slate mb-1">System health</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            Three numbers that fail quietly when they fail.
+          </p>
+          {health ? <SystemHealthBody health={health} /> : <p className="text-sm text-gray-400">—</p>}
+        </div>
+      )}
 
       {/* Recent Activity */}
       <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-5">

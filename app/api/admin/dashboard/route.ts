@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { auditXclDrift } from '../../../utils/gcal-sync'
 import { sessionRole } from '../../../utils/staff-gate'
 import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../utils/dates'
+import { computeSystemHealth } from '../../../utils/system-health'
 
 // PL-100: the dashboard's data. Needs Attention mirrors the internal alert
 // family but is STATE-DRIVEN, never send-driven (Scarlett's explicit
@@ -23,6 +24,19 @@ const shortDate = (iso: string) =>
         month: 'short',
         day: 'numeric',
         timeZone: 'UTC',
+      })
+    : ''
+
+/** PL-330/335E: full-month form — "August 14", with the year only when it
+ *  isn't this year. Calendar dates anchor at UTC noon (dates.ts rule), so
+ *  the rendered day IS the class-local calendar day regardless of server tz. */
+const plainDate = (iso: string, todayIso: string) =>
+  iso
+    ? new Date(iso.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'UTC',
+        ...(iso.slice(0, 4) !== todayIso.slice(0, 4) ? { year: 'numeric' as const } : {}),
       })
     : ''
 
@@ -64,16 +78,9 @@ export type ActivityRow = {
   groupLabel?: string
 }
 
-/**
- * PL-136: three numbers, one glance — the pre-launch card. The motivating
- * incident is the July 23 quota exhaustion: sends failed silently until an
- * external email happened to arrive. Read-only, no graphs, no history.
- */
-export type SystemHealth = {
-  sends: { today: number; campaignToday: number; cap: number; state: 'ok' | 'warn' | 'full' }
-  qbo: { pending: number; failed: number }
-  sweep: { lastFinishedAt: string | null; stale: boolean; hanging: boolean }
-}
+// PL-136: three numbers, one glance — the pre-launch health card. The
+// computation lives in utils/system-health.ts (PL-331: shared with the
+// manager's Settings section).
 
 export async function GET() {
   const caller = await sessionRole('staff')
@@ -198,11 +205,15 @@ export async function GET() {
   })
   const label = (c: any) => `${one<any>(c.schools)?.nickname ?? ''} ${c.class_type}`.trim()
 
+  // PL-330/335E: dashboard copy renders calendar dates plain-English — the
+  // "starts …" day is the class's real first day (PL-1: earliest session).
+  const firstDayOf = (c: any) =>
+    (c.sessions ?? []).map((s: any) => s.session_date).sort()[0] ?? c.start_date
   for (const c of liveClasses.filter((c) => !c.instructor_id)) {
     attention.push({
       id: `no-instructor-${c.id}`,
       kind: 'Class needs an instructor',
-      text: `${label(c)} (starts ${c.start_date}) has no instructor assigned.`,
+      text: `${label(c)} (starts ${plainDate(firstDayOf(c), todayIso)}) has no instructor assigned.`,
       href: `/admin?class=${c.id}`,
       since: c.created_at, // PL-135: since the class was created
     })
@@ -234,7 +245,7 @@ export async function GET() {
       attention.push({
         id: `min-enroll-${c.id}`,
         kind: 'Minimum-enrollment decision',
-        text: `${label(c)}: ${paid} of ${c.min_enrollment} minimum with the deadline ${c.enrollment_deadline} — run, extend, or cancel.`,
+        text: `${label(c)}: ${paid} of ${c.min_enrollment} minimum with the deadline ${plainDate(c.enrollment_deadline, todayIso)} — run, extend, or cancel.`,
         href: `/admin?class=${c.id}`,
         urgent: true,
         deadline: c.enrollment_deadline, // PL-135: a promise beats an age
@@ -243,12 +254,12 @@ export async function GET() {
   }
   const in7d = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10)
   for (const c of liveClasses) {
-    const firstDay = (c.sessions ?? []).map((s: any) => s.session_date).sort()[0] ?? c.start_date
+    const firstDay = firstDayOf(c)
     if (!c.default_location && firstDay >= todayIso && firstDay <= in7d) {
       attention.push({
         id: `missing-details-${c.id}`,
         kind: 'Class details missing',
-        text: `${label(c)} starts ${firstDay} and still has no ${c.delivery_mode === 'online' ? 'meeting link' : 'room/location'}.`,
+        text: `${label(c)} starts ${plainDate(firstDay, todayIso)} and still has no ${c.delivery_mode === 'online' ? 'meeting link' : 'room/location'}.`,
         href: `/admin?class=${c.id}`,
         urgent: true,
       })
@@ -873,82 +884,21 @@ export async function GET() {
       (rowClock(a) && rowClock(b) ? rowClock(a).localeCompare(rowClock(b)) : 0)
   )
 
-  // --- PL-136: system health ------------------------------------------------
-  const dayStartDenver = new Date(
-    new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }) + 'T00:00:00-06:00'
-  ).toISOString()
-  const [{ data: capRow }, { count: sendsToday }, { count: campaignToday }, { count: qboPendingCount }, { count: qboFailedCount }, { data: sweepRows }] =
-    await Promise.all([
-      supabase.from('app_settings').select('value').eq('key', 'resend_daily_cap').maybeSingle(),
-      // Real sends AND test sends both consume the plan's quota.
-      supabase
-        .from('email_sends')
-        .select('id', { count: 'exact', head: true })
-        .in('status', ['sent', 'delivered', 'bounced', 'complained'])
-        .gte('sent_at', dayStartDenver),
-      // PL-201: campaign volume shown distinctly on the health card
-      // (campaign sends are the dedupe keys the engine mints).
-      supabase
-        .from('email_sends')
-        .select('id', { count: 'exact', head: true })
-        .like('dedupe_key', 'campaign:%')
-        .in('status', ['sent', 'delivered', 'bounced', 'complained'])
-        .gte('sent_at', dayStartDenver),
-      supabase.from('qbo_sync_log').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('qbo_sync_log').select('id', { count: 'exact', head: true }).eq('status', 'failed'),
-      supabase
-        .from('app_settings')
-        .select('key, value')
-        .in('key', ['cron_sweep_started_at', 'cron_sweep_finished_at', 'sweep_recovered_note']),
-    ])
-  const sweepMap = Object.fromEntries(((sweepRows as any[]) ?? []).map((r) => [r.key, r.value]))
-  const finishedAt = sweepMap.cron_sweep_finished_at ?? null
-  const startedAt = sweepMap.cron_sweep_started_at ?? null
+  // --- PL-136: system health (PL-331: shared computation) ---------------------
+  const { health, recovery } = await computeSystemHealth(now)
   // PL-273: the sweep's own recovery note lands in the activity feed —
   // "down for N hours, recovered at X" — for a week, then ages out of the
   // 40-row window naturally.
-  try {
-    const rec = sweepMap.sweep_recovered_note ? JSON.parse(sweepMap.sweep_recovered_note) : null
-    if (rec?.at && now.getTime() - new Date(rec.at).getTime() < 7 * 86_400_000) {
-      const hours = Math.round((rec.gapMinutes / 60) * 10) / 10
-      activity.push({
-        id: `sweep-recovered-${rec.at}`,
-        type: 'System',
-        groupKey: `System|sweep-${rec.at}`,
-        when: rec.at,
-        text: `Hourly sweep recovered after a ${hours}-hour gap — the backlog was delivered by this run.`,
-        href: '/admin',
-      })
-    }
-  } catch {
-    // an unparseable note is not worth failing the dashboard over
-  }
-  const cap = Number(capRow?.value ?? 100)
-  const used = sendsToday ?? 0
-  const health: SystemHealth = {
-    sends: {
-      today: used,
-      campaignToday: campaignToday ?? 0,
-      cap,
-      state: used >= cap ? 'full' : used >= cap * 0.8 ? 'warn' : 'ok',
-    },
-    qbo: { pending: qboPendingCount ?? 0, failed: qboFailedCount ?? 0 },
-    sweep: {
-      lastFinishedAt: finishedAt,
-      // The sweep is HOURLY (GitHub Actions; the daily Vercel cron is only a
-      // backstop) and the hourly assumption is load-bearing — PL-144 catch-up,
-      // failed-send flushing, campaign resumes. GH Actions cron is
-      // best-effort, so allow ~15 minutes of start slack: more than 75
-      // minutes without finishing is a stall, and a stalled sweep stops the
-      // whole email lifecycle silently.
-      stale: !finishedAt || now.getTime() - new Date(finishedAt).getTime() > 75 * 60_000,
-      // Started much later than it finished = the current run is hanging.
-      hanging: Boolean(
-        startedAt &&
-          (!finishedAt || startedAt > finishedAt) &&
-          now.getTime() - new Date(startedAt).getTime() > 20 * 60_000
-      ),
-    },
+  if (recovery && now.getTime() - new Date(recovery.at).getTime() < 7 * 86_400_000) {
+    const hours = Math.round((recovery.gapMinutes / 60) * 10) / 10
+    activity.push({
+      id: `sweep-recovered-${recovery.at}`,
+      type: 'System',
+      groupKey: `System|sweep-${recovery.at}`,
+      when: recovery.at,
+      text: `Hourly sweep recovered after a ${hours}-hour gap — the backlog was delivered by this run.`,
+      href: '/admin',
+    })
   }
 
   // --- Recent Activity (read-only) ------------------------------------------
@@ -1084,14 +1034,16 @@ export async function GET() {
   activity.sort((a, b) => String(b.when).localeCompare(String(a.when)))
 
   // --- Restrained extras ------------------------------------------------------
+  // PL-330: the card speaks plain English ("starts September 2"), never raw
+  // ISO, and "starts" means the class's real first day (PL-1).
   const upcoming = liveClasses
-    .filter((c) => c.start_date >= todayIso)
-    .sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))
+    .filter((c) => firstDayOf(c) >= todayIso)
+    .sort((a, b) => String(firstDayOf(a)).localeCompare(String(firstDayOf(b))))
     .slice(0, 5)
     .map((c) => ({
       id: c.id,
       label: label(c),
-      startDate: c.start_date,
+      startDate: plainDate(firstDayOf(c), todayIso),
       paid: (c.enrollments ?? []).filter((e: any) => ['Paid', 'Completed'].includes(e.payment_status)).length,
       min: c.min_enrollment,
       cap: null as number | null,
@@ -1120,5 +1072,8 @@ export async function GET() {
     weekSessions: weekSessions ?? 0,
     weekProposed: weekProposed ?? 0,
     health,
+    // PL-331: the panel hides the System health card for managers (it lives
+    // under Settings → System health for that role instead).
+    role: caller.role,
   })
 }

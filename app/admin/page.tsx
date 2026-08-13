@@ -16,6 +16,7 @@ import GcalPanel from './tutoring/gcal-panel'
 import ContactSettingsPanel from './contact-settings-panel'
 import TeamAccessPanel from './team-access-panel'
 import NotificationsPanel from './notifications-panel'
+import { SystemHealthSettingsPanel } from './system-health-card'
 import PricingPanel from './pricing-panel'
 import ReadOnlyPreview from './view-as/read-only-preview'
 import { classDisplayLabel } from '../utils/class-label'
@@ -661,6 +662,10 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       // PL-213: who can open the admin side (admin-only; hidden for managers).
       { id: 'team', label: 'Team access' },
       { id: 'notifications', label: 'Notifications' },
+      // PL-331: manager-only filing — the dashboard's System health card
+      // lives here for that role (the entry is filtered out for admins,
+      // whose dashboard keeps the card).
+      { id: 'health', label: 'System health' },
       { id: 'pricing', label: 'Price list' },
       // PL-202: the Quo calls integration (setup + enable switch).
       { id: 'calls', label: 'Phone calls' },
@@ -689,6 +694,9 @@ export default function AdminDashboard() {
   // ownership panels hidden exactly as the role hides them, wrapped in the
   // PL-325 read-only interceptor. Used by View as → Manager (iframe).
   const [simManager, setSimManager] = useState(false)
+  // PL-331: the caller's real role — the System health settings entry only
+  // shows for managers (the admin keeps the dashboard card instead).
+  const [callerRole, setCallerRole] = useState<'admin' | 'manager'>('admin')
   // PL-101: vertical section tabs — one section visible at a time, all of
   // them always MOUNTED (hidden, not unmounted) so deep-link focus polling
   // and data loads behave exactly as before (the PL-99 late-mount lesson).
@@ -752,6 +760,15 @@ export default function AdminDashboard() {
       setActiveGroup('classes')
       setActiveSection('rosters')
     }
+  }, [])
+  // PL-331: one profile read — the same client-side pattern the instructor
+  // editor uses (display-only; every write path re-checks role server-side).
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return
+      const { data: p } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
+      if (p?.role === 'manager') setCallerRole('manager')
+    })
   }, [])
   // Signals that used to just expand a section now also select its tab.
   useEffect(() => {
@@ -2336,7 +2353,11 @@ export default function AdminDashboard() {
               navigates you out of the left-hand navigation anymore. */}
           {(NAV_GROUPS[activeGroup]?.entries.length ?? 0) > 1 && (
             <SidebarNav
-              entries={NAV_GROUPS[activeGroup].entries}
+              entries={NAV_GROUPS[activeGroup].entries.filter(
+                // PL-331: System health files under Settings for managers
+                // only — the admin's dashboard keeps the card instead.
+                (e) => e.id !== 'health' || callerRole === 'manager' || simManager
+              )}
               active={activeSection}
               onSelect={setActiveSection}
             />
@@ -2346,7 +2367,7 @@ export default function AdminDashboard() {
         <div className={activeSection === 'dashboard' ? '' : 'hidden'}>
           {/* PL-100: the landing view — Needs Attention (state-driven) +
               Recent Activity + a couple of restrained glance cards. */}
-          <DashboardPanel />
+          <DashboardPanel simulatedManager={simManager} />
         </div>
 
         <div className={activeSection === 'add-class' ? '' : 'hidden'}>
@@ -2679,6 +2700,18 @@ export default function AdminDashboard() {
             defaultOpen
           >
             <NotificationsPanel simulatedManager={simManager} />
+          </CollapsibleSection>
+        </div>
+
+        {/* PL-331: the manager's System health section — the same three
+            numbers the admin dashboard card shows, same computation. */}
+        <div className={activeSection === 'health' ? '' : 'hidden'}>
+          <CollapsibleSection
+            title="System health"
+            subtitle="Email quota, the QuickBooks queue, and the hourly sweep — live"
+            defaultOpen
+          >
+            <SystemHealthSettingsPanel />
           </CollapsibleSection>
         </div>
 
