@@ -103,6 +103,9 @@ export type ClassBundle = {
   minEnrollment: number
   deliveryMode: string
   enrollmentDeadline: string | null
+  /** PL-335: 'run_anyway' = a recorded decision — the under-minimum
+   *  checkpoint (alert + dashboard row) stops asking for this class. */
+  minEnrollmentDecision: string | null
   registrationCloseDate: string | null
   startDate: string
   sessions: SessionInfo[]
@@ -218,6 +221,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     `
     id, slug, status, counselor_id, class_type, school_id, instructor_id,
     default_location, synap_group, price, capacity, min_enrollment,
+    min_enrollment_decision,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     collateral_changed_at, timezone, has_diagnostics,
     follow_on_class_id, fo_extended_until, fo_exclude, fo_announce_date, fo_discount_end,
@@ -323,6 +327,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
             : 8,
       deliveryMode: c.delivery_mode,
       enrollmentDeadline: c.enrollment_deadline,
+      minEnrollmentDecision: c.min_enrollment_decision ?? null,
       registrationCloseDate: c.registration_close_date ?? null,
       startDate: c.start_date,
       sessions,

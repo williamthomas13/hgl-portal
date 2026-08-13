@@ -220,6 +220,11 @@ type ClassRow = {
   delivery_mode: string
   min_enrollment: number | null
   enrollment_deadline: string | null
+  /** PL-335: "Run this class anyway" — a recorded decision ('run_anyway')
+   *  that clears the Needs Attention row permanently; undo re-arms it. */
+  min_enrollment_decision: string | null
+  min_enrollment_decided_at: string | null
+  min_enrollment_decided_by: string | null
   follow_on_class_id: string | null
   /** PL-311: explicit follow-up flag — gates the FO marketing controls. */
   is_follow_on: boolean
@@ -727,6 +732,9 @@ export default function AdminDashboard() {
       setActiveTab(classId)
       setActiveGroup('classes')
       setActiveSection('rosters')
+      // PL-335 A: the Needs Attention row lands ON the decision zone — the
+      // highlighted deadline field with run-anyway and cancel right there.
+      if (q.get('decision') === 'min') setDeepFocus(`min-decision-${classId}`)
     }
     // PL-242: names are doors — ?school={id} lands on that school's card
     // (the panel scrolls to and highlights it).
@@ -1012,11 +1020,18 @@ export default function AdminDashboard() {
 
   // PL-287/PL-289: the two roster date edits — a real calendar picker (the
   // typed YYYY-MM-DD prompt is gone). Null clears back to the default.
+  // PL-335: the DEADLINE goes through the decision route — extending while
+  // the class is under minimum inside the row's window is one of the three
+  // decisions, so the instructor hears about it (any other edit is silent).
   async function handleDateField(
     c: ClassRow,
     field: 'enrollment_deadline' | 'registration_close_date',
     value: string | null
   ) {
+    if (field === 'enrollment_deadline') {
+      await minEnrollmentAction(c, { action: 'set_deadline', deadline: value })
+      return
+    }
     const { error } = await supabase
       .from('classes')
       .update({ [field]: value })
@@ -1024,6 +1039,30 @@ export default function AdminDashboard() {
     if (error) {
       setActionNotice('Error saving the date: ' + error.message)
       return
+    }
+    fetchRosters()
+  }
+
+  // PL-335: run-anyway / undo / deadline edits — one server path, which also
+  // owns the instructor note so no screen can skip it.
+  async function minEnrollmentAction(
+    c: ClassRow,
+    payload: { action: 'run_anyway' | 'undo' | 'set_deadline'; deadline?: string | null }
+  ) {
+    const res = await fetch('/api/admin/class-min-enrollment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classId: c.id, ...payload }),
+    })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      setActionNotice('Error: ' + (json.error ?? 'that decision did not save.'))
+      return
+    }
+    if (payload.action === 'run_anyway') {
+      setActionNotice(
+        'Recorded — the class runs regardless of the paid count, and the dashboard row is cleared. The instructor gets a short note.'
+      )
     }
     fetchRosters()
   }
@@ -1480,6 +1519,21 @@ export default function AdminDashboard() {
     const sortedSessions = [...(c.sessions ?? [])].sort(bySessionStart)
     const lastSession = sortedSessions[sortedSessions.length - 1] ?? null
     const isCancelled = c.status === 'cancelled'
+    // PL-335: the decision zone renders when the dashboard row's own
+    // condition is live (state parity), when a run-anyway decision is on
+    // record, or when the Needs Attention link deep-linked here.
+    const runAnyway = c.min_enrollment_decision === 'run_anyway'
+    const todayIsoLocal = new Date().toISOString().slice(0, 10)
+    const in3dIso = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
+    const underMin = !isCancelled && c.min_enrollment != null && paidCount < c.min_enrollment
+    const decisionWindow =
+      underMin &&
+      !runAnyway &&
+      !!c.enrollment_deadline &&
+      c.enrollment_deadline >= todayIsoLocal &&
+      c.enrollment_deadline <= in3dIso
+    const showDecisionZone =
+      !isCancelled && (runAnyway || decisionWindow || deepFocus === `min-decision-${c.id}`)
     return (
       <div key={c.id} className="border border-gray-200 rounded-lg overflow-hidden">
         <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-start gap-6">
@@ -1747,6 +1801,54 @@ export default function AdminDashboard() {
                 </button>
               )}
             </p>
+            {/* PL-335: the decision zone — the Needs Attention row lands
+                here, and each of the three choices actually resolves it. */}
+            {showDecisionZone && (
+              <div
+                id={`min-decision-${c.id}`}
+                className="my-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm space-y-1.5 max-w-xl"
+              >
+                {runAnyway ? (
+                  <p className="text-amber-900">
+                    <span className="font-semibold">Running below minimum</span>
+                    {c.min_enrollment_decided_at
+                      ? ` — decided ${formatTimestampAdmin(c.min_enrollment_decided_at)}`
+                      : ''}
+                    {c.min_enrollment_decided_by ? ` by ${c.min_enrollment_decided_by}` : ''}.{' '}
+                    {(!c.enrollment_deadline || c.enrollment_deadline >= todayIsoLocal) && (
+                      <ConfirmAction
+                        label="undo"
+                        message="Clear the run-anyway decision? The dashboard reminder re-arms if the class is still under minimum near the deadline."
+                        confirmLabel="Yes, clear it"
+                        className="text-xs text-gray-600 underline"
+                        onConfirm={() => minEnrollmentAction(c, { action: 'undo' })}
+                      />
+                    )}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-amber-900 font-semibold">
+                      Below minimum ({paidCount} of {c.min_enrollment} paid) with the deadline
+                      coming up — extend the deadline, run the class anyway, or cancel it.
+                    </p>
+                    <p className="text-amber-800 text-xs">
+                      Extending (pick a later date on the deadline picker above) is a snooze, not
+                      a dismissal — the reminder returns if enrollment is still short near the new
+                      date. Cancelling uses the Cancel class… button below.
+                    </p>
+                    <p>
+                      <ConfirmAction
+                        label="Run this class anyway"
+                        message={`Run ${schoolLabel} ${c.class_type} regardless of the paid count? The dashboard reminder clears for good (undo-able until the deadline passes) and the instructor gets a short note.`}
+                        confirmLabel="Yes, run it"
+                        className="px-3 py-1.5 rounded bg-hgl-slate text-white text-xs font-semibold hover:opacity-90"
+                        onConfirm={() => minEnrollmentAction(c, { action: 'run_anyway' })}
+                      />
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
             <p className="text-xs text-gray-500 flex items-center gap-2">
               <span title="The automatic cutoff — the register page stops taking sign-ups after this date. A setup detail; decisions run on the deadline above.">
                 Registration closes (sign-up cutoff):{' '}

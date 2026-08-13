@@ -2181,4 +2181,28 @@ One line on what to expect: you'll get a weekly enrollment update while registra
 
 {familyEmailBlock}`,
   },
+  // PL-335 D: the instructor hears the minimum-enrollment decision — run
+  // anyway / deadline extended — as a short direct note (cancel is covered
+  // by the existing cancellation comms, so it never double-sends). Sent
+  // regardless of the PL-327 prefs: schedule-relevant, T3-T-class treatment.
+  {
+    template_key: 'IN_MIN_DECISION',
+    display_name: 'IN — Instructor minimum-enrollment decision note',
+    sequence_number: 'IN-M',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{className}: {minDecisionSubject}',
+    preheader: 'Where the class stands — nothing you need to do.',
+    footer_note: null,
+    body_markdown: `Hi {tutorFirstName},
+
+{minDecisionLine}
+
+Current enrollment: **{instructorCountsLine}**.
+
+Nothing you need to do — this is just so you always know where the class stands.
+
+[button:Open your class page]({instructorViewLink})`,
+  },
 ]

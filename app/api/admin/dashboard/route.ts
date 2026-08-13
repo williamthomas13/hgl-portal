@@ -112,7 +112,7 @@ export async function GET() {
     supabase
       .from('classes')
       .select(
-        `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, default_location, delivery_mode, start_date, created_at,
+        `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, min_enrollment_decision, default_location, delivery_mode, start_date, created_at,
          collateral_reminder_at, short_link, school_id,
          schools ( nickname ), sessions ( session_date ), enrollments ( payment_status )`
       )
@@ -238,6 +238,10 @@ export async function GET() {
     if (
       c.min_enrollment != null &&
       paid < c.min_enrollment &&
+      // PL-335 B: a recorded run-anyway decision clears this row for GOOD —
+      // it never re-triggers as the deadline gets closer. Extend just moves
+      // the deadline, so the same check re-arms against the new date.
+      !c.min_enrollment_decision &&
       c.enrollment_deadline &&
       c.enrollment_deadline >= todayIso &&
       c.enrollment_deadline <= in3d
@@ -246,7 +250,8 @@ export async function GET() {
         id: `min-enroll-${c.id}`,
         kind: 'Minimum-enrollment decision',
         text: `${label(c)}: ${paid} of ${c.min_enrollment} minimum with the deadline ${plainDate(c.enrollment_deadline, todayIso)} — run, extend, or cancel.`,
-        href: `/admin?class=${c.id}`,
+        // PL-335 A: lands on the class card's decision zone, not just the card.
+        href: `/admin?class=${c.id}&decision=min`,
         urgent: true,
         deadline: c.enrollment_deadline, // PL-135: a promise beats an age
       })

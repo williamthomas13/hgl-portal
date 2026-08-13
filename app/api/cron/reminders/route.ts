@@ -1119,7 +1119,14 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
   // FP-status line — this used to default to first session −7 days alone.
   const deadline = effectiveDeadline(bundle)
   const paidCount = bundle.enrollments.filter((e) => e.payment_status === 'Paid').length
-  if (paidCount < bundle.minEnrollment && today <= bundle.firstSession && localHour(bundle.timezone) >= 8) {
+  // PL-335 B: a recorded run-anyway decision closes the checkpoint for good —
+  // the email alert stops asking exactly like the dashboard row does.
+  if (
+    paidCount < bundle.minEnrollment &&
+    !bundle.minEnrollmentDecision &&
+    today <= bundle.firstSession &&
+    localHour(bundle.timezone) >= 8
+  ) {
     // PL-290 (the PL-274E label rule): open classes carry no school prefix.
     const label = bundle.isOpenEnrollment ? bundle.classType : `${bundle.schoolLabel} ${bundle.classType}`
     const daysToDeadline = Math.round((Date.parse(deadline) - Date.parse(today)) / 86_400_000)
@@ -1143,7 +1150,9 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
       : fpSends?.[0]?.sent_at
         ? `the final-days push (the counselor's last-call email) was sent ${formatDate(fpSends[0].sent_at.slice(0, 10))}`
         : "the counselor's final-days push has not gone out yet (it goes out 3 days to 1 day before the deadline)"
-    const classLink = `${emailBaseUrl()}/admin?class=${bundle.id}`
+    // PL-335 A: land on the class card's decision zone (deadline picker +
+    // run-anyway + cancel), not just the card.
+    const classLink = `${emailBaseUrl()}/admin?class=${bundle.id}&decision=min`
     const movesHtml = `
       <p><strong>Your three moves:</strong></p>
       <ul style="margin:0;padding-left:20px;color:#334155">
@@ -1161,8 +1170,9 @@ async function sweepAdminCheckpoints(bundle: ClassBundle, c: Counters) {
         }, and this checkpoint re-arms against the new date (you'll get this brief
         again at new-deadline −3d if still under).</li>
         <li style="margin:6px 0"><strong>Run under minimum, or cancel</strong> — running under
-        is a legitimate call once in a while; <a href="${classLink}">the cancel flow lives on
-        the class page</a> if it's the other way.</li>
+        is a legitimate call once in a while: <a href="${classLink}">"Run this class anyway"
+        on the class page</a> records the decision and this checkpoint stops asking. The
+        cancel flow lives right beside it.</li>
       </ul>
       <p>Nothing here is automatic — this brief informs; the decision is yours.</p>`
     const pictureHtml = `<p><strong>${paidCount} paid / ${bundle.minEnrollment} minimum / ${bundle.capacity} cap</strong>

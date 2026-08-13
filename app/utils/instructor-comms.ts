@@ -2,7 +2,8 @@ import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
-import { formatDateFull } from './dates'
+import { renderMarkdownBody } from './comms-md'
+import { formatDateFull, formatDateOnly } from './dates'
 import { classDetailsSendDate, localDate, registrationCloseFor, type ClassBundle } from './lifecycle'
 import { createGcalEvent, deleteGcalEvent, loadGcalConnection, patchGcalEvent } from './gcal'
 
@@ -322,6 +323,104 @@ export async function maybeSendInstructorFyi(
     subject: email.subject,
     html: email.html,
   }).catch((e) => console.error('instructor FYI failed (family sends stand):', e))
+}
+
+// ---------------------------------------------------------------------------
+// PL-335 D — the minimum-enrollment decision note. Run-anyway and extend get
+// a short direct email; cancel is covered by the existing cancellation comms
+// (never double-send). Schedule-relevant, so it sends like T3-T-class
+// information — a direct instructor load, NOT loadClassInstructor's
+// pref-gated one (digests-off must still hear the class's fate).
+// ---------------------------------------------------------------------------
+
+function minDecisionMarkdown(v: {
+  tutorFirstName: string
+  minDecisionLine: string
+  instructorCountsLine: string
+  instructorViewLink: string
+}): string {
+  return `Hi ${v.tutorFirstName},
+
+${v.minDecisionLine}
+
+Current enrollment: **${v.instructorCountsLine}**.
+
+Nothing you need to do — this is just so you always know where the class stands.
+
+[button:Open your class page](${v.instructorViewLink})`
+}
+
+export async function sendMinEnrollmentDecisionNote(
+  bundle: ClassBundle,
+  decision: 'run_anyway' | 'extend',
+  opts: { newDeadline?: string | null; decidedAt?: string } = {}
+): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed' | 'skipped'> {
+  if (!bundle.instructorId) return 'skipped'
+  const { data } = await supabase
+    .from('instructors')
+    .select('id, name, email, timezone')
+    .eq('id', bundle.instructorId)
+    .maybeSingle()
+  if (!data?.email) return 'skipped'
+  const instructor: ClassInstructor = {
+    id: data.id,
+    name: data.name,
+    email: data.email,
+    commsEnabled: true,
+    digestPref: 'on',
+    fyiCopies: true,
+    timezone: data.timezone ?? null,
+  }
+  const extendDateLong = opts.newDeadline ? formatDateFull(opts.newDeadline) : ''
+  const extendDateShort = opts.newDeadline
+    ? formatDateOnly(opts.newDeadline, { month: 'long', day: 'numeric' })
+    : ''
+  const minDecisionSubject =
+    decision === 'run_anyway'
+      ? 'running as planned'
+      : `registration deadline extended to ${extendDateShort}`
+  const minDecisionLine =
+    decision === 'run_anyway'
+      ? "The class is below its enrollment minimum, and we've decided to **run it as planned** — the schedule stands exactly as it is."
+      : `The class is below its enrollment minimum, so we've **extended the registration deadline to ${extendDateLong}** to give sign-ups more time. The schedule itself hasn't changed — we'll confirm either way by the new deadline.`
+  const extras = {
+    ...baseExtras(bundle, instructor),
+    minDecisionSubject,
+    minDecisionLine,
+  }
+  const stub = instructorStub(bundle, instructor)
+  const fallback = (): Rendered => ({
+    subject: `${bundle.schoolLabel} ${bundle.classType}: ${minDecisionSubject}`,
+    html: wrap(
+      renderMarkdownBody(
+        minDecisionMarkdown({
+          tutorFirstName: extras.tutorFirstName,
+          minDecisionLine,
+          instructorCountsLine: extras.instructorCountsLine,
+          instructorViewLink: extras.instructorViewLink,
+        }),
+        {}
+      ),
+      { preheader: 'Where the class stands — nothing you need to do.', footer: footerT() }
+    ),
+  })
+  const email = await renderRegistered('IN_MIN_DECISION', stub, extras, fallback)
+  // Re-stamping the decision (undo → run again) mints a fresh key; extending
+  // to a NEW date sends, re-saving the same date dedupes.
+  const dedupeKey =
+    decision === 'run_anyway'
+      ? `in_min_decision:${bundle.id}:run:${opts.decidedAt ?? 'first'}`
+      : `in_min_decision:${bundle.id}:extend:${opts.newDeadline ?? 'none'}`
+  return sendOnce({
+    dedupeKey,
+    emailType: 'instructor_min_decision',
+    templateKey: 'IN_MIN_DECISION',
+    recipientRole: 'instructor',
+    classId: bundle.id,
+    to: [instructor.email],
+    subject: email.subject,
+    html: email.html,
+  })
 }
 
 // ---------------------------------------------------------------------------

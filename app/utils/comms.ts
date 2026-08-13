@@ -93,6 +93,8 @@ export function templateMetaFor(
       return { key: 'IN_DIGEST', role: 'instructor' }
     case 'instructor_fyi':
       return { key: 'IN_FYI', role: 'instructor' }
+    case 'instructor_min_decision': // PL-335 D
+      return { key: 'IN_MIN_DECISION', role: 'instructor' }
     case 'tutoring_upsell':
       return { key: 'E9_UPSELL', role: 'parent' }
     case 'waitlist_confirmation':
@@ -240,6 +242,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   IN_WELCOME: 'IN — Instructor class assignment welcome',
   IN_DIGEST: 'IN — Instructor enrollment digest / milestone ping',
   IN_FYI: 'IN — Instructor FYI copy (family logistics email)',
+  IN_MIN_DECISION: 'IN — Instructor minimum-enrollment decision note',
   // PL-66: internal [HGL Admin] alert family (subject shown WITHOUT the
   // [HGL Admin] prefix — the sender adds it)
   AL_REGISTRATION: 'AL — New registration',

@@ -271,6 +271,11 @@ export type ExtraVars = {
   fyiOriginalSubject?: string
   /** IN_FYI: the family email's rendered body (extracted, pre-wrapped HTML). */
   familyEmailBlock?: string
+  /** PL-335 D: IN_MIN_DECISION subject tail — "running as planned" ·
+   *  "registration deadline extended to September 12". */
+  minDecisionSubject?: string
+  /** PL-335 D: the decision sentence, composed per variant (markdown). */
+  minDecisionLine?: string
 }
 
 type Resolver = (ctx: EnrollmentEmailContext, audience: Audience, extra: ExtraVars) => string
@@ -1058,6 +1063,17 @@ export const VARIABLES: Record<string, VariableDef> = {
     block: true,
     resolve: (_c, _a, e) => e.familyEmailBlock ?? '',
   },
+  // PL-335 D: the minimum-enrollment decision note's two composed pieces.
+  minDecisionSubject: {
+    description: 'IN_MIN_DECISION subject tail: "running as planned" · "registration deadline extended to September 12"',
+    resolve: (_c, _a, e) => e.minDecisionSubject ?? '—',
+  },
+  minDecisionLine: {
+    description: 'IN_MIN_DECISION: the decision sentence — run-anyway ("we\'ve decided to run it as planned — the schedule stands") or extend ("we\'ve extended the registration deadline to {date}…"), composed at send time',
+    block: true,
+    md: true,
+    resolve: (_c, _a, e) => e.minDecisionLine ?? '',
+  },
 
   // --- computed blocks ---------------------------------------------------------
   orderSummaryBlock: {
@@ -1451,6 +1467,16 @@ const sampleCoverage = (event: CoverageEvent) => ({
 })
 
 export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
+  // PL-335 D: instructor-comms.ts sendMinEnrollmentDecisionNote — sample the
+  // run-anyway variant, with counts that AGREE with a below-minimum story
+  // (the shared pool's 8/8 min-met line would read like a bug here).
+  IN_MIN_DECISION: {
+    minDecisionSubject: 'running as planned',
+    minDecisionLine:
+      "The class is below its enrollment minimum, and we've decided to **run it as planned** — the schedule stands exactly as it is.",
+    instructorCountsLine: '3 enrolled / 8 min / 15 cap',
+  },
+
   // coverage.ts opsAlert('requested') — a tutor asking a colleague to cover.
   AL_COVERAGE_REQUEST: sampleCoverage('requested'),
   // coverage.ts opsAlert('accepted') — the ACCEPTED variant is pinned; the
