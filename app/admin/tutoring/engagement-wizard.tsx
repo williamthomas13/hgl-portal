@@ -261,7 +261,9 @@ export default function EngagementWizard({
     if (serverDraft.id === seenServerDraftRef.current) return
     seenServerDraftRef.current = serverDraft.id
     applyDraft(serverDraft.payload ?? {})
-    setServerDraftId(serverDraft.id)
+    // PL-337: a calendar-proposal handoff has no saved row (id '') — prefill
+    // only; Create has nothing to retire.
+    setServerDraftId(serverDraft.id || null)
     onServerDraftConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverDraft])
@@ -1034,6 +1036,11 @@ export default function EngagementWizard({
 
   return (
     <div className="space-y-5 text-sm">
+      {/* PL-337 D: one line of discoverability for drag-to-propose. */}
+      <p className="text-xs text-gray-400">
+        …or start by dragging times on the calendar below — pick a single tutor on the Tutor-week
+        grid, drag the empty grid, then &ldquo;Use this schedule&rdquo;.
+      </p>
       {/* PL-171: resume offer — a half-built schedule survives phone calls
           and navigation; resuming is one click, discarding explicit. */}
       {draftOffer && (

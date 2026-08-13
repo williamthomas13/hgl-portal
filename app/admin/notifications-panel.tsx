@@ -34,7 +34,9 @@ export default function NotificationsPanel({
   const load = async () => {
     const res = await fetch('/api/admin/alert-subscriptions')
     if (!res.ok) return setErr('Could not load notification settings.')
-    setData(await res.json())
+    const json = await res.json().catch(() => null)
+    if (!json) return setErr('Could not load notification settings — the response was unreadable.')
+    setData(json)
   }
   useEffect(() => {
     load()
@@ -85,7 +87,9 @@ export default function NotificationsPanel({
           {/* PL-332: the plain-English explainer where the control would be. */}
           {!isAdmin && s.role === 'admin' && (
             <p className="text-xs text-gray-500 italic mb-2">
-              Only {s.name ?? s.email} can change an owner&apos;s notifications.
+              {/* The {' '} is the PL-116 JSX-boundary rule — the space after
+                  the expression gets eaten otherwise ("Thomascan change"). */}
+              Only {s.name ?? s.email}{' '}can change an owner&apos;s notifications.
             </p>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">

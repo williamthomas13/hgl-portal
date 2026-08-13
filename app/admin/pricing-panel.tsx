@@ -102,7 +102,9 @@ export default function PricingPanel() {
   const load = async () => {
     const res = await fetch('/api/admin/pricing')
     if (!res.ok) return setVisible(false)
-    setData(await res.json())
+    const json = await res.json().catch(() => null)
+    if (!json) return setVisible(false)
+    setData(json)
     setVisible(true)
   }
   useEffect(() => {

@@ -375,7 +375,8 @@ export default function InstructorEditor({
               {/* PL-332: the plain-English explainer where the control would be. */}
               {prefOwner && (
                 <p className="text-[11px] text-gray-500 italic mt-1">
-                  Only {prefOwner.name ?? prefOwner.email} can change an owner&apos;s notifications.
+                  Only {prefOwner.name ?? prefOwner.email}{' '}can change an owner&apos;s
+                  notifications.
                 </p>
               )}
             </div>

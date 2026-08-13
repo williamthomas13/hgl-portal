@@ -294,6 +294,21 @@ export default function TutoringAdmin() {
                       refreshSignal={refreshSignal}
                       focusSessionId={focusSessionId}
                       focusAction={focusSessionAction}
+                      // PL-337 C: "Use this schedule" prefills the wizard —
+                      // same handoff shape as resuming a saved draft.
+                      onUseProposal={(payload) => {
+                        setDraftToResume({
+                          id: '',
+                          created_by: '',
+                          student_label: null,
+                          payload,
+                          created_at: '',
+                          updated_at: '',
+                        })
+                        setWizardOpenSignal((n) => n + 1)
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                      }}
+                      onDraftsChanged={() => setDraftsVersion((v) => v + 1)}
                     />
                   </CollapsibleSection>
                 </div>

@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { autoTutorColor } from '../../utils/calendar-colors'
-import { classifyNotice, zonedToUtc } from '../../utils/tutoring'
+import { classifyNotice, isoWeekday, zonedToUtc } from '../../utils/tutoring'
 import { DateHint } from '../ui'
-import { fmtTime, wallClock, type SessionRow, type Tutor } from './types'
+import { WEEKDAYS, fmtTime, wallClock, type RecurrenceSlotUI, type SessionRow, type Tutor } from './types'
+import type { WizardDraft } from './engagement-wizard'
 
 // Calendar views (Phase 7a §5): per-tutor week (with freebusy shading from
 // the tutor's own Google Calendar) and all-tutors day. Edit-dialog session
@@ -68,11 +69,39 @@ function normalize(rows: any[]): SessionRow[] {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+// PL-337: a dragged proposal — weekly slot rows ONLY (the engagement's
+// recurrence model; the popover deliberately offers no other cadence, so a
+// proposal can never express something the wizard can't store).
+type DragState =
+  | { kind: 'create'; dayIso: string; startY: number; endY: number }
+  | { kind: 'move'; index: number; y: number; grabOffset: number }
+  | { kind: 'resize'; index: number; y: number }
+
+/** 'HH:MM' → "4:00 PM". */
+function fmtHHMMLocal(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const hr = h % 12 === 0 ? 12 : h % 12
+  return `${hr}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+
+const snapQuarter = (hours: number) => Math.round(hours * 4) / 4
+const hoursToHHMM = (hours: number) => {
+  const h = Math.floor(hours)
+  const m = Math.round((hours - h) * 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+const hhmmToHours = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number)
+  return h + m / 60
+}
+
 export default function ScheduleView({
   tutors,
   refreshSignal,
   focusSessionId = null,
   focusAction = null,
+  onUseProposal,
+  onDraftsChanged,
 }: {
   tutors: Tutor[]
   refreshSignal: number
@@ -80,6 +109,11 @@ export default function ScheduleView({
    *  tutor + week and open its dialog. */
   focusSessionId?: string | null
   focusAction?: 'ack' | 'reschedule' | null
+  /** PL-337 C: "Use this schedule" hands the dragged proposal to the wizard
+   *  as a prefill — nothing mutates until the wizard's normal Create. */
+  onUseProposal?: (payload: Partial<WizardDraft>) => void
+  /** PL-338 E: the proposal saved as a draft — the card/dashboard recount. */
+  onDraftsChanged?: () => void
 }) {
   const activeTutors = useMemo(() => tutors.filter((t) => t.tutoring_active), [tutors])
   const [mode, setMode] = useState<'week' | 'day'>('week')
@@ -223,13 +257,333 @@ export default function ScheduleView({
     setAnchor((a) => new Date(a.getTime() + days * 86_400_000))
   }
 
-  /** Blocks (top/height px + label) that overlap a given calendar date in tz. */
+  // -------------------------------------------------------------------------
+  // PL-337: drag-to-propose. Dragging on empty grid (week mode, exactly one
+  // tutor selected) creates dashed PROPOSED blocks — weekly slot rows, the
+  // only cadence the engagement can store. The blocks project onto every
+  // future week while paging (each week's own busy data + sessions render
+  // behind them), a horizon summary checks ~3 months ahead in chunked
+  // freebusy calls, and "Use this schedule" prefills the wizard. Nothing
+  // mutates until the wizard's normal Create. Proposal lifetime = component
+  // state: survives scrolling, not navigation (the wizard-draft rule).
+  // -------------------------------------------------------------------------
+  const [proposal, setProposal] = useState<RecurrenceSlotUI[]>([])
+  const [proposalStartWeek, setProposalStartWeek] = useState<string | null>(null)
+  const [dragState, setDragState] = useState<DragState | null>(null)
+  const [horizonWeeks, setHorizonWeeks] = useState(12)
+  const [proposalMsg, setProposalMsg] = useState('')
+  useEffect(() => {
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'tutoring_proposal_horizon_weeks')
+      .maybeSingle()
+      .then(({ data }) => {
+        const n = Number(data?.value ?? 12)
+        // Scarlett wants up to 6 months; the route math stays sane below 1.
+        if (Number.isFinite(n)) setHorizonWeeks(Math.min(26, Math.max(1, n)))
+      })
+  }, [])
+  // Switching tutors drops the proposal — it was drawn against ONE tutor's
+  // calendar; silently re-aiming it at another would fake a clean check.
+  const proposalTutorRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (proposal.length === 0) {
+      proposalTutorRef.current = tutor?.id ?? null
+      return
+    }
+    if (tutor?.id !== proposalTutorRef.current) {
+      setProposal([])
+      setProposalStartWeek(null)
+      setProposalMsg('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutor?.id])
+
+  const columnYToHours = (colEl: HTMLElement, clientY: number) => {
+    const rect = colEl.getBoundingClientRect()
+    return Math.min(DAY_END, Math.max(DAY_START, (clientY - rect.top) / HOUR_PX + DAY_START))
+  }
+
+  function beginCreateDrag(e: React.PointerEvent<HTMLDivElement>, dayIso: string) {
+    if (mode !== 'week' || !tutor || e.button !== 0) return
+    // A drag starting on a session chip is the chip's own interaction.
+    if ((e.target as HTMLElement).closest('button')) return
+    const y = columnYToHours(e.currentTarget, e.clientY)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    setDragState({ kind: 'create', dayIso, startY: y, endY: y })
+  }
+
+  function columnPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragState) return
+    const y = columnYToHours(e.currentTarget, e.clientY)
+    setDragState((d) => {
+      if (!d) return d
+      if (d.kind === 'create') return { ...d, endY: y }
+      return { ...d, y }
+    })
+  }
+
+  function columnPointerUp() {
+    if (!dragState) return
+    if (dragState.kind === 'create') {
+      const a = snapQuarter(Math.min(dragState.startY, dragState.endY))
+      const b = snapQuarter(Math.max(dragState.startY, dragState.endY))
+      const durationMinutes = Math.round((b - a) * 60)
+      // A plain click (no real drag) creates nothing — accidental blocks are
+      // worse than one more deliberate drag.
+      if (durationMinutes >= 15) {
+        const slot: RecurrenceSlotUI = {
+          weekday: isoWeekday(dragState.dayIso),
+          start_time: hoursToHHMM(a),
+          duration_minutes: Math.min(480, durationMinutes),
+        }
+        setProposal((p) => [...p, slot])
+        if (!proposalStartWeek) setProposalStartWeek(range.days[0])
+        setProposalMsg('')
+      }
+    } else if (dragState.kind === 'move') {
+      const start = snapQuarter(dragState.y - dragState.grabOffset)
+      setProposal((p) =>
+        p.map((s, i) =>
+          i === dragState.index
+            ? {
+                ...s,
+                start_time: hoursToHHMM(
+                  Math.max(DAY_START, Math.min(DAY_END - s.duration_minutes / 60, start))
+                ),
+              }
+            : s
+        )
+      )
+    } else {
+      const end = snapQuarter(dragState.y)
+      setProposal((p) =>
+        p.map((s, i) => {
+          if (i !== dragState.index) return s
+          const startH = hhmmToHours(s.start_time)
+          const minutes = Math.round((end - startH) * 60)
+          return { ...s, duration_minutes: Math.max(15, Math.min(480, minutes)) }
+        })
+      )
+    }
+    setDragState(null)
+  }
+
+  function beginBlockDrag(e: React.PointerEvent<HTMLDivElement>, index: number) {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const colEl = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    const y = columnYToHours(colEl, e.clientY)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const nearBottom = e.clientY > rect.bottom - 8
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    const slot = proposal[index]
+    setDragState(
+      nearBottom
+        ? { kind: 'resize', index, y }
+        : { kind: 'move', index, y, grabOffset: y - hhmmToHours(slot.start_time) }
+    )
+  }
+
+  function blockPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragState || dragState.kind === 'create') return
+    const colEl = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    const y = columnYToHours(colEl, e.clientY)
+    setDragState((d) => (d && d.kind !== 'create' ? { ...d, y } : d))
+  }
+
+  /** The proposed blocks that belong on a day column, with live drag echo. */
+  function proposalBlocksForDay(dayIso: string) {
+    if (mode !== 'week' || !tutor || proposal.length === 0) return []
+    // Forward projection only: every week from the proposal's own week on.
+    if (proposalStartWeek && range.days[0] < proposalStartWeek) return []
+    const weekday = isoWeekday(dayIso)
+    const out: { index: number; startH: number; durH: number }[] = []
+    proposal.forEach((s, index) => {
+      if (s.weekday !== weekday) return
+      let startH = hhmmToHours(s.start_time)
+      let durH = s.duration_minutes / 60
+      if (dragState && dragState.kind === 'move' && dragState.index === index) {
+        startH = Math.max(
+          DAY_START,
+          Math.min(DAY_END - durH, snapQuarter(dragState.y - dragState.grabOffset))
+        )
+      }
+      if (dragState && dragState.kind === 'resize' && dragState.index === index) {
+        durH = Math.max(0.25, snapQuarter(dragState.y) - startH)
+      }
+      out.push({ index, startH, durH })
+    })
+    // The in-flight create drag echoes live on its own day.
+    if (dragState?.kind === 'create' && dragState.dayIso === dayIso) {
+      const a = Math.min(dragState.startY, dragState.endY)
+      const b = Math.max(dragState.startY, dragState.endY)
+      if (b - a >= 0.1) out.push({ index: -1, startH: snapQuarter(a), durH: Math.max(0.25, snapQuarter(b) - snapQuarter(a)) })
+    }
+    return out
+  }
+
+  // PL-337 B: the horizon summary — the proposed recurrence checked
+  // ~horizonWeeks ahead against the same veto inputs the picker uses: the
+  // tutor's Google freebusy (which already carries the PL-159 portal holds)
+  // plus the tutor's portal sessions. The freebusy route caps one request at
+  // 45 days, so the horizon stitches sequential 44-day chunks; how far the
+  // Google side ACTUALLY reached is reported, never implied.
+  const [horizon, setHorizon] = useState<
+    | null
+    | {
+        checking: boolean
+        conflict: { when: Date; label: string } | null
+        gcalThrough: string | null // ISO date the Google check reached, null = not connected/failed
+        weeks: number
+      }
+  >(null)
+  const proposalKey = useMemo(
+    () => proposal.map((s) => `${s.weekday}:${s.start_time}:${s.duration_minutes}`).join('|'),
+    [proposal]
+  )
+  useEffect(() => {
+    if (proposal.length === 0 || !tutor || !proposalStartWeek) {
+      setHorizon(null)
+      return
+    }
+    let stale = false
+    const tutorTz = tutor.timezone ?? 'America/Denver'
+    setHorizon({ checking: true, conflict: null, gcalThrough: null, weeks: horizonWeeks })
+    ;(async () => {
+      const horizonDays = horizonWeeks * 7
+      const fromMs = zonedToUtc(proposalStartWeek, '00:00', tutorTz).getTime()
+      const toMs = fromMs + horizonDays * 86_400_000
+      // 1. Google freebusy, stitched in 44-day chunks (under the 45-day cap).
+      const busyBlocks: { start: string; end: string; title: string | null }[] = []
+      let gcalThrough: string | null = null
+      for (let chunkStart = fromMs; chunkStart < toMs; chunkStart += 44 * 86_400_000) {
+        const chunkEnd = Math.min(chunkStart + 44 * 86_400_000, toMs)
+        try {
+          const res = await fetch('/api/gcal/freebusy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tutorId: tutor.id,
+              timeMin: new Date(chunkStart).toISOString(),
+              timeMax: new Date(chunkEnd).toISOString(),
+            }),
+          })
+          const json = res.ok ? await res.json().catch(() => null) : null
+          if (!json?.available) break // not connected / errored — stop stitching
+          busyBlocks.push(...(json.busy ?? []))
+          gcalThrough = new Date(chunkEnd).toISOString()
+        } catch {
+          break
+        }
+        if (stale) return
+      }
+      // 2. The tutor's portal sessions across the whole horizon.
+      const { data: portalRows } = await supabase
+        .from('tutoring_sessions')
+        .select('starts_at, ends_at, status, students ( first_name )')
+        .eq('tutor_id', tutor.id)
+        .in('status', ['proposed', 'confirmed'])
+        .gte('starts_at', new Date(fromMs).toISOString())
+        .lt('starts_at', new Date(toMs).toISOString())
+      if (stale) return
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const portal = ((portalRows as any[]) ?? []).map((r) => ({
+        start: r.starts_at,
+        end: r.ends_at,
+        title: `${(Array.isArray(r.students) ? r.students[0] : r.students)?.first_name ?? 'a student'}'s session`,
+      }))
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      const all = [...busyBlocks, ...portal]
+      // 3. Walk the occurrences week by week, earliest conflict wins.
+      let conflict: { when: Date; label: string } | null = null
+      outer: for (let w = 0; w < horizonWeeks; w++) {
+        const weekMon = new Date(new Date(proposalStartWeek + 'T12:00:00Z').getTime() + w * 7 * 86_400_000)
+          .toISOString()
+          .slice(0, 10)
+        const sorted = [...proposal].sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time))
+        for (const s of sorted) {
+          const dayIso = new Date(new Date(weekMon + 'T12:00:00Z').getTime() + (s.weekday - 1) * 86_400_000)
+            .toISOString()
+            .slice(0, 10)
+          const start = zonedToUtc(dayIso, s.start_time, tutorTz).getTime()
+          if (start < Date.now()) continue
+          const end = start + s.duration_minutes * 60_000
+          const hit = all.find((b) => new Date(b.start).getTime() < end && new Date(b.end).getTime() > start)
+          if (hit) {
+            conflict = { when: new Date(start), label: hit.title ?? 'busy per Google Calendar' }
+            break outer
+          }
+        }
+      }
+      if (!stale) setHorizon({ checking: false, conflict, gcalThrough, weeks: horizonWeeks })
+    })()
+    return () => {
+      stale = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalKey, tutor?.id, proposalStartWeek, horizonWeeks])
+
+  /** PL-337 C: the wizard prefill payload — tutor, slots, start date. */
+  function proposalPayload(): Partial<WizardDraft> {
+    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: tutor?.timezone ?? 'America/Denver' })
+    const firstDates = proposal
+      .map((s) =>
+        new Date(new Date((proposalStartWeek ?? range.days[0]) + 'T12:00:00Z').getTime() + (s.weekday - 1) * 86_400_000)
+          .toISOString()
+          .slice(0, 10)
+      )
+      .sort()
+    const startDate = firstDates.find((d) => d >= todayIso) ?? firstDates[0] ?? ''
+    return {
+      savedAt: new Date().toISOString(),
+      tutorId: tutor?.id ?? '',
+      slots: proposal,
+      startDate,
+      sessionsPerWeek: Math.min(5, Math.max(1, proposal.length)),
+      durationMinutes: proposal[0]?.duration_minutes ?? 60,
+      requireApproval: true,
+    }
+  }
+
+  async function saveProposalAsDraft() {
+    const { data: auth } = await supabase.auth.getUser()
+    const { error } = await supabase.from('tutoring_schedule_drafts').insert({
+      created_by: auth.user?.email ?? 'staff',
+      student_label: null,
+      payload: proposalPayload(),
+    })
+    if (error) {
+      setProposalMsg('Error: the draft did not save — ' + error.message)
+      return
+    }
+    setProposal([])
+    setProposalStartWeek(null)
+    setProposalMsg('Saved under Schedules in progress — resume it from there any time.')
+    onDraftsChanged?.()
+  }
+
+  /** Blocks (top/height px + label) that overlap a given calendar date in tz.
+   *  PL-337: all-day and overnight events used to render as a 10px sliver on
+   *  their start day only (an event ending 00:00 next day computed height 0)
+   *  — a proposed block over an all-day busy day read as clean while the
+   *  horizon check flagged it. Days inside a multi-day span now shade fully. */
   function blocksForDay(dayIso: string, items: typeof busy) {
+    const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: tz })
     return items
-      .filter((b) => new Date(b.start).toLocaleDateString('en-CA', { timeZone: tz }) === dayIso)
+      .filter((b) => {
+        const startDay = dayOf(b.start)
+        // An event ending exactly at midnight belongs to the previous day.
+        const endDay = dayOf(new Date(new Date(b.end).getTime() - 1).toISOString())
+        return startDay <= dayIso && dayIso <= endDay
+      })
       .map((b) => {
-        const s = wallClock(b.start, tz)
-        const e = wallClock(b.end, tz)
+        const startDay = dayOf(b.start)
+        const s = startDay < dayIso ? { hour: DAY_START, minute: 0 } : wallClock(b.start, tz)
+        // The RAW end day here: an event ending exactly at next-midnight has
+        // wallClock hour 0, which used to compute a zero-height block.
+        const e = dayOf(b.end) > dayIso ? { hour: DAY_END, minute: 0 } : wallClock(b.end, tz)
         const top = Math.max(0, (s.hour + s.minute / 60 - DAY_START) * HOUR_PX)
         const bottom = Math.min(DAY_END - DAY_START, e.hour + e.minute / 60 - DAY_START) * HOUR_PX
         const label = b.title ?? (b.private ? 'busy (private event)' : 'busy')
@@ -334,8 +688,133 @@ export default function ScheduleView({
           {mode === 'week' &&
             selectedTutors.length > 1 &&
             ' · Google busy shading shows when exactly one tutor is selected'}
+          {mode === 'week' && tutor && proposal.length === 0 && ' · drag on empty grid to propose weekly times'}
         </span>
       </div>
+
+      {/* PL-337: the proposal panel — the dragged blocks' controls + the
+          horizon summary. Dashed styling everywhere says "not real yet";
+          nothing here mutates anything. */}
+      {proposal.length > 0 && tutor && (
+        <div className="border-2 border-dashed border-sky-400 bg-sky-50/60 rounded-lg p-3 space-y-2">
+          <p className="font-semibold text-hgl-slate">
+            Proposed schedule for {tutor.name ?? tutor.email}{' '}
+            <span className="font-normal text-xs text-gray-500">
+              — nothing is saved yet; repeats weekly (weekly times are the only cadence a schedule
+              stores — add another day by dragging again, drag a block to move it, drag its bottom
+              edge to resize)
+            </span>
+          </p>
+          <div className="space-y-1">
+            {proposal.map((s, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                <select
+                  value={s.weekday}
+                  onChange={(e) =>
+                    setProposal((p) => p.map((x, j) => (j === i ? { ...x, weekday: Number(e.target.value) } : x)))
+                  }
+                  className="border border-gray-300 rounded p-1 bg-white"
+                >
+                  {WEEKDAYS.map((d, di) => (
+                    <option key={d} value={di + 1}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-gray-700">
+                  {fmtHHMMLocal(s.start_time)} · {s.duration_minutes} min
+                </span>
+                <button
+                  onClick={() => {
+                    setProposal((p) => p.filter((_, j) => j !== i))
+                    if (proposal.length === 1) {
+                      setProposalStartWeek(null)
+                      setProposalMsg('')
+                    }
+                  }}
+                  className="text-gray-500 underline"
+                >
+                  remove
+                </button>
+              </div>
+            ))}
+          </div>
+          {/* The horizon summary — checked span named, certainty never
+              implied (freebusy only shows events that EXIST; far-out weeks
+              may just be unfilled calendars). */}
+          <p className="text-xs text-gray-600">
+            {!horizon || horizon.checking ? (
+              'Checking the weeks ahead…'
+            ) : horizon.conflict ? (
+              <>
+                <span className="font-semibold text-red-700">
+                  First conflict:{' '}
+                  {horizon.conflict.when.toLocaleString('en-US', {
+                    timeZone: tutor.timezone ?? 'America/Denver',
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}{' '}
+                  — {horizon.conflict.label}.
+                </span>{' '}
+                <button
+                  onClick={() => setAnchor(new Date(horizon.conflict!.when))}
+                  className="text-hgl-blue underline"
+                >
+                  jump to that week
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-green-700">
+                  No conflicts on the calendar for the next {horizon.weeks} weeks
+                </span>{' '}
+                {horizon.gcalThrough
+                  ? `(Google Calendar checked through ${new Date(horizon.gcalThrough).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}, portal sessions the same span — far-out weeks may simply be unfilled calendars).`
+                  : `(the tutor's Google Calendar isn't connected or didn't answer — portal sessions checked for the whole span).`}
+              </>
+            )}
+          </p>
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button
+              onClick={() => {
+                onUseProposal?.(proposalPayload())
+                setProposal([])
+                setProposalStartWeek(null)
+                setProposalMsg('')
+              }}
+              className="bg-hgl-slate text-white text-xs font-bold py-1.5 px-4 rounded hover:opacity-90"
+              title="Prefill the New student schedule wizard with this tutor, these weekly times, and the start date — you pick the student, subject, and rate there; nothing is created until its Create button"
+            >
+              Use this schedule
+            </button>
+            {/* PL-338 E: same draft model as the wizard's Save as draft. */}
+            <button
+              onClick={saveProposalAsDraft}
+              className="border border-hgl-slate text-hgl-slate text-xs font-semibold py-1.5 px-3 rounded hover:bg-white"
+            >
+              Save as draft
+            </button>
+            <button
+              onClick={() => {
+                setProposal([])
+                setProposalStartWeek(null)
+                setProposalMsg('')
+              }}
+              className="text-xs text-gray-500 underline"
+            >
+              Clear proposal
+            </button>
+          </div>
+        </div>
+      )}
+      {proposalMsg && (
+        <p className={`text-xs font-semibold ${proposalMsg.startsWith('Error') ? 'text-red-700' : 'text-green-700'}`}>
+          {proposalMsg}
+        </p>
+      )}
 
       {activeTutors.length === 0 ? (
         <p className="text-gray-500 italic">No active tutors yet — enable tutoring on an instructor below.</p>
@@ -407,7 +886,14 @@ export default function ScheduleView({
                       </>
                     )}
                   </div>
-                  <div className="relative bg-white" style={{ height: (DAY_END - DAY_START) * HOUR_PX }}>
+                  <div
+                    className={`relative bg-white ${mode === 'week' && tutor ? 'cursor-crosshair' : ''}`}
+                    style={{ height: (DAY_END - DAY_START) * HOUR_PX }}
+                    // PL-337 A: drag on empty grid creates a proposed block.
+                    onPointerDown={(e) => beginCreateDrag(e, dayIso)}
+                    onPointerMove={columnPointerMove}
+                    onPointerUp={columnPointerUp}
+                  >
                     {Array.from({ length: DAY_END - DAY_START }, (_, i) => (
                       <div key={i} className="absolute w-full border-t border-gray-100" style={{ top: i * HOUR_PX }} />
                     ))}
@@ -464,6 +950,62 @@ export default function ScheduleView({
                         </button>
                       )
                     })}
+                    {/* PL-337: the dashed proposed blocks — projected onto
+                        every future week, each week's own busy data +
+                        sessions behind them, conflicts flagged in place. */}
+                    {mode === 'week' &&
+                      proposalBlocksForDay(dayIso).map((b) => {
+                        const topPx = (b.startH - DAY_START) * HOUR_PX
+                        const hPx = Math.max(12, b.durH * HOUR_PX)
+                        const busyHit = busyBlocks.find((bb) => bb.top < topPx + hPx && bb.top + bb.height > topPx)
+                        const sessionHit = colSessions.find((s) => {
+                          if (!['proposed', 'confirmed'].includes(s.status)) return false
+                          const st = wallClock(s.starts_at, tz)
+                          const sTop = (st.hour + st.minute / 60 - DAY_START) * HOUR_PX
+                          const sH = (s.duration_minutes / 60) * HOUR_PX
+                          return sTop < topPx + hPx && sTop + sH > topPx
+                        })
+                        const conflictLabel = busyHit
+                          ? busyHit.label
+                          : sessionHit
+                            ? `${sessionHit.students?.first_name ?? 'a student'}'s session`
+                            : null
+                        return (
+                          <div
+                            key={`prop-${b.index}-${dayIso}`}
+                            className={`absolute inset-x-0.5 rounded border-2 border-dashed px-1 py-0.5 text-[11px] leading-tight overflow-hidden select-none z-10 ${
+                              conflictLabel
+                                ? 'border-red-500 bg-red-100/70 text-red-800'
+                                : 'border-sky-500 bg-sky-100/70 text-sky-900'
+                            } ${b.index >= 0 ? 'cursor-move' : ''}`}
+                            style={{ top: topPx, height: hPx }}
+                            onPointerDown={b.index >= 0 ? (e) => beginBlockDrag(e, b.index) : undefined}
+                            onPointerMove={b.index >= 0 ? blockPointerMove : undefined}
+                            onPointerUp={b.index >= 0 ? columnPointerUp : undefined}
+                            title={
+                              conflictLabel
+                                ? `Proposed — conflicts with ${conflictLabel}`
+                                : 'Proposed — weekly; drag to move, drag the bottom edge to resize'
+                            }
+                          >
+                            <span className="font-semibold">
+                              {fmtHHMMLocal(hoursToHHMM(b.startH))} proposed
+                            </span>
+                            {conflictLabel && (
+                              <>
+                                <br />
+                                conflicts with {conflictLabel}
+                              </>
+                            )}
+                            {b.index >= 0 && (
+                              <span
+                                className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize"
+                                aria-hidden
+                              />
+                            )}
+                          </div>
+                        )
+                      })}
                   </div>
                 </div>
               )
