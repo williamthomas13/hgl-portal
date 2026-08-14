@@ -396,27 +396,32 @@ export default function ScheduleView({
 
   /** The proposed blocks that belong on a day column, with live drag echo. */
   function proposalBlocksForDay(dayIso: string) {
-    if (mode !== 'week' || !tutor || proposal.length === 0) return []
-    // Forward projection only: every week from the proposal's own week on.
-    if (proposalStartWeek && range.days[0] < proposalStartWeek) return []
+    if (mode !== 'week' || !tutor) return []
     const weekday = isoWeekday(dayIso)
     const out: { index: number; startH: number; durH: number }[] = []
-    proposal.forEach((s, index) => {
-      if (s.weekday !== weekday) return
-      let startH = hhmmToHours(s.start_time)
-      let durH = s.duration_minutes / 60
-      if (dragState && dragState.kind === 'move' && dragState.index === index) {
-        startH = Math.max(
-          DAY_START,
-          Math.min(DAY_END - durH, snapQuarter(dragState.y - dragState.grabOffset))
-        )
-      }
-      if (dragState && dragState.kind === 'resize' && dragState.index === index) {
-        durH = Math.max(0.25, snapQuarter(dragState.y) - startH)
-      }
-      out.push({ index, startH, durH })
-    })
-    // The in-flight create drag echoes live on its own day.
+    // Committed blocks project forward only: every week from the proposal's
+    // own week on.
+    if (proposal.length > 0 && !(proposalStartWeek && range.days[0] < proposalStartWeek)) {
+      proposal.forEach((s, index) => {
+        if (s.weekday !== weekday) return
+        let startH = hhmmToHours(s.start_time)
+        let durH = s.duration_minutes / 60
+        if (dragState && dragState.kind === 'move' && dragState.index === index) {
+          startH = Math.max(
+            DAY_START,
+            Math.min(DAY_END - durH, snapQuarter(dragState.y - dragState.grabOffset))
+          )
+        }
+        if (dragState && dragState.kind === 'resize' && dragState.index === index) {
+          durH = Math.max(0.25, snapQuarter(dragState.y) - startH)
+        }
+        out.push({ index, startH, durH })
+      })
+    }
+    // PL-340: the in-flight create drag echoes live on its own day — the
+    // rubber band renders from the very FIRST drag (it used to hide until a
+    // block already existed, so drag one gave no feedback until mouse-up),
+    // 15-min snapped, range label updating as it stretches.
     if (dragState?.kind === 'create' && dragState.dayIso === dayIso) {
       const a = Math.min(dragState.startY, dragState.endY)
       const b = Math.max(dragState.startY, dragState.endY)
@@ -424,6 +429,17 @@ export default function ScheduleView({
     }
     return out
   }
+
+  // PL-340: Escape abandons whatever drag is in flight — the forming rubber
+  // band vanishes, a move/resize snaps back to the block's stored time.
+  useEffect(() => {
+    if (!dragState) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDragState(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [dragState])
 
   // PL-337 B: the horizon summary — the proposed recurrence checked
   // ~horizonWeeks ahead against the same veto inputs the picker uses: the

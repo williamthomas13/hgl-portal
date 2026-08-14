@@ -109,7 +109,7 @@ export default function InstructorsPanel({
                   the email (a width hog gone), phone and prefs never wrap, so
                   Actions is plainly on-card at normal widths. */}
               {['Name', 'Email & meeting link', 'Phone', 'Email prefs', 'Actions'].map((h) => (
-                <th key={h} className="px-4 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
+                <th key={h} className="px-2 py-2 text-left text-xs font-bold text-hgl-slate uppercase tracking-wider">
                   {h}
                 </th>
               ))}
@@ -118,8 +118,8 @@ export default function InstructorsPanel({
           <tbody className="divide-y divide-gray-200">
             {visible.map((i) => (
               <tr key={i.id} className="hover:bg-gray-50 transition text-sm">
-                <td className="px-4 py-2 font-semibold text-hgl-slate whitespace-nowrap">{i.name ?? '—'}</td>
-                <td className="px-4 py-2">
+                <td className="px-2 py-2 font-semibold text-hgl-slate whitespace-nowrap">{i.name ?? '—'}</td>
+                <td className="px-2 py-2">
                   <a href={`mailto:${i.email}`} className="text-hgl-blue hover:underline">
                     {i.email}
                   </a>
@@ -133,7 +133,7 @@ export default function InstructorsPanel({
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-2 text-gray-600 whitespace-nowrap">
+                <td className="px-2 py-2 text-gray-600 whitespace-nowrap">
                   {i.phone ? (
                     <a href={`tel:${i.phone.replace(/[^\d+]/g, '')}`} className="text-hgl-blue hover:underline">
                       {i.phone}
@@ -142,7 +142,7 @@ export default function InstructorsPanel({
                     <span className="italic text-gray-400">—</span>
                   )}
                 </td>
-                <td className="px-4 py-2 text-xs whitespace-nowrap">
+                <td className="px-2 py-2 text-xs whitespace-nowrap">
                   {/* PL-327/342: ONE line of compact chips — the full
                       three-control detail lives in the profile editor; tutors
                       self-serve the same three from their portal. */}
@@ -170,7 +170,7 @@ export default function InstructorsPanel({
                     ))}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-left whitespace-nowrap">
+                <td className="px-2 py-2 text-left whitespace-nowrap">
                   {/* PL-226: the full profile (identity + tutoring) edits here. */}
                   <button
                     onClick={() => setEditing(i.id)}

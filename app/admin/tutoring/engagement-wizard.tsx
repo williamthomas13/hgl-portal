@@ -253,6 +253,10 @@ export default function EngagementWizard({
   // adopts its id, so Save-as-draft updates in place and Create retires it.
   const [serverDraftId, setServerDraftId] = useState<string | null>(null)
   const seenServerDraftRef = useRef<string | null>(null)
+  // PL-341: a proposal's tutor differs from the wizard's already-chosen one —
+  // a real conflict, asked inline, never silently swapped.
+  const [tutorConflict, setTutorConflict] = useState<string | null>(null)
+
   useEffect(() => {
     if (!serverDraft) {
       // Consumed — the same draft can be resumed again later.
@@ -261,10 +265,41 @@ export default function EngagementWizard({
     }
     if (serverDraft.id === seenServerDraftRef.current) return
     seenServerDraftRef.current = serverDraft.id
-    applyDraft(serverDraft.payload ?? {})
-    // PL-337: a calendar-proposal handoff has no saved row (id '') — prefill
-    // only; Create has nothing to retire.
-    setServerDraftId(serverDraft.id || null)
+    const p = serverDraft.payload ?? {}
+    // PL-341: "Use this schedule" MERGES into a wizard that already has
+    // content — Monday's proposal, back to the calendar, Wednesday's
+    // proposal, and both land in 4 · Weekly schedule. A saved-draft resume
+    // (id set) still REPLACES: resuming means restoring.
+    const isProposal = serverDraft.id === ''
+    const hasContent = slots.length > 0 || !!studentId || !!subjectId || !!tutorId || !!notes.trim()
+    if (isProposal && hasContent) {
+      const keyOf = (s: RecurrenceSlotUI) => `${s.weekday}|${s.start_time}|${s.duration_minutes}`
+      const seen = new Set(slots.map(keyOf))
+      const added = (p.slots ?? []).filter((s) => !seen.has(keyOf(s)))
+      const merged = [...slots, ...added.map((s) => ({ ...s }))]
+      setSlots(merged)
+      // Sessions-per-week follows the merged row count (its own 1–5 scale).
+      setSessionsPerWeek(Math.min(5, Math.max(1, merged.length)))
+      if (p.startDate && !startDate) setStartDate(p.startDate)
+      if (p.tutorId) {
+        if (!tutorId) setTutorId(p.tutorId)
+        else if (p.tutorId !== tutorId) setTutorConflict(p.tutorId)
+      }
+      setMessage(
+        added.length > 0
+          ? `Added ${added.length} weekly time${added.length === 1 ? '' : 's'} from the calendar proposal — existing rows kept${
+              (p.slots ?? []).length > added.length ? ', exact duplicates skipped' : ''
+            }.`
+          : 'Those weekly times are already on the schedule — nothing duplicated.'
+      )
+      // serverDraftId stays as-is: merging a proposal onto a resumed saved
+      // draft keeps updating THAT draft.
+    } else {
+      applyDraft(p)
+      // PL-337: a calendar-proposal handoff has no saved row (id '') — prefill
+      // only; Create has nothing to retire.
+      setServerDraftId(serverDraft.id || null)
+    }
     onServerDraftConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverDraft])
@@ -1222,6 +1257,44 @@ export default function EngagementWizard({
         <label className="block text-xs text-gray-600 font-semibold mb-1">
           3 · Tutor {subject && <span className="font-normal text-gray-400">(matches for {subject.name} first)</span>}
         </label>
+        {/* PL-341: the proposal was drawn against a DIFFERENT tutor's
+            calendar than the one picked here — ask which wins, never swap
+            silently. Either answer re-runs the conflict checks (the busy
+            fetch and warnings follow the tutor select). */}
+        {tutorConflict && tutorConflict !== tutorId && (() => {
+          const incoming = tutors.find((t) => t.id === tutorConflict)
+          const current = tutors.find((t) => t.id === tutorId)
+          if (!incoming) return null
+          const nameOf = (t: typeof incoming | undefined) =>
+            (t?.name ?? t?.email ?? 'that tutor').split(' ')[0]
+          return (
+            <div className="mb-2 p-2 rounded bg-amber-50 border border-amber-300 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+              <span>
+                The calendar proposal was drawn against{' '}
+                <strong>{incoming.name ?? incoming.email}</strong>&apos;s calendar, but{' '}
+                <strong>{current?.name ?? current?.email ?? 'another tutor'}</strong> is picked here —
+                which tutor should this schedule use?
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setTutorId(tutorConflict)
+                  setTutorConflict(null)
+                }}
+                className="bg-hgl-slate text-white rounded px-2.5 py-1 font-semibold"
+              >
+                Use {nameOf(incoming)}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTutorConflict(null)}
+                className="text-gray-600 underline"
+              >
+                Keep {nameOf(current)}
+              </button>
+            </div>
+          )
+        })()}
         <select
           value={tutorId}
           onChange={(e) => setTutorId(e.target.value)}
