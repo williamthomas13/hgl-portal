@@ -5,6 +5,7 @@ import { supabase } from '../../utils/supabase'
 import { DateHint, SearchCombobox, TimeSelect } from '../ui'
 import AvailabilityGrid from '../../components/AvailabilityGrid'
 import { generateOccurrences, horizonEndIso, addDaysIso } from '../../utils/tutoring'
+import { formatTimeRange, hhmmRange } from '../../utils/dates'
 import {
   availabilitySummary,
   slotOutsideAvailability,
@@ -1349,8 +1350,9 @@ export default function EngagementWizard({
                   onClick={() => setSlots(combo.slots.map((s) => ({ ...s })))}
                   className="text-xs border border-hgl-blue text-hgl-blue rounded-full px-3 py-1.5 hover:bg-hgl-blue hover:text-white transition"
                 >
+                  {/* PL-339: chips speak the full range. */}
                   {combo.slots
-                    .map((s) => `${WEEKDAYS[s.weekday - 1]} ${fmtHHMM(s.start_time)}`)
+                    .map((s) => `${WEEKDAYS[s.weekday - 1]} ${hhmmRange(s.start_time, s.duration_minutes)}`)
                     .join(' + ')}{' '}
                   —{' '}
                   {combo.conflicts === 0
@@ -1384,6 +1386,11 @@ export default function EngagementWizard({
                   <option key={m} value={m}>{m} min</option>
                 ))}
               </select>
+              {/* PL-339: the row says its range out loud — the pickers hold
+                  start + length, the range is what the family will live. */}
+              <span className="text-xs text-gray-500 whitespace-nowrap">
+                = {hhmmRange(slot.start_time, slot.duration_minutes)}
+              </span>
               <button onClick={() => setSlots((s) => s.filter((_, j) => j !== i))} className="text-red-600 text-xs underline">
                 remove
               </button>
@@ -1416,7 +1423,7 @@ export default function EngagementWizard({
               {conflicts.slice(0, 8).map((c, i) => (
                 <li key={i}>
                   {fmtDay(c.occ.startsAt.toISOString(), tutor!.timezone)}{' '}
-                  {fmtTime(c.occ.startsAt.toISOString(), tutor!.timezone)} — conflicts with:{' '}
+                  {formatTimeRange(c.occ.startsAt, c.occ.endsAt, tutor!.timezone)} — conflicts with:{' '}
                   <span className="font-semibold">
                     {c.block.title ?? (c.block.private ? 'busy — private event' : 'busy')}
                   </span>
@@ -1612,7 +1619,7 @@ export default function EngagementWizard({
           <ul className="mt-1 ml-4 list-disc">
             {[...outsideSlots].map((i) => (
               <li key={i}>
-                {WEEKDAYS[slots[i].weekday - 1]} {fmtHHMM(slots[i].start_time)} ·{' '}
+                {WEEKDAYS[slots[i].weekday - 1]} {hhmmRange(slots[i].start_time, slots[i].duration_minutes)} ·{' '}
                 {slots[i].duration_minutes} min
               </li>
             ))}

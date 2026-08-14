@@ -146,6 +146,50 @@ export function friendlyZoneCity(timezone: string, location?: string | null): st
   return cityFromLocation(location) ?? timezoneCityLabel(timezone)
 }
 
+// ---------------------------------------------------------------------------
+// PL-339: time RANGES everywhere — "4:00–5:30 PM", never a bare start time.
+// Tight en dash; the leading meridiem drops when both ends share it
+// ("4:00–5:30 PM") and stays when they differ ("11:00 AM–12:30 PM").
+// Leaf-safe on purpose: calendar blocks, wizard chips, and email composers
+// all format through these three, so the treatment can't drift.
+// ---------------------------------------------------------------------------
+
+/** Collapse two already-formatted "h:mm AM/PM" labels into one range. */
+export function timeRangeLabel(startLabel: string, endLabel: string): string {
+  const meridiem = (s: string) => s.match(/\s*(AM|PM)\s*$/i)?.[1]?.toUpperCase() ?? ''
+  const m = meridiem(startLabel)
+  if (m && m === meridiem(endLabel)) {
+    return `${startLabel.replace(/\s*(AM|PM)\s*$/i, '')}–${endLabel}`
+  }
+  return `${startLabel}–${endLabel}`
+}
+
+/** Range between two instants, rendered in a zone: "4:00–5:30 PM". */
+export function formatTimeRange(
+  start: string | Date,
+  end: string | Date | null | undefined,
+  timeZone: string
+): string {
+  const fmt = (v: string | Date) =>
+    new Date(v).toLocaleTimeString('en-US', { timeZone, hour: 'numeric', minute: '2-digit' })
+  if (!end) return fmt(start) // an end we don't know stays a start time
+  return timeRangeLabel(fmt(start), fmt(end))
+}
+
+/** Range from a wall-clock 'HH:MM' start + duration — recurrence rows and
+ *  proposed blocks, where no instant (and no zone) exists yet. */
+export function hhmmRange(startHHMM: string, durationMinutes: number): string {
+  const [h, m] = startHHMM.split(':').map(Number)
+  if (Number.isNaN(h) || Number.isNaN(m)) return startHHMM
+  const label = (mins: number) => {
+    const hh = Math.floor(mins / 60) % 24
+    const hr = hh % 12 === 0 ? 12 : hh % 12
+    return `${hr}:${String(mins % 60).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'}`
+  }
+  const startMins = h * 60 + m
+  return timeRangeLabel(label(startMins), label(startMins + Math.max(0, durationMinutes)))
+}
+
 // PL-127: ONE clock for the availability promise — the family-facing "we'll
 // propose times within N business days" line and the ops-side "propose times
 // by {date}" countdown both derive from this constant, so they can never

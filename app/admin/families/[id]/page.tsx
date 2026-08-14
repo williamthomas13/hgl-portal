@@ -7,7 +7,7 @@ import { CollapsibleSection } from '../../ui'
 import { SidebarLayout, SidebarPanel, type SidebarEntry } from '../../sidebar'
 import { FamilyCommsTimeline } from '../../family-comms'
 import ScoresEntry from '../../../components/ScoresEntry'
-import { formatDateShort } from '../../../utils/dates'
+import { formatDateShort, formatTimeRange } from '../../../utils/dates'
 import { pronounsDisplayLabel } from '../../../utils/pronoun-label'
 
 // PL-230: ONE Family profile per household — the canonical person-record hub
@@ -52,6 +52,19 @@ const fmtWhen = (iso: string) =>
     hour: 'numeric',
     minute: '2-digit',
   })
+
+/** PL-339: "Nov 9, 2026, 4:00–5:30 PM" — date + full range (end derived
+ *  from the session's duration; the query carries no ends_at). */
+const fmtWhenRange = (iso: string, durationMinutes: number) => {
+  const end = new Date(new Date(iso).getTime() + durationMinutes * 60_000)
+  const day = new Date(iso).toLocaleDateString('en-US', {
+    timeZone: 'America/Denver',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  return `${day}, ${formatTimeRange(iso, end, 'America/Denver')}`
+}
 
 // PL-231: contact info is actionable — plain protocol handoff, OS picks the app.
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`
@@ -644,7 +657,11 @@ export default function FamilyProfilePage() {
                           </ul>
                           {upcoming.length > 0 && (
                             <p className="text-xs text-gray-500 mt-1">
-                              Next: {fmtWhen(upcoming[upcoming.length - 1].starts_at)}
+                              Next:{' '}
+                              {fmtWhenRange(
+                                upcoming[upcoming.length - 1].starts_at,
+                                upcoming[upcoming.length - 1].duration_minutes
+                              )}
                             </p>
                           )}
                         </div>

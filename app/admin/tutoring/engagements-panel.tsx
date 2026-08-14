@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
-import { formatDateShort } from '../../utils/dates'
+import { formatDateShort, formatTimeRange, hhmmRange } from '../../utils/dates'
 import ScoresEntry from '../../components/ScoresEntry'
 import { ConfirmAction } from './confirm'
 import { WEEKDAYS, familyLabel, fmtDay, fmtTime, type Engagement } from './types'
@@ -24,7 +24,7 @@ export default function EngagementsPanel({
 }: {
   engagements: Engagement[]
   /** engagement_id → next confirmed session ISO */
-  nextSessions: Record<string, string>
+  nextSessions: Record<string, { starts_at: string; ends_at: string | null }>
   /** engagement_id → hours consumed (completed + no_show + forfeited + upcoming confirmed) */
   packageHoursUsed: Record<string, number>
   /** addon_id → purchased hours */
@@ -321,9 +321,10 @@ export default function EngagementsPanel({
                   <span>{e.subjects?.name}</span>
                   <span className="text-gray-500">w/ {e.instructors?.name ?? e.instructors?.email}</span>
                   <span className="text-gray-500">
+                    {/* PL-339: "Tue 4:00–5:30 PM", never raw 24h + minutes. */}
                     {e.recurrence.length > 0
                       ? e.recurrence
-                          .map((r) => `${WEEKDAYS[r.weekday - 1]} ${r.start_time} (${r.duration_minutes}m)`)
+                          .map((r) => `${WEEKDAYS[r.weekday - 1]} ${hhmmRange(r.start_time, r.duration_minutes)}`)
                           .join(', ')
                       : 'one-offs only'}
                   </span>
@@ -433,7 +434,7 @@ export default function EngagementsPanel({
                   )}
                   {next ? (
                     <span className="text-xs text-green-700">
-                      next: {fmtDay(next, tz)} {fmtTime(next, tz)}
+                      next: {fmtDay(next.starts_at, tz)} {formatTimeRange(next.starts_at, next.ends_at, tz)}
                     </span>
                   ) : (
                     e.status === 'active' && <span className="text-xs text-amber-600">no upcoming sessions</span>

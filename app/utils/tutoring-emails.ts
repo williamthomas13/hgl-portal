@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { renderRegistered } from './comms-registered'
 import { sendOnce, wrap, footerT } from './email'
+import { formatTimeRange } from './dates'
 import { recordTutorScheduleChange } from './tutor-notices'
 
 // Phase 7c tutoring emails (spec §6): T1 monthly proposal, T1b nudge,
@@ -347,7 +348,7 @@ export async function sendRescheduleAck(sessionId: string): Promise<'sent' | 'al
   const { data: s } = await supabase
     .from('tutoring_sessions')
     .select(
-      `id, starts_at, reschedule_requested_at,
+      `id, starts_at, ends_at, reschedule_requested_at,
        students ( id, first_name, families ( parent_first_name, parent_email, billing_cc_emails, timezone ) ),
        tutoring_engagements ( subjects ( name ) ),
        instructors ( timezone )`
@@ -360,14 +361,13 @@ export async function sendRescheduleAck(sessionId: string): Promise<'sent' | 'al
   if (!student || !family?.parent_email) return 'no_request'
   const subject = one7c<any>(one7c<any>(s.tutoring_engagements)?.subjects)?.name ?? 'tutoring'
   const tz = family.timezone ?? one7c<any>(s.instructors)?.timezone ?? 'America/Denver'
-  const when = new Date(s.starts_at).toLocaleString('en-US', {
+  // PL-339: the quoted session speaks its full range.
+  const when = `${new Date(s.starts_at).toLocaleDateString('en-US', {
     timeZone: tz,
     weekday: 'short',
     month: 'short',
     day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  })}, ${formatTimeRange(s.starts_at, s.ends_at, tz)}`
   const notice: 'ok' | 'late' =
     new Date(s.starts_at).getTime() - new Date(s.reschedule_requested_at).getTime() >= 24 * 3600_000
       ? 'ok'
@@ -431,18 +431,18 @@ export async function sendScheduleChangeNotices(opts: {
     const subject = one7c<any>(one7c<any>(s.tutoring_engagements)?.subjects)?.name ?? 'tutoring'
     if (!student || !family) return
     const tz = family.timezone ?? tutor?.timezone ?? 'America/Denver'
-    const fmt = (iso: string) =>
-      new Date(iso).toLocaleString('en-US', {
+    // PL-339: every quoted session time is the full range.
+    const fmt = (startIso: string, endIso?: string | null) =>
+      `${new Date(startIso).toLocaleDateString('en-US', {
         timeZone: tz,
         weekday: 'short',
         month: 'short',
         day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      })
+      })}, ${formatTimeRange(startIso, endIso, tz)}`
 
     const changeLines: string[] = []
     let replacementStartsAt: string | null = null
+    let replacementEndsAt: string | null = null
     if (opts.kind === 'reschedule' && opts.replacementId) {
       const { data: r } = await supabase
         .from('tutoring_sessions')
@@ -450,17 +450,20 @@ export async function sendScheduleChangeNotices(opts: {
         .eq('id', opts.replacementId)
         .maybeSingle()
       replacementStartsAt = r?.starts_at ?? null
-      changeLines.push(`${subject} on ${fmt(s.starts_at)} moved to ${r ? fmt(r.starts_at) : 'a new time'}.`)
+      replacementEndsAt = r?.ends_at ?? null
+      changeLines.push(
+        `${subject} on ${fmt(s.starts_at, s.ends_at)} moved to ${r ? fmt(r.starts_at, r.ends_at) : 'a new time'}.`
+      )
       if (opts.notice === 'late') {
         changeLines.push(
           `Because the change came inside 24 hours, the $40/hour reschedule fee from our scheduling policy applies — it will appear on next month's invoice.`
         )
       }
     } else if (opts.kind === 'no_show') {
-      changeLines.push(`${subject} on ${fmt(s.starts_at)} was marked a no-show.`)
+      changeLines.push(`${subject} on ${fmt(s.starts_at, s.ends_at)} was marked a no-show.`)
       changeLines.push(`Per the prepaid-month policy the session isn't refunded, but do get in touch — emergencies are always our call to make together.`)
     } else {
-      changeLines.push(`${subject} on ${fmt(s.starts_at)} was cancelled without a replacement, so the prepaid session is forfeited.`)
+      changeLines.push(`${subject} on ${fmt(s.starts_at, s.ends_at)} was cancelled without a replacement, so the prepaid session is forfeited.`)
       changeLines.push(`If you'd rather reschedule it after all, just say the word.`)
     }
 
@@ -503,6 +506,9 @@ export async function sendScheduleChangeNotices(opts: {
           subjectName: subject,
           oldStartsAt: s.starts_at,
           newStartsAt: replacementStartsAt,
+          // PL-339: ends travel too, so the tutor notice quotes ranges.
+          oldEndsAt: s.ends_at ?? null,
+          newEndsAt: replacementEndsAt,
           recordedAt: new Date().toISOString(),
         },
       })

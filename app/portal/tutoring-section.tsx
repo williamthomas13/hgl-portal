@@ -11,6 +11,7 @@ import BlockConfirmControl from './block-confirm-control'
 import { continueRatesForStudent } from '../utils/block-confirm'
 import RescheduleRequest from './reschedule-request'
 import { escapeLike } from '../utils/like-escape'
+import { formatTimeRange, hhmmRange } from '../utils/dates'
 
 // Parent tutoring surface (Phase 7d, spec §8) — un-stubs the comms spec's C3
 // widget. Reads run as service role scoped to the signed-in parent's own
@@ -235,16 +236,20 @@ export default async function TutoringSection({ email }: { email: string }) {
                 {student?.first_name} — {one<any>(e.subjects)?.name}
               </div>
               <div className="text-gray-600">with {(tutor?.name ?? 'your tutor').split(' ')[0]}</div>
+              {/* PL-339: full ranges — "Tuesdays 4:00–5:30 PM". */}
               {Array.isArray(e.recurrence) && e.recurrence.length > 0 && (
                 <div className="text-xs text-gray-500 mt-1">
                   {e.recurrence
-                    .map((r: any) => `${WEEKDAY_PLURALS[r.weekday - 1]} ${fmtSlotTime(String(r.start_time).slice(0, 5))}`)
+                    .map(
+                      (r: any) =>
+                        `${WEEKDAY_PLURALS[r.weekday - 1]} ${hhmmRange(String(r.start_time).slice(0, 5), Number(r.duration_minutes ?? 60))}`
+                    )
                     .join(' · ')}
                 </div>
               )}
               {next && (
                 <div className="text-xs text-green-700 mt-1">
-                  Next: {fmtDay(next.starts_at)} {fmtTime(next.starts_at)}
+                  Next: {fmtDay(next.starts_at)} {formatTimeRange(next.starts_at, next.ends_at, tz)}
                 </div>
               )}
               {/* PL-275: truncate needs a bounded box — min-w-0 keeps the

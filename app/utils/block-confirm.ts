@@ -3,6 +3,7 @@ import { emailBaseUrl } from './base-url'
 import { sendOnce, sendAdminAlert, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { renderMarkdownBody } from './comms-md'
+import { formatTimeRange } from './dates'
 import { loadTutoringPackages, studentTutoringTier } from './lifecycle'
 import { generateOccurrences, horizonEndIso, addDaysIso } from './tutoring'
 import { loadGcalConnection, deleteGcalEvent, freeBusy } from './gcal'
@@ -590,7 +591,7 @@ async function reserveContinuation(
         rate_snapshot: rate,
       }))
     )
-    .select('id, starts_at')
+    .select('id, starts_at, ends_at')
   if (error || !inserted) {
     console.error('continuation reserve insert failed — routing to staff:', error?.message)
     return { outcome: 'staff' }
@@ -599,18 +600,17 @@ async function reserveContinuation(
   processGcalQueue().catch((err) => console.error('gcal queue drain failed (retry sweep covers):', err))
   return {
     outcome: 'reserved',
-    times: inserted
-      .map((s) => s.starts_at as string)
-      .sort()
-      .map((iso) =>
-        new Date(iso).toLocaleString('en-US', {
-          timeZone: e.tutorTimezone,
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        })
+    // PL-339: reserved times speak the full range.
+    times: [...inserted]
+      .sort((a, b) => String(a.starts_at).localeCompare(String(b.starts_at)))
+      .map(
+        (s) =>
+          `${new Date(s.starts_at).toLocaleDateString('en-US', {
+            timeZone: e.tutorTimezone,
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+          })}, ${formatTimeRange(s.starts_at, s.ends_at, e.tutorTimezone)}`
       ),
   }
 }

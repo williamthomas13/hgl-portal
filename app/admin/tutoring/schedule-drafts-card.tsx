@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
+import { hhmmRange } from '../../utils/dates'
 import { CollapsibleSection } from '../ui'
 import { ConfirmAction } from './confirm'
 import { WEEKDAYS, type Tutor } from './types'
@@ -12,19 +13,12 @@ import type { ScheduleDraftRow } from './engagement-wizard'
 // doors. Renders nothing when no drafts exist (state-driven, like the
 // dashboard's generic count row).
 
-/** 'HH:MM' → "4:00 PM". */
-function fmtHHMM(hhmm: string): string {
-  const [h, m] = (hhmm ?? '').split(':').map(Number)
-  if (Number.isNaN(h)) return hhmm
-  const hr = h % 12 === 0 ? 12 : h % 12
-  return `${hr}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
-}
-
 function slotSummary(d: ScheduleDraftRow): string {
   const slots = d.payload?.slots ?? []
   if (slots.length === 0) return 'no weekly times yet'
+  // PL-339: the range is primary ("Tue 4:00–5:30 PM").
   return slots
-    .map((s) => `${WEEKDAYS[(s.weekday ?? 1) - 1]} ${fmtHHMM(s.start_time)} · ${s.duration_minutes} min`)
+    .map((s) => `${WEEKDAYS[(s.weekday ?? 1) - 1]} ${hhmmRange(s.start_time, s.duration_minutes)}`)
     .join(' + ')
 }
 

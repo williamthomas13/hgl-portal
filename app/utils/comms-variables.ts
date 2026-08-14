@@ -998,7 +998,8 @@ export const VARIABLES: Record<string, VariableDef> = {
   },
   // PL-262: reschedule-request ack.
   sessionWhenPhrase: {
-    description: 'PL-262: the requested session\'s local time, e.g. "Wed, Aug 5, 4:00 PM"',
+    description:
+      'PL-262/339: the requested session\'s local time RANGE, e.g. "Wed, Aug 5, 4:00–5:30 PM"',
     resolve: (_c, _a, e) => e.sessionWhenPhrase ?? '—',
   },
   subjectName: {
@@ -1403,6 +1404,8 @@ export const SAMPLE_EXTRA: ExtraVars = {
   timecardHours: '14.5',
   timecardLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
   sessionDate: 'Wednesday, July 22',
+  // PL-339: quoted session times are ranges now.
+  sessionWhenPhrase: 'Wed, Aug 5, 4:00–5:30 PM',
   missingSessionsBlock: '4:00 PM — Ana García\n6:00 PM — Marcus Lee',
   notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
   // PL-157: the coverage/handoff values below are the SAME derived constants

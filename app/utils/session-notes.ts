@@ -2,6 +2,7 @@ import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
+import { formatTimeRange } from './dates'
 
 // PL-111 session-note reminders. Friendly cadence, hard backstop:
 //   1. END-OF-DAY: one email per tutor listing that day's completed sessions
@@ -31,6 +32,8 @@ const shiftDays = (dateIso: string, days: number) => {
 type MissingSession = {
   id: string
   starts_at: string
+  /** PL-339: quoted times are full ranges. */
+  ends_at: string | null
   studentName: string
 }
 
@@ -42,7 +45,7 @@ export async function missingByTutor(dateIso: string): Promise<Map<string, Missi
   const to = new Date(shiftDays(dateIso, 2) + 'T00:00:00Z').toISOString()
   const { data: sessions } = await supabase
     .from('tutoring_sessions')
-    .select('id, tutor_id, starts_at, students ( first_name, last_name )')
+    .select('id, tutor_id, starts_at, ends_at, students ( first_name, last_name )')
     .eq('status', 'completed')
     .gte('starts_at', from)
     .lt('starts_at', to)
@@ -62,6 +65,7 @@ export async function missingByTutor(dateIso: string): Promise<Map<string, Missi
     list.push({
       id: s.id,
       starts_at: s.starts_at,
+      ends_at: s.ends_at ?? null,
       studentName: st ? `${st.first_name} ${st.last_name}` : 'your student',
     })
     out.set(s.tutor_id, list)
@@ -96,10 +100,7 @@ async function sendReminder(opts: {
   })
   const lines = opts.sessions
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-    .map(
-      (s) =>
-        `${new Date(s.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz })} — ${s.studentName}`
-    )
+    .map((s) => `${formatTimeRange(s.starts_at, s.ends_at, tz)} — ${s.studentName}`)
   const listHtml = `<ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul>`
   const isEod = opts.kind === 'eod'
 
@@ -213,7 +214,7 @@ export async function sweepWeeklyNotesDigest(now: Date = new Date()): Promise<nu
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
         .map(
           (s) =>
-            `${new Date(s.starts_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz })} ${new Date(s.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz })} — ${s.studentName}`
+            `${new Date(s.starts_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz })} ${formatTimeRange(s.starts_at, s.ends_at, tz)} — ${s.studentName}`
         )
       const twin = (): Rendered => ({
         subject: `Your week's session notes — ${lines.length} still missing`,

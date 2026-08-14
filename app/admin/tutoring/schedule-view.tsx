@@ -5,6 +5,7 @@ import { supabase } from '../../utils/supabase'
 import { autoTutorColor } from '../../utils/calendar-colors'
 import { classifyNotice, isoWeekday, zonedToUtc } from '../../utils/tutoring'
 import { DateHint } from '../ui'
+import { formatTimeRange, hhmmRange } from '../../utils/dates'
 import { WEEKDAYS, fmtTime, wallClock, type RecurrenceSlotUI, type SessionRow, type Tutor } from './types'
 import type { WizardDraft } from './engagement-wizard'
 
@@ -586,7 +587,12 @@ export default function ScheduleView({
         const e = dayOf(b.end) > dayIso ? { hour: DAY_END, minute: 0 } : wallClock(b.end, tz)
         const top = Math.max(0, (s.hour + s.minute / 60 - DAY_START) * HOUR_PX)
         const bottom = Math.min(DAY_END - DAY_START, e.hour + e.minute / 60 - DAY_START) * HOUR_PX
-        const label = b.title ?? (b.private ? 'busy (private event)' : 'busy')
+        const base = b.title ?? (b.private ? 'busy (private event)' : 'busy')
+        // PL-339: the range where one is known — a block fully inside this
+        // day speaks its times; all-day and clamped multi-day spans don't
+        // (their geometry says it, and a fake "12:00 AM–12:00 AM" would lie).
+        const sameDay = startDay === dayIso && dayOf(b.end) === dayIso
+        const label = sameDay ? `${formatTimeRange(b.start, b.end, tz)} ${base}` : base
         return { top, height: Math.max(10, bottom - top), label }
       })
       .filter((b) => b.height > 0 && b.top < (DAY_END - DAY_START) * HOUR_PX)
@@ -721,8 +727,10 @@ export default function ScheduleView({
                     </option>
                   ))}
                 </select>
+                {/* PL-339: the range is primary; duration stays as a note. */}
                 <span className="text-gray-700">
-                  {fmtHHMMLocal(s.start_time)} · {s.duration_minutes} min
+                  {hhmmRange(s.start_time, s.duration_minutes)}
+                  <span className="text-gray-400"> · {s.duration_minutes} min</span>
                 </span>
                 <button
                   onClick={() => {
@@ -937,10 +945,14 @@ export default function ScheduleView({
                               ? { borderLeftColor: color, borderLeftWidth: 4, borderLeftStyle: 'solid' }
                               : { background: `${color}26`, borderColor: color, borderLeftWidth: 4 }),
                           }}
-                          title={`${s.students?.first_name ?? ''} ${s.students?.last_name ?? ''} · ${s.status}${sTutorName ? ` · ${sTutorName}` : ''}${driftIds.has(s.id) ? ' · calendar edited outside the portal — decide on the banner above' : ''}`}
+                          title={`${formatTimeRange(s.starts_at, s.ends_at, tz)} · ${s.students?.first_name ?? ''} ${s.students?.last_name ?? ''} · ${s.status}${sTutorName ? ` · ${sTutorName}` : ''}${driftIds.has(s.id) ? ' · calendar edited outside the portal — decide on the banner above' : ''}`}
                         >
+                          {/* PL-339: the full range, time first — a too-short
+                              block truncates the NAME, never the time (the
+                              time is the point of a calendar). */}
                           <span className="font-semibold">
-                            {fmtTime(s.starts_at, tz)} {s.students?.first_name}
+                            <span className="whitespace-nowrap">{formatTimeRange(s.starts_at, s.ends_at, tz)}</span>{' '}
+                            {s.students?.first_name}
                             {s.reschedule_requested_at && s.status === 'confirmed' && ' ⟳'}
                             {driftIds.has(s.id) && <span className="text-amber-600"> ⚠</span>}
                           </span>
@@ -988,8 +1000,9 @@ export default function ScheduleView({
                                 : 'Proposed — weekly; drag to move, drag the bottom edge to resize'
                             }
                           >
-                            <span className="font-semibold">
-                              {fmtHHMMLocal(hoursToHHMM(b.startH))} proposed
+                            {/* PL-339: "12:00–1:30 PM proposed". */}
+                            <span className="font-semibold whitespace-nowrap">
+                              {hhmmRange(hoursToHHMM(b.startH), Math.round(b.durH * 60))} proposed
                             </span>
                             {conflictLabel && (
                               <>

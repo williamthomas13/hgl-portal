@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
-import { fmtDay, fmtTime } from './types'
+import { fmtDay } from './types'
+import { formatTimeRange } from '../../utils/dates'
 
 // Recent parent activity (spec v1.4 §8: "nothing happens invisibly") — one
 // merged feed of everything families did from the portal:
@@ -27,9 +28,10 @@ type FeedItem = SessionRefs & {
   kind: 'moved' | 'requested'
   sessionId: string
   starts_at: string
+  ends_at: string | null
   status: string
   note: string | null
-  replacement: { starts_at: string } | null
+  replacement: { starts_at: string; ends_at: string | null } | null
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -53,11 +55,11 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const sel = `id, starts_at, status, parent_rescheduled_at, reschedule_requested_at, reschedule_request_note,
+      const sel = `id, starts_at, ends_at, status, parent_rescheduled_at, reschedule_requested_at, reschedule_request_note,
            students ( first_name, last_name ),
            tutoring_engagements ( subjects ( name ) ),
            instructors ( name ),
-           replacement:rescheduled_to_id ( starts_at )`
+           replacement:rescheduled_to_id ( starts_at, ends_at )`
       const [picks, requests] = await Promise.all([
         supabase
           .from('tutoring_sessions')
@@ -82,6 +84,7 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
           kind: 'moved',
           sessionId: r.id,
           starts_at: r.starts_at,
+          ends_at: r.ends_at ?? null,
           status: r.status,
           note: null,
           replacement: one(r.replacement),
@@ -97,6 +100,7 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
           kind: 'requested',
           sessionId: r.id,
           starts_at: r.starts_at,
+          ends_at: r.ends_at ?? null,
           status: r.status,
           note: r.reschedule_request_note ?? null,
           replacement: one(r.replacement),
@@ -144,13 +148,13 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
                 <>
                   — family moved{' '}
                   <span className="text-gray-600">
-                    {fmtDay(r.starts_at, ORG_TZ)} {fmtTime(r.starts_at, ORG_TZ)}
+                    {fmtDay(r.starts_at, ORG_TZ)} {formatTimeRange(r.starts_at, r.ends_at, ORG_TZ)}
                   </span>{' '}
                   →{' '}
                   {r.replacement ? (
                     <strong className="text-green-700">
                       {fmtDay(r.replacement.starts_at, ORG_TZ)}{' '}
-                      {fmtTime(r.replacement.starts_at, ORG_TZ)}
+                      {formatTimeRange(r.replacement.starts_at, r.replacement.ends_at, ORG_TZ)}
                     </strong>
                   ) : (
                     <span className="text-gray-500">a new time</span>
@@ -160,7 +164,7 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
                 <>
                   — family ASKED to move the{' '}
                   <span className="text-gray-600">
-                    {fmtDay(r.starts_at, ORG_TZ)} {fmtTime(r.starts_at, ORG_TZ)}
+                    {fmtDay(r.starts_at, ORG_TZ)} {formatTimeRange(r.starts_at, r.ends_at, ORG_TZ)}
                   </span>{' '}
                   session{r.note ? <span className="text-gray-500"> — “{r.note}”</span> : ''}{' '}
                   {pending ? (
@@ -178,7 +182,7 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
                   ) : r.status === 'rescheduled' && r.replacement ? (
                     <span className="text-green-700">
                       → moved to {fmtDay(r.replacement.starts_at, ORG_TZ)}{' '}
-                      {fmtTime(r.replacement.starts_at, ORG_TZ)}
+                      {formatTimeRange(r.replacement.starts_at, r.replacement.ends_at, ORG_TZ)}
                     </span>
                   ) : r.status === 'rescheduled' ? (
                     <span className="text-green-700">→ rescheduled</span>

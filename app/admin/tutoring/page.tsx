@@ -32,7 +32,8 @@ export default function TutoringAdmin() {
   const [students, setStudents] = useState<StudentOption[]>([])
   const [engagements, setEngagements] = useState<Engagement[]>([])
   const [tutorNotes, setTutorNotes] = useState<Record<string, string>>({})
-  const [nextSessions, setNextSessions] = useState<Record<string, string>>({})
+  // PL-339: start + end travel together so "next:" can speak the range.
+  const [nextSessions, setNextSessions] = useState<Record<string, { starts_at: string; ends_at: string | null }>>({})
   const [packageHoursUsed, setPackageHoursUsed] = useState<Record<string, number>>({})
   const [addonHours, setAddonHours] = useState<Record<string, number>>({})
   // PL-84: family_id → cancellation-conversion packages (the authoritative
@@ -143,14 +144,14 @@ export default function TutoringAdmin() {
     if (engIds.length > 0) {
       const { data: upcoming } = await supabase
         .from('tutoring_sessions')
-        .select('engagement_id, starts_at')
+        .select('engagement_id, starts_at, ends_at')
         .in('engagement_id', engIds)
         .eq('status', 'confirmed')
         .gte('starts_at', new Date().toISOString())
         .order('starts_at')
-      const next: Record<string, string> = {}
+      const next: Record<string, { starts_at: string; ends_at: string | null }> = {}
       for (const s of upcoming ?? []) {
-        if (!next[s.engagement_id]) next[s.engagement_id] = s.starts_at
+        if (!next[s.engagement_id]) next[s.engagement_id] = { starts_at: s.starts_at, ends_at: s.ends_at ?? null }
       }
       setNextSessions(next)
 

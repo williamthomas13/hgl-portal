@@ -1,5 +1,6 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { renderRegistered } from './comms-registered'
+import { formatTimeRange } from './dates'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 
 // PL-81: T3-T stays mandatory (Google Calendar never notifies the tutor —
@@ -39,6 +40,10 @@ export type TutorChange = {
   subjectName: string
   oldStartsAt: string
   newStartsAt: string | null
+  /** PL-339: end instants so quoted times render as ranges. OPTIONAL — rows
+   *  stored before the fields existed render start-only, never wrongly. */
+  oldEndsAt?: string | null
+  newEndsAt?: string | null
   recordedAt: string
 }
 
@@ -241,7 +246,10 @@ function tzFormats(tz: string) {
     new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric' })
   const time = (iso: string) =>
     new Date(iso).toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' })
-  return { dateTime, date, time }
+  /** PL-339: "Mon, Nov 9, 4:00–5:30 PM" — start-only when no end is known. */
+  const dateTimeRange = (startIso: string, endIso?: string | null) =>
+    endIso ? `${date(startIso)}, ${formatTimeRange(startIso, endIso, tz)}` : dateTime(startIso)
+  return { dateTime, dateTimeRange, date, time }
 }
 
 // PL-85: the "What changed" list shows each SESSION once — original state
@@ -258,8 +266,10 @@ export type CollapsedDelta = {
   subjectName: string
   /** State as of the window's first change touching this chain. */
   originalStartsAt: string
+  originalEndsAt: string | null
   /** Final time for surviving reschedules; null for terminal states. */
   finalStartsAt: string | null
+  finalEndsAt: string | null
 }
 
 export function collapseChanges(changes: TutorChange[]): CollapsedDelta[] {
@@ -276,7 +286,9 @@ export function collapseChanges(changes: TutorChange[]): CollapsedDelta[] {
         studentFirst: c.studentFirst,
         subjectName: c.subjectName,
         originalStartsAt: c.oldStartsAt,
+        originalEndsAt: c.oldEndsAt ?? null,
         finalStartsAt: null,
+        finalEndsAt: null,
         currentId: c.sessionId,
         terminal: false,
       }
@@ -287,9 +299,11 @@ export function collapseChanges(changes: TutorChange[]): CollapsedDelta[] {
     chain.kind = c.kind
     if (c.kind === 'reschedule') {
       chain.finalStartsAt = c.newStartsAt
+      chain.finalEndsAt = c.newEndsAt ?? null
       chain.currentId = c.replacementId ?? c.sessionId
     } else {
       chain.finalStartsAt = null
+      chain.finalEndsAt = null
       chain.terminal = true
     }
     byCurrentId.set(chain.currentId, chain)
@@ -306,15 +320,18 @@ export function collapseChanges(changes: TutorChange[]): CollapsedDelta[] {
     .map(({ currentId: _c, terminal: _t, ...delta }) => delta)
 }
 
-export function changeDeltaLine(c: CollapsedDelta, fmt: (iso: string) => string): string {
+export function changeDeltaLine(
+  c: CollapsedDelta,
+  fmt: (startIso: string, endIso?: string | null) => string
+): string {
   const who = `${c.studentFirst}'s ${c.subjectName} session`
   if (c.kind === 'reschedule') {
-    return `${who} on <strong>${fmt(c.originalStartsAt)}</strong> moved to <strong>${c.finalStartsAt ? fmt(c.finalStartsAt) : 'a new time'}</strong>.`
+    return `${who} on <strong>${fmt(c.originalStartsAt, c.originalEndsAt)}</strong> moved to <strong>${c.finalStartsAt ? fmt(c.finalStartsAt, c.finalEndsAt) : 'a new time'}</strong>.`
   }
   if (c.kind === 'no_show') {
-    return `${who} on <strong>${fmt(c.originalStartsAt)}</strong> was a no-show.`
+    return `${who} on <strong>${fmt(c.originalStartsAt, c.originalEndsAt)}</strong> was a no-show.`
   }
-  return `${who} on <strong>${fmt(c.originalStartsAt)}</strong> was cancelled — you're still paid for the reserved slot (it stays on your calendar, XCL-marked).`
+  return `${who} on <strong>${fmt(c.originalStartsAt, c.originalEndsAt)}</strong> was cancelled — you're still paid for the reserved slot (it stays on your calendar, XCL-marked).`
 }
 
 /** Exported for the regression/E2E scripts — production callers go through
@@ -325,7 +342,7 @@ export async function composeTutorNotice(
   changes: TutorChange[]
 ): Promise<Rendered | null> {
   const tz = tutor.timezone ?? 'America/Denver'
-  const { dateTime, date, time } = tzFormats(tz)
+  const { dateTimeRange, date } = tzFormats(tz)
   const nowIso = new Date().toISOString()
 
   // PL-85: one line per session — original → net effect; round trips vanish.
@@ -351,7 +368,8 @@ export async function composeTutorNotice(
       .limit(12)
     const lines = (upcoming ?? []).map(
       (s) =>
-        `<li style="margin:2px 0">${date(s.starts_at)} · ${time(s.starts_at)}${s.ends_at ? `–${time(s.ends_at)}` : ''}</li>`
+        // PL-339: one range treatment everywhere (shared-meridiem elision).
+        `<li style="margin:2px 0">${date(s.starts_at)} · ${formatTimeRange(s.starts_at, s.ends_at, tz)}</li>`
     )
     scheduleSections.push(
       `<h3 style="color:#334155;margin:18px 0 6px">${nameFor.get(studentId)} — ${subjectFor.get(studentId)} · upcoming sessions</h3>` +
@@ -362,7 +380,7 @@ export async function composeTutorNotice(
   }
   const tutorScheduleBlock = scheduleSections.join('')
 
-  const deltaLines = deltas.map((c) => `<li style="margin:2px 0">${changeDeltaLine(c, dateTime)}</li>`)
+  const deltaLines = deltas.map((c) => `<li style="margin:2px 0">${changeDeltaLine(c, dateTimeRange)}</li>`)
   const tutorChangeBlock =
     `<p style="margin:16px 0 6px"><strong>What changed:</strong></p>` +
     `<ul style="margin:0;padding-left:20px;color:#334155">${deltaLines.join('')}</ul>`

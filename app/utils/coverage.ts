@@ -9,6 +9,7 @@ import {
   coverageSessionLines,
 } from './coverage-copy'
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { formatTimeRange } from './dates'
 import { sendAdminAlert, sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { enqueueGcalSync } from './gcal-sync'
@@ -65,15 +66,17 @@ async function loadSession(sessionId: string) {
   }
 }
 
-function fmtWhen(iso: string, tz: string | null | undefined) {
-  return new Date(iso).toLocaleString('en-US', {
-    timeZone: tz ?? 'America/Denver',
+/** PL-339: "Monday, November 9, 4:00–5:30 PM" — the full range, in the
+ *  reader's own timezone. */
+function fmtWhen(iso: string, endIso: string | null | undefined, tz: string | null | undefined) {
+  const zone = tz ?? 'America/Denver'
+  const day = new Date(iso).toLocaleDateString('en-US', {
+    timeZone: zone,
     weekday: 'long',
     month: 'long',
     day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
   })
+  return `${day}, ${formatTimeRange(iso, endIso, zone)}`
 }
 
 export type CoverageCandidate = { id: string; name: string; needsPrep: boolean }
@@ -115,7 +118,7 @@ async function opsAlert(opts: {
   requesterName: string
   candidateName: string
 }) {
-  const when = fmtWhen(opts.session.startsAt, opts.session.tutor?.timezone)
+  const when = fmtWhen(opts.session.startsAt, opts.session.endsAt, opts.session.tutor?.timezone)
   await sendAdminAlert({
     dedupeKey: `al_coverage:${opts.requestId}:${opts.event}`,
     adminEmail: ADMIN_EMAIL,
@@ -185,7 +188,7 @@ export async function requestCoverage(opts: {
 
   const base = emailBaseUrl()
   const requesterName = session.tutor?.name ?? 'A colleague'
-  const when = fmtWhen(session.startsAt, candidate.timezone)
+  const when = fmtWhen(session.startsAt, session.endsAt, candidate.timezone)
   const first = candidate.name?.split(' ')[0] ?? 'there'
   // PL-157: composed in coverage-copy.ts so the template sample derives from
   // the same code path.
@@ -302,7 +305,7 @@ export async function respondCoverage(opts: {
       .order('created_at', { ascending: false })
       .limit(10)
     handoff = {
-      when: fmtWhen(session.startsAt, candidate?.timezone),
+      when: fmtWhen(session.startsAt, session.endsAt, candidate?.timezone),
       studentName: session.studentName,
       subjectName: session.subjectName,
       location: session.location,
@@ -315,7 +318,7 @@ export async function respondCoverage(opts: {
   }
 
   if (requester?.email) {
-    const when = fmtWhen(session.startsAt, requester.timezone)
+    const when = fmtWhen(session.startsAt, session.endsAt, requester.timezone)
     const first = requester.name?.split(' ')[0] ?? 'there'
     const contact = await loadContactInfo()
     // PL-157: composed in coverage-copy.ts so the template sample derives
@@ -474,7 +477,7 @@ export async function coverageNoteContext(requestId: string): Promise<CoverageNo
     subFirstName: sub?.name?.split(' ')[0] ?? 'your colleague',
     studentFirst: session.studentFirst,
     subjectName: session.subjectName,
-    when: fmtWhen(session.startsAt, sub?.timezone),
+    when: fmtWhen(session.startsAt, session.endsAt, sub?.timezone),
     alreadySent: req.handoff_note_at ?? null,
   }
 }
@@ -520,7 +523,7 @@ export async function sendCoverageNote(opts: {
 
   const subFirst = sub.name?.split(' ')[0] ?? 'there'
   const fromName = requester?.name ?? 'Your colleague'
-  const when = fmtWhen(session.startsAt, sub.timezone)
+  const when = fmtWhen(session.startsAt, session.endsAt, sub.timezone)
   // PL-157: composed in coverage-copy.ts (which also fixes the escape order —
   // the inline version escaped its own <br> tags into visible text).
   const noteHtml = coverageNoteHtml(note)

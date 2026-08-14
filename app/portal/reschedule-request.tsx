@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { formatTimeRange } from '../utils/dates'
 
 // Parent reschedule (Phase 7d §8, incl. the July 15 pick-from-offered-slots
 // addition). ≥24h: the portal offers 2–3 pre-approved replacement times to
@@ -51,6 +52,16 @@ export default function RescheduleRequest({
       hour: 'numeric',
       minute: '2-digit',
     })
+  /** PL-339: offered times speak the full range — "Wed, Nov 11, 4:00–5:30 PM". */
+  const fmtSlot = (s: Slot) => {
+    const day = new Date(s.starts_at).toLocaleDateString('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })
+    return `${day}, ${formatTimeRange(s.starts_at, s.ends_at, timezone)}`
+  }
 
   async function post(payload: Record<string, unknown>) {
     return fetch('/api/portal/tutoring-family', {
@@ -160,7 +171,7 @@ export default function RescheduleRequest({
         {confirming ? (
           <span className="block space-y-1.5">
             <span className="block font-semibold text-hgl-slate">
-              Move the session to {fmt(confirming.starts_at)}?
+              Move the session to {fmtSlot(confirming)}?
             </span>
             <span className="flex gap-2">
               <button
@@ -183,7 +194,7 @@ export default function RescheduleRequest({
                 onClick={() => setConfirming(s)}
                 className="border border-hgl-slate text-hgl-slate rounded px-2.5 py-1 font-semibold hover:bg-hgl-slate hover:text-white transition"
               >
-                {fmt(s.starts_at)}
+                {fmtSlot(s)}
               </button>
             ))}
           </span>
