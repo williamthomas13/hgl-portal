@@ -45,6 +45,49 @@ export default function TermReportPage() {
   const filteredRevenue = filtered.reduce((s, c) => s + (c.revenue ?? 0), 0)
   const filteredEnrolled = filtered.reduce((s, c) => s + c.enrolled, 0)
 
+  // PL-346: revenue by service — computed from the SAME payload fields the
+  // rest of this page renders (the PL-204 paid columns; nothing recomputed),
+  // which also makes the manager strip structural: a manager payload carries
+  // no revenue fields at all, so these slices cannot exist for them.
+  // Slices honor the filters honestly: month applies to all three; school /
+  // class-type can only scope the class slice (1-on-1 and packages aren't
+  // school-scoped) and the header says so.
+  const serviceSlices = (() => {
+    if (!isAdmin || !report) return null
+    const tutoring = (report.tutoringByMonth as any[])
+      .filter((t) => !month || t.month === month)
+      .reduce((s, t) => s + (t.revenue ?? 0), 0)
+    const packages = (report.packages as any[])
+      .filter((p) => !month || p.month === month)
+      .reduce((s, p) => s + (p.revenue ?? 0), 0)
+    // Validated categorical slots 1–3 (dataviz palette; the aqua slot's
+    // contrast WARN is covered by direct labels + the table beside it).
+    const slices = [
+      { key: 'classes', label: 'Group classes', color: '#2a78d6', amount: filteredRevenue, href: '#classes' },
+      { key: 'tutoring', label: '1-on-1 monthly invoices', color: '#eb6834', amount: tutoring, href: '#tutoring' },
+      { key: 'packages', label: 'Hours packages', color: '#1baf7a', amount: packages, href: '#packages' },
+    ]
+    const total = slices.reduce((s, x) => s + x.amount, 0)
+    if (total <= 0) return { slices: [], total: 0, percents: [] as number[] }
+    // Largest-remainder rounding so the percentages sum to exactly 100.
+    const raw = slices.map((x) => (x.amount / total) * 100)
+    const floors = raw.map(Math.floor)
+    let leftover = 100 - floors.reduce((s, v) => s + v, 0)
+    const order = raw
+      .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+      .sort((a, b) => b.frac - a.frac)
+    const percents = [...floors]
+    for (const { i } of order) {
+      if (leftover <= 0) break
+      percents[i] += 1
+      leftover--
+    }
+    return { slices, total, percents }
+  })()
+  const monthLabel = month
+    ? new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : 'all months'
+
   return (
     <div className="min-h-screen bg-gray-50 p-10">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -82,6 +125,98 @@ export default function TermReportPage() {
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
+
+            {/* PL-346: revenue by service — table + proportional bar, like
+                the old TutorBird report. ADMIN-ONLY by construction (manager
+                payloads carry no revenue fields). */}
+            {serviceSlices && (
+              <div id="by-service" className="bg-white rounded-lg shadow-md p-5">
+                <h2 className="text-lg font-bold text-hgl-slate mb-1">Revenue by service</h2>
+                <p className="text-xs text-gray-500 mb-3">
+                  Collected across {monthLabel}
+                  {(school || classType) &&
+                    ' — the school/class-type filters scope the group-class line only (1-on-1 and packages aren’t school-scoped)'}
+                  . Same paid records QuickBooks sync reads.
+                </p>
+                {serviceSlices.total <= 0 ? (
+                  <p className="text-sm text-gray-500 italic">Nothing collected in this range yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                          <th className="py-1.5 pr-3">Service</th>
+                          <th className="py-1.5 pr-3 text-right">Percent</th>
+                          <th className="py-1.5 text-right">Collected</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {serviceSlices.slices.map((s, i) => (
+                          <tr key={s.key} className="border-b border-gray-100">
+                            <td className="py-1.5 pr-3">
+                              <a href={s.href} className="text-gray-700 hover:text-hgl-blue hover:underline inline-flex items-center gap-2">
+                                <span
+                                  aria-hidden
+                                  className="inline-block w-3 h-3 rounded-sm shrink-0"
+                                  style={{ background: s.color }}
+                                />
+                                {s.label}
+                              </a>
+                            </td>
+                            <td className="py-1.5 pr-3 text-right text-gray-700">{serviceSlices.percents[i]}%</td>
+                            <td className="py-1.5 text-right text-gray-700">{money(s.amount)}</td>
+                          </tr>
+                        ))}
+                        <tr className="font-bold text-hgl-slate">
+                          <td className="py-1.5 pr-3">Total</td>
+                          <td className="py-1.5 pr-3 text-right">100%</td>
+                          <td className="py-1.5 text-right">{money(serviceSlices.total)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div>
+                      {/* One proportional bar: thin marks, 2px surface gaps,
+                          identity carried by the labels below (never color
+                          alone); each piece is a door to its section. */}
+                      <div
+                        className="flex w-full h-7 rounded overflow-hidden"
+                        role="img"
+                        aria-label={`Revenue by service across ${monthLabel}: ${serviceSlices.slices
+                          .map((s, i) => `${s.label} ${serviceSlices.percents[i]} percent (${money(s.amount)})`)
+                          .join(', ')}`}
+                      >
+                        {serviceSlices.slices.map(
+                          (s, i) =>
+                            s.amount > 0 && (
+                              <a
+                                key={s.key}
+                                href={s.href}
+                                className="h-full first:rounded-l last:rounded-r"
+                                style={{
+                                  width: `${(s.amount / serviceSlices.total) * 100}%`,
+                                  background: s.color,
+                                  marginLeft: i > 0 ? 2 : 0,
+                                }}
+                                title={`${s.label} — ${serviceSlices.percents[i]}% · ${money(s.amount)}`}
+                              />
+                            )
+                        )}
+                      </div>
+                      <ul className="mt-2 space-y-1 text-xs">
+                        {serviceSlices.slices.map((s, i) => (
+                          <li key={s.key}>
+                            <a href={s.href} className="text-gray-600 hover:text-hgl-blue inline-flex items-center gap-2">
+                              <span aria-hidden className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: s.color }} />
+                              {s.label} — {serviceSlices.percents[i]}% · {money(s.amount)}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div id="classes" className="bg-white rounded-lg shadow-md p-5">
               <h2 className="text-lg font-bold text-hgl-slate mb-3">Classes</h2>
