@@ -130,6 +130,26 @@ export default function DashboardPanel({
   const [weekProposed, setWeekProposed] = useState(0)
   // PL-334 B: overdue unpaid invoices — count + $ total, its own tile.
   const [unpaid, setUnpaid] = useState<{ count: number; total: number }>({ count: 0, total: 0 })
+  // PL-345: "This term at a glance" — fetched ONCE on mount (the PL-333
+  // preview inside it is an expensive simulation; the 60s loop skips it).
+  const [liveClassCount, setLiveClassCount] = useState(0)
+  const [snapshot, setSnapshot] = useState<{
+    enrolledAllTime: number
+    enrolledThisMonth: number
+    activeEngagements: number
+    hoursThisMonth: number
+    monthLabel: string
+    revenue?: { grand: number }
+    projection?: { total: number; monthLabel: string; generateDay: number }
+  } | null>(null)
+  useEffect(() => {
+    fetch('/api/admin/report/snapshot')
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null)
+      .then((json) => {
+        if (json) setSnapshot(json)
+      })
+  }, [])
   const [error, setError] = useState('')
   const [health, setHealth] = useState<SystemHealth | null>(null)
   // PL-331: the API reports the caller's role — managers get no System
@@ -166,6 +186,7 @@ export default function DashboardPanel({
       setWeekSessions(json.weekSessions ?? 0)
       setWeekProposed(json.weekProposed ?? 0)
       setUnpaid(json.unpaid ?? { count: 0, total: 0 })
+      setLiveClassCount(json.liveClassCount ?? 0)
       setHealth(json.health ?? null)
       setRole(json.role === 'manager' ? 'manager' : 'admin')
       setError('')
@@ -483,12 +504,71 @@ export default function DashboardPanel({
           </a>
         </div>
       </div>
-        {/* PL-204: the term glance, one click away. */}
-        <p className="text-xs">
-          <a href="/admin/report" className="text-hgl-blue underline">
-            Term report — enrollment &amp; revenue →
+        {/* PL-345: the bare term-report link grew into a snapshot card —
+            headline numbers from the PL-204/218/333 machinery (no
+            recomputation; managers get the enrollment side only, stripped
+            server-side). Informational: every number is a door, actions
+            stay on their own surfaces. */}
+        <div className="bg-white rounded-lg shadow-md border-t-4 border-green-600 p-5">
+          <h2 className="text-sm font-bold text-hgl-slate mb-2">This term at a glance</h2>
+          {snapshot ? (
+            <ul className="text-sm space-y-1.5">
+              <li>
+                <a href="/admin/report#classes" className="text-gray-700 hover:text-hgl-blue">
+                  <span className="text-xl font-bold text-hgl-slate">{snapshot.enrolledAllTime}</span>{' '}
+                  paid enrollments
+                  {snapshot.enrolledThisMonth > 0 && (
+                    <span className="text-green-700 font-semibold"> · +{snapshot.enrolledThisMonth} in {snapshot.monthLabel}</span>
+                  )}
+                </a>
+              </li>
+              <li>
+                <a href="/admin?tab=classes" className="text-gray-700 hover:text-hgl-blue">
+                  {/* PL-116 {' '} rule — "4live" otherwise. */}
+                  <span className="text-xl font-bold text-hgl-slate">{liveClassCount}</span>{' '}live &amp;
+                  scheduled classes
+                </a>
+              </li>
+              <li>
+                <a href="/admin/tutoring?section=timecards" className="text-gray-700 hover:text-hgl-blue">
+                  <span className="text-xl font-bold text-hgl-slate">{snapshot.hoursThisMonth}</span>{' '}
+                  tutoring hours delivered in {snapshot.monthLabel}
+                </a>
+              </li>
+              {/* PL-345: dollar rows are admin's — the API already strips
+                  them for real managers; the view-as sim hides them too. */}
+              {snapshot.revenue && !simulatedManager && (
+                <li>
+                  <a href="/admin/report#totals" className="text-gray-700 hover:text-hgl-blue">
+                    <span className="text-xl font-bold text-hgl-slate">
+                      ${snapshot.revenue.grand.toLocaleString('en-US')}
+                    </span>{' '}
+                    collected — classes, packages &amp; paid invoices
+                  </a>
+                </li>
+              )}
+              {snapshot.projection && !simulatedManager && (
+                <li>
+                  <a href="/admin/tutoring?section=billing" className="text-gray-700 hover:text-hgl-blue">
+                    <span className="text-xl font-bold text-hgl-slate">
+                      ${snapshot.projection.total.toLocaleString('en-US')}
+                    </span>{' '}
+                    projected for {snapshot.projection.monthLabel} — generates on the{' '}
+                    {snapshot.projection.generateDay}th
+                  </a>
+                </li>
+              )}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-400">—</p>
+          )}
+          <a
+            href="/admin/report"
+            className="mt-3 inline-block bg-hgl-slate text-white text-xs font-bold py-2 px-4 rounded hover:opacity-90"
+          >
+            See enrollment &amp; revenue reports →
           </a>
-        </p>
+        </div>
       </div>
 
       {/* Right column: health + activity. */}

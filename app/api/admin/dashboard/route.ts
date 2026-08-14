@@ -964,6 +964,7 @@ export async function GET() {
     weekSessions: weekSessions ?? 0,
     weekProposed: weekProposed ?? 0,
     unpaid, // PL-334 B
+    liveClassCount: liveClasses.length, // PL-345: the snapshot card's classes number
     health,
     // PL-331: the panel hides the System health card for managers (it lives
     // under Settings → System health for that role instead).

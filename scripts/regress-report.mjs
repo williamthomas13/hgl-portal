@@ -103,14 +103,15 @@ try {
   // The load-bearing check: manager payload carries NO dollar field anywhere.
   const manager = tr.stripRevenue(report)
   const badKeys = []
-  const scan = (obj, pathStr) => {
-    if (Array.isArray(obj)) return obj.forEach((v, i) => scan(v, `${pathStr}[${i}]`))
+  const scanTarget = (obj, pathStr, sink) => {
+    if (Array.isArray(obj)) return obj.forEach((v, i) => scanTarget(v, `${pathStr}[${i}]`, sink))
     if (obj && typeof obj === 'object')
       for (const [k, v] of Object.entries(obj)) {
-        if (/revenue|total|price|amount|dollar|paid_?amount/i.test(k) && k !== 'invoicesPaid') badKeys.push(`${pathStr}.${k}`)
-        scan(v, `${pathStr}.${k}`)
+        if (/revenue|total|price|amount|dollar|paid_?amount/i.test(k) && k !== 'invoicesPaid') sink.push(`${pathStr}.${k}`)
+        scanTarget(v, `${pathStr}.${k}`, sink)
       }
   }
+  const scan = (obj, pathStr) => scanTarget(obj, pathStr, badKeys)
   scan(manager, '$')
   check('8. manager payload deep-scan: zero dollar-shaped keys', badKeys.length === 0, badKeys.slice(0, 5).join(', '))
   check('9. manager role stamped + counts intact', manager.role === 'manager' && manager.classes.find((c) => c.id === cls.id)?.enrolled === 2, '')
@@ -140,6 +141,27 @@ try {
     hoursManager.role === 'manager' && badHourKeys.length === 0, badHourKeys.slice(0, 5).join(', '))
   check('12. tutor-hours category keys are stable machine keys',
     hoursReport.rows.every((r) => /^(1on1|worktype|class|consult):/.test(r.key)), JSON.stringify(hoursReport.rows.map((r) => r.key).slice(0, 5)))
+
+  // PL-345: the dashboard snapshot holds the same line — the manager variant
+  // carries counts and hours only, never a dollar-shaped key.
+  const fullSnapshot = {
+    role: 'admin',
+    enrolledAllTime: 12,
+    enrolledThisMonth: 3,
+    activeEngagements: 4,
+    hoursThisMonth: 21.5,
+    monthLabel: 'August',
+    revenue: { classes: 950, tutoring: 300, packages: 400, grand: 1650 },
+    projection: { total: 675, monthLabel: 'September 2026', generateDay: 20 },
+  }
+  const managerSnapshot = tr.stripSnapshotRevenue(fullSnapshot)
+  const badSnapKeys = []
+  scanTarget(managerSnapshot, '$', badSnapKeys)
+  check('13. snapshot manager payload deep-scan: zero dollar-shaped keys',
+    managerSnapshot.role === 'manager' && badSnapKeys.length === 0, badSnapKeys.join(', '))
+  check('14. snapshot manager payload keeps the enrollment-side numbers',
+    managerSnapshot.enrolledAllTime === 12 && managerSnapshot.enrolledThisMonth === 3 &&
+    managerSnapshot.hoursThisMonth === 21.5 && !('revenue' in managerSnapshot) && !('projection' in managerSnapshot), '')
 } finally {
   await destroy()
   rmSync(out, { recursive: true, force: true })

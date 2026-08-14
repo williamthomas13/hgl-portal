@@ -35,6 +35,10 @@ export type TermReport = {
   tutoringByMonth: { month: string; invoicesPaid: number; revenue?: number }[]
   packages: { month: string; sold: number; hours: number; exhausted: number; revenue?: number }[]
   activeEngagements: number
+  /** PL-345: paid, non-refunded enrollments whose enrolled_at falls in the
+   *  current Denver month — the snapshot card's "+N this month" delta. A
+   *  COUNT (manager-safe), computed in the same pass as everything else. */
+  enrolledThisMonth: number
   totals?: { classRevenue: number; tutoringRevenue: number; packageRevenue: number; grand: number }
 }
 
@@ -48,7 +52,7 @@ export async function loadTermReport(): Promise<TermReport> {
       .select('id, class_type, start_date, status, capacity, min_enrollment, price, schools ( nickname, name )'),
     supabase
       .from('enrollments')
-      .select('id, class_id, payment_status, class_price_paid, cancellation_outcome, classes ( price )'),
+      .select('id, class_id, payment_status, class_price_paid, cancellation_outcome, enrolled_at, classes ( price )'),
     supabase.from('tutoring_invoices').select('id, period, status, total, paid_at').eq('status', 'paid'),
     supabase
       .from('enrollment_addons')
@@ -78,6 +82,8 @@ export async function loadTermReport(): Promise<TermReport> {
   // Paid, non-refunded enrollments per class + class-component revenue
   // (PL-142 rule: snapshot first, class list price as legacy fallback).
   const byClass = new Map<string, { enrolled: number; revenue: number }>()
+  const thisDenverMonth = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7)
+  let enrolledThisMonth = 0
   for (const e of ((enrRes.data as any[]) ?? [])) {
     if (!PAID_STATUSES.includes(e.payment_status)) continue
     if (e.cancellation_outcome === 'refunded' || e.cancellation_outcome === 'refund_requested') continue
@@ -85,6 +91,14 @@ export async function loadTermReport(): Promise<TermReport> {
     entry.enrolled++
     entry.revenue += Number(e.class_price_paid ?? one<any>(e.classes)?.price ?? 0)
     byClass.set(e.class_id, entry)
+    // PL-345: the same paid/refund rules drive the this-month delta.
+    if (
+      e.enrolled_at &&
+      new Date(e.enrolled_at).toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7) ===
+        thisDenverMonth
+    ) {
+      enrolledThisMonth++
+    }
   }
 
   const classes: ReportClassRow[] = (((classesRes.data as any[]) ?? []) as any[]).map((c) => {
@@ -142,6 +156,7 @@ export async function loadTermReport(): Promise<TermReport> {
     tutoringByMonth,
     packages,
     activeEngagements: ((engRes.data as any[]) ?? []).length,
+    enrolledThisMonth,
     totals: {
       classRevenue: Number(classRevenue.toFixed(2)),
       tutoringRevenue: Number(tutoringRevenue.toFixed(2)),
@@ -163,6 +178,44 @@ export function stripRevenue(report: TermReport): TermReport {
     tutoringByMonth: report.tutoringByMonth.map(({ revenue: _r, ...rest }) => rest),
     packages: report.packages.map(({ revenue: _r, ...rest }) => rest),
     activeEngagements: report.activeEngagements,
+    enrolledThisMonth: report.enrolledThisMonth, // a count — manager-safe
     // no totals key at all
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PL-345: the dashboard's "This term at a glance" snapshot — composed FROM
+// the machinery above (plus the tutor-hours report and the PL-333 preview),
+// never recomputed. PREMISE NOTE: no term boundary exists anywhere in the
+// system — the report is all-time and its own card says "All-time totals" —
+// so the snapshot's enrollment/revenue figures mirror that truthfully; when
+// a term concept lands, both surfaces move together.
+// ---------------------------------------------------------------------------
+
+export type ReportSnapshot = {
+  role: 'admin' | 'manager'
+  /** Paid, non-refunded enrollments (the report's own counting rules). */
+  enrolledAllTime: number
+  enrolledThisMonth: number
+  activeEngagements: number
+  hoursThisMonth: number
+  /** "August" — the month the delta and hours speak about. */
+  monthLabel: string
+  /** ADMIN-ONLY — stripped server-side for managers. */
+  revenue?: { classes: number; tutoring: number; packages: number; grand: number }
+  projection?: { total: number; monthLabel: string; generateDay: number }
+}
+
+/** The manager snapshot: dollar fields ABSENT, not hidden (the PL-204 rule —
+ *  the regression gate deep-scans this shape too). */
+export function stripSnapshotRevenue(s: ReportSnapshot): ReportSnapshot {
+  return {
+    role: 'manager',
+    enrolledAllTime: s.enrolledAllTime,
+    enrolledThisMonth: s.enrolledThisMonth,
+    activeEngagements: s.activeEngagements,
+    hoursThisMonth: s.hoursThisMonth,
+    monthLabel: s.monthLabel,
+    // no revenue, no projection
   }
 }

@@ -83,7 +83,7 @@ export default function TermReportPage() {
               </select>
             </div>
 
-            <div className="bg-white rounded-lg shadow-md p-5">
+            <div id="classes" className="bg-white rounded-lg shadow-md p-5">
               <h2 className="text-lg font-bold text-hgl-slate mb-3">Classes</h2>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
@@ -130,7 +130,7 @@ export default function TermReportPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white rounded-lg shadow-md p-5">
+              <div id="tutoring" className="bg-white rounded-lg shadow-md p-5">
                 <h2 className="text-lg font-bold text-hgl-slate mb-3">1-on-1 tutoring</h2>
                 <p className="text-xs text-gray-500 mb-2">
                   {report.activeEngagements} active engagement{report.activeEngagements === 1 ? '' : 's'} · paid invoices by month
@@ -157,7 +157,7 @@ export default function TermReportPage() {
                 </table>
               </div>
 
-              <div className="bg-white rounded-lg shadow-md p-5">
+              <div id="packages" className="bg-white rounded-lg shadow-md p-5">
                 <h2 className="text-lg font-bold text-hgl-slate mb-3">Hours packages</h2>
                 <table className="min-w-full text-sm">
                   <thead>
@@ -185,7 +185,7 @@ export default function TermReportPage() {
             </div>
 
             {isAdmin && report.totals && (
-              <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-5 text-sm">
+              <div id="totals" className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-5 text-sm">
                 <h2 className="text-lg font-bold text-hgl-slate mb-2">All-time totals</h2>
                 <div className="flex flex-wrap gap-x-8 gap-y-1">
                   <span>Classes: <strong>{money(report.totals.classRevenue)}</strong></span>
