@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 
 // PL-348: Settings → Class pages — the shared content every public /c/{slug}
@@ -175,14 +175,130 @@ const SECTION_LABELS: Record<string, string> = {
   states: 'Honest-state copy (full class · no active class)',
 }
 
-const SECTION_ORDER = ['included', 'pitch', 'instructors', 'faq', 'closing', 'fine-print', 'states']
+// PL-367: shared sections in the order the /c page renders them; 'pitch' is
+// flow-only and lives in its own last group.
+const SECTION_ORDER = ['included', 'instructors', 'faq', 'closing', 'fine-print', 'states']
+
+type PreviewInfo = {
+  shared: { url: string; sample: boolean }
+  courses: Record<string, { displayName: string; url: string; sample: boolean }>
+  flow: { url: string } | null
+}
+
+// PL-367 B: the inline preview IS the real page (iframe of the same /c URL
+// the link opens) — never a parallel approximation. `nonce` remounts the
+// iframe, so saves auto-refresh it.
+function InlinePreview({ url, nonce }: { url: string; nonce: number }) {
+  return (
+    <iframe
+      key={`${url}:${nonce}`}
+      src={url}
+      title={`Live preview of ${url}`}
+      className="w-full h-[600px] border border-gray-300 rounded-lg bg-white"
+      sandbox="allow-same-origin allow-scripts"
+    />
+  )
+}
+
+function GroupHeader({
+  label,
+  rows,
+  preview,
+  sampleNote,
+  previewOpen,
+  onToggleGroup,
+  onTogglePreview,
+  onRefreshPreview,
+}: {
+  label: string
+  rows: Block[]
+  preview: string | null
+  sampleNote: boolean
+  previewOpen: boolean
+  onToggleGroup: () => void
+  onTogglePreview: () => void
+  onRefreshPreview: () => void
+}) {
+  const unreviewed = rows.filter((b) => !b.updated_by).length
+  return (
+    <summary
+      onClick={(e) => {
+        // State-driven open/closed — the native toggle would fight React's
+        // re-renders (typing in a card would snap groups shut).
+        e.preventDefault()
+        onToggleGroup()
+      }}
+      className="cursor-pointer list-none flex flex-wrap items-center gap-2 select-none"
+    >
+      <span aria-hidden className="text-gray-400 text-xs transition-transform group-open:rotate-90">▶</span>
+      <span className="text-sm font-bold text-hgl-slate">{label}</span>
+      <span className="text-xs text-gray-400">{rows.length} block{rows.length === 1 ? '' : 's'}</span>
+      {unreviewed > 0 && (
+        <span className="text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5">
+          {unreviewed} not yet reviewed
+        </span>
+      )}
+      <span className="flex-1" />
+      {preview && (
+        <>
+          <a
+            href={preview}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-xs text-hgl-blue underline"
+          >
+            Preview a page using these blocks →
+          </a>
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onTogglePreview()
+            }}
+            className="text-xs text-hgl-blue underline"
+          >
+            {previewOpen ? 'hide inline preview' : 'preview here'}
+          </button>
+          {previewOpen && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onRefreshPreview()
+              }}
+              className="text-xs text-gray-500 underline"
+            >
+              refresh
+            </button>
+          )}
+          {sampleNote && (
+            <span className="text-[11px] text-amber-700">
+              (no class uses this set yet — previews a labeled sample class)
+            </span>
+          )}
+        </>
+      )}
+    </summary>
+  )
+}
 
 export default function SiteContentPanel() {
   const [blocks, setBlocks] = useState<Block[] | null>(null)
+  const [preview, setPreview] = useState<PreviewInfo | null>(null)
   const [error, setError] = useState('')
   const [drafts, setDrafts] = useState<Record<string, { heading: string; body_markdown: string }>>({})
   const [busyKey, setBusyKey] = useState('')
   const [savedKey, setSavedKey] = useState('')
+  // PL-367 B: which groups have their inline preview pane open, and the
+  // nonce that remounts every open iframe (bumped on each successful save —
+  // edit → save → see is one surface).
+  const [openPreviews, setOpenPreviews] = useState<Record<string, boolean>>({})
+  const [previewNonce, setPreviewNonce] = useState(0)
+  // PL-367 A: explicit open/closed per group — initialized ONCE from the
+  // first load (groups with unreviewed seeds start open, so the badges
+  // point at something visible).
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean> | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -192,7 +308,24 @@ export default function SiteContentPanel() {
         setError(json.error ?? `The server returned ${res.status}.`)
         return
       }
-      setBlocks(json.blocks ?? [])
+      const rows: Block[] = json.blocks ?? []
+      setBlocks(rows)
+      setPreview(json.preview ?? null)
+      setOpenGroups((prev) => {
+        if (prev) return prev
+        const unreviewed = (f: (b: Block) => boolean) => rows.some((b) => f(b) && !b.updated_by)
+        const initial: Record<string, boolean> = {
+          shared: unreviewed((b) => (!b.scope || b.scope === 'shared') && b.section !== 'pitch'),
+          flow: unreviewed((b) => (!b.scope || b.scope === 'shared') && b.section === 'pitch'),
+          'per-class': unreviewed((b) => b.scope === 'class'),
+        }
+        for (const b of rows) {
+          if (b.scope === 'course' && b.course_key) {
+            initial[`course:${b.course_key}`] = initial[`course:${b.course_key}`] || !b.updated_by
+          }
+        }
+        return initial
+      })
       setError('')
     } catch {
       setError("Couldn't load the content blocks — check your connection.")
@@ -232,6 +365,8 @@ export default function SiteContentPanel() {
         const { [b.key]: _gone, ...rest } = prev
         return rest
       })
+      // PL-367: every open inline preview reloads — save → see.
+      setPreviewNonce((n) => n + 1)
     } finally {
       setBusyKey('')
     }
@@ -241,30 +376,95 @@ export default function SiteContentPanel() {
   if (!blocks) return <p className="text-sm text-gray-500">Loading…</p>
 
   const isShared = (b: Block) => !b.scope || b.scope === 'shared'
-  const sections = SECTION_ORDER.filter((s) => blocks.some((b) => isShared(b) && b.section === s))
   // PL-355: course-type block sets, grouped per course key — inherited by
   // every class of that course automatically.
   const courseKeys = [...new Set(blocks.filter((b) => b.scope === 'course').map((b) => b.course_key ?? ''))]
     .filter(Boolean)
     .sort()
   const classScoped = blocks.filter((b) => b.scope === 'class')
+  const sharedRows = blocks.filter((b) => isShared(b) && b.section !== 'pitch')
+  const flowRows = blocks.filter((b) => isShared(b) && b.section === 'pitch')
 
-  const groups: { label: string; rows: Block[] }[] = [
-    ...sections.map((section) => ({
-      label: SECTION_LABELS[section] ?? section,
-      rows: blocks.filter((b) => isShared(b) && b.section === section),
-    })),
-    ...courseKeys.map((ck) => ({
-      label: `Course blocks — ${ck} (every class of this course inherits these)`,
-      rows: blocks.filter((b) => b.scope === 'course' && b.course_key === ck).sort((a, b) => a.sort_order - b.sort_order),
-    })),
-    ...(classScoped.length > 0
-      ? [{ label: 'Per-class blocks (each renders on exactly one class page)', rows: classScoped }]
-      : []),
-  ]
+  const blockChanged = () => {
+    load()
+    setPreviewNonce((n) => n + 1)
+  }
+
+  const blockCard = (b: Block) => {
+    const d = draftFor(b)
+    return (
+      <div key={b.key} className="border border-gray-200 rounded-lg p-4 bg-white">
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <input
+            type="text"
+            value={d.heading}
+            onChange={(e) => setDrafts((prev) => ({ ...prev, [b.key]: { ...d, heading: e.target.value } }))}
+            className="flex-1 min-w-48 border border-gray-300 rounded p-1.5 text-sm font-semibold"
+            aria-label={`Heading for ${b.key}`}
+          />
+          <button
+            onClick={() => save(b)}
+            disabled={busyKey === b.key || !isDirty(b)}
+            className="bg-hgl-slate text-white text-xs font-bold py-1.5 px-4 rounded disabled:opacity-40"
+          >
+            {busyKey === b.key ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        <textarea
+          value={d.body_markdown}
+          onChange={(e) => setDrafts((prev) => ({ ...prev, [b.key]: { ...d, body_markdown: e.target.value } }))}
+          rows={Math.min(16, Math.max(4, d.body_markdown.split('\n').length + 1))}
+          className="w-full border border-gray-300 rounded p-2 text-sm font-mono"
+          aria-label={`Content for ${b.key}`}
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          {savedKey === b.key && <span className="text-green-700 font-semibold">Saved. </span>}
+          {isDirty(b) && savedKey !== b.key && <span className="text-amber-700">Unsaved changes. </span>}
+          Last changed {new Date(b.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
+          {b.updated_by ? ` by ${b.updated_by}` : ' (seeded copy — not yet reviewed)'}
+        </p>
+        <BlockImageControls blockKey={b.key} image={b.image} onChanged={blockChanged} />
+      </div>
+    )
+  }
+
+  // PL-367 A: collapsible groups in page-render order — Shared first, one
+  // group per course set (display-named), per-class rows, flow-only last.
+  // Groups with unreviewed seeds start open so the badges point somewhere.
+  const groupDef = (
+    id: string,
+    label: string,
+    rows: Block[],
+    previewUrl: string | null,
+    sampleNote: boolean,
+    body: ReactNode
+  ) => (
+    <details
+      key={id}
+      className="group border border-gray-200 rounded-lg p-3 bg-gray-50/50"
+      open={Boolean(openGroups?.[id])}
+    >
+      <GroupHeader
+        label={label}
+        rows={rows}
+        preview={previewUrl}
+        sampleNote={sampleNote}
+        previewOpen={Boolean(openPreviews[id])}
+        onToggleGroup={() => setOpenGroups((p) => ({ ...(p ?? {}), [id]: !p?.[id] }))}
+        onTogglePreview={() => setOpenPreviews((p) => ({ ...p, [id]: !p[id] }))}
+        onRefreshPreview={() => setPreviewNonce((n) => n + 1)}
+      />
+      {openPreviews[id] && previewUrl && (
+        <div className="mt-3">
+          <InlinePreview url={previewUrl} nonce={previewNonce} />
+        </div>
+      )}
+      <div className="mt-3 space-y-4">{body}</div>
+    </details>
+  )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <p className="text-xs text-gray-500">
         These blocks render on the public class pages (/c/…), below the class-specific top —
         shared blocks on EVERY page, course blocks on every class of that course, edit once and
@@ -274,56 +474,66 @@ export default function SiteContentPanel() {
         {' {address}'} and {'{examName}'} fill in from each class record.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {groups.map(({ label, rows }) => (
-        <div key={label}>
-          <h4 className="text-sm font-bold text-hgl-slate mb-2">{label}</h4>
-          <div className="space-y-4">
-            {rows
-              .map((b) => {
-                const d = draftFor(b)
-                return (
-                  <div key={b.key} className="border border-gray-200 rounded-lg p-4 bg-white">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={d.heading}
-                        onChange={(e) =>
-                          setDrafts((prev) => ({ ...prev, [b.key]: { ...d, heading: e.target.value } }))
-                        }
-                        className="flex-1 min-w-48 border border-gray-300 rounded p-1.5 text-sm font-semibold"
-                        aria-label={`Heading for ${b.key}`}
-                      />
-                      <button
-                        onClick={() => save(b)}
-                        disabled={busyKey === b.key || !isDirty(b)}
-                        className="bg-hgl-slate text-white text-xs font-bold py-1.5 px-4 rounded disabled:opacity-40"
-                      >
-                        {busyKey === b.key ? 'Saving…' : 'Save'}
-                      </button>
-                    </div>
-                    <textarea
-                      value={d.body_markdown}
-                      onChange={(e) =>
-                        setDrafts((prev) => ({ ...prev, [b.key]: { ...d, body_markdown: e.target.value } }))
-                      }
-                      rows={Math.min(16, Math.max(4, d.body_markdown.split('\n').length + 1))}
-                      className="w-full border border-gray-300 rounded p-2 text-sm font-mono"
-                      aria-label={`Content for ${b.key}`}
-                    />
-                    <p className="text-xs text-gray-400 mt-1">
-                      {savedKey === b.key && <span className="text-green-700 font-semibold">Saved. </span>}
-                      {isDirty(b) && savedKey !== b.key && <span className="text-amber-700">Unsaved changes. </span>}
-                      Last changed {new Date(b.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
-                      {b.updated_by ? ` by ${b.updated_by}` : ' (seeded copy — not yet reviewed)'}
-                    </p>
-                    <BlockImageControls blockKey={b.key} image={b.image} onChanged={load} />
-                  </div>
-                )
-              })}
+
+      {groupDef(
+        'shared',
+        'Shared — every class page',
+        sharedRows,
+        preview?.shared?.url ?? null,
+        Boolean(preview?.shared?.sample),
+        SECTION_ORDER.filter((s) => sharedRows.some((b) => b.section === s)).map((section) => (
+          <div key={section}>
+            <h5 className="text-xs font-bold text-gray-600 mb-2">{SECTION_LABELS[section] ?? section}</h5>
+            <div className="space-y-4">
+              {sharedRows.filter((b) => b.section === section).map(blockCard)}
+            </div>
           </div>
-        </div>
-      ))}
+        ))
+      )}
+
+      {courseKeys.map((ck) =>
+        groupDef(
+          `course:${ck}`,
+          `${preview?.courses?.[ck]?.displayName ?? ck} — course set (every class of this course inherits these)`,
+          blocks.filter((b) => b.scope === 'course' && b.course_key === ck),
+          preview?.courses?.[ck]?.url ?? `/c/sample--${ck}`,
+          Boolean(preview?.courses?.[ck]?.sample),
+          blocks
+            .filter((b) => b.scope === 'course' && b.course_key === ck)
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map(blockCard)
+        )
+      )}
+
       <MintCourseSet existingKeys={courseKeys} onMinted={load} />
+
+      {classScoped.length > 0 &&
+        groupDef(
+          'per-class',
+          'Per-class blocks (each renders on exactly one class page)',
+          classScoped,
+          null,
+          false,
+          classScoped.map(blockCard)
+        )}
+
+      {flowRows.length > 0 &&
+        groupDef(
+          'flow',
+          'Registration flow only — not on class pages',
+          flowRows,
+          preview?.flow?.url ?? null,
+          false,
+          <>
+            {preview?.flow?.url && (
+              <p className="text-xs text-gray-500">
+                The preview opens the registration flow — this copy appears on its second step
+                (&ldquo;Add 1-on-1 tutoring?&rdquo;).
+              </p>
+            )}
+            {flowRows.map(blockCard)}
+          </>
+        )}
     </div>
   )
 }

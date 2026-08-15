@@ -37,7 +37,100 @@ function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? ((v[0] as T) ?? null) : v
 }
 
+// PL-367: the admin's "no class exists for this set yet" preview renders the
+// REAL page component against a clearly-labeled synthetic class (never a DB
+// row). The slug pattern carries the course key so course-scoped blocks
+// inherit exactly as they would on a real class.
+const SAMPLE_SLUG_RE = /^sample--([a-z0-9-]{2,64})$/
+
+function sampleClass(courseKey: string) {
+  // Next four Saturdays starting ~3 weeks out, 10:00–12:00 — plausible,
+  // obviously-labeled layout props. Every fact here is synthetic.
+  const first = new Date()
+  first.setDate(first.getDate() + 21 + ((6 - first.getDay() + 7) % 7))
+  const sessions = [0, 1, 2, 3].map((week) => {
+    const d = new Date(first)
+    d.setDate(d.getDate() + week * 7)
+    return {
+      id: `sample-session-${week}`,
+      session_date: d.toISOString().slice(0, 10),
+      start_time: '10:00',
+      end_time: '12:00',
+      location: null,
+    }
+  })
+  const label = courseKey
+    .split('-')
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ')
+  return {
+    id: 'sample-preview',
+    slug: `sample--${courseKey}`,
+    class_type: `${label} (sample)`,
+    course_key: courseKey,
+    schools: null,
+    school_id: null,
+    sessions,
+    start_date: sessions[0].session_date,
+    registration_close_date: sessions[0].session_date,
+    enrollment_deadline: sessions[0].session_date,
+    status: 'open',
+    price: 999,
+    capacity: 15,
+    min_enrollment: null,
+    delivery_mode: 'in_person',
+    default_location: 'Room 204',
+    timezone: DEFAULT_TIMEZONE,
+    display_cities: null,
+    selling_bullets: null,
+    hero_image: null,
+    prerequisite_note: null,
+    promo_code: null,
+    is_follow_on: false,
+    has_diagnostics: false,
+  }
+}
+
 const loadPage = cache(async (slug: string) => {
+  const sampleMatch = SAMPLE_SLUG_RE.exec(slug)
+  if (sampleMatch) {
+    // Blocks load exactly like a real page (shared + this course key's set);
+    // everything class-shaped is synthetic and the page banners it.
+    let blocks: any[] = []
+    try {
+      const { data } = await supabase
+        .from('site_content_blocks')
+        .select('key, section, heading, body_markdown, sort_order, image, scope, course_key, class_id')
+        .order('sort_order')
+      blocks = (data as any[]) ?? []
+    } catch {
+      blocks = []
+    }
+    let featuredInstructors: any[] = []
+    try {
+      const { data } = await supabase
+        .from('instructors')
+        .select('id, name, public_name, credential, headshot, team_order')
+        .eq('featured_on_classes', true)
+        .order('team_order', { ascending: true, nullsFirst: false })
+        .order('name')
+      featuredInstructors = ((data as any[]) ?? []).map((p) => ({
+        ...p,
+        name: (typeof p.public_name === 'string' && p.public_name.trim()) || p.name,
+      }))
+    } catch {
+      featuredInstructors = []
+    }
+    return {
+      cls: sampleClass(sampleMatch[1]) as any,
+      spotsTaken: 3,
+      blocks,
+      feeders: [] as any[],
+      siblings: [] as any[],
+      featuredInstructors,
+    }
+  }
+
   // '*' on purpose: the page keeps rendering even before the
   // selling_bullets migration lands (the column just won't be there).
   const { data: cls } = await supabase
@@ -179,6 +272,10 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>
 }): Promise<Metadata> {
   const { slug } = await params
+  // PL-367: synthetic sample previews are never index-worthy.
+  if (SAMPLE_SLUG_RE.test(slug)) {
+    return { title: 'Sample class page — Higher Ground Learning', robots: { index: false } }
+  }
   const { cls } = await loadPage(slug)
   if (!cls) return { title: 'Classes — Higher Ground Learning', robots: { index: false } }
   // PL-359 B/E: only LIVE pages are index-worthy; cancelled/closed states
@@ -223,6 +320,9 @@ export default async function PublicClassPage({
 }) {
   const { slug } = await params
   const { cls, spotsTaken, blocks, feeders, siblings, featuredInstructors } = await loadPage(slug)
+  // PL-367: sample mode — the REAL renderer over synthetic class facts,
+  // clearly bannered; registration and analytics/JSON-LD are disabled.
+  const isSample = SAMPLE_SLUG_RE.test(slug)
 
   const block = (key: string) => blocks.find((b) => b.key === key) ?? null
   const stateBody = (key: string, fallback: string) => block(key)?.body_markdown ?? fallback
@@ -278,7 +378,8 @@ export default async function PublicClassPage({
   const closeDays = daysUntil(String(registrationClose).slice(0, 10), timezone)
   const countdown =
     closeDays === 0 ? 'today' : closeDays === 1 ? 'tomorrow' : `in ${closeDays} days`
-  const registerHref = `/register/${cls.slug ?? cls.id}`
+  // PL-367: a sample page must not lead anywhere real.
+  const registerHref = isSample ? '#' : `/register/${cls.slug ?? cls.id}`
   // PL-353: the class/school's OWN city, never the IANA zone city.
   const zoneCity = publicTimeCityLabel({
     schoolCity: school?.city,
@@ -454,10 +555,19 @@ export default async function PublicClassPage({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {!isSample && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      )}
       {/* PL-350: first-party section/click counting (DNT-respecting; the
-          fine-print block discloses it). */}
-      <ClassPageAnalytics classId={cls.id} />
+          fine-print block discloses it). Samples never count. */}
+      {!isSample && <ClassPageAnalytics classId={cls.id} />}
+      {isSample && (
+        <div className="bg-amber-400 text-amber-950 text-center text-sm font-bold px-4 py-2">
+          SAMPLE PAGE — layout preview with made-up class facts (dates, price, room). No class
+          with this course exists yet; the content blocks below are real and editable in the
+          admin. Registration is disabled.
+        </div>
+      )}
       {/* ── Hero: class-specific, live from the record ──────────────────── */}
       <section id="hero" data-section="hero" style={{ background: accent }}>
         <div className="max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white">

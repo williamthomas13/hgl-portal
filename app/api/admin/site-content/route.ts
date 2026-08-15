@@ -21,7 +21,59 @@ export async function GET() {
       { status: 503 }
     )
   }
-  return NextResponse.json({ blocks: data ?? [] })
+
+  // PL-367: resolve each group's preview target — a REAL /c page of a class
+  // using that block set (the preview IS the real renderer). Newest open
+  // class wins; a set with no class gets the clearly-labeled synthetic
+  // sample page (/c/sample--{course-key} renders the same component).
+  const { data: classRows } = await supabase
+    .from('classes')
+    .select('slug, class_type, status, course_key, school_id, created_at')
+    .not('slug', 'is', null)
+    .order('created_at', { ascending: false })
+  const classes = (classRows ?? []) as {
+    slug: string
+    class_type: string | null
+    status: string | null
+    course_key: string | null
+    school_id: string | null
+  }[]
+  const usable = classes.filter((c) => c.status !== 'cancelled')
+  const pickFor = (courseKey: string) =>
+    usable.find((c) => c.course_key === courseKey && c.status === 'open') ??
+    usable.find((c) => c.course_key === courseKey) ??
+    null
+  const courseKeys = [
+    ...new Set((data ?? []).filter((b) => b.scope === 'course').map((b) => b.course_key ?? '')),
+  ].filter(Boolean)
+  const coursePreviews: Record<string, { displayName: string; url: string; sample: boolean }> = {}
+  for (const ck of courseKeys) {
+    const named = classes.find((c) => c.course_key === ck && c.class_type)
+    const displayName =
+      named?.class_type ??
+      ck.split('-').map((w: string) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
+    const cls = pickFor(ck)
+    coursePreviews[ck] = {
+      displayName,
+      url: cls ? `/c/${cls.slug}` : `/c/sample--${ck}`,
+      sample: !cls,
+    }
+  }
+  const sharedClass =
+    usable.find((c) => c.school_id != null && c.status === 'open') ??
+    usable.find((c) => c.status === 'open') ??
+    null
+  const flowClass = usable.find((c) => c.status === 'open') ?? null
+  return NextResponse.json({
+    blocks: data ?? [],
+    preview: {
+      shared: sharedClass
+        ? { url: `/c/${sharedClass.slug}`, sample: false }
+        : { url: '/c/sample--shared', sample: true },
+      courses: coursePreviews,
+      flow: flowClass ? { url: `/register/${flowClass.slug}` } : null,
+    },
+  })
 }
 
 const COURSE_KEY_RE = /^[a-z0-9-]{2,64}$/
