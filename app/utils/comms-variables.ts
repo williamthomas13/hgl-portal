@@ -329,8 +329,20 @@ function classroomValue(ctx: EnrollmentEmailContext): string {
 // PL-68/PL-71: the ONE mode-aware "where classes happen" builder — #4 v3,
 // #5 v4, LR's {classDetailsBlock}, and the entry previews all render from
 // here, so the wording can never drift between the emails and the hints.
-//   in-person → "in Room 204"
+//   in-person → "in Room 204" / "at 380 W. Pierpont Ave"
 //   online    → "online — here's the meeting link: <link>"
+
+// PL-360: rooms are places you're *in*; street addresses and named venues are
+// places you're *at*. Missing locations keep the historical "in TBD".
+function locationPreposition(loc: string): 'in' | 'at' {
+  if (/^\d+\s/.test(loc)) return 'at' // street number: "380 W. Pierpont Ave"
+  const named = loc.replace(/^the\s+/i, '')
+  if (/^(room|rm\.?|hall|library|lab|auditorium|gym|gymnasium|cafeteria|classroom|suite)\b/i.test(named)) {
+    return 'in'
+  }
+  return 'at' // named venues: "at the Community Center"
+}
+
 export function classLocationTailText(
   location: string | null | undefined,
   deliveryMode: string | null | undefined
@@ -341,7 +353,8 @@ export function classLocationTailText(
       ? `online — here's the meeting link: ${loc}`
       : `online — we'll send the meeting link before class`
   }
-  return `in ${loc || 'TBD'}`
+  if (!loc) return 'in TBD'
+  return `${locationPreposition(loc)} ${loc}`
 }
 
 function classLocationTailHtml(
