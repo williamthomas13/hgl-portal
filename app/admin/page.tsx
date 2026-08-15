@@ -133,6 +133,7 @@ function BulkSessionEdit({
   )
 }
 import DashboardPanel from './dashboard-panel'
+import StaffEnrollPanel from './staff-enroll-panel'
 import AttendancePanel from '../portal/attendance-panel'
 import { ConfirmAction } from './tutoring/confirm'
 import ScoresEntry from '../components/ScoresEntry'
@@ -175,6 +176,12 @@ type Enrollment = {
   tutoring_credit_amount: number | null
   cancellation_offer_hours: number | null
   amount_paid: number | null
+  // PL-361: staff-assisted enrollment provenance + offline payments.
+  source: string | null
+  source_recorded_by: string | null
+  offline_payment_method: string | null
+  offline_payment_note: string | null
+  offline_recorded_by: string | null
   class_cancelled: boolean
   cancellation_outcome: string | null
   enrollment_addons: { hours: number }[] | null
@@ -971,6 +978,11 @@ export default function AdminDashboard() {
           tutoring_credit_amount,
           cancellation_offer_hours,
           amount_paid,
+          source,
+          source_recorded_by,
+          offline_payment_method,
+          offline_payment_note,
+          offline_recorded_by,
           class_cancelled,
           cancellation_outcome,
           enrollment_addons ( hours ),
@@ -1013,6 +1025,10 @@ export default function AdminDashboard() {
   // Registration links (pasted into Squarespace "Register" buttons)
   // ---------------------------------------------------------------------------
   const [copiedClassId, setCopiedClassId] = useState<string | null>(null)
+  // PL-361: which class card has the "Register a family" panel open, and
+  // which row's payment link was just re-sent (transient ✓).
+  const [staffEnrollClassId, setStaffEnrollClassId] = useState<string | null>(null)
+  const [linkResentId, setLinkResentId] = useState<string | null>(null)
 
   function registrationUrl(c: ClassRow) {
     return `${window.location.origin}/register/${c.slug ?? c.id}`
@@ -1968,6 +1984,17 @@ export default function AdminDashboard() {
             >
               Duplicate class
             </button>
+            {/* PL-361: phone signups — staff capture the info, payment is a
+                link or a recorded offline payment, never card-by-phone. */}
+            {!isCancelled && (
+              <button
+                onClick={() => setStaffEnrollClassId(staffEnrollClassId === c.id ? null : c.id)}
+                title="Register a family by phone — search or capture their info, then email a payment link or record an offline payment"
+                className="text-xs bg-hgl-blue text-white font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover whitespace-nowrap"
+              >
+                {staffEnrollClassId === c.id ? 'Close registration panel' : 'Register a family'}
+              </button>
+            )}
             {waitlistCount > 0 && (
               <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full whitespace-nowrap">
                 {waitlistCount} waitlisted
@@ -1980,6 +2007,17 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
+
+        {/* PL-361: the staff-assisted registration panel. */}
+        {staffEnrollClassId === c.id && (
+          <StaffEnrollPanel
+            classId={c.id}
+            classLabel={`${schoolLabel} — ${c.class_type}`}
+            price={Number(c.price)}
+            onChanged={fetchRosters}
+            onClose={() => setStaffEnrollClassId(null)}
+          />
+        )}
 
         {/* ROSTER — PL-106: the FIRST thing on the card is who's registered
             (and paid state); sessions and setup come after. */}
@@ -2076,6 +2114,73 @@ export default function AdminDashboard() {
                           ? 'Declined offer'
                           : en.payment_status}
                       </span>
+                      {/* PL-361: provenance chips — the report page and the
+                          roster can tell assisted signups apart. */}
+                      {en.source === 'staff' && (
+                        <span
+                          title={`Registered by staff${en.source_recorded_by ? ` (${en.source_recorded_by})` : ''} — phone signup`}
+                          className="ml-2 inline-block px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold align-middle"
+                        >
+                          staff signup
+                        </span>
+                      )}
+                      {en.source === 'import' && (
+                        <span
+                          title={`Imported at cutover${en.source_recorded_by ? ` by ${en.source_recorded_by}` : ''}`}
+                          className="ml-2 inline-block px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold align-middle"
+                        >
+                          imported
+                        </span>
+                      )}
+                      {en.offline_payment_method && (
+                        <span
+                          title={`Offline payment recorded${en.offline_recorded_by ? ` by ${en.offline_recorded_by}` : ''}${en.offline_payment_note ? ` — ${en.offline_payment_note}` : ''}`}
+                          className="ml-2 inline-block px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold align-middle"
+                        >
+                          {en.offline_payment_method === 'comp' ? 'comp ($0)' : `paid by ${en.offline_payment_method}`}
+                        </span>
+                      )}
+                      {/* PL-361 D: a staff-created Pending has its actions on
+                          the row — resend the payment link, or cancel. */}
+                      {en.source === 'staff' && en.payment_status === 'Pending' && (
+                        <>
+                          <button
+                            onClick={async () => {
+                              const res = await fetch('/api/admin/staff-enroll', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'send_link', enrollmentId: en.id }),
+                              })
+                              const j = await res.json().catch(() => ({}))
+                              setRosterError(res.ok ? '' : j.error ?? 'Sending failed.')
+                              if (res.ok) setLinkResentId(en.id)
+                            }}
+                            title="Email the payment link to the parent again"
+                            className="ml-2 text-xs text-hgl-blue underline hover:text-hgl-slate"
+                          >
+                            {linkResentId === en.id ? 'payment link sent ✓' : 'resend payment link'}
+                          </button>
+                          <span className="ml-2">
+                            <ConfirmAction
+                              label="cancel registration"
+                              message={`Cancel ${`${en.students?.first_name ?? ''} ${en.students?.last_name ?? ''}`.trim()}'s pending registration? The seat frees immediately; the family can register normally any time. No email goes out.`}
+                              confirmLabel="Yes, cancel it"
+                              className="text-xs text-red-600 underline"
+                              confirmClassName="text-xs text-red-700 font-semibold underline"
+                              onConfirm={async () => {
+                                const res = await fetch('/api/admin/staff-enroll', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ action: 'cancel_pending', enrollmentId: en.id }),
+                                })
+                                const j = await res.json().catch(() => ({}))
+                                setRosterError(res.ok ? '' : j.error ?? 'Cancelling failed.')
+                                fetchRosters()
+                              }}
+                            />
+                          </span>
+                        </>
+                      )}
                       {/* PL-94: waitlist rescue on expired/declined/rolled rows
                           (and stale offers) — the hour-49 phone call. */}
                       {((en.payment_status === 'Expired' &&

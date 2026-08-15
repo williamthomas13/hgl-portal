@@ -166,8 +166,13 @@ async function customerIdFor(detail: EnrollmentDetail): Promise<string> {
 
 function privateNote(row: SyncRow, extra?: string) {
   const base = emailBaseUrl()
+  // PL-361: offline payments (check/bank recorded by staff) carry a
+  // synthetic reference, not a Stripe PaymentIntent — say so honestly.
+  const ref = row.stripe_payment_intent_id?.startsWith('offline_')
+    ? `Offline payment recorded in the portal (ref ${row.stripe_payment_intent_id})`
+    : `Stripe PaymentIntent ${row.stripe_payment_intent_id}`
   return [
-    `Stripe PaymentIntent ${row.stripe_payment_intent_id}`,
+    ref,
     `Portal enrollment ${base}/admin (id ${row.enrollment_id})`,
     ...(extra ? [extra] : []),
   ].join(' · ')

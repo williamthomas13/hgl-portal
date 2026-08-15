@@ -174,6 +174,19 @@ export async function GET() {
       )
   ])
 
+  // PL-361 D: a staff-created registration that never got paid must not sit
+  // in silent limbo — after 3 days it surfaces here (deep link to the class
+  // roster, where resend-the-link and cancel live). Clears when it's paid,
+  // cancelled, or expires.
+  const { data: staleStaffPending } = await supabase
+    .from('enrollments')
+    .select(
+      'id, class_id, enrolled_at, source_recorded_by, students ( first_name, last_name ), classes ( class_type, status, schools ( nickname ) )'
+    )
+    .eq('source', 'staff')
+    .eq('payment_status', 'Pending')
+    .lt('enrolled_at', new Date(now.getTime() - 3 * 86400000).toISOString())
+
   // --- Needs Attention (state-driven) ---------------------------------------
   const liveClasses = ((classes as any[]) ?? []).filter((c) => {
     const days = (c.sessions ?? []).map((s: any) => s.session_date)
@@ -193,6 +206,20 @@ export async function GET() {
       text: `${label(c)} (starts ${plainDate(firstDayOf(c), todayIso)}) has no instructor assigned.`,
       href: `/admin?class=${c.id}`,
       since: c.created_at, // PL-135: since the class was created
+    })
+  }
+  // PL-361 D: abandoned staff-created registrations.
+  for (const e of (staleStaffPending as any[]) ?? []) {
+    const cls = one<any>(e.classes)
+    if (cls?.status === 'cancelled') continue
+    const student = one<any>(e.students)
+    const studentName = student ? `${student.first_name} ${student.last_name}` : 'A student'
+    attention.push({
+      id: `staff-pending-${e.id}`,
+      kind: 'Staff registration awaiting payment',
+      text: `${studentName} was registered by staff for ${one<any>(cls?.schools)?.nickname ?? 'HGL'} ${cls?.class_type ?? ''} on ${plainDate(String(e.enrolled_at).slice(0, 10), todayIso)} and hasn't paid — resend the payment link or cancel the registration from the roster.`,
+      href: `/admin?class=${e.class_id}`,
+      since: e.enrolled_at,
     })
   }
   // PL-237: skip-for-now on the wizard's Branding & Collateral step — the

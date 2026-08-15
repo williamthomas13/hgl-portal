@@ -365,6 +365,15 @@ export default function TermReportPage() {
                         <td className="py-2 pr-4">{c.month}</td>
                         <td className={`py-2 pr-4 font-semibold ${c.minEnrollment != null && c.enrolled < c.minEnrollment ? 'text-amber-700' : ''}`}>
                           {c.enrolled}
+                          {/* PL-361: assisted signups, distinguishable at a glance. */}
+                          {(c.staffAssisted ?? 0) > 0 && (
+                            <span
+                              className="ml-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full px-1.5 py-0.5 align-middle"
+                              title="Registered by staff (phone signups)"
+                            >
+                              {c.staffAssisted} by staff
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 pr-4 text-gray-500">{c.capacity ?? '—'}</td>
                         <td className="py-2 pr-4 text-gray-500">{c.minEnrollment ?? '—'}</td>

@@ -519,6 +519,33 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
 }
 
 // ---------------------------------------------------------------------------
+// SR — Staff-assisted registration payment link · parent · info@ (PL-361)
+// ---------------------------------------------------------------------------
+
+/** Code twin for SR_PAYMENT_LINK (draft until Scarlett flips it live) —
+ *  same copy shape as the seed: the office set the registration up by
+ *  phone, here's the signed checkout link. */
+export function staffPaymentLinkEmail(ctx: EnrollmentEmailContext): Rendered {
+  const subject = `Complete ${ctx.studentFirstName}'s registration for ${ctx.className}`
+  const body = `
+      <p>Hi ${ctx.parentFirstName},</p>
+      <p>As discussed, we've set up ${ctx.studentFirstName}'s registration for the
+      ${ctx.className} class. One step left: payment. You can pay securely online here:</p>
+      ${button('Complete Registration', ctx.resumePaymentUrl)}
+      <p>As soon as the payment goes through, you'll get a confirmation email and
+      ${ctx.studentFirstName}'s spot is locked in.</p>
+      <p>P.S. Questions about the class? Most answers are in our FAQs:</p>
+      <p>${FAQ_LINKS}</p>`
+  return {
+    subject,
+    html: wrap(body, {
+      preheader: 'One step left — pay securely online to confirm the spot',
+      footer: footerT(),
+    }),
+  }
+}
+
+// ---------------------------------------------------------------------------
 // #1 — Parent Thank-You · ~3h after payment · William Thomas <billy@> · R
 // ---------------------------------------------------------------------------
 

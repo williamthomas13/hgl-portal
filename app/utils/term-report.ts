@@ -24,6 +24,8 @@ export type ReportClassRow = {
   startDate: string | null
   status: string
   enrolled: number
+  /** PL-361: of the enrolled, how many were staff-assisted signups. */
+  staffAssisted: number
   capacity: number | null
   minEnrollment: number | null
   revenue?: number
@@ -56,7 +58,7 @@ export async function loadTermReport(): Promise<TermReport> {
       .select('id, class_type, start_date, status, capacity, min_enrollment, price, schools ( nickname, name )'),
     supabase
       .from('enrollments')
-      .select('id, class_id, payment_status, class_price_paid, cancellation_outcome, enrolled_at, classes ( price )'),
+      .select('id, class_id, payment_status, class_price_paid, cancellation_outcome, enrolled_at, source, classes ( price )'),
     supabase.from('tutoring_invoices').select('id, period, status, total, paid_at').eq('status', 'paid'),
     supabase
       .from('enrollment_addons')
@@ -85,15 +87,16 @@ export async function loadTermReport(): Promise<TermReport> {
 
   // Paid, non-refunded enrollments per class + class-component revenue
   // (PL-142 rule: snapshot first, class list price as legacy fallback).
-  const byClass = new Map<string, { enrolled: number; revenue: number }>()
+  const byClass = new Map<string, { enrolled: number; revenue: number; staffAssisted: number }>()
   const thisDenverMonth = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7)
   let enrolledThisMonth = 0
   const enrolledByMonth: Record<string, number> = {}
   for (const e of ((enrRes.data as any[]) ?? [])) {
     if (!PAID_STATUSES.includes(e.payment_status)) continue
     if (e.cancellation_outcome === 'refunded' || e.cancellation_outcome === 'refund_requested') continue
-    const entry = byClass.get(e.class_id) ?? { enrolled: 0, revenue: 0 }
+    const entry = byClass.get(e.class_id) ?? { enrolled: 0, revenue: 0, staffAssisted: 0 }
     entry.enrolled++
+    if (e.source === 'staff') entry.staffAssisted++ // PL-361
     entry.revenue += Number(e.class_price_paid ?? one<any>(e.classes)?.price ?? 0)
     byClass.set(e.class_id, entry)
     // PL-345/347: the same paid/refund rules drive the per-month counts.
@@ -106,7 +109,7 @@ export async function loadTermReport(): Promise<TermReport> {
 
   const classes: ReportClassRow[] = (((classesRes.data as any[]) ?? []) as any[]).map((c) => {
     const school = one<any>(c.schools)
-    const agg = byClass.get(c.id) ?? { enrolled: 0, revenue: 0 }
+    const agg = byClass.get(c.id) ?? { enrolled: 0, revenue: 0, staffAssisted: 0 }
     return {
       id: c.id,
       school: school?.nickname ?? school?.name ?? '—',
@@ -115,6 +118,7 @@ export async function loadTermReport(): Promise<TermReport> {
       startDate: c.start_date,
       status: c.status,
       enrolled: agg.enrolled,
+      staffAssisted: agg.staffAssisted,
       capacity: c.capacity != null ? Number(c.capacity) : null,
       minEnrollment: c.min_enrollment != null ? Number(c.min_enrollment) : null,
       revenue: Number(agg.revenue.toFixed(2)),

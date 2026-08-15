@@ -179,6 +179,32 @@ And if plans changed, no action needed — the registration will simply expire o
 Higher Ground Learning`,
   },
   {
+    // PL-361: staff-assisted registration — the payment link the office
+    // sends after setting a family up by phone. Same signed checkout link
+    // machinery as PR1-4; paying flips everything exactly like an online
+    // registration.
+    template_key: 'SR_PAYMENT_LINK',
+    display_name: 'SR — Staff-assisted registration payment link',
+    sequence_number: 'SR',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Complete {studentFirstName}'s registration for {className}",
+    preheader: 'One step left — pay securely online to confirm the spot',
+    footer_note: null,
+    body_markdown: `Hi {parentFirstName},
+
+As discussed, we've set up {studentFirstName}'s registration for the {className} class. One step left: payment. You can pay securely online here:
+
+[button:Complete Registration]({resumePaymentLink})
+
+As soon as the payment goes through, you'll get a confirmation email and {studentFirstName}'s spot is locked in.
+
+P.S. Questions about the class? Most answers are in our FAQs:
+
+{faqLinks}`,
+  },
+  {
     template_key: 'E1_THANKS',
     display_name: '#1 — Thank you',
     sequence_number: '1',
