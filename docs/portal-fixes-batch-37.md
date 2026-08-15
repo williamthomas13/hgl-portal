@@ -1,0 +1,20 @@
+# Portal fixes — batch 37 (ACCUMULATING — opened Aug 15, 2026)
+
+**Standing rules:** plain-English statuses · no internal shorthand · every alert deep-links its record + click-through to a resolution surface · samples from composers · `git push` after committing · PL-x IDs in commits · check items off here when shipped · registry template edits ship as new versions via anchor guards, twins+seeds lockstep · verify composed blocks via the composer path · inline confirm banners only · NO native browser dialogs · schedule-change baseline = what the family SAW at registration · financial facts never render into marketing copy (incl. /c pages) · two-phase column drops incl. post-drop grep · **test/QA email → billy@ / billy+*@ ONLY** · crashed gate ≠ green gate · public time labels = city names, never IANA zone cities.
+
+## ✅ PL-354 — Scarlett's batch-36 verdicts (Aug 15): attach the two flagged images + confirm SLS = Milan
+Both flagged stock composites are CLEARED — attach them to their blocks (alt text per the PL-351 rule). SLS = "Milan" CONFIRMED — clear its flag; the seed stands. Scarlett will do her copy walkthrough via Settings → Class pages separately.
+
+**Shipped:** the "30-minute strategy sessions" and "1-on-1 tutoring" composites are attached to their what's-included cards with descriptive alt text ("An instructor working one-on-one with a student on test strategy" / "A student in an online 1-on-1 tutoring session at home"), same variant scheme as the PL-351 port (480/960/full-width webp renditions) — all four cards now carry images, verified rendering live. SLS = Milan: the seed stands as-is (it filled a NULL, so nothing to change); the confirmation is recorded here and the flag language cleared from the batch-36 notes. Editable any time: images under Settings → Class pages, the city on the Schools card.
+
+## PL-355 — Class-page variant machinery (the batch-36 PL-348 amendment, now built)
+Build the documented-but-unbuilt amendment in full (see batch-36 doc for the resolved details):
+**A. Course keys + course-type block scope.** Model a course key on classes (how Deep Dive re-runs share identity — pick the simplest thing that works with clone/duplicate flows and say what you chose); content blocks gain scope shared-evergreen / course-type(key) / per-class; a new class of a course inherits its course-type blocks automatically, editable; "mint a new course block set" is a first-class blocks-admin action.
+**B. Feeder-city automation.** Follow-up classes derive display cities from their feeder classes' schools (feeder linkage exists), each contributing city+timezone via `publicTimeCityLabel` machinery, same-offset cities collapsed onto one line; `display_cities` remains the manual override; fallback = own city, plainly labeled.
+**C. Sibling-run cross-links.** Live classes sharing a course key cross-link ("Can't make these times? There's also a section at 6:30–8:00 pm Salt Lake City →"); no section object — sections are separate classes.
+**D. Follow-up prerequisite line.** Per-class field, renders near the bullets.
+**E. At-HGL variant.** HGL branding, location/directions block from the record, Salt-Lake-City-labeled times, full template shape; seed the "ACT Prep @ HGL" course-type block set from the DRAFT copy in the batch-36 doc, marked unreviewed for Scarlett's walkthrough; exam-name as a variable in the shared exam-registration fine-print block rather than an SAT/ACT fork (if simple).
+Everything ships dark behind the same closing gates as batch 36.
+
+## PL-356 — Class-page block links open in new tabs (Scarlett, Aug 15)
+`site-md.ts` renders block links as same-tab anchors — a family clicking "Preview our curriculum" mid-registration navigates away and loses their flow. External/document links (http(s) absolute URLs, PDFs) get `target="_blank" rel="noopener noreferrer"`. Keep SAME-tab for true in-page/in-flow links: anchors (#…) and relative portal paths that ARE the flow (e.g. the register CTA itself). mailto:/tel: untouched. Applies wherever site-md renders (class pages + state cards).
