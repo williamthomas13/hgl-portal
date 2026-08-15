@@ -30,6 +30,7 @@ export default function SessionCalendar({
   calendarHref,
   hour24 = false,
   timezone = null,
+  cityLabel = null,
   renderActions,
 }: {
   sessions: CalendarSession[]
@@ -41,6 +42,10 @@ export default function SessionCalendar({
   /** PL-126: the school's IANA timezone — when set, a "(times shown in
    *  {city} time)" line renders so an international family never guesses. */
   timezone?: string | null
+  /** PL-353: the resolved public city label ("Düsseldorf"). When set it wins
+   *  over the location/zone fallback — callers with school-city data resolve
+   *  via publicTimeCityLabel and pass the result. */
+  cityLabel?: string | null
   /** PL-277: admin-only per-session actions (Edit/Remove) rendered at the
    *  row's right edge. Public and portal callers never pass this. */
   renderActions?: (s: CalendarSession) => ReactNode
@@ -87,10 +92,11 @@ export default function SessionCalendar({
         })}
       </div>
       {timezone && (
-        /* PL-305: the class's own city when the location names one ("Salt
-           Lake City time" for at-HGL), the zone city otherwise. */
+        /* PL-305/353: the class's own city — a caller-resolved label first
+           (school city), then the location's city ("Salt Lake City" for
+           at-HGL), the zone city only as last resort. */
         <p className="text-xs text-gray-500 mt-1.5">
-          (times shown in {friendlyZoneCity(timezone, defaultLocation)} time)
+          (times shown in {cityLabel || friendlyZoneCity(timezone, defaultLocation)} time)
         </p>
       )}
       {calendarHref && (

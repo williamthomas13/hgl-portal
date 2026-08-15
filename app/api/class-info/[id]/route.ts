@@ -33,7 +33,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     .select(
       `id, slug, status, class_type, price, capacity,
        start_date, default_location, registration_close_date, school_id, delivery_mode,
-       timezone, promo_code, marketing_url, schools ( name, nickname, timezone ),
+       timezone, display_cities, promo_code, marketing_url, schools ( name, nickname, timezone, city ),
        sessions ( id, session_date, start_time, end_time, location ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )

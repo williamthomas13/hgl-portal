@@ -29,6 +29,8 @@ export type School = {
   logo_url?: string | null
   accent_color?: string | null
   collateral_language?: string | null
+  /** PL-353: the city families associate with the school — public time labels. */
+  city?: string | null
 }
 
 export type ContactAtSchool = {
@@ -142,6 +144,9 @@ export default function ClassWizard({
   // (asks its timezone explicitly) and in-person at Higher Ground (Denver).
   const [openKind, setOpenKind] = useState<'' | 'online' | 'hgl'>('')
   const [openTimezone, setOpenTimezone] = useState('America/Denver')
+  // PL-353: the city list an ONLINE class labels its times with ("Milan,
+  // Munich") — public pages never show a bare IANA zone city.
+  const [displayCities, setDisplayCities] = useState('')
   const [counselorId, setCounselorId] = useState('') // '' = all school contacts; never copied
   const [classType, setClassType] = useState(initial?.classType ?? '')
   const [instructorId, setInstructorId] = useState(initial?.instructorId ?? '')
@@ -564,6 +569,8 @@ export default function ClassWizard({
       school_id: school?.id ?? null,
       counselor_id: isOpen ? null : counselorId || null,
       timezone: isOpen ? classTimezone : null,
+      // PL-353: online classes may carry their own public city list.
+      display_cities: isOpen && openKind === 'online' ? displayCities.trim() || null : null,
       has_diagnostics: hasDiagnostics,
       is_follow_on: isOpen ? isFollowOn : false,
       class_type: classType.trim(),
@@ -680,6 +687,7 @@ export default function ClassWizard({
     setPromoAmount('')
     setPromoDeadline('')
     setSellingBullets('')
+    setDisplayCities('')
     setSkipForNow(false)
     setDefaultLocation('')
     setSessions([])
@@ -1162,6 +1170,22 @@ export default function ClassWizard({
               <div className="mt-1">
                 <TimezoneSelect value={openTimezone} onChange={setOpenTimezone} />
               </div>
+              {/* PL-353: the PUBLIC label for those times — city names
+                  families recognize, never the zone id's city. */}
+              <label className="block text-sm font-medium text-gray-700 mt-3">
+                Cities shown with the times{' '}
+                <span className="font-normal text-xs text-gray-500">
+                  — optional, comma-separated (&ldquo;Milan, Munich&rdquo;); blank = the
+                  timezone&apos;s own city
+                </span>
+              </label>
+              <input
+                type="text"
+                value={displayCities}
+                onChange={(e) => setDisplayCities(e.target.value)}
+                placeholder="Milan, Munich, Cape Town"
+                className={inputCls}
+              />
             </div>
           )}
           {openKind === 'hgl' && (

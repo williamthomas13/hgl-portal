@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import SessionCalendar from '../../components/SessionCalendar'
 import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
 import InterestCapture from '../../components/InterestCapture'
-import { bySessionStart, formatDateOnly } from '../../utils/dates'
+import { bySessionStart, formatDateOnly, publicTimeCityLabel } from '../../utils/dates'
 
 type SessionRow = {
   session_date: string
@@ -25,7 +25,9 @@ type ClassDetails = {
   default_location: string | null
   registration_close_date: string | null
   timezone?: string | null
-  schools: { name: string; nickname: string; timezone: string | null } | null
+  /** PL-353: an online class's own city list for time labels. */
+  display_cities?: string | null
+  schools: { name: string; nickname: string; timezone: string | null; city?: string | null } | null
   sessions: SessionRow[] | null
   isFull: boolean
   /** Cancelled classes render as full with no waitlist (PHASE4_SPEC §12). */
@@ -349,6 +351,12 @@ export default function RegistrationPage() {
         defaultLocation={classDetails.default_location}
         calendarHref={`/classes/${classDetails.id}/calendar`}
         timezone={classDetails.timezone ?? classDetails.schools?.timezone ?? null}
+        cityLabel={publicTimeCityLabel({
+          schoolCity: classDetails.schools?.city,
+          displayCities: classDetails.display_cities,
+          location: classDetails.default_location,
+          timezone: classDetails.timezone ?? classDetails.schools?.timezone ?? 'UTC',
+        })}
       />
     ) : null
 

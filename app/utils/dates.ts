@@ -146,6 +146,31 @@ export function friendlyZoneCity(timezone: string, location?: string | null): st
   return cityFromLocation(location) ?? timezoneCityLabel(timezone)
 }
 
+/** PL-353: the city label PUBLIC pages put on times — the class/school's OWN
+ *  city, never the IANA zone city leaking into copy ("Düsseldorf", not
+ *  "Berlin"). Resolution: the school's city field → the class's
+ *  display_cities list (online classes; joined plainly when several) → a
+ *  city read from the location string (PL-305) → the generic zone city as
+ *  the last resort. ONE source for every public "… time" label; admin
+ *  surfaces may keep zone ids. */
+export function publicTimeCityLabel(opts: {
+  schoolCity?: string | null
+  displayCities?: string | null
+  location?: string | null
+  timezone: string
+}): string {
+  const school = (opts.schoolCity ?? '').trim()
+  if (school) return school
+  const cities = (opts.displayCities ?? '')
+    .split(/[\n,]/)
+    .map((c) => c.trim())
+    .filter(Boolean)
+  if (cities.length === 1) return cities[0]
+  if (cities.length === 2) return `${cities[0]} and ${cities[1]}`
+  if (cities.length > 2) return `${cities.slice(0, -1).join(', ')}, and ${cities[cities.length - 1]}`
+  return friendlyZoneCity(opts.timezone, opts.location)
+}
+
 // ---------------------------------------------------------------------------
 // PL-339: time RANGES everywhere — "4:00–5:30 PM", never a bare start time.
 // Tight en dash; the leading meridiem drops when both ends share it

@@ -7,7 +7,7 @@ import {
   effectiveStartDate,
   formatDateFull,
   formatDateOnly,
-  friendlyZoneCity,
+  publicTimeCityLabel,
   timeRangeLabel,
 } from '../../utils/dates'
 import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
@@ -38,7 +38,7 @@ const loadPage = cache(async (slug: string) => {
   // selling_bullets migration lands (the column just won't be there).
   const { data: cls } = await supabase
     .from('classes')
-    .select('*, schools ( name, nickname, timezone, logo_url, accent_color ), sessions ( id, session_date, start_time, end_time, location )')
+    .select('*, schools ( name, nickname, timezone, city, logo_url, accent_color ), sessions ( id, session_date, start_time, end_time, location )')
     .eq('slug', slug)
     .maybeSingle()
 
@@ -171,7 +171,13 @@ export default async function PublicClassPage({
   const countdown =
     closeDays === 0 ? 'today' : closeDays === 1 ? 'tomorrow' : `in ${closeDays} days`
   const registerHref = `/register/${cls.slug ?? cls.id}`
-  const zoneCity = friendlyZoneCity(timezone, cls.default_location)
+  // PL-353: the class/school's OWN city, never the IANA zone city.
+  const zoneCity = publicTimeCityLabel({
+    schoolCity: school?.city,
+    displayCities: cls.display_cities,
+    location: cls.default_location,
+    timezone,
+  })
   const online = cls.delivery_mode === 'online'
 
   const faqBlocks = blocks.filter((b) => b.section === 'faq')

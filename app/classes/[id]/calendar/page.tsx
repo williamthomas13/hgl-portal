@@ -22,12 +22,14 @@ type ClassInfo = {
   class_type: string
   /** PL-274 precedence: the class's own zone wins over the school's. */
   timezone: string | null
+  /** PL-353: an online class's own city list for time labels. */
+  display_cities?: string | null
   default_location: string | null
-  schools: { nickname: string; timezone: string | null } | null
+  schools: { nickname: string; timezone: string | null; city?: string | null } | null
   sessions: Session[] | null
 }
 
-import { friendlyZoneCity, bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
+import { publicTimeCityLabel, bySessionStart, formatDateFull as formatDate } from '../../../utils/dates'
 import { classDisplayLabel } from '../../../utils/class-label'
 
 function formatTime(t: string | null) {
@@ -124,11 +126,18 @@ export default function ClassCalendarPage() {
 
         <h3 className="font-semibold text-hgl-slate mb-1">Sessions</h3>
         {/* PL-126: international families should never guess the zone.
-            PL-305: class-tz precedence + the class's own city when known. */}
+            PL-305/353: the class/school's OWN city first ("Düsseldorf"),
+            never the IANA zone city leaking into copy. */}
         {(info.timezone ?? info.schools?.timezone) && (
           <p className="text-xs text-gray-500 mb-3">
             (times shown in{' '}
-            {friendlyZoneCity((info.timezone ?? info.schools?.timezone)!, info.default_location)} time)
+            {publicTimeCityLabel({
+              schoolCity: info.schools?.city,
+              displayCities: info.display_cities,
+              location: info.default_location,
+              timezone: (info.timezone ?? info.schools?.timezone)!,
+            })}{' '}
+            time)
           </p>
         )}
         {sessions.length === 0 ? (

@@ -64,6 +64,8 @@ function SchoolEditor({
   const [name, setName] = useState(school.name ?? '')
   const [nickname, setNickname] = useState(school.nickname ?? '')
   const [timezone, setTimezone] = useState(school.timezone ?? '')
+  // PL-353: the city families see on public time labels ("Düsseldorf time").
+  const [city, setCity] = useState(school.city ?? '')
   const [accent, setAccent] = useState(school.accent_color ?? '')
   const [language, setLanguage] = useState(school.collateral_language ?? 'en')
   const [busy, setBusy] = useState(false)
@@ -103,6 +105,7 @@ function SchoolEditor({
         name: name.trim(),
         nickname: nickname.trim(),
         timezone: timezone || null,
+        city: city.trim() || null,
         accent_color: accent || null,
         collateral_language: language,
       })
@@ -135,9 +138,27 @@ function SchoolEditor({
           )}
         </div>
       </div>
-      <div>
-        <label className="block text-xs text-gray-600 font-semibold mb-1">Timezone</label>
-        <TimezoneSelect value={timezone} onChange={setTimezone} />
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">Timezone</label>
+          <TimezoneSelect value={timezone} onChange={setTimezone} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-600 font-semibold mb-1">City</label>
+          <input
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            placeholder="e.g. Düsseldorf"
+            className="w-full border rounded p-2"
+          />
+          {/* PL-353: public pages label times with THIS, never the zone id's
+              city — blank falls back to the zone city (Europe/Berlin would
+              read "Berlin"). */}
+          <p className="text-xs text-gray-500 mt-1">
+            Public pages say &ldquo;times shown in {city.trim() || '…'} time&rdquo; — the city
+            families know, not the timezone&apos;s.
+          </p>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
