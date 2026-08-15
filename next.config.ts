@@ -28,6 +28,21 @@ const nextConfig: NextConfig = {
 
   async redirects() {
     return [
+      // PL-349: bare hgl.co (email signatures) is a PERMANENT 301 to the
+      // main site — host-conditioned so it only fires once hgl.co's DNS
+      // points at this app (the launch-tail cutover, PL-155b ordered pair).
+      {
+        source: '/',
+        has: [{ type: 'host', value: 'hgl.co' }],
+        destination: 'https://www.highergroundlearning.com',
+        permanent: true,
+      },
+      {
+        source: '/',
+        has: [{ type: 'host', value: 'www.hgl.co' }],
+        destination: 'https://www.highergroundlearning.com',
+        permanent: true,
+      },
       // The portal has no public front page: parents arrive on per-class
       // /register/{slug} links from Squarespace. Temporary redirect so the
       // root can become the parent portal in Phase 4.

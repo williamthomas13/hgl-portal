@@ -11,6 +11,7 @@ import CancelClassPanel from './cancel-class-panel'
 import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-wizard'
 import CollateralCard, { type CollateralFields } from './collateral-card'
 import SiteContentPanel from './site-content-panel'
+import ShortlinksPanel from './shortlinks-panel'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import GcalPanel from './tutoring/gcal-panel'
@@ -641,6 +642,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       { id: 'add-class', label: 'Add a new class' },
       { id: 'contacts', label: 'Schools' },
       { id: 'branding', label: 'Branding & collateral' },
+      // PL-349: the hgl.co shortcode table (repointable printed links).
+      { id: 'shortlinks', label: 'Short links' },
       // PL-284: the calendar files here now (was the PL-198 topline tab).
       { id: 'calendar', label: 'Calendar', href: '/admin/calendar' },
     ],
@@ -2760,6 +2763,19 @@ export default function AdminDashboard() {
 
         {/* Phase 6: accounting integration — connection + mapping are
             admin-only; the sync log and retries are staff-wide. */}
+        </div>
+
+        {/* PL-349: hgl.co shortcodes — repointable, so printed collateral
+            never dies. The dashboard's repoint nudge deep-links here. */}
+        <div className={activeSection === 'shortlinks' ? '' : 'hidden'}>
+          <CollapsibleSection
+            title="Short links"
+            subtitle="hgl.co codes — what each printed link opens, click counts, and the repoint control"
+            accent="border-hgl-blue"
+            defaultOpen
+          >
+            <ShortlinksPanel />
+          </CollapsibleSection>
         </div>
 
         <div className={activeSection === 'qbo' ? '' : 'hidden'}>
