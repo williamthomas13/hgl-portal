@@ -26,6 +26,8 @@ export type CollateralFields = {
   selling_bullets?: string | null
   /** PL-351: the class's hero photo descriptor (class-page-images shape). */
   hero_image?: unknown
+  /** PL-355: prerequisite line near the bullets. */
+  prerequisite_note?: string | null
 }
 
 // PL-351: the per-class hero photo — upload (alt required), replace, remove
@@ -179,6 +181,7 @@ export default function CollateralCard({
     promo_amount: fields.promo_amount != null ? String(fields.promo_amount) : '',
     promo_deadline: fields.promo_deadline ?? '',
     selling_bullets: fields.selling_bullets ?? '',
+    prerequisite_note: fields.prerequisite_note ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -239,6 +242,7 @@ export default function CollateralCard({
         // has landed (the loaded row carries the key) — otherwise EVERY
         // collateral save would break on the unknown column.
         ...('selling_bullets' in fields ? { selling_bullets: form.selling_bullets.trim() || null } : {}),
+        ...('prerequisite_note' in fields ? { prerequisite_note: form.prerequisite_note.trim() || null } : {}),
       })
       .eq('id', classId)
     setSaving(false)
@@ -667,6 +671,21 @@ export default function CollateralCard({
               onChange={(e) => set('selling_bullets', e.target.value)}
               rows={4}
               placeholder={'16 hours of instruction with an expert instructor\nSmall group size\n…'}
+              className="mt-1 w-full border rounded p-1.5"
+            />
+          </div>
+        )}
+        {/* PL-355 D: the prerequisite line, editable after creation too. */}
+        {'prerequisite_note' in fields && (
+          <div className="col-span-3">
+            <label className="block text-xs text-gray-600">
+              Public page prerequisite line — renders as &ldquo;Prerequisite: …&rdquo; under the bullets
+            </label>
+            <input
+              type="text"
+              value={form.prerequisite_note}
+              onChange={(e) => set('prerequisite_note', e.target.value)}
+              placeholder="e.g. For students who've completed an HGL SAT Prep class"
               className="mt-1 w-full border rounded p-1.5"
             />
           </div>

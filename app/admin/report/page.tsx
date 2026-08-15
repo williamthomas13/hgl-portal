@@ -31,6 +31,8 @@ const money = (n: number | undefined) =>
 const PAGE_SECTIONS: [string, string][] = [
   ['hero', 'Top of page'],
   ['schedule', 'Schedule'],
+  ['course', 'Course details'],
+  ['location', 'Where we meet'],
   ['whats-included', "What's included"],
   ['curriculum', 'Curriculum preview'],
   ['instructors', 'Instructors'],

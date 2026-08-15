@@ -7,9 +7,11 @@ import {
   effectiveStartDate,
   formatDateFull,
   formatDateOnly,
+  formatTimeRange,
   publicTimeCityLabel,
   timeRangeLabel,
 } from '../../utils/dates'
+import { zonedToUtc } from '../../utils/tutoring'
 import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, renderSiteMarkdown } from '../../utils/site-md'
 import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
@@ -66,14 +68,40 @@ const loadPage = cache(async (slug: string) => {
   try {
     const { data } = await supabase
       .from('site_content_blocks')
-      .select('key, section, heading, body_markdown, sort_order, image')
+      .select('key, section, heading, body_markdown, sort_order, image, scope, course_key, class_id')
       .order('section')
       .order('sort_order')
     blocks = (data as any[]) ?? []
   } catch {
     blocks = []
   }
-  return { cls: cls as any, spotsTaken, blocks }
+
+  // PL-355 B: a follow-up class's feeder classes (feeder.follow_on_class_id
+  // points here) — their schools' city+timezone drive the multi-city times.
+  let feeders: any[] = []
+  if (cls?.is_follow_on) {
+    const { data } = await supabase
+      .from('classes')
+      .select('id, schools ( nickname, city, timezone )')
+      .eq('follow_on_class_id', cls.id)
+    feeders = (data as any[]) ?? []
+  }
+
+  // PL-355 C: sibling sections = other LIVE classes sharing the course key
+  // (sections are separate classes — no section object).
+  let siblings: any[] = []
+  if (cls?.course_key) {
+    const { data } = await supabase
+      .from('classes')
+      .select(
+        'id, slug, class_type, status, timezone, default_location, display_cities, registration_close_date, start_date, schools ( city, timezone ), sessions ( session_date, start_time, end_time )'
+      )
+      .eq('course_key', cls.course_key)
+      .neq('id', cls.id)
+      .eq('status', 'open')
+    siblings = (data as any[]) ?? []
+  }
+  return { cls: cls as any, spotsTaken, blocks, feeders, siblings }
 })
 
 function heroTitleFor(cls: any): string {
@@ -145,7 +173,7 @@ export default async function PublicClassPage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
-  const { cls, spotsTaken, blocks } = await loadPage(slug)
+  const { cls, spotsTaken, blocks, feeders, siblings } = await loadPage(slug)
 
   const block = (key: string) => blocks.find((b) => b.key === key) ?? null
   const stateBody = (key: string, fallback: string) => block(key)?.body_markdown ?? fallback
@@ -211,14 +239,99 @@ export default async function PublicClassPage({
   })
   const online = cls.delivery_mode === 'online'
 
-  const faqBlocks = blocks.filter((b) => b.section === 'faq')
-  const includedBlocks = blocks.filter((b) => b.section === 'included')
-  const finePrintBlocks = blocks.filter((b) => b.section === 'fine-print')
+  // PL-355: block scopes — shared renders everywhere; course rows render on
+  // every class sharing the course key (inheritance IS the render rule);
+  // class rows render on that class only. Pre-migration rows carry no scope
+  // and count as shared.
+  const isShared = (b: any) => !b.scope || b.scope === 'shared'
+  const faqBlocks = blocks.filter((b) => isShared(b) && b.section === 'faq')
+  const includedBlocks = blocks.filter((b) => isShared(b) && b.section === 'included')
+  const finePrintBlocks = blocks.filter((b) => isShared(b) && b.section === 'fine-print')
+  const courseBlocks = blocks
+    .filter(
+      (b) =>
+        (b.scope === 'course' && cls.course_key && b.course_key === cls.course_key) ||
+        (b.scope === 'class' && b.class_id === cls.id)
+    )
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+  const heroBlurb = courseBlocks.find((b) => String(b.key).endsWith(':hero-blurb')) ?? null
+  const locationBlock = courseBlocks.find((b) => String(b.key).endsWith(':location')) ?? null
+  const courseSections = courseBlocks.filter((b) => b !== heroBlurb && b !== locationBlock)
   // PL-352 (amendment): the 1-on-1 upsell ('one-on-one-pitch') deliberately
   // does NOT render here — it lives on the registration flow's second page.
   const instructors = block('instructors')
   const closing = block('closing-cta')
   const waitlistNote = block('waitlist-note')
+
+  // PL-355 E: block copy may reference the record's facts as variables —
+  // the address and the exam name (one shared exam-registration block, no
+  // SAT/ACT fork). Substituted BEFORE markdown rendering; never money.
+  const examName = /\bACT\b/i.test(String(cls.class_type)) ? 'ACT' : 'SAT'
+  const examLink =
+    examName === 'ACT'
+      ? 'https://global.act.org/content/global/en/products-and-services/the-act-non-us/registration.html'
+      : 'https://satsuite.collegeboard.org/sat/registration/international-testing/dates-deadlines'
+  const md = (s: string) =>
+    renderSiteMarkdown(
+      String(s)
+        .replaceAll('{address}', cls.default_location ?? 'our office')
+        .replaceAll('{examName}', examName)
+        .replaceAll('{examRegistrationLink}', examLink)
+    )
+
+  // PL-355 B: feeder-city time groups. Each feeder school contributes its
+  // city + timezone; per session, cities whose local time renders the same
+  // (same offset) collapse onto one line. display_cities stays the MANUAL
+  // override (label list on the class's own times); no feeders = the class's
+  // own city, plainly labeled (the PL-353 behavior).
+  const feederCities: { city: string; tz: string }[] = []
+  if (!cls.display_cities) {
+    for (const f of feeders) {
+      const s = one<any>(f.schools)
+      if (!s?.timezone) continue
+      const city = publicTimeCityLabel({ schoolCity: s.city, timezone: s.timezone })
+      if (!feederCities.some((c) => c.city === city)) feederCities.push({ city, tz: s.timezone })
+    }
+  }
+  const feederGroupsFor = (s: any): { range: string; cities: string[] }[] => {
+    if (feederCities.length === 0 || !s.start_time) return []
+    const startUtc = zonedToUtc(s.session_date, String(s.start_time).slice(0, 5), timezone)
+    const endUtc = s.end_time ? zonedToUtc(s.session_date, String(s.end_time).slice(0, 5), timezone) : null
+    const groups = new Map<string, string[]>()
+    for (const fc of feederCities) {
+      const range = formatTimeRange(startUtc, endUtc, fc.tz)
+      groups.set(range, [...(groups.get(range) ?? []), fc.city])
+    }
+    return [...groups.entries()].map(([range, cities]) => ({ range, cities }))
+  }
+
+  // PL-355 C: sibling sections still open for registration.
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
+  const liveSiblings = (siblings as any[])
+    .map((sib) => {
+      const sess = ([...(sib.sessions ?? [])] as any[]).sort(bySessionStart)
+      const first = sess[0]
+      const close = String(sib.registration_close_date ?? sess[0]?.session_date ?? sib.start_date ?? '').slice(0, 10)
+      if (!close || close < todayIso) return null
+      const start = clockLabel(first?.start_time)
+      const end = clockLabel(first?.end_time)
+      const sibSchool = one<any>(sib.schools)
+      return {
+        slug: sib.slug,
+        label: [
+          start ? (end ? timeRangeLabel(start, end) : start) : null,
+          publicTimeCityLabel({
+            schoolCity: sibSchool?.city,
+            displayCities: sib.display_cities,
+            location: sib.default_location,
+            timezone: sib.timezone ?? sibSchool?.timezone ?? DEFAULT_TIMEZONE,
+          }),
+        ]
+          .filter(Boolean)
+          .join(' '),
+      }
+    })
+    .filter(Boolean) as { slug: string; label: string }[]
 
   const registerCta = (extra = '') => (
     <a
@@ -260,6 +373,19 @@ export default async function PublicClassPage({
                 </li>
               ))}
             </ul>
+          )}
+          {/* PL-355 D: the per-class prerequisite line, near the bullets. */}
+          {cls.prerequisite_note && (
+            <p className="mt-4 text-sm font-semibold text-white/95">
+              Prerequisite: <span className="font-normal">{cls.prerequisite_note}</span>
+            </p>
+          )}
+          {/* PL-355 A/E: the course's hero blurb (course-type block). */}
+          {heroBlurb && (
+            <div
+              className="mt-4 text-white/95 [&_p]:text-white/95 [&_a]:text-white [&_a]:underline space-y-2"
+              dangerouslySetInnerHTML={{ __html: md(heroBlurb.body_markdown) }}
+            />
           )}
           <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-4">
             <span className="text-3xl font-extrabold">{priceLabel}</span>
@@ -304,7 +430,11 @@ export default async function PublicClassPage({
         <section id="schedule" data-section="schedule">
           <h2 className="text-2xl font-bold text-hgl-slate mb-1">Class schedule</h2>
           <p className="text-sm text-gray-500 mb-4">
-            All times are {zoneCity} time.{' '}
+            {/* PL-355 B: with feeder cities, every row speaks each city's
+                own local time — the header must not name a zone city. */}
+            {feederCities.length > 0
+              ? 'Times are shown in each city’s local time.'
+              : `All times are ${zoneCity} time.`}{' '}
             <a href={`/classes/${cls.id}/calendar`} className="text-hgl-blue underline">
               Add the schedule to your calendar →
             </a>
@@ -322,10 +452,23 @@ export default async function PublicClassPage({
                   <li key={s.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 px-4 py-3">
                     <span className="text-xs font-bold text-gray-400 w-20 shrink-0">Session {i + 1}</span>
                     <span className="font-semibold text-hgl-slate">{formatDateOnly(s.session_date, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
-                    {start && (
-                      <span className="text-gray-600 whitespace-nowrap">
-                        {end ? timeRangeLabel(start, end) : start}
+                    {/* PL-355 B: a follow-up class shows each feeder city's
+                        own local time; same-offset cities share one line. */}
+                    {feederGroupsFor(s).length > 0 ? (
+                      <span className="text-gray-600">
+                        {feederGroupsFor(s).map((g, gi) => (
+                          <span key={gi} className="whitespace-nowrap">
+                            {gi > 0 && <span className="text-gray-300"> · </span>}
+                            {g.range} <span className="text-gray-400">{g.cities.join(', ')}</span>
+                          </span>
+                        ))}
                       </span>
+                    ) : (
+                      start && (
+                        <span className="text-gray-600 whitespace-nowrap">
+                          {end ? timeRangeLabel(start, end) : start}
+                        </span>
+                      )
                     )}
                     {(s.location || (!online && cls.default_location)) && (
                       <span className="text-sm text-gray-400">{s.location || cls.default_location}</span>
@@ -335,7 +478,75 @@ export default async function PublicClassPage({
               })}
             </ul>
           )}
+          {/* PL-355 C: sibling sections of the same course — separate
+              classes, cross-linked, never a section object. */}
+          {liveSiblings.length > 0 && (
+            <p className="mt-3 text-sm text-gray-600">
+              Can&apos;t make these times?{' '}
+              {liveSiblings.map((sib, i) => (
+                <span key={sib.slug}>
+                  {i > 0 && ' · '}
+                  <a href={`/c/${sib.slug}`} className="text-hgl-blue underline">
+                    There&apos;s also a section at {sib.label} →
+                  </a>
+                </span>
+              ))}
+            </p>
+          )}
         </section>
+
+        {/* ── PL-355 A/E: course-type + per-class sections (inherited via
+            the course key; edit once per course, every run updates) ──────── */}
+        {(courseSections.length > 0 || (locationBlock && !online && !school)) && (
+          <section id="course" data-section="course" className="space-y-10">
+            {courseSections.map((b) => {
+              const img = parseClassPageImage(b.image)
+              const beside = img && (img.layout === 'left' || img.layout === 'right')
+              const body = (
+                <div className="space-y-3" dangerouslySetInnerHTML={{ __html: md(b.body_markdown) }} />
+              )
+              return (
+                <div key={b.key}>
+                  {b.heading && <h2 className="text-2xl font-bold text-hgl-slate mb-3">{b.heading}</h2>}
+                  {img && img.layout === 'hero' && (
+                    <BlockImg image={img} sizes="(min-width: 768px) 736px, 100vw" className="rounded-lg mb-4" />
+                  )}
+                  {beside ? (
+                    <div className="md:grid md:grid-cols-2 md:gap-6 md:items-center">
+                      <BlockImg
+                        image={img}
+                        sizes="(min-width: 768px) 356px, 100vw"
+                        className={`rounded-lg mb-4 md:mb-0 ${img.layout === 'right' ? 'md:order-2' : ''}`}
+                      />
+                      {body}
+                    </div>
+                  ) : (
+                    body
+                  )}
+                </div>
+              )
+            })}
+            {/* PL-355 E: the at-HGL location block — frame copy from the
+                block ({address} substituted), the address itself and the
+                map link always from the record. */}
+            {locationBlock && !online && !school && cls.default_location && (
+              <div id="location" data-section="location">
+                <h2 className="text-2xl font-bold text-hgl-slate mb-3">{locationBlock.heading || 'Where we meet'}</h2>
+                <div className="space-y-3" dangerouslySetInnerHTML={{ __html: md(locationBlock.body_markdown) }} />
+                <p className="mt-2 text-sm">
+                  <a
+                    href={`https://maps.google.com/?q=${encodeURIComponent(cls.default_location)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-hgl-blue underline"
+                  >
+                    Open in Google Maps →
+                  </a>
+                </p>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* ── Evergreen shared blocks (edit once → every class page) ─────── */}
         {includedBlocks.length > 0 && (
@@ -357,7 +568,7 @@ export default async function PublicClassPage({
                     className="rounded mb-3"
                   />
                   <h3 className="font-bold text-hgl-slate mb-2">{b.heading}</h3>
-                  <div className="space-y-3 text-sm" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(b.body_markdown) }} />
+                  <div className="space-y-3 text-sm" dangerouslySetInnerHTML={{ __html: md(b.body_markdown) }} />
                 </div>
               ))}
             </div>
@@ -372,7 +583,7 @@ export default async function PublicClassPage({
             const img = parseClassPageImage(instructors.image)
             const beside = img && (img.layout === 'left' || img.layout === 'right')
             const body = (
-              <div className="space-y-3" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(instructors.body_markdown) }} />
+              <div className="space-y-3" dangerouslySetInnerHTML={{ __html: md(instructors.body_markdown) }} />
             )
             return (
               <section id="instructors" data-section="instructors">
@@ -410,7 +621,7 @@ export default async function PublicClassPage({
                           {item.question}
                           <span aria-hidden className="text-gray-400 group-open:rotate-45 transition-transform">+</span>
                         </summary>
-                        <div className="mt-2 space-y-2 text-sm" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(item.answerMarkdown) }} />
+                        <div className="mt-2 space-y-2 text-sm" dangerouslySetInnerHTML={{ __html: md(item.answerMarkdown) }} />
                       </details>
                     ))}
                   </div>
@@ -425,7 +636,7 @@ export default async function PublicClassPage({
         <section id="closing" data-section="closing" className="text-center bg-white rounded-lg shadow-sm p-8">
           <h2 className="text-2xl font-bold text-hgl-slate mb-2">{closing?.heading || 'Ready to get started?'}</h2>
           {closing && (
-            <div className="mb-4 text-gray-600" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(closing.body_markdown) }} />
+            <div className="mb-4 text-gray-600" dangerouslySetInnerHTML={{ __html: md(closing.body_markdown) }} />
           )}
           <p className="text-3xl font-extrabold text-hgl-slate mb-4">{priceLabel}</p>
           {registerCta()}
@@ -446,7 +657,7 @@ export default async function PublicClassPage({
             {finePrintBlocks.map((b) => (
               <div key={b.key}>
                 <h3 className="font-semibold text-gray-600 mb-1">{b.heading}</h3>
-                <div className="space-y-2 [&_p]:text-gray-500 [&_a]:text-hgl-blue" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(b.body_markdown) }} />
+                <div className="space-y-2 [&_p]:text-gray-500 [&_a]:text-hgl-blue" dangerouslySetInnerHTML={{ __html: md(b.body_markdown) }} />
               </div>
             ))}
           </section>

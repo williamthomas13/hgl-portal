@@ -13,8 +13,14 @@ function escapeHtml(s: string): string {
 function renderInline(text: string): string {
   let out = escapeHtml(text)
   out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, href) => {
-    const safeHref = /^(https?:\/\/|\/|mailto:|tel:)/i.test(href.trim()) ? href.trim() : '#'
-    return `<a href="${safeHref}" class="text-hgl-blue underline hover:opacity-80">${label}</a>`
+    const safeHref = /^(https?:\/\/|\/|mailto:|tel:|#)/i.test(href.trim()) ? href.trim() : '#'
+    // PL-356: external/document links open a NEW tab — a family clicking
+    // "Preview our curriculum" mid-registration must never lose their flow.
+    // Same-tab stays for true in-flow links: #anchors and relative portal
+    // paths (the register CTA itself); mailto:/tel: untouched.
+    const external = /^https?:\/\//i.test(safeHref)
+    const target = external ? ' target="_blank" rel="noopener noreferrer"' : ''
+    return `<a href="${safeHref}"${target} class="text-hgl-blue underline hover:opacity-80">${label}</a>`
   })
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>')

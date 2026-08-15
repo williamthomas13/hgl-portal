@@ -1355,6 +1355,8 @@ export default function AdminDashboard() {
         // only once the migration has landed (ship-dark guard — the wizard
         // spreads this into its insert).
         ...('selling_bullets' in c ? { selling_bullets: c.selling_bullets ?? null } : {}),
+        // PL-355: the prerequisite line carries the same way.
+        ...('prerequisite_note' in c ? { prerequisite_note: c.prerequisite_note ?? null } : {}),
       },
     })
     setWizardSourceLabel(

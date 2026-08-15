@@ -83,6 +83,8 @@ export type WizardPrefill = {
     promo_deadline: string | null
     /** PL-348: hero bullets on the public /c/{slug} page, one per line. */
     selling_bullets?: string | null
+    /** PL-355: prerequisite line near the bullets ("For students who…"). */
+    prerequisite_note?: string | null
   }
 }
 
@@ -199,6 +201,8 @@ export default function ClassWizard({
   const [promoDeadline, setPromoDeadline] = useState(initial?.collateral?.promo_deadline ?? '')
   // PL-348: the public class page's hero bullets (one per line).
   const [sellingBullets, setSellingBullets] = useState(initial?.collateral?.selling_bullets ?? '')
+  // PL-355 D: the public page's prerequisite line (follow-up classes mainly).
+  const [prerequisiteNote, setPrerequisiteNote] = useState(initial?.collateral?.prerequisite_note ?? '')
   // 'Skip for now (remind me later)' stamps collateral_reminder_at on the
   // class -> the state-driven Needs Attention row.
   const [skipForNow, setSkipForNow] = useState(false)
@@ -612,6 +616,15 @@ export default function ClassWizard({
       ...(sellingBullets.trim() || (initial?.collateral && 'selling_bullets' in initial.collateral)
         ? { selling_bullets: sellingBullets.trim() || null }
         : {}),
+      // PL-355 A: course identity for open-enrollment classes — DERIVED from
+      // the class type (duplicates copy the type, so re-runs share the key
+      // with nothing extra to remember; renaming the type for a re-run
+      // changes which course-type blocks it inherits — deliberate).
+      course_key: isOpen ? slugify(classType.trim()) || null : null,
+      // PL-355 D: the public page's prerequisite line.
+      ...(prerequisiteNote.trim() || (initial?.collateral && 'prerequisite_note' in initial.collateral)
+        ? { prerequisite_note: prerequisiteNote.trim() || null }
+        : {}),
     }
     if (!Number.isFinite(newClass.practice_test_count) || newClass.practice_test_count < 0) {
       setMessage('Error: the number of practice tests must be a whole number (0 or more).')
@@ -687,6 +700,7 @@ export default function ClassWizard({
     setPromoAmount('')
     setPromoDeadline('')
     setSellingBullets('')
+    setPrerequisiteNote('')
     setDisplayCities('')
     setSkipForNow(false)
     setDefaultLocation('')
@@ -1645,6 +1659,24 @@ export default function ClassWizard({
                     Suggest bullets from the class details
                   </button>
                 )}
+              </p>
+            </div>
+            {/* PL-355 D: the prerequisite line, right where the bullets
+                render on the public page. */}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Public page prerequisite line (optional)
+              </label>
+              <input
+                type="text"
+                value={prerequisiteNote}
+                onChange={(e) => setPrerequisiteNote(e.target.value)}
+                placeholder="e.g. For students who've completed an HGL SAT Prep class"
+                className={inputCls}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Renders as &ldquo;Prerequisite: …&rdquo; under the bullets — mainly for follow-up
+                classes.
               </p>
             </div>
           </div>

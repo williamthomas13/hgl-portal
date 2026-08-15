@@ -15,6 +15,9 @@ type Block = {
   body_markdown: string
   sort_order: number
   image: unknown
+  scope?: string | null
+  course_key?: string | null
+  class_id?: string | null
   updated_at: string
   updated_by: string | null
 }
@@ -237,23 +240,45 @@ export default function SiteContentPanel() {
   if (error && !blocks) return <p className="text-sm text-red-600">{error}</p>
   if (!blocks) return <p className="text-sm text-gray-500">Loading…</p>
 
-  const sections = SECTION_ORDER.filter((s) => blocks.some((b) => b.section === s))
+  const isShared = (b: Block) => !b.scope || b.scope === 'shared'
+  const sections = SECTION_ORDER.filter((s) => blocks.some((b) => isShared(b) && b.section === s))
+  // PL-355: course-type block sets, grouped per course key — inherited by
+  // every class of that course automatically.
+  const courseKeys = [...new Set(blocks.filter((b) => b.scope === 'course').map((b) => b.course_key ?? ''))]
+    .filter(Boolean)
+    .sort()
+  const classScoped = blocks.filter((b) => b.scope === 'class')
+
+  const groups: { label: string; rows: Block[] }[] = [
+    ...sections.map((section) => ({
+      label: SECTION_LABELS[section] ?? section,
+      rows: blocks.filter((b) => isShared(b) && b.section === section),
+    })),
+    ...courseKeys.map((ck) => ({
+      label: `Course blocks — ${ck} (every class of this course inherits these)`,
+      rows: blocks.filter((b) => b.scope === 'course' && b.course_key === ck).sort((a, b) => a.sort_order - b.sort_order),
+    })),
+    ...(classScoped.length > 0
+      ? [{ label: 'Per-class blocks (each renders on exactly one class page)', rows: classScoped }]
+      : []),
+  ]
 
   return (
     <div className="space-y-6">
       <p className="text-xs text-gray-500">
-        These blocks render on EVERY public class page (/c/…), below the class-specific top —
-        edit once, all pages update. Class facts (price, schedule, deadline) always come from
+        These blocks render on the public class pages (/c/…), below the class-specific top —
+        shared blocks on EVERY page, course blocks on every class of that course, edit once and
+        all matching pages update. Class facts (price, schedule, deadline) always come from
         the class record, never from this copy. Formatting: **bold**, [link](https://…),
-        &quot;- &quot; lists, and &quot;### &quot; sub-headings (FAQ questions).
+        &quot;- &quot; lists, and &quot;### &quot; sub-headings (FAQ questions). In course blocks,
+        {' {address}'} and {'{examName}'} fill in from each class record.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {sections.map((section) => (
-        <div key={section}>
-          <h4 className="text-sm font-bold text-hgl-slate mb-2">{SECTION_LABELS[section] ?? section}</h4>
+      {groups.map(({ label, rows }) => (
+        <div key={label}>
+          <h4 className="text-sm font-bold text-hgl-slate mb-2">{label}</h4>
           <div className="space-y-4">
-            {blocks
-              .filter((b) => b.section === section)
+            {rows
               .map((b) => {
                 const d = draftFor(b)
                 return (
@@ -298,6 +323,80 @@ export default function SiteContentPanel() {
           </div>
         </div>
       ))}
+      <MintCourseSet existingKeys={courseKeys} onMinted={load} />
+    </div>
+  )
+}
+
+// PL-355: minting a NEW course's block set is a first-class action — a
+// future follow-up course means new blocks here, never a code change.
+function MintCourseSet({ existingKeys, onMinted }: { existingKeys: string[]; onMinted: () => void }) {
+  const [courseKey, setCourseKey] = useState('')
+  const [copyFrom, setCopyFrom] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  return (
+    <div className="border border-gray-200 rounded-lg p-4">
+      <h4 className="text-sm font-bold text-hgl-slate mb-1">Mint a new course block set</h4>
+      <p className="text-xs text-gray-500 mb-3">
+        For a NEW course (a future follow-up, a new local class type). The course key must match
+        what the wizard derives from the class type — lowercase with dashes, e.g. class type
+        &ldquo;ACT Prep&rdquo; → <span className="font-mono">act-prep</span>. Copying an existing
+        course starts you from its copy; blank starts a skeleton.
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-xs text-gray-600">Course key</label>
+          <input
+            type="text"
+            value={courseKey}
+            onChange={(e) => setCourseKey(e.target.value.toLowerCase())}
+            placeholder="act-prep"
+            className="mt-1 border border-gray-300 rounded p-1.5 text-sm w-56 font-mono"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-600">Start from</label>
+          <select
+            value={copyFrom}
+            onChange={(e) => setCopyFrom(e.target.value)}
+            className="mt-1 border border-gray-300 rounded p-1.5 bg-white text-sm"
+          >
+            <option value="">Blank skeleton</option>
+            {existingKeys.map((k) => (
+              <option key={k} value={k}>Copy of {k}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          disabled={busy || !courseKey.trim()}
+          onClick={async () => {
+            setBusy(true)
+            setMsg('')
+            try {
+              const res = await fetch('/api/admin/site-content', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'mint', courseKey: courseKey.trim(), copyFrom: copyFrom || null }),
+              })
+              const json = await res.json().catch(() => ({}))
+              if (!res.ok) setMsg(json.error ?? 'Minting failed.')
+              else {
+                setMsg(`Minted ${json.minted} blocks for '${courseKey.trim()}' — edit them above.`)
+                setCourseKey('')
+                setCopyFrom('')
+                onMinted()
+              }
+            } finally {
+              setBusy(false)
+            }
+          }}
+          className="bg-hgl-slate text-white text-xs font-bold py-2 px-4 rounded disabled:opacity-40"
+        >
+          {busy ? 'Minting…' : 'Mint the block set'}
+        </button>
+      </div>
+      {msg && <p className={`text-xs mt-2 ${msg.startsWith('Minted') ? 'text-green-700' : 'text-red-600'}`}>{msg}</p>}
     </div>
   )
 }

@@ -8,7 +8,9 @@ import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 // dropped here too (the client already respects them — this is the belt).
 
 // PL-352: 'pitch' left the page (the upsell lives on the registration flow).
-const METRIC_RE = /^(visit|register-click|arrival:shortlink|section:(hero|schedule|whats-included|curriculum|instructors|faq|fine-print|closing))$/
+// PL-355: 'course' (the course-type section area) and 'location' (the
+// at-HGL where-we-meet block) joined it.
+const METRIC_RE = /^(visit|register-click|arrival:shortlink|section:(hero|schedule|course|location|whats-included|curriculum|instructors|faq|fine-print|closing))$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function POST(request: Request) {
