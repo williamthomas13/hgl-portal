@@ -17,6 +17,7 @@ import {
 } from './tutoring-emails'
 import { renderRegistered } from './comms-registered'
 import { signingSecret } from './signing'
+import { autopayNudgeHtml } from './autopay-nudge'
 
 // Phase 7c monthly cycle engine (spec §6): generate → propose → confirm →
 // (payment leg in tutoring-stripe.ts). Replaces the Ops Director's calendar
@@ -667,6 +668,8 @@ export async function generateMonthlyCycle(
           : null,
       link: `${appUrl()}/tutoring/schedule/${proposalToken(invoice.id)}`,
       autoconfirmDays: settings.autoconfirmDays,
+      // PL-362: THE one autopay nudge ('' for autopay families).
+      nudgeFamily: { id: family.id, autopay: family.autopay === true },
       contact,
     }
     // PL-13: registry template when live; code copy otherwise.
@@ -687,6 +690,7 @@ export async function generateMonthlyCycle(
         // auto-POSTs on load); the request-changes link keeps the plain URL.
         confirmOneTapLink: `${t1Opts.link}?confirm=1`,
         autoconfirmDays: settings.autoconfirmDays,
+        autopayBlock: autopayNudgeHtml(t1Opts.nudgeFamily, 'invoice'),
         contactBlock: contactBlockHtml(contact),
       },
       () => t1ProposalEmail(t1Opts)
@@ -1267,7 +1271,7 @@ export async function sweepProposals(now: Date = new Date()): Promise<ProposalSw
     .from('tutoring_invoices')
     .select(
       `id, period, proposal_sent_at, nudge_sent_at, change_requested_at, total,
-       families ( parent_email, billing_email, billing_cc_emails, parent_first_name )`
+       families ( id, parent_email, billing_email, billing_cc_emails, parent_first_name, autopay )`
     )
     .eq('status', 'proposed')
     .not('proposal_sent_at', 'is', null)
@@ -1312,6 +1316,8 @@ export async function sweepProposals(now: Date = new Date()): Promise<ProposalSw
         names: names || null,
         link,
         daysLeft: Math.max(1, Math.ceil(settings.autoconfirmDays - ageDays)),
+        // PL-362: THE one autopay nudge ('' for autopay families).
+        nudgeFamily: fam.id ? { id: fam.id, autopay: fam.autopay === true } : null,
         contact,
       }
       // PL-13: registry template when live; code copy otherwise.
@@ -1323,6 +1329,7 @@ export async function sweepProposals(now: Date = new Date()): Promise<ProposalSw
           studentNames: names || 'your student',
           confirmLink: link,
           daysLeft: t1bOpts.daysLeft,
+          autopayBlock: t1bOpts.nudgeFamily ? autopayNudgeHtml(t1bOpts.nudgeFamily, 'invoice') : '',
           contactBlock: contactBlockHtml(contact),
         },
         () => t1bNudgeEmail(t1bOpts)

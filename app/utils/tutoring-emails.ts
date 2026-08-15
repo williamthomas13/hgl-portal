@@ -3,6 +3,7 @@ import { renderRegistered } from './comms-registered'
 import { sendOnce, wrap, footerT } from './email'
 import { formatTimeRange } from './dates'
 import { recordTutorScheduleChange } from './tutor-notices'
+import { autopayNudgeHtml } from './autopay-nudge'
 
 // Phase 7c tutoring emails (spec §6): T1 monthly proposal, T1b nudge,
 // T2 invoice, T3 schedule change, T4 payment failed. Code-rendered (the A4
@@ -129,6 +130,8 @@ export function t1ProposalEmail(opts: {
   packageNote: string | null // e.g. "Covered by your prepaid package hours."
   link: string
   autoconfirmDays: number
+  /** PL-362: THE one autopay nudge ('' composed for autopay families). */
+  nudgeFamily: { id: string; autopay?: boolean | null } | null
   contact: ContactInfo
 }): { subject: string; html: string } {
   const names = firstNames(opts.blocks)
@@ -152,6 +155,7 @@ export function t1ProposalEmail(opts: {
      <p style="color:#64748b;font-size:13px">If we don't hear from you within ${opts.autoconfirmDays} days,
      the schedule confirms automatically and stays exactly as shown — same as our usual policy
      (schedule changes for the coming month need to reach us before month-end).</p>
+     ${opts.nudgeFamily ? autopayNudgeHtml(opts.nudgeFamily, 'invoice') : ''}
      ${contactBlockHtml(opts.contact)}`,
     { preheader: `${opts.monthLabel} schedule — confirm or request changes`, footer: footerT() }
   )
@@ -163,6 +167,8 @@ export function t1bNudgeEmail(opts: {
   names: string | null // student first names; null → generic wording
   link: string
   daysLeft: number
+  /** PL-362: THE one autopay nudge ('' composed for autopay families). */
+  nudgeFamily: { id: string; autopay?: boolean | null } | null
   contact: ContactInfo
 }): { subject: string; html: string } {
   const whose = opts.names ? `${opts.names}'s` : 'your'
@@ -176,6 +182,7 @@ export function t1bNudgeEmail(opts: {
      </p>
      <p style="color:#64748b;font-size:13px">No action needed to keep everything as-is — the schedule
      confirms automatically in ${opts.daysLeft} day${opts.daysLeft === 1 ? '' : 's'}.</p>
+     ${opts.nudgeFamily ? autopayNudgeHtml(opts.nudgeFamily, 'invoice') : ''}
      ${contactBlockHtml(opts.contact)}`,
     { preheader: `One click to confirm ${opts.monthLabel}`, footer: footerT() }
   )
@@ -187,7 +194,8 @@ export function t2InvoiceEmail(opts: {
   total: number
   hostedUrl: string
   dueLabel: string // "August 31"
-  autopayLink: string | null
+  /** PL-362: THE one autopay nudge, pre-composed ('' for autopay families). */
+  nudgeFamily: { id: string; autopay?: boolean | null } | null
   contact: ContactInfo
   /** +10-day past-due reminder variant (§6.4 escalation). */
   reminder?: boolean
@@ -209,13 +217,7 @@ export function t2InvoiceEmail(opts: {
      </p>
      <p style="color:#64748b;font-size:13px">Pay by card or directly from a US bank account (ACH) —
      both options are on the invoice page.</p>
-     ${
-       opts.autopayLink
-         ? `<p style="color:#64748b;font-size:13px">Prefer not to think about this each month?
-            <a href="${opts.autopayLink}" style="color:#00AEEE">Set up autopay</a> and future invoices
-            charge your saved card or bank account automatically.</p>`
-         : ''
-     }
+     ${opts.nudgeFamily ? autopayNudgeHtml(opts.nudgeFamily, 'invoice') : ''}
      ${contactBlockHtml(opts.contact)}`,
     { preheader: `${money(opts.total)} due by ${opts.dueLabel}`, footer: footerT() }
   )
@@ -230,6 +232,8 @@ export function t2bPaymentReminderEmail(opts: {
   total: number
   hostedUrl: string
   dueLabel: string // "August 31"
+  /** PL-362: THE one autopay nudge ('' composed for autopay families). */
+  nudgeFamily: { id: string; autopay?: boolean | null } | null
   contact: ContactInfo
 }): { subject: string; html: string } {
   const subject = `Reminder: your HGL tutoring invoice for ${opts.monthLabel} — ${money(opts.total)}`
@@ -244,6 +248,7 @@ export function t2bPaymentReminderEmail(opts: {
      both options are on the invoice page. If the payment is already on its way — thank you,
      please ignore this. And if anything on the invoice looks off, just reply and we'll sort it
      out.</p>
+     ${opts.nudgeFamily ? autopayNudgeHtml(opts.nudgeFamily, 'invoice') : ''}
      ${contactBlockHtml(opts.contact)}`,
     { preheader: `${money(opts.total)} — originally due ${opts.dueLabel}`, footer: footerT() }
   )

@@ -1,4 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { autopayNudgeHtml } from './autopay-nudge'
 import { emailBaseUrl } from './base-url'
 import { sendOnce, sendAdminAlert, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
@@ -68,6 +69,7 @@ type BlockEngagement = {
   parentFirstName: string
   parentEmail: string | null
   familyId: string
+  familyAutopay: boolean
   tutorName: string
   tutorEmail: string | null
   tutorCalendarId: string | null
@@ -82,7 +84,7 @@ export async function loadBlockEngagements(): Promise<BlockEngagement[]> {
     .select(
       `id, addon_id, student_id, tutor_id, hourly_rate, status, recurrence,
        block_confirmation, block_continue_hours, block_ask_cycle, block_dropped_at,
-       students!inner ( first_name, family_id, families!inner ( id, parent_first_name, parent_email ) ),
+       students!inner ( first_name, family_id, families!inner ( id, parent_first_name, parent_email, autopay ) ),
        instructors!tutoring_engagements_tutor_id_fkey ( name, email, google_calendar_id, timezone ),
        enrollment_addons!tutoring_engagements_addon_id_fkey ( id, hours )`
     )
@@ -125,6 +127,7 @@ export async function loadBlockEngagements(): Promise<BlockEngagement[]> {
       parentFirstName: family.parent_first_name,
       parentEmail: family.parent_email ?? null,
       familyId: family.id,
+      familyAutopay: family.autopay === true,
       tutorName: tutor?.name ?? 'their tutor',
       tutorEmail: tutor?.email ?? null,
       tutorCalendarId: tutor?.google_calendar_id ?? null,
@@ -482,9 +485,10 @@ async function sendContinueOutcome(
     : `<p>You're all set — ${e.studentFirstName} continues ${what}.</p>
        <p>We couldn't auto-reserve the continuing times (a calendar conflict), so our team is on
        it and will sort the schedule out with you — nothing needed from you right now.</p>`
+  const nudge = autopayNudgeHtml({ id: e.familyId, autopay: e.familyAutopay }, 'transition')
   const twin = (): Rendered => ({
     subject: `${e.studentFirstName}'s tutoring continues — here's what happens next`,
-    html: wrap(`<p>Hi ${e.parentFirstName},</p>${block}<p>Thanks!</p><p>Higher Ground Learning</p>`, {
+    html: wrap(`<p>Hi ${e.parentFirstName},</p>${block}${nudge}<p>Thanks!</p><p>Higher Ground Learning</p>`, {
       preheader: reservedTimes ? 'Times reserved — you are all set.' : "We're sorting the schedule out for you.",
       footer: footerT(),
     }),
@@ -492,7 +496,7 @@ async function sendContinueOutcome(
   const email = await renderRegistered(
     'BL_CONTINUE_OUTCOME',
     { parentFirstName: e.parentFirstName, parentEmail: e.parentEmail, studentFirstName: e.studentFirstName },
-    { blockContinueOutcomeBlock: block },
+    { blockContinueOutcomeBlock: block, autopayBlock: nudge },
     twin
   )
   await sendOnce({

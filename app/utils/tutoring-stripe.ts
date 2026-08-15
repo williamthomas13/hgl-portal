@@ -4,6 +4,7 @@ import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert } from './email'
 import { ADMIN_EMAIL } from './lifecycle'
 import { processQboQueue } from './qbo-sync'
+import { autopayNudgeHtml } from './autopay-nudge'
 import {
   autopayToken,
   billingMonth,
@@ -179,12 +180,15 @@ export async function issueOrCharge(invoiceId: string): Promise<{ ok: boolean; p
 
 // PL-13: registry extras for T2 — the same conditional intro/autopay pieces
 // the code renderer builds, pre-rendered as blocks.
+// PL-362: the autopay ask composes from THE one nudge source (empty for
+// autopay families — this path only serves non-autopay families today, but
+// the guard lives in the block, not in the caller's control flow).
 function t2Extras(opts: {
   monthLabel: string
   total: number
   hostedUrl: string
   dueLabel: string
-  autopayLink: string | null
+  nudgeFamily: { id: string; autopay?: boolean | null } | null
   reminder?: boolean
 }) {
   return {
@@ -196,9 +200,7 @@ function t2Extras(opts: {
     invoiceIntroBlock: opts.reminder
       ? `<p>Just a nudge that the ${opts.monthLabel} tutoring invoice (<strong>${fmtMoney(opts.total)}</strong>, due ${opts.dueLabel}) is still open. If it's already on its way — thank you, ignore this!</p>`
       : `<p>Your invoice for ${opts.monthLabel} tutoring is ready: <strong>${fmtMoney(opts.total)}</strong>, due by <strong>${opts.dueLabel}</strong>.</p>`,
-    autopayBlock: opts.autopayLink
-      ? `<p style="color:#64748b;font-size:13px">Prefer not to think about this each month? <a href="${opts.autopayLink}" style="color:#00AEEE">Set up autopay</a> and future invoices charge your saved card or bank account automatically.</p>`
-      : '',
+    autopayBlock: opts.nudgeFamily ? autopayNudgeHtml(opts.nudgeFamily, 'invoice') : '',
   }
 }
 
@@ -297,7 +299,8 @@ async function issueHostedInvoice(
     total: Number(inv.total),
     hostedUrl: finalized.hosted_invoice_url ?? '',
     dueLabel: due.label,
-    autopayLink: `${appUrl()}/tutoring/autopay/${autopayToken(family.id)}`,
+    // PL-362: the ONE nudge block (empty for autopay families).
+    nudgeFamily: { id: family.id, autopay: family.autopay === true },
     contact,
   }
   const email = await renderRegistered(
@@ -590,7 +593,7 @@ export type CollectionSweepResult = {
 // the code twin sends the same copy shape until Scarlett flips it live).
 export async function sendPaymentReminder(
   inv: { id: string; period: string; total: number; due_at: string; stripe_hosted_invoice_url: string | null },
-  fam: { parent_first_name: string | null; parent_email: string; billing_email: string | null; billing_cc_emails: string[] | null },
+  fam: { id?: string; parent_first_name: string | null; parent_email: string; billing_email: string | null; billing_cc_emails: string[] | null; autopay?: boolean | null },
   contact: ContactInfo,
   dedupeKey: string
 ): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
@@ -604,6 +607,9 @@ export async function sendPaymentReminder(
       month: 'long',
       day: 'numeric',
     }),
+    // PL-362: THE one autopay nudge — a natural fit on a payment reminder
+    // ("never think about this again"); '' for autopay families.
+    nudgeFamily: fam.id ? { id: fam.id, autopay: fam.autopay === true } : null,
     contact,
   }
   const email = await renderRegistered(
@@ -614,6 +620,7 @@ export async function sendPaymentReminder(
       invoiceTotal: fmtMoney(opts.total),
       invoiceDueDate: opts.dueLabel,
       invoiceUrl: opts.hostedUrl,
+      autopayBlock: opts.nudgeFamily ? autopayNudgeHtml(opts.nudgeFamily, 'invoice') : '',
       contactBlock: contactBlockHtml(contact),
     },
     () => t2bPaymentReminderEmail(opts)

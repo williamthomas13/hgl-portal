@@ -1,4 +1,5 @@
 import type { EnrollmentEmailContext, Audience } from './email'
+import { autopayNudgeCopyHtml } from './autopay-nudge'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
 import {
   coverageAlertDetails,
@@ -809,7 +810,8 @@ export const VARIABLES: Record<string, VariableDef> = {
   invoiceTotal: { description: 'Invoice total, e.g. $620.00', resolve: (_c, _a, e) => e.invoiceTotal ?? '—' },
   invoiceDueDate: { description: 'Due date, e.g. "August 31"', resolve: (_c, _a, e) => e.invoiceDueDate ?? '—' },
   invoiceUrl: { description: 'Hosted invoice (view & pay) link', resolve: (_c, _a, e) => e.invoiceUrl ?? '#' },
-  autopayBlock: { description: 'Autopay pitch paragraph (may be empty)', block: true, resolve: (_c, _a, e) => e.autopayBlock ?? '' },
+  // PL-362: THE one autopay nudge — composes empty for autopay families.
+  autopayBlock: { description: 'The autopay nudge (ONE source; empty for families already on autopay)', block: true, resolve: (_c, _a, e) => e.autopayBlock ?? '' },
   paymentFailBlock: { description: 'T4: what failed + what happens next', block: true, resolve: (_c, _a, e) => e.paymentFailBlock ?? '' },
   payButtonBlock: { description: 'T4: pay-now button (may be empty)', block: true, resolve: (_c, _a, e) => e.payButtonBlock ?? '' },
   changeListBlock: { description: 'T3: before/after change list', block: true, resolve: (_c, _a, e) => e.changeListBlock ?? '' },
@@ -1357,8 +1359,8 @@ export const SAMPLE_EXTRA: ExtraVars = {
   invoiceUrl: 'https://hgl-portal.vercel.app/test-link',
   invoiceIntroBlock:
     '<p>Your invoice for September 2026 tutoring is ready: <strong>$480.00</strong>, due by <strong>September 30</strong>.</p>',
-  autopayBlock:
-    '<p style="color:#64748b;font-size:13px">Prefer not to think about this each month? <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Set up autopay</a> and future invoices charge your saved card or bank account automatically.</p>',
+  // PL-362: COMPUTED from the one nudge source (PL-96 drift guard).
+  autopayBlock: autopayNudgeCopyHtml('https://hgl-portal.vercel.app/test-link', 'invoice'),
 
   // T4 (payment failed) — attempt 3 of 3: retries exhausted, pay-now shown
   paymentFailBlock:

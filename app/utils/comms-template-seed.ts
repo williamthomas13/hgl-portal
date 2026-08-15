@@ -547,6 +547,8 @@ See you there? See you there.`,
 
 {blockContinueOutcomeBlock}
 
+{autopayBlock}
+
 Thanks!
 
 Higher Ground Learning`,
@@ -1007,6 +1009,8 @@ Here's the plan for {tutoringMonthLabel} — same as always unless you'd like a 
 
 If we don't hear from you within {autoconfirmDays} days, the schedule confirms automatically and stays exactly as shown — same as our usual policy (schedule changes for the coming month need to reach us before month-end).
 
+{autopayBlock}
+
 {contactBlock}`,
   },
   {
@@ -1026,6 +1030,8 @@ We sent over {studentNames}'s {tutoringMonthLabel} tutoring schedule a couple of
 [button:Review the schedule]({confirmLink})
 
 No action needed to keep everything as-is — the schedule confirms automatically in {daysLeft} days.
+
+{autopayBlock}
 
 {contactBlock}`,
   },
@@ -1072,6 +1078,8 @@ The {tutoringMonthLabel} tutoring invoice (**{invoiceTotal}**, due {invoiceDueDa
 [button:View & pay invoice]({invoiceUrl})
 
 Pay by card or directly from a US bank account (ACH) — both options are on the invoice page. If the payment is already on its way — thank you, please ignore this. And if anything on the invoice looks off, just reply and we'll sort it out.
+
+{autopayBlock}
 
 {contactBlock}`,
   },
@@ -1194,7 +1202,7 @@ You can reschedule any single session yourself from your parent portal — no ne
 
 **The one rule worth remembering:** with 24+ hours' notice, rescheduling a session is always free — inside 24 hours the prepaid session is forfeited or carries a $40/hour reschedule fee, because {tutorFirstName} is still paid for the reserved time.
 
-Prefer not to think about invoices? [Set up autopay]({autopayLink}) and each month's confirmed invoice charges your saved card or bank account automatically.
+{autopayBlock}
 
 **One more thing: we set up access for your family in the [Higher Ground Learning portal]({portalLink}).** Inside you'll find {studentFirstName}'s schedule, your receipts and invoices, session notes on what {studentFirstName} worked on, one-click rescheduling for any single session, and a calendar feed you can subscribe to. Signing in never needs a password — just this email address.
 

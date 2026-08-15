@@ -7,6 +7,7 @@ import {
   verifyScheduleApproveToken,
 } from '../../../utils/schedule-approval'
 import { processGcalQueue } from '../../../utils/gcal-sync'
+import { autopayToken } from '../../../utils/tutoring-billing'
 import { loadContactInfo } from '../../../utils/tutoring-emails'
 import { PublicNoticeCard } from '../../../components/PublicNotice'
 import ConfirmActions from './confirm-actions'
@@ -72,14 +73,32 @@ export default async function ConfirmSchedulePage({
         you&apos;d like to talk it through sooner, just reply to our email or give us a call.
       </div>
     ) : alreadyActive ? (
-      <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-        <strong>
-          {result === 'approved'
-            ? 'Locked in — thank you!'
-            : "This schedule is confirmed — you're all set."}
-        </strong>{' '}
-        A welcome email with calendar links and the PDF schedule is on its way (or already in your
-        inbox), and every session is in your parent portal.
+      <div className="space-y-3">
+        <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
+          <strong>
+            {result === 'approved'
+              ? 'Locked in — thank you!'
+              : "This schedule is confirmed — you're all set."}
+          </strong>{' '}
+          A welcome email with calendar links and the PDF schedule is on its way (or already in your
+          inbox), and every session is in your parent portal.
+        </div>
+        {/* PL-362 C: the highest-intent moment — the family just said yes.
+            Existing consent page unchanged; this is placement only. Never
+            shown to families already on autopay. */}
+        {!e.familyAutopay && (
+          <div className="p-4 rounded bg-blue-50 border border-blue-200 text-sm text-hgl-slate">
+            <strong>While you&apos;re here:</strong> prefer not to think about invoices? Set up
+            autopay once and each month&apos;s confirmed invoice charges your saved card or bank
+            account automatically.{' '}
+            <a
+              href={`/tutoring/autopay/${autopayToken(e.familyId)}`}
+              className="text-hgl-blue underline font-semibold"
+            >
+              Set up autopay →
+            </a>
+          </div>
+        )}
       </div>
     ) : e.status !== 'pending_parent_confirmation' ? (
       <div className="p-4 rounded bg-gray-50 border border-gray-200 text-gray-700 text-sm">

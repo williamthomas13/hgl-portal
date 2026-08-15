@@ -260,7 +260,7 @@ export async function POST(req: Request) {
       }
       const { data: full } = await supabase
         .from('tutoring_invoices')
-        .select('id, period, total, due_at, stripe_hosted_invoice_url, families ( parent_first_name, parent_email, billing_email, billing_cc_emails )')
+        .select('id, period, total, due_at, stripe_hosted_invoice_url, families ( id, parent_first_name, parent_email, billing_email, billing_cc_emails, autopay )')
         .eq('id', invoice.id)
         .maybeSingle()
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */

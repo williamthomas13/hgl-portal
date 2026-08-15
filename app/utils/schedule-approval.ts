@@ -65,6 +65,7 @@ export type ApprovalEngagement = {
   parentEmail: string
   ccEmails: string[] | undefined
   familyId: string
+  familyAutopay: boolean
   familyTz: string
   tutorName: string
   tutorFirst: string
@@ -77,7 +78,7 @@ export async function loadApprovalEngagement(id: string): Promise<ApprovalEngage
     .from('tutoring_engagements')
     .select(
       `id, status, recurrence, start_date, approval_requested_at, approval_nudge_count,
-       students ( first_name, families ( id, parent_first_name, parent_email, billing_cc_emails, timezone ) ),
+       students ( first_name, families ( id, parent_first_name, parent_email, billing_cc_emails, timezone, autopay ) ),
        subjects ( name ),
        instructors ( name, timezone )`
     )
@@ -101,6 +102,7 @@ export async function loadApprovalEngagement(id: string): Promise<ApprovalEngage
     parentEmail: family.parent_email,
     ccEmails: family.billing_cc_emails?.length ? family.billing_cc_emails : undefined,
     familyId: family.id,
+    familyAutopay: family.autopay === true,
     familyTz: family.timezone ?? tutor.timezone ?? 'America/Denver',
     tutorName,
     tutorFirst: tutorName.split(' ')[0],

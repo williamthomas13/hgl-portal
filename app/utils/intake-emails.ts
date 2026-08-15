@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT } from './email'
 import { loadContactInfo, contactBlockHtml, type ContactInfo } from './tutoring-emails'
 import { autopayToken, tutoringIcsToken } from './tutoring-billing'
+import { autopayNudgeHtml } from './autopay-nudge'
 import { agreementToken } from './intake'
 import { renderRegistered } from './comms-registered'
 
@@ -123,7 +124,7 @@ export async function sendWelcomeHandoff(
     .select(
       `id, location,
        students ( first_name,
-         families ( id, parent_first_name, parent_email, billing_cc_emails, timezone ) ),
+         families ( id, parent_first_name, parent_email, billing_cc_emails, timezone, autopay ) ),
        subjects ( name ),
        instructors ( name, email, timezone, default_meeting_link )`
     )
@@ -231,9 +232,7 @@ export async function sendWelcomeHandoff(
      with 24+ hours' notice, rescheduling a session is always free — inside 24 hours the
      prepaid session is forfeited or carries a $40/hour reschedule fee, because
      ${tutorFirst} is still paid for the reserved time.</p>
-     <p style="color:#64748b;font-size:13px">Prefer not to think about invoices?
-     <a href="${autopayLink}" style="color:#00AEEE">Set up autopay</a> and each month's
-     confirmed invoice charges your saved card or bank account automatically.</p>
+     ${autopayNudgeHtml({ id: family.id, autopay: family.autopay === true }, 'welcome')}
      <p><strong>One more thing: we set up access for your family in
      the <a href="${portalLink}" style="color:#00AEEE">Higher Ground Learning portal</a>.</strong>
      Inside you'll find ${student.first_name}'s schedule, your receipts
@@ -276,7 +275,10 @@ export async function sendWelcomeHandoff(
           : `<p>We'll send the session schedule shortly — each month you'll get the next
              month's plan by email to confirm or adjust.</p>`,
       agreementsLink,
+      // {autopayLink} keeps resolving for the live v4 body; v5 moves to the
+      // ONE composed {autopayBlock} (empty for autopay families).
       autopayLink,
+      autopayBlock: autopayNudgeHtml({ id: family.id, autopay: family.autopay === true }, 'welcome'),
       schedulePdfLink,
       contactBlock: contactBlockHtml(contact),
     },
