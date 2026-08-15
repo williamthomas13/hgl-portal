@@ -12,7 +12,7 @@ export async function GET() {
   if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
   const { data, error } = await supabase
     .from('site_content_blocks')
-    .select('key, section, heading, body_markdown, sort_order, updated_at, updated_by')
+    .select('key, section, heading, body_markdown, sort_order, image, updated_at, updated_by')
     .order('section')
     .order('sort_order')
   if (error) {

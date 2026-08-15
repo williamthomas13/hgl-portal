@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 
 // PL-348: Settings → Class pages — the shared content every public /c/{slug}
 // page renders below its class-specific top. Edit once, every class page
@@ -13,8 +14,150 @@ type Block = {
   heading: string
   body_markdown: string
   sort_order: number
+  image: unknown
   updated_at: string
   updated_by: string | null
+}
+
+// PL-351: per-block image controls — upload (alt text REQUIRED first),
+// replace, alt/layout edits, and remove behind an inline confirm.
+function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; image: unknown; onChanged: () => void }) {
+  const img = parseClassPageImage(image)
+  const [alt, setAlt] = useState(img?.alt ?? '')
+  const [layout, setLayout] = useState(img?.layout ?? 'right')
+  const [busy, setBusy] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  async function upload(file: File) {
+    setBusy(true)
+    setMsg('')
+    try {
+      const body = new FormData()
+      body.set('target', 'block')
+      body.set('key', blockKey)
+      body.set('file', file)
+      body.set('alt', alt)
+      body.set('layout', layout)
+      const res = await fetch('/api/admin/site-content/image', { method: 'POST', body })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) setMsg(json.error ?? 'Upload failed.')
+      else onChanged()
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function saveMeta() {
+    setBusy(true)
+    setMsg('')
+    try {
+      const res = await fetch('/api/admin/site-content/image', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'block', key: blockKey, alt, layout }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) setMsg(json.error ?? 'Saving failed.')
+      else onChanged()
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function remove() {
+    setBusy(true)
+    setMsg('')
+    try {
+      const res = await fetch('/api/admin/site-content/image', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'block', key: blockKey }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) setMsg(json.error ?? 'Removing failed.')
+      else {
+        setConfirmRemove(false)
+        onChanged()
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 border-t border-dashed border-gray-200 pt-2">
+      <div className="flex flex-wrap items-start gap-3">
+        {img ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageAttrs(img).src}
+            alt={img.alt}
+            className="h-20 w-auto rounded border border-gray-200 object-cover"
+          />
+        ) : (
+          <span className="text-xs text-gray-400 italic self-center">no image — text-only block</span>
+        )}
+        <div className="flex-1 min-w-56 space-y-1.5">
+          <input
+            type="text"
+            value={alt}
+            onChange={(e) => setAlt(e.target.value)}
+            placeholder="Alt text (required) — describe the image"
+            className="w-full border border-gray-300 rounded p-1.5 text-xs"
+            aria-label={`Image alt text for ${blockKey}`}
+          />
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={layout}
+              onChange={(e) => setLayout(e.target.value as 'left' | 'right' | 'hero')}
+              className="border border-gray-300 rounded p-1 bg-white"
+              aria-label={`Image layout for ${blockKey}`}
+            >
+              <option value="left">Image left of the text</option>
+              <option value="right">Image right of the text</option>
+              <option value="hero">Full width above the text</option>
+            </select>
+            <label className={`underline cursor-pointer ${alt.trim() ? 'text-hgl-blue' : 'text-gray-400 cursor-not-allowed'}`}>
+              {img ? 'replace image' : 'upload image'}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                disabled={busy || !alt.trim()}
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  e.target.value = ''
+                  if (f) upload(f)
+                }}
+              />
+            </label>
+            {img && (
+              <button onClick={saveMeta} disabled={busy || !alt.trim()} className="text-hgl-blue underline disabled:opacity-40">
+                save alt/layout
+              </button>
+            )}
+            {img && !confirmRemove && (
+              <button onClick={() => setConfirmRemove(true)} disabled={busy} className="text-red-600 underline">
+                remove…
+              </button>
+            )}
+          </div>
+          {!alt.trim() && <p className="text-xs text-gray-400">Add alt text first — uploads without it are refused.</p>}
+          {confirmRemove && (
+            <div className="bg-red-50 border border-red-200 rounded p-2 text-xs space-x-2">
+              <span className="text-red-900">Remove this image from every class page?</span>
+              <button onClick={remove} disabled={busy} className="font-bold text-red-700 underline">
+                Remove it
+              </button>
+              <button onClick={() => setConfirmRemove(false)} disabled={busy} className="text-gray-600 underline">
+                Keep it
+              </button>
+            </div>
+          )}
+          {msg && <p className="text-xs text-red-600">{msg}</p>}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const SECTION_LABELS: Record<string, string> = {
@@ -148,6 +291,7 @@ export default function SiteContentPanel() {
                       Last changed {new Date(b.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
                       {b.updated_by ? ` by ${b.updated_by}` : ' (seeded copy — not yet reviewed)'}
                     </p>
+                    <BlockImageControls blockKey={b.key} image={b.image} onChanged={load} />
                   </div>
                 )
               })}

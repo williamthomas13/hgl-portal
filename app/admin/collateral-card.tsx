@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
 import { flyerIntroDefault } from '../utils/collateral-shared'
+import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { DateHint } from './ui'
 import type { School } from './class-wizard'
 
@@ -23,6 +24,128 @@ export type CollateralFields = {
   promo_deadline: string | null
   /** PL-348: hero bullets on the public /c/{slug} page, one per line. */
   selling_bullets?: string | null
+  /** PL-351: the class's hero photo descriptor (class-page-images shape). */
+  hero_image?: unknown
+}
+
+// PL-351: the per-class hero photo — upload (alt required), replace, remove
+// with an inline confirm. Writes go through the staff-gated image route.
+function HeroImageControl({
+  classId,
+  image,
+  onChanged,
+}: {
+  classId: string
+  image: unknown
+  onChanged: () => void
+}) {
+  const img = parseClassPageImage(image)
+  const [alt, setAlt] = useState(img?.alt ?? '')
+  const [busy, setBusy] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  async function call(init: RequestInit) {
+    setBusy(true)
+    setMsg('')
+    try {
+      const res = await fetch('/api/admin/site-content/image', init)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg(json.error ?? 'That image change failed.')
+        return false
+      }
+      onChanged()
+      return true
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-start gap-3 border border-gray-200 rounded p-2.5">
+      {img ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageAttrs(img).src} alt={img.alt} className="h-16 w-auto rounded border border-gray-200 object-cover" />
+      ) : (
+        <span className="text-xs text-gray-400 italic self-center">no photo — the page shows the branded hero alone</span>
+      )}
+      <div className="flex-1 min-w-56 space-y-1.5 text-xs">
+        <input
+          type="text"
+          value={alt}
+          onChange={(e) => setAlt(e.target.value)}
+          placeholder="Alt text (required) — describe the photo"
+          className="w-full border border-gray-300 rounded p-1.5"
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <label className={`underline cursor-pointer ${alt.trim() ? 'text-hgl-blue' : 'text-gray-400 cursor-not-allowed'}`}>
+            {img ? 'replace photo' : 'upload photo'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              disabled={busy || !alt.trim()}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (!f) return
+                const body = new FormData()
+                body.set('target', 'class-hero')
+                body.set('classId', classId)
+                body.set('file', f)
+                body.set('alt', alt)
+                call({ method: 'POST', body })
+              }}
+            />
+          </label>
+          {img && (
+            <button
+              onClick={() =>
+                call({
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ target: 'class-hero', classId, alt }),
+                })
+              }
+              disabled={busy || !alt.trim()}
+              className="text-hgl-blue underline disabled:opacity-40"
+            >
+              save alt text
+            </button>
+          )}
+          {img && !confirmRemove && (
+            <button onClick={() => setConfirmRemove(true)} disabled={busy} className="text-red-600 underline">
+              remove…
+            </button>
+          )}
+        </div>
+        {confirmRemove && (
+          <div className="bg-red-50 border border-red-200 rounded p-2 space-x-2">
+            <span className="text-red-900">Remove the hero photo from this class&apos;s public page?</span>
+            <button
+              onClick={async () => {
+                const ok = await call({
+                  method: 'DELETE',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ target: 'class-hero', classId }),
+                })
+                if (ok) setConfirmRemove(false)
+              }}
+              disabled={busy}
+              className="font-bold text-red-700 underline"
+            >
+              Remove it
+            </button>
+            <button onClick={() => setConfirmRemove(false)} disabled={busy} className="text-gray-600 underline">
+              Keep it
+            </button>
+          </div>
+        )}
+        {msg && <p className="text-red-600">{msg}</p>}
+      </div>
+    </div>
+  )
 }
 
 export default function CollateralCard({
@@ -513,6 +636,16 @@ export default function CollateralCard({
             className="mt-1 w-full border rounded p-1.5"
           />
         </div>
+        {/* PL-351: the class's own hero photo on the public page (optional;
+            alt text required). Ship-dark guard like selling_bullets. */}
+        {'hero_image' in fields && (
+          <div className="col-span-3">
+            <label className="block text-xs text-gray-600 mb-1">
+              Public page hero photo — shown at the top of the class page (optional)
+            </label>
+            <HeroImageControl classId={classId} image={fields.hero_image} onChanged={onSaved} />
+          </div>
+        )}
         {/* PL-348: hero bullets for the public /c/{slug} page. Ship-dark
             guard: the field only renders once the migration has landed
             (the loaded row carries the key), matching the save guard. */}

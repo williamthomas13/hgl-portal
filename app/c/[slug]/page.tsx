@@ -14,6 +14,7 @@ import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, renderSiteMarkdown } from '../../utils/site-md'
 import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
 import ClassPageAnalytics from './analytics'
+import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
 
 // PL-348: the public class page — the portal-hosted replacement for the
 // per-class Squarespace pages (Option A). Top half is CLASS-SPECIFIC and
@@ -65,7 +66,7 @@ const loadPage = cache(async (slug: string) => {
   try {
     const { data } = await supabase
       .from('site_content_blocks')
-      .select('key, section, heading, body_markdown, sort_order')
+      .select('key, section, heading, body_markdown, sort_order, image')
       .order('section')
       .order('sort_order')
     blocks = (data as any[]) ?? []
@@ -85,6 +86,34 @@ function daysUntil(dateIso: string, timezone: string): number {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
   const ms = Date.parse(`${dateIso.slice(0, 10)}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)
   return Math.round(ms / 86_400_000)
+}
+
+/** PL-351: a block/hero image — responsive srcset from the pre-generated
+ *  variants, explicit dimensions so text never reflows, lazy below the fold.
+ *  A missing or malformed descriptor renders NOTHING (clean text block). */
+function BlockImg({
+  image,
+  sizes,
+  eager = false,
+  className = '',
+}: {
+  image: ClassPageImage | null
+  sizes: string
+  eager?: boolean
+  className?: string
+}) {
+  if (!image) return null
+  const attrs = imageAttrs(image)
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      {...attrs}
+      sizes={sizes}
+      loading={eager ? undefined : 'lazy'}
+      decoding="async"
+      className={`w-full h-auto ${className}`}
+    />
+  )
 }
 
 /** "16:00[:00]" wall-clock → "4:00 PM". */
@@ -161,6 +190,8 @@ export default async function PublicClassPage({
   }
 
   const accent = usableAccent(school?.accent_color)
+  // PL-351: per-class hero photo (optional; missing = no frame at all).
+  const heroImage = parseClassPageImage(cls.hero_image)
   const bullets = String(cls.selling_bullets ?? '')
     .split('\n')
     .map((b: string) => b.replace(/^[-•]\s*/, '').trim())
@@ -244,6 +275,16 @@ export default async function PublicClassPage({
           <p className="mt-3 text-sm text-white/90">
             Registration closes {formatDateFull(String(registrationClose).slice(0, 10))} — {countdown}.
           </p>
+          {/* PL-351: the class's own photo rides inside the hero, eager (top
+              of page) with explicit dimensions — never a reflow. */}
+          {heroImage && (
+            <BlockImg
+              image={heroImage}
+              sizes="(min-width: 768px) 688px, 100vw"
+              eager
+              className="rounded-lg shadow-md mt-6"
+            />
+          )}
         </div>
       </section>
 
@@ -308,6 +349,13 @@ export default async function PublicClassPage({
                   id={b.key === 'included-instruction' ? 'curriculum' : undefined}
                   data-section={b.key === 'included-instruction' ? 'curriculum' : undefined}
                 >
+                  {/* PL-351: card images sit on top regardless of the
+                      layout hint — the two-column card grid has no side. */}
+                  <BlockImg
+                    image={parseClassPageImage(b.image)}
+                    sizes="(min-width: 768px) 322px, calc(100vw - 80px)"
+                    className="rounded mb-3"
+                  />
                   <h3 className="font-bold text-hgl-slate mb-2">{b.heading}</h3>
                   <div className="space-y-3 text-sm" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(b.body_markdown) }} />
                 </div>
@@ -316,12 +364,37 @@ export default async function PublicClassPage({
           </section>
         )}
 
-        {instructors && (
-          <section id="instructors" data-section="instructors">
-            <h2 className="text-2xl font-bold text-hgl-slate mb-3">{instructors.heading}</h2>
-            <div className="space-y-3" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(instructors.body_markdown) }} />
-          </section>
-        )}
+        {instructors &&
+          (() => {
+            // PL-351: standalone sections honor the layout hint — image-left,
+            // image-right (text beside it from md up; stacked on mobile), or
+            // full-width above the text.
+            const img = parseClassPageImage(instructors.image)
+            const beside = img && (img.layout === 'left' || img.layout === 'right')
+            const body = (
+              <div className="space-y-3" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(instructors.body_markdown) }} />
+            )
+            return (
+              <section id="instructors" data-section="instructors">
+                <h2 className="text-2xl font-bold text-hgl-slate mb-3">{instructors.heading}</h2>
+                {img && img.layout === 'hero' && (
+                  <BlockImg image={img} sizes="(min-width: 768px) 736px, 100vw" className="rounded-lg mb-4" />
+                )}
+                {beside ? (
+                  <div className="md:grid md:grid-cols-2 md:gap-6 md:items-center">
+                    <BlockImg
+                      image={img}
+                      sizes="(min-width: 768px) 356px, 100vw"
+                      className={`rounded-lg mb-4 md:mb-0 ${img.layout === 'right' ? 'md:order-2' : ''}`}
+                    />
+                    {body}
+                  </div>
+                ) : (
+                  body
+                )}
+              </section>
+            )
+          })()}
 
         {faqBlocks.length > 0 && (
           <section id="faq" data-section="faq">
