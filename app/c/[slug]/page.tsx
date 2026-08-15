@@ -108,11 +108,16 @@ const loadPage = cache(async (slug: string) => {
   try {
     const { data } = await supabase
       .from('instructors')
-      .select('id, name, credential, headshot, team_order')
+      .select('id, name, public_name, credential, headshot, team_order')
       .eq('featured_on_classes', true)
       .order('team_order', { ascending: true, nullsFirst: false })
       .order('name')
-    featuredInstructors = (data as any[]) ?? []
+    // PL-365: public surfaces render public_name when set (internal row
+    // name stays authoritative for timecards/QBO).
+    featuredInstructors = ((data as any[]) ?? []).map((p) => ({
+      ...p,
+      name: (typeof p.public_name === 'string' && p.public_name.trim()) || p.name,
+    }))
   } catch {
     featuredInstructors = []
   }

@@ -37,11 +37,16 @@ function initials(name: string): string {
 export default async function TeamPage() {
   const { data } = await supabase
     .from('instructors')
-    .select('id, name, credential, bio, headshot, team_order')
+    .select('id, name, public_name, credential, bio, headshot, team_order')
     .eq('show_on_team', true)
     .order('team_order', { ascending: true, nullsFirst: false })
     .order('name')
-  const people = ((data as any[]) ?? [])
+  // PL-365: public surfaces render public_name when set (the internal row
+  // name stays authoritative for timecards/QBO — never renamed).
+  const people = ((data as any[]) ?? []).map((p) => ({
+    ...p,
+    name: (typeof p.public_name === 'string' && p.public_name.trim()) || p.name,
+  }))
 
   // PL-359 A: Person markup from the same profile rows the page renders.
   const jsonLd = {

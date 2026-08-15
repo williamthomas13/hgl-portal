@@ -153,6 +153,9 @@ export default function InstructorEditor({
   // PL-274 F: family-facing intro paragraph for open-class details emails.
   const [bio, setBio] = useState('')
   // PL-358: the public profile — /team and the class pages render from these.
+  // PL-365: public_name = what the public pages display; the row name stays
+  // internal (timecards/QBO matching).
+  const [publicName, setPublicName] = useState('')
   const [credential, setCredential] = useState('')
   const [showOnTeam, setShowOnTeam] = useState(false)
   const [teamOrder, setTeamOrder] = useState('')
@@ -208,7 +211,7 @@ export default function InstructorEditor({
               `id, email, name, phone, bio, subjects, subjects_with_prep, timezone, google_calendar_id,
                default_meeting_link, offer_windows, pay_type_titles, pay_type, calendar_color,
                pref_notes_reminders, pref_class_digests, pref_fyi_copies,
-               credential, show_on_team, team_order, featured_on_classes, headshot`
+               credential, public_name, show_on_team, team_order, featured_on_classes, headshot`
             )
             .eq('id', instructorId)
             .maybeSingle(),
@@ -221,6 +224,7 @@ export default function InstructorEditor({
           setPhone(row.phone ?? '')
           setBio((row as { bio?: string | null }).bio ?? '')
           setCredential((row as any).credential ?? '')
+          setPublicName((row as any).public_name ?? '')
           setShowOnTeam((row as any).show_on_team === true)
           setTeamOrder((row as any).team_order != null ? String((row as any).team_order) : '')
           setFeaturedOnClasses((row as any).featured_on_classes === true)
@@ -271,6 +275,7 @@ export default function InstructorEditor({
       // PL-358: public-profile fields (headshot saves via its own upload
       // control, not here).
       credential: credential.trim() || null,
+      public_name: publicName.trim() || null,
       show_on_team: showOnTeam,
       team_order: teamOrder.trim() === '' ? null : Math.trunc(Number(teamOrder)),
       featured_on_classes: featuredOnClasses,
@@ -386,6 +391,23 @@ export default function InstructorEditor({
               <legend className="text-xs font-semibold text-hgl-slate px-1">
                 Public profile — the team page &amp; class pages render from this
               </legend>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-xs text-gray-600 font-semibold mb-1">
+                    Public display name
+                  </label>
+                  <input
+                    value={publicName}
+                    onChange={(e) => setPublicName(e.target.value)}
+                    placeholder={name.trim() ? `blank = "${name.trim()}"` : 'blank = the name above'}
+                    className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    Shown on the team page &amp; class pages. The name above stays as-is
+                    everywhere internal (timecards, payroll matching).
+                  </p>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-600 font-semibold mb-1">
