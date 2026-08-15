@@ -63,6 +63,7 @@ export default async function ParentView({
       enrollments (
         id, payment_status, enrolled_at, paid_at, amount_paid, stripe_payment_intent_id,
         enrollment_addons ( id, hours, price_paid, tutoring_timing, tutoring_packages ( name ) ),
+        product_orders ( id, status, quantity, tracking_url, shipped_at, products ( name ) ),
         attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early ),
         classes (
           id, slug, status, class_type, default_location, delivery_mode,
@@ -348,6 +349,17 @@ export default async function ParentView({
                   hours: Number(a.hours),
                   pricePaid: Number(a.price_paid),
                 }))
+                // PL-364: notebook fulfillment, plainly — never a silent order.
+                const productOrders = (e.product_orders ?? [])
+                  .filter((po: any) => !['pending_payment', 'cancelled', 'refunded'].includes(po.status))
+                  .map((po: any) => ({
+                    id: po.id,
+                    name: one<any>(po.products)?.name ?? 'Notebook',
+                    quantity: Number(po.quantity),
+                    status: po.status,
+                    trackingUrl: po.tracking_url ?? null,
+                    shippedAt: po.shipped_at ?? null,
+                  }))
                 const classScores = scores.filter((s) => s.class_id === cls.id)
                 // "details coming soon" mirrors the #4 hold rule — it's a
                 // promise, so only make it for enrollments where details are
@@ -376,6 +388,27 @@ export default async function ParentView({
                           {/* family-facing never says "TBD" (addendum §7.3) */}
                           {` · Instructor: ${one<any>(cls.instructors)?.name ?? one<any>(cls.instructors)?.email ?? 'to be announced'}`}
                         </p>
+                        {productOrders.map((po: any) => (
+                          <p key={po.id} className="text-sm text-gray-600">
+                            {po.name}
+                            {po.quantity > 1 ? ` × ${po.quantity}` : ''}:{' '}
+                            {po.status === 'shipped' ? (
+                              <>
+                                shipped{po.shippedAt ? ` ${formatDate(String(po.shippedAt).slice(0, 10))}` : ''}
+                                {po.trackingUrl && (
+                                  <>
+                                    {' — '}
+                                    <a href={po.trackingUrl} target="_blank" rel="noopener noreferrer" className="text-hgl-blue underline">
+                                      track the package
+                                    </a>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              'being prepared — tracking will appear here when it ships'
+                            )}
+                          </p>
+                        ))}
                         {(cls.default_location || showPlaceholders) && (
                           <p className="text-sm text-gray-600">
                             {cls.delivery_mode === 'online' ? 'Meeting link' : 'Classroom'}:{' '}

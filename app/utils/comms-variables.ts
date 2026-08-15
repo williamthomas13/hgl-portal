@@ -1100,6 +1100,10 @@ export const VARIABLES: Record<string, VariableDef> = {
       const addonLines = c.addons
         .map((a) => `<br/>${a.name} — 1-on-1 Tutoring — $${a.pricePaid}`)
         .join('')
+        // PL-364: physical add-ons in the same recap (money facts from rows).
+        + (c.products ?? [])
+          .map((p) => `<br/>${p.name}${p.quantity > 1 ? ` × ${p.quantity}` : ''}${p.pricePaid != null ? ` — $${p.pricePaid}` : ''} (ships to the address you gave)`)
+          .join('')
       // PL-75: matches #0-P v4's "Enrollment Confirmed" subject.
       return `<h3 style="color:#334155">Enrollment Summary</h3>
       <p>${c.className} — $${c.price}${addonLines}

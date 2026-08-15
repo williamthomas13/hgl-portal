@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { validateFollowOnDiscount } from '../../utils/follow-on'
 import { classTutoringTier } from '../../utils/tutoring-tier'
+import { printfulConfigured, printfulCountries } from '../../utils/printful'
 
 // Stripe client. We don't pin apiVersion here — the installed SDK
 // version ships with a default that matches its TypeScript types.
@@ -29,6 +30,8 @@ export async function POST(request: Request) {
       foToken,
       foEnrollmentId,
       discountCode,
+      products: productPicks,
+      shipping,
     }: {
       enrollmentId?: string;
       enrollmentIds?: string[];
@@ -40,6 +43,13 @@ export async function POST(request: Request) {
       foEnrollmentId?: string | null;
       /** PL-279: the typed-code fallback. */
       discountCode?: string | null;
+      /** PL-364: physical add-on picks — server re-prices from the products table. */
+      products?: { productId: string; quantity: number }[];
+      /** PL-364: shipping address — required when a physical product is in the order. */
+      shipping?: {
+        name?: string; address1?: string; address2?: string;
+        city?: string; state?: string; zip?: string; country?: string;
+      };
     } = body;
 
     const ids: string[] = Array.isArray(enrollmentIds) && enrollmentIds.length > 0
@@ -189,6 +199,89 @@ export async function POST(request: Request) {
       }
     }
 
+    // PL-364: physical add-on products — server-priced, shipping address
+    // required, coverage checked against Printful's own country list so an
+    // unsupported destination refuses HERE, never at fulfillment. Product
+    // money rides the FIRST enrollment's cart total (one family, one cart);
+    // the product_orders rows carry the per-product money facts.
+    const pickedProducts: { row: any; quantity: number }[] = [];
+    if (Array.isArray(productPicks) && productPicks.length > 0) {
+      if (!printfulConfigured()) {
+        return NextResponse.json(
+          { error: 'Physical add-ons are not available right now.' },
+          { status: 400 }
+        );
+      }
+      for (const pick of productPicks) {
+        const qty = Math.trunc(Number(pick?.quantity));
+        if (!pick?.productId || !(qty >= 1) || qty > 10) continue;
+        const { data: prod } = await supabase
+          .from('products')
+          .select('id, name, price, regular_price, physical, active')
+          .eq('id', pick.productId)
+          .eq('active', true)
+          .maybeSingle();
+        if (!prod) {
+          return NextResponse.json({ error: 'Product not found — reload the page and pick again.' }, { status: 400 });
+        }
+        pickedProducts.push({ row: prod, quantity: qty });
+      }
+      const anyPhysical = pickedProducts.some((p) => p.row.physical);
+      if (anyPhysical) {
+        const s = shipping ?? {};
+        if (!s.name?.trim() || !s.address1?.trim() || !s.city?.trim() || !s.country?.trim()) {
+          return NextResponse.json(
+            { error: 'A shipping address (name, street, city, country) is needed for the notebook order.' },
+            { status: 400 }
+          );
+        }
+        const countries = await printfulCountries();
+        if (countries.length > 0 && !countries.some((c) => c.code === s.country)) {
+          return NextResponse.json(
+            { error: `We can't ship notebooks to that country yet — remove the physical add-on to register, or contact us and we'll figure something out.` },
+            { status: 400 }
+          );
+        }
+      }
+      const primary = ids[0];
+      for (const p of pickedProducts) {
+        lineItems.push({
+          price_data: {
+            currency: 'usd',
+            product_data: { name: `${p.row.name}${p.quantity > 1 ? ` × ${p.quantity}` : ''}` },
+            unit_amount: Math.round(Number(p.row.price) * 100),
+          },
+          quantity: p.quantity,
+        });
+        perEnrollmentTotal[primary] = (perEnrollmentTotal[primary] ?? 0) + Number(p.row.price) * p.quantity;
+        // One row per enrollment+product — the Printful idempotency unit. A
+        // re-checkout (abandoned cart) updates the same row in place.
+        const { error: poErr } = await supabase.from('product_orders').upsert(
+          {
+            enrollment_id: primary,
+            product_id: p.row.id,
+            quantity: p.quantity,
+            price_paid: Number(p.row.price) * p.quantity,
+            regular_price_snapshot: p.row.regular_price != null ? Number(p.row.regular_price) : null,
+            ship_name: shipping?.name?.trim() ?? null,
+            ship_address1: shipping?.address1?.trim() ?? null,
+            ship_address2: shipping?.address2?.trim() || null,
+            ship_city: shipping?.city?.trim() ?? null,
+            ship_state: shipping?.state?.trim() || null,
+            ship_zip: shipping?.zip?.trim() || null,
+            ship_country: shipping?.country?.trim() ?? null,
+            status: 'pending_payment',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'enrollment_id,product_id' }
+        );
+        if (poErr) {
+          console.error('product_orders upsert failed:', poErr.message);
+          return NextResponse.json({ error: 'Could not record the notebook order — try again.' }, { status: 500 });
+        }
+      }
+    }
+
     // Metadata: single carts keep the legacy shape (enrollment_id +
     // package_id) so nothing downstream changes; sibling carts carry the
     // fan-out lists the webhook explodes (comma-joined — well under
@@ -215,6 +308,16 @@ export async function POST(request: Request) {
       // so we can update the exact enrollment(s) regardless of email collisions.
       metadata,
     });
+
+    // PL-364: stamp the session on the product rows too — the paid webhook
+    // flips exactly these to 'queued'.
+    if (pickedProducts.length > 0) {
+      await supabase
+        .from('product_orders')
+        .update({ stripe_session_id: session.id, updated_at: new Date().toISOString() })
+        .eq('enrollment_id', ids[0])
+        .eq('status', 'pending_payment');
+    }
 
     // Stamp the Stripe session id onto each enrollment immediately so the
     // webhook has a deterministic lookup key. PL-52: the add-on selection and

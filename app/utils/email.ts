@@ -96,6 +96,8 @@ export type EnrollmentEmailContext = {
   diagnosticDueDate: string
   /** Tutoring add-ons purchased with this enrollment. */
   addons: AddonRow[]
+  /** PL-364: physical add-on products (notebooks) bought with the registration. */
+  products?: { name: string; quantity: number; pricePaid: number | null; status: string; trackingUrl: string | null }[]
   marketingOptOut: boolean
   unsubscribeUrl: string
   /** PL-53b: the family's signed share-your-availability page. */
@@ -360,6 +362,9 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
   const addonLines = ctx.addons
     .map((a) => `<br/>${a.name} — 1-on-1 Tutoring — $${a.pricePaid}`)
     .join('')
+    + (ctx.products ?? [])
+      .map((p) => `<br/>${p.name}${p.quantity > 1 ? ` × ${p.quantity}` : ''}${p.pricePaid != null ? ` — $${p.pricePaid}` : ''} (ships to the address you gave)`)
+      .join('')
   const detail = (label: string, value: string | null) =>
     `<br/><strong>${label}:</strong> ${value && value.trim() ? value : '—'}`
   return {

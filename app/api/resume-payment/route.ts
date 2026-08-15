@@ -109,11 +109,30 @@ export async function GET(request: Request) {
     }
   }
 
+  // PL-364: rebuild the notebook picks the same way — the rows persisted at
+  // cart build (price frozen there; the address rides the same rows).
+  const { data: productRows } = await supabase
+    .from('product_orders')
+    .select('id, quantity, price_paid, products ( name )')
+    .eq('enrollment_id', enrollmentId)
+    .eq('status', 'pending_payment')
+  for (const po of (productRows as any[]) ?? []) {
+    const prod = Array.isArray(po.products) ? po.products[0] : po.products
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: { name: `${prod?.name ?? 'Add-on'}${po.quantity > 1 ? ` × ${po.quantity}` : ''}` },
+        unit_amount: Math.round((Number(po.price_paid) / po.quantity) * 100),
+      },
+      quantity: po.quantity,
+    })
+  }
+
   // PL-52 guard: compare the rebuilt total with what the parent originally
   // built. A price change between selection and resume must be a human
   // conversation, not a silent different charge — alert, then proceed with
   // the current (DB-priced) cart.
-  const rebuiltTotal = lineItems.reduce((sum, li) => sum + (li.price_data?.unit_amount ?? 0), 0) / 100
+  const rebuiltTotal = lineItems.reduce((sum, li) => sum + (li.price_data?.unit_amount ?? 0) * (li.quantity ?? 1), 0) / 100
   const originalTotal = pending?.pending_checkout_total != null ? Number(pending.pending_checkout_total) : null
   if (originalTotal != null && Math.abs(rebuiltTotal - originalTotal) > 0.005) {
     await sendAdminAlert({
@@ -148,6 +167,15 @@ export async function GET(request: Request) {
     .from('enrollments')
     .update({ stripe_session_id: session.id })
     .eq('id', enrollmentId)
+
+  // PL-364: the paid webhook flips product rows by session id — restamp.
+  if ((productRows ?? []).length > 0) {
+    await supabase
+      .from('product_orders')
+      .update({ stripe_session_id: session.id, updated_at: new Date().toISOString() })
+      .eq('enrollment_id', enrollmentId)
+      .eq('status', 'pending_payment')
+  }
 
   return NextResponse.redirect(session.url as string, 303)
 }

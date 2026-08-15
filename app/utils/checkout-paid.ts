@@ -5,6 +5,7 @@ import { renderEmail } from './comms-db-render'
 import { runEnrollmentCommsPass } from './comms-inline'
 import { sendInstructorMilestones } from './instructor-comms'
 import { emailBaseUrl } from './base-url'
+import { submitPrintfulOrder } from './printful'
 import {
   lateRegistrationWelcomeEmail,
   parentConfirmationEmail,
@@ -336,6 +337,28 @@ export async function handleClassCheckoutCompleted(
   const paidEnrollmentId = data[0].id
   const classId = data[0].class_id
   console.log(`Marked enrollment ${paidEnrollmentId} paid (session ${sessionId}).`)
+
+  // PL-364: money moved → the notebook order(s) attached to this enrollment
+  // flip to queued and push to Printful behind the response (the hourly
+  // sweep is the retry backstop; a webhook retry finds no pending rows and
+  // no-ops — enrollment+product is the idempotency unit).
+  try {
+    const { data: productRows } = await supabase
+      .from('product_orders')
+      .update({ status: 'queued', updated_at: new Date().toISOString() })
+      .eq('enrollment_id', paidEnrollmentId)
+      .eq('status', 'pending_payment')
+      .select('id')
+    for (const po of productRows ?? []) {
+      opts.defer(() =>
+        submitPrintfulOrder(po.id).catch((e) =>
+          console.error('Printful push failed (hourly sweep retries):', e)
+        )
+      )
+    }
+  } catch (e) {
+    console.error('product-order queue flip failed (sweep converges):', e)
+  }
 
   // Phase 6: money moved, so the sale must reach QuickBooks — even in the
   // paid-after-cancel race below (the refund receipt will pair with it).

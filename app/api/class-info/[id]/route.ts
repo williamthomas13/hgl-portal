@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { validateFollowOnDiscount } from '../../../utils/follow-on'
 import { classTutoringTier } from '../../../utils/tutoring-tier'
+import { printfulConfigured, printfulCountries, productPriceLabel } from '../../../utils/printful'
 
 // Public class details for the registration and calendar pages. Phase 3
 // removed the browser's direct DB access (anon has no RLS policies), so the
@@ -108,6 +109,32 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     upsellPitchMarkdown = null
   }
 
+  // PL-364: physical add-on products (the notebooks) — offered ONLY when
+  // Printful is configured (never sell what we can't fulfill), with the
+  // composed sale label and Printful's own shipping-coverage country list
+  // so unsupported destinations are honest at checkout, not at fulfillment.
+  let products: { id: string; name: string; price: number; priceLabel: string }[] = []
+  let shipCountries: { code: string; name: string }[] = []
+  if (printfulConfigured()) {
+    try {
+      const { data: prods } = await supabase
+        .from('products')
+        .select('id, name, price, regular_price, physical, sort_order')
+        .eq('active', true)
+        .order('sort_order')
+      products = ((prods as any[]) ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.price),
+        priceLabel: productPriceLabel(p),
+      }))
+      if (products.length > 0) shipCountries = await printfulCountries()
+      if (shipCountries.length === 0) products = [] // coverage unknowable → don't offer
+    } catch {
+      products = []
+    }
+  }
+
   return NextResponse.json({
     ...publicClass,
     cancelled,
@@ -117,5 +144,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     followOnDiscount,
     followOnDiscountNote,
     upsellPitchMarkdown,
+    products,
+    shipCountries,
   })
 }

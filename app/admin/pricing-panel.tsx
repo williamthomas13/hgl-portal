@@ -300,10 +300,107 @@ export default function PricingPanel() {
         </p>
       </div>
 
+      <ProductsCard />
+
       <p className="text-xs text-gray-400">
         Class prices are per-class (set in the wizard, editable on each roster card) and follow-up
         discounts are per-class promo codes — both intentionally not here.
       </p>
+    </div>
+  )
+}
+
+// PL-364: the physical add-on products (notebooks) — sold on the class
+// registration flow's second page, fulfilled via Printful. Sale pricing is
+// COMPOSED from these two numbers ("$35.00, regularly $48.00") — never
+// hand-typed into copy. The Printful variant id is the fulfillment mapping;
+// without it, orders fail honestly into Needs Attention until it's set.
+function ProductsCard() {
+  const [rows, setRows] = useState<
+    { id: string; name: string; price: number; regular_price: number | null; active: boolean; printful_variant_id: number | null }[] | null
+  >(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const load = async () => {
+    const res = await fetch('/api/admin/products')
+    if (!res.ok) return
+    const j = await res.json().catch(() => null)
+    if (j?.products) setRows(j.products)
+  }
+  useEffect(() => {
+    load()
+  }, [])
+  if (!rows) return null
+
+  const save = async (id: string, fields: Record<string, unknown>) => {
+    setBusy(true)
+    setErr('')
+    const res = await fetch('/api/admin/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...fields }),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      setErr(j.error ?? 'Save failed.')
+      return
+    }
+    await load()
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-4">
+      <p className="font-bold text-hgl-slate mb-1">Physical add-ons (registration flow)</p>
+      <p className="text-xs text-gray-500 mb-3">
+        Sold on the class registration&apos;s add-on step, printed &amp; shipped by Printful.
+        &quot;Regularly&quot; blank = no sale line. The Printful variant id maps the product for
+        fulfillment — until it&apos;s set (during the sandbox round-trip), paid orders wait on
+        Needs Attention with a retry. Forward-only: paid orders keep their price.
+      </p>
+      {err && <p className="text-red-600 font-semibold mb-2">{err}</p>}
+      <div className="space-y-2">
+        {rows.map((p) => (
+          <div key={p.id} className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="font-semibold text-hgl-slate min-w-56">{p.name}</span>
+            <span>
+              Price:{' '}
+              <NumberEdit value={Number(p.price)} busy={busy} onSave={(v) => save(p.id, { price: v })} />
+            </span>
+            <span>
+              Regularly:{' '}
+              <NumberEdit
+                value={p.regular_price != null ? Number(p.regular_price) : 0}
+                busy={busy}
+                onSave={(v) => save(p.id, { regular_price: v > 0 ? v : null })}
+              />
+              <span className="text-xs text-gray-400"> (0 clears)</span>
+            </span>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={p.active}
+                onChange={(e) => save(p.id, { active: e.target.checked })}
+                disabled={busy}
+              />
+              offered
+            </label>
+            <span className="text-xs text-gray-500">
+              Printful variant:{' '}
+              <input
+                defaultValue={p.printful_variant_id ?? ''}
+                onBlur={(e) => {
+                  const v = e.target.value.trim()
+                  if (String(p.printful_variant_id ?? '') !== v) save(p.id, { printful_variant_id: v || null })
+                }}
+                placeholder="not mapped"
+                className="border border-gray-300 rounded px-1.5 py-0.5 w-28 font-mono text-xs"
+              />
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

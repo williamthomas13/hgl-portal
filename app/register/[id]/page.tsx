@@ -44,6 +44,10 @@ type ClassDetails = {
   followOnDiscountNote?: string | null
   /** PL-357: the add-1-on-1 step's pitch copy, from the flow-only block. */
   upsellPitchMarkdown?: string | null
+  /** PL-364: physical add-on products (offered only when fulfillable). */
+  products?: { id: string; name: string; price: number; priceLabel: string }[]
+  /** PL-364: Printful's shipping-coverage country list. */
+  shipCountries?: { code: string; name: string }[]
 }
 
 function fmtTime(t: string | null) {
@@ -126,6 +130,9 @@ export default function RegistrationPage() {
   } | null>(null)
   // PL-125: per-student add-on picks for sibling carts.
   const [addonPicks, setAddonPicks] = useState<Record<string, string | null>>({})
+  // PL-364: physical add-on quantities + the shipping address they require.
+  const [productQty, setProductQty] = useState<Record<string, number>>({})
+  const [ship, setShip] = useState({ name: '', address1: '', address2: '', city: '', state: '', zip: '', country: 'US' })
 
   useEffect(() => {
     async function fetchClass() {
@@ -208,7 +215,7 @@ export default function RegistrationPage() {
 
     // Add-on step: offer pre-class tutoring packages before checkout
     // (only available at registration). If none exist, go straight to Stripe.
-    if (packages.length > 0) {
+    if (packages.length > 0 || (classDetails?.products?.length ?? 0) > 0) {
       setPendingCheckout({
         enrollments: enrollmentIds.map((id, i) => ({
           enrollmentId: id,
@@ -230,6 +237,15 @@ export default function RegistrationPage() {
     enrollmentIds: string[],
     packageSelections: Record<string, string | null>
   ) {
+    // PL-364: a physical add-on needs somewhere to ship — enforced here so
+    // the button says why, and re-checked server-side.
+    const productPicks = Object.entries(productQty)
+      .filter(([, q]) => q > 0)
+      .map(([productId, quantity]) => ({ productId, quantity }))
+    if (productPicks.length > 0 && (!ship.name.trim() || !ship.address1.trim() || !ship.city.trim() || !ship.country)) {
+      setMessage('Please fill in the shipping address for the notebook order (name, street, city, country) — or set the quantity back to 0.')
+      return
+    }
     setLoading(true)
     setMessage('Redirecting to secure checkout...')
     try {
@@ -240,6 +256,7 @@ export default function RegistrationPage() {
           ...(enrollmentIds.length === 1
             ? { enrollmentId: enrollmentIds[0], packageId: packageSelections[enrollmentIds[0]] ?? null }
             : { enrollmentIds, packageSelections }),
+          ...(productPicks.length > 0 ? { products: productPicks, shipping: ship } : {}),
           // PL-279: the discount rides to checkout and is re-validated
           // server-side (token path preferred; typed code as fallback).
           ...(classDetails?.followOnDiscount && foParams
@@ -431,6 +448,63 @@ export default function RegistrationPage() {
               dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(classDetails.upsellPitchMarkdown) }}
             />
           )}
+          {/* PL-364: physical add-ons (the notebooks) — names and composed
+              sale pricing straight from the products table; a quantity > 0
+              opens the shipping address (required, coverage from Printful's
+              own country list). Class-registration add-ons only. */}
+          {(classDetails.products?.length ?? 0) > 0 && (
+            <div className="mb-6 border border-gray-200 rounded-lg p-4">
+              <h2 className="text-sm font-bold text-hgl-slate mb-2">Add a notebook?</h2>
+              <div className="space-y-2">
+                {classDetails.products!.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-gray-700">
+                      {p.name} — <span className="font-semibold">{p.priceLabel}</span>
+                    </span>
+                    <select
+                      value={productQty[p.id] ?? 0}
+                      onChange={(e) =>
+                        setProductQty((prev) => ({ ...prev, [p.id]: Number(e.target.value) }))
+                      }
+                      className="border border-gray-300 rounded p-1.5 bg-white"
+                      aria-label={`Quantity for ${p.name}`}
+                    >
+                      {[0, 1, 2, 3, 4].map((n) => (
+                        <option key={n} value={n}>
+                          {n === 0 ? 'None' : n}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              {Object.values(productQty).some((q) => q > 0) && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-600">
+                    Where should we ship it? (Printful prints and ships it to you directly.)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={ship.name} onChange={(e) => setShip((s) => ({ ...s, name: e.target.value }))} placeholder="Full name *" className="border border-gray-300 rounded p-2 text-sm col-span-2" />
+                    <input value={ship.address1} onChange={(e) => setShip((s) => ({ ...s, address1: e.target.value }))} placeholder="Street address *" className="border border-gray-300 rounded p-2 text-sm col-span-2" />
+                    <input value={ship.address2} onChange={(e) => setShip((s) => ({ ...s, address2: e.target.value }))} placeholder="Apt / unit" className="border border-gray-300 rounded p-2 text-sm" />
+                    <input value={ship.city} onChange={(e) => setShip((s) => ({ ...s, city: e.target.value }))} placeholder="City *" className="border border-gray-300 rounded p-2 text-sm" />
+                    <input value={ship.state} onChange={(e) => setShip((s) => ({ ...s, state: e.target.value }))} placeholder="State / region" className="border border-gray-300 rounded p-2 text-sm" />
+                    <input value={ship.zip} onChange={(e) => setShip((s) => ({ ...s, zip: e.target.value }))} placeholder="Postal code" className="border border-gray-300 rounded p-2 text-sm" />
+                    <select value={ship.country} onChange={(e) => setShip((s) => ({ ...s, country: e.target.value }))} className="border border-gray-300 rounded p-2 text-sm bg-white col-span-2" aria-label="Country">
+                      {(classDetails.shipCountries ?? []).map((c) => (
+                        <option key={c.code} value={c.code}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    The country list is exactly where our print partner ships — if yours isn&apos;t
+                    there, we can&apos;t get the notebook to you yet (registration itself is
+                    unaffected).
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
           {pendingCheckout.enrollments.length === 1 ? (
             <>
               <div className="space-y-3 mb-6">
@@ -456,7 +530,13 @@ export default function RegistrationPage() {
                 onClick={() => proceedToCheckout([pendingCheckout.enrollments[0].enrollmentId], {})}
                 className="w-full bg-hgl-blue text-white font-bold py-3 px-4 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-60"
               >
-                {loading ? 'Preparing secure checkout...' : 'No thanks, just the class'}
+                {loading
+                  ? 'Preparing secure checkout...'
+                  : Object.values(productQty).some((q) => q > 0)
+                    ? 'Continue to payment'
+                    : packages.length > 0
+                      ? 'No thanks, just the class'
+                      : 'Continue to payment'}
               </button>
             </>
           ) : (

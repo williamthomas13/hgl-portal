@@ -61,6 +61,8 @@ export type EnrollmentRow = {
   previousScores: string | null
   notes: string | null
   graduatingYear: string | null
+  /** PL-364: physical add-on products (paid rows only). */
+  products: { name: string; quantity: number; pricePaid: number | null; status: string; trackingUrl: string | null }[]
   addons: AddonRow[]
   waitlist_offer_sent_at: string | null
   waitlist_offer_expires_at: string | null
@@ -235,6 +237,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       accommodations, previous_scores, notes,
       waitlist_offer_sent_at, waitlist_offer_expires_at, waitlist_offer_round,
       enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
+      product_orders ( quantity, price_paid, status, tracking_url, products ( name ) ),
       students (
         first_name, last_name, student_email, graduating_year, pronouns,
         families ( id, parent_first_name, parent_email, marketing_opt_out )
@@ -272,6 +275,16 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           previousScores: e.previous_scores ?? null,
           notes: e.notes ?? null,
           graduatingYear: student.graduating_year ?? null,
+          // PL-364: physical add-on products bought with this registration.
+          products: (e.product_orders ?? [])
+            .filter((po: any) => !['pending_payment', 'cancelled', 'refunded'].includes(po.status))
+            .map((po: any) => ({
+              name: one<any>(po.products)?.name ?? 'Add-on',
+              quantity: Number(po.quantity),
+              pricePaid: po.price_paid != null ? Number(po.price_paid) : null,
+              status: po.status,
+              trackingUrl: po.tracking_url ?? null,
+            })),
           addons: (e.enrollment_addons ?? []).map((a: any) => ({
             name: one<any>(a.tutoring_packages)?.name ?? 'Tutoring package',
             hours: Number(a.hours),
@@ -377,6 +390,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     // Always first session minus one day — computed, never stored.
     diagnosticDueDate: addDaysISO(bundle.firstSession, -1),
     addons: e.addons,
+    products: e.products,
     marketingOptOut: e.marketingOptOut,
     unsubscribeUrl: unsubscribeUrlFor(e.familyId),
     availabilityUrl: availabilityUrlFor(e.familyId),

@@ -182,6 +182,17 @@ type Enrollment = {
   offline_payment_method: string | null
   offline_payment_note: string | null
   offline_recorded_by: string | null
+  // PL-364: notebook orders riding this enrollment.
+  product_orders:
+    | {
+        id: string
+        status: string
+        quantity: number
+        tracking_url: string | null
+        last_error: string | null
+        products: { name: string } | { name: string }[] | null
+      }[]
+    | null
   class_cancelled: boolean
   cancellation_outcome: string | null
   enrollment_addons: { hours: number }[] | null
@@ -986,6 +997,7 @@ export default function AdminDashboard() {
           class_cancelled,
           cancellation_outcome,
           enrollment_addons ( hours ),
+          product_orders ( id, status, quantity, tracking_url, last_error, products ( name ) ),
           qbo_sync_log ( id, kind, status, qbo_doc_id, qbo_doc_number, last_error ),
           attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early, note ),
           students (
@@ -2140,6 +2152,58 @@ export default function AdminDashboard() {
                           {en.offline_payment_method === 'comp' ? 'comp ($0)' : `paid by ${en.offline_payment_method}`}
                         </span>
                       )}
+                      {/* PL-364: notebook fulfillment chips + the retry
+                          behind a failed Printful push. */}
+                      {(en.product_orders ?? [])
+                        .filter((po) => !['pending_payment', 'cancelled', 'refunded'].includes(po.status))
+                        .map((po) => {
+                          const pname = Array.isArray(po.products) ? po.products[0]?.name : po.products?.name
+                          return (
+                            <span key={po.id} className="ml-2 inline-flex items-center gap-1 align-middle">
+                              <span
+                                title={po.last_error ?? undefined}
+                                className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  po.status === 'shipped'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : po.status === 'failed'
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-purple-100 text-purple-700'
+                                }`}
+                              >
+                                {pname ?? 'notebook'}
+                                {po.quantity > 1 ? ` ×${po.quantity}` : ''}:{' '}
+                                {po.status === 'failed'
+                                  ? 'Printful push failed'
+                                  : po.status === 'queued'
+                                    ? 'waiting to push'
+                                    : po.status}
+                              </span>
+                              {po.status === 'shipped' && po.tracking_url && (
+                                <a href={po.tracking_url} target="_blank" rel="noopener noreferrer" className="text-xs text-hgl-blue underline">
+                                  tracking
+                                </a>
+                              )}
+                              {po.status === 'failed' && (
+                                <button
+                                  onClick={async () => {
+                                    const res = await fetch('/api/admin/printful', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ action: 'retry', orderId: po.id }),
+                                    })
+                                    const j = await res.json().catch(() => ({}))
+                                    setRosterError(res.ok ? '' : j.error ?? 'Retry failed.')
+                                    fetchRosters()
+                                  }}
+                                  className="text-xs text-red-700 underline"
+                                  title={po.last_error ?? 'Push the order to Printful again'}
+                                >
+                                  retry
+                                </button>
+                              )}
+                            </span>
+                          )
+                        })}
                       {/* PL-361 D / PL-363: a staff-created or imported
                           Pending has its actions on the row — send/resend
                           the payment link, or cancel. */}

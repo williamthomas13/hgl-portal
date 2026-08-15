@@ -9,6 +9,7 @@ import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { sweepSessionNoteReminders, sweepWeeklyNotesDigest } from '../../../utils/session-notes'
 import { generateMonthlyCycle, generationDueFor, loadCycleSettings, sweepProposals } from '../../../utils/tutoring-billing'
 import { sweepCollections } from '../../../utils/tutoring-stripe'
+import { sweepPrintfulOrders } from '../../../utils/printful'
 import { runScheduleApprovalNudges } from '../../../utils/schedule-approval'
 import { sweepPendingTutorNotices } from '../../../utils/tutor-notices'
 import { sweepConversionFollowups } from '../../../utils/convert-tutoring'
@@ -2031,6 +2032,18 @@ export async function GET(req: Request) {
   if (gcal.synced > 0) counters.gcal_synced = gcal.synced
   if (gcal.failed > 0) counters.gcal_failed = gcal.failed
   if (gcal.deferred > 0) counters.gcal_deferred = gcal.deferred
+
+  // PL-364: Printful convergence — push queued notebook orders (the
+  // payment-webhook defer is the fast path), poll submitted ones for
+  // tracking, cancel unshipped orders on refunded enrollments.
+  try {
+    const pf = await sweepPrintfulOrders()
+    if (pf.pushed > 0) counters.printful_pushed = pf.pushed
+    if (pf.shipped > 0) counters.printful_shipped = pf.shipped
+    if (pf.cancelled > 0) counters.printful_cancelled = pf.cancelled
+  } catch (e) {
+    console.error('Printful sweep failed (next hour retries):', e)
+  }
 
   // PL-180: calendar-side edits to tutoring session events — detect always,
   // adopt deliberately. The alert is ATTRIBUTIONAL: on the tutor's own

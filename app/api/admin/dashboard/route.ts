@@ -208,6 +208,25 @@ export async function GET() {
       since: c.created_at, // PL-135: since the class was created
     })
   }
+  // PL-364 C: a paid notebook order that can't reach Printful is never a
+  // lost order — it surfaces here until the push succeeds (retry lives on
+  // the roster row) or the order is cancelled/refunded.
+  const { data: failedPf } = await supabase
+    .from('product_orders')
+    .select('id, enrollment_id, last_error, updated_at, products ( name ), enrollments!inner ( class_id, students ( first_name, last_name ) )')
+    .eq('status', 'failed')
+  for (const po of (failedPf as any[]) ?? []) {
+    const enr = one<any>(po.enrollments)
+    const student = one<any>(enr?.students)
+    attention.push({
+      id: `printful-failed-${po.id}`,
+      kind: 'Notebook order not yet at Printful',
+      text: `${student ? `${student.first_name} ${student.last_name}` : 'A family'} paid for a ${one<any>(po.products)?.name ?? 'notebook'} but the Printful push failed (${po.last_error ?? 'unknown error'}) — fix the cause and hit retry on their roster row; nothing is lost meanwhile.`,
+      href: `/admin?class=${enr?.class_id}&enrollment=${po.enrollment_id}`,
+      since: po.updated_at,
+    })
+  }
+
   // PL-361 D: abandoned staff-created registrations.
   for (const e of (staleStaffPending as any[]) ?? []) {
     const cls = one<any>(e.classes)
