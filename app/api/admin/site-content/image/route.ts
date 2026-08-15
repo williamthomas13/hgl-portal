@@ -19,6 +19,7 @@ const LAYOUTS = ['left', 'right', 'hero'] as const
 type Target =
   | { table: 'site_content_blocks'; column: 'image'; match: { key: string } }
   | { table: 'classes'; column: 'hero_image'; match: { id: string } }
+  | { table: 'instructors'; column: 'headshot'; match: { id: string } }
 
 function resolveTarget(target: unknown, key: unknown, classId: unknown): Target | null {
   if (target === 'block' && typeof key === 'string' && key) {
@@ -26,6 +27,11 @@ function resolveTarget(target: unknown, key: unknown, classId: unknown): Target 
   }
   if (target === 'class-hero' && typeof classId === 'string' && classId) {
     return { table: 'classes', column: 'hero_image', match: { id: classId } }
+  }
+  // PL-358: instructor headshots (classId carries the instructor id — the
+  // form field is named for the common case, the target disambiguates).
+  if (target === 'instructor-headshot' && typeof classId === 'string' && classId) {
+    return { table: 'instructors', column: 'headshot', match: { id: classId } }
   }
   return null
 }
@@ -83,8 +89,10 @@ export async function POST(request: Request) {
   // paths so cached pages can never show a stale image after a replace.
   const prefix =
     t.table === 'site_content_blocks'
-      ? `blocks/${t.match.key}/${Date.now()}`
-      : `class-hero/${t.match.id}/${Date.now()}`
+      ? `blocks/${(t.match as { key: string }).key}/${Date.now()}`
+      : t.table === 'instructors'
+        ? `team/${(t.match as { id: string }).id}/${Date.now()}`
+        : `class-hero/${(t.match as { id: string }).id}/${Date.now()}`
   const widths = [...new Set(VARIANT_WIDTHS.map((w) => Math.min(w, srcWidth)))].sort((a, b) => a - b)
   const variants: { path: string; width: number; height: number }[] = []
   for (const w of widths) {

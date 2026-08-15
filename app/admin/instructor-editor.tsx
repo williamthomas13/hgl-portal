@@ -7,6 +7,7 @@ import { TimezoneSelect } from './ui'
 import { WEEKDAYS } from './tutoring/types'
 import type { OfferWindowUI } from './tutoring/types'
 import { groupSubjects } from '../utils/subject-groups'
+import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 
 // PL-226: THE instructor add/edit surface (instructors = tutors — one table,
 // one profile). Lives on Contacts→Instructors; the 1-on-1→Tutors panel is a
@@ -19,6 +20,115 @@ import { groupSubjects } from '../utils/subject-groups'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 type SubjectRow = { id: string; name: string; category: string }
+
+// PL-358: the headshot upload/replace/remove control — same staff-gated
+// image route as the class-page images (target 'instructor-headshot').
+function HeadshotControl({
+  instructorId,
+  headshot,
+  onChanged,
+}: {
+  instructorId: string
+  headshot: unknown
+  onChanged: (next: unknown) => void
+}) {
+  const img = parseClassPageImage(headshot)
+  const [alt, setAlt] = useState(img?.alt ?? '')
+  const [busy, setBusy] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  async function call(init: RequestInit): Promise<{ ok: boolean; image?: unknown }> {
+    setBusy(true)
+    setMsg('')
+    try {
+      const res = await fetch('/api/admin/site-content/image', init)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg(json.error ?? 'That change failed.')
+        return { ok: false }
+      }
+      return { ok: true, image: json.image ?? null }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-start gap-3 text-xs">
+      {img ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageAttrs(img).src} alt={img.alt} className="w-16 h-16 rounded-full object-cover border border-gray-200" />
+      ) : (
+        <span className="text-gray-400 italic self-center">no headshot — the team page shows initials</span>
+      )}
+      <div className="flex-1 min-w-56 space-y-1.5">
+        <input
+          type="text"
+          value={alt}
+          onChange={(e) => setAlt(e.target.value)}
+          placeholder="Alt text (required), e.g. Portrait of Eric Brown"
+          className="w-full border border-gray-300 rounded p-1.5"
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <label className={`underline cursor-pointer ${alt.trim() ? 'text-hgl-blue' : 'text-gray-400 cursor-not-allowed'}`}>
+            {img ? 'replace headshot' : 'upload headshot'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              disabled={busy || !alt.trim()}
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (!f) return
+                const body = new FormData()
+                body.set('target', 'instructor-headshot')
+                body.set('classId', instructorId)
+                body.set('file', f)
+                body.set('alt', alt)
+                const r = await call({ method: 'POST', body })
+                if (r.ok) onChanged(r.image)
+              }}
+            />
+          </label>
+          {img && !confirmRemove && (
+            <button type="button" onClick={() => setConfirmRemove(true)} disabled={busy} className="text-red-600 underline">
+              remove…
+            </button>
+          )}
+        </div>
+        {confirmRemove && (
+          <div className="bg-red-50 border border-red-200 rounded p-2 space-x-2">
+            <span className="text-red-900">Remove the headshot? The team page shows initials instead.</span>
+            <button
+              type="button"
+              onClick={async () => {
+                const r = await call({
+                  method: 'DELETE',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ target: 'instructor-headshot', classId: instructorId }),
+                })
+                if (r.ok) {
+                  setConfirmRemove(false)
+                  onChanged(null)
+                }
+              }}
+              disabled={busy}
+              className="font-bold text-red-700 underline"
+            >
+              Remove it
+            </button>
+            <button type="button" onClick={() => setConfirmRemove(false)} disabled={busy} className="text-gray-600 underline">
+              Keep it
+            </button>
+          </div>
+        )}
+        {msg && <p className="text-red-600">{msg}</p>}
+      </div>
+    </div>
+  )
+}
 
 export default function InstructorEditor({
   instructorId,
@@ -42,6 +152,12 @@ export default function InstructorEditor({
   const [phone, setPhone] = useState('')
   // PL-274 F: family-facing intro paragraph for open-class details emails.
   const [bio, setBio] = useState('')
+  // PL-358: the public profile — /team and the class pages render from these.
+  const [credential, setCredential] = useState('')
+  const [showOnTeam, setShowOnTeam] = useState(false)
+  const [teamOrder, setTeamOrder] = useState('')
+  const [featuredOnClasses, setFeaturedOnClasses] = useState(false)
+  const [headshot, setHeadshot] = useState<unknown>(null)
   const [picked, setPicked] = useState<string[]>([])
   const [pickedPrep, setPickedPrep] = useState<string[]>([])
   const [timezone, setTimezone] = useState('America/Denver')
@@ -89,9 +205,10 @@ export default function InstructorEditor({
           supabase
             .from('instructors')
             .select(
-              `id, email, name, phone, subjects, subjects_with_prep, timezone, google_calendar_id,
+              `id, email, name, phone, bio, subjects, subjects_with_prep, timezone, google_calendar_id,
                default_meeting_link, offer_windows, pay_type_titles, pay_type, calendar_color,
-               pref_notes_reminders, pref_class_digests, pref_fyi_copies`
+               pref_notes_reminders, pref_class_digests, pref_fyi_copies,
+               credential, show_on_team, team_order, featured_on_classes, headshot`
             )
             .eq('id', instructorId)
             .maybeSingle(),
@@ -103,6 +220,11 @@ export default function InstructorEditor({
           setOriginalEmail(row.email ?? '')
           setPhone(row.phone ?? '')
           setBio((row as { bio?: string | null }).bio ?? '')
+          setCredential((row as any).credential ?? '')
+          setShowOnTeam((row as any).show_on_team === true)
+          setTeamOrder((row as any).team_order != null ? String((row as any).team_order) : '')
+          setFeaturedOnClasses((row as any).featured_on_classes === true)
+          setHeadshot((row as any).headshot ?? null)
           setPicked((row.subjects as string[]) ?? [])
           setPickedPrep((row.subjects_with_prep as string[]) ?? [])
           setTimezone(row.timezone ?? 'America/Denver')
@@ -146,6 +268,12 @@ export default function InstructorEditor({
       name: name.trim() || null,
       phone: phone.trim() || null,
       bio: bio.trim() || null,
+      // PL-358: public-profile fields (headshot saves via its own upload
+      // control, not here).
+      credential: credential.trim() || null,
+      show_on_team: showOnTeam,
+      team_order: teamOrder.trim() === '' ? null : Math.trunc(Number(teamOrder)),
+      featured_on_classes: featuredOnClasses,
       subjects: picked,
       subjects_with_prep: pickedPrep,
       timezone: timezone || 'America/Denver',
@@ -246,9 +374,71 @@ export default function InstructorEditor({
               />
               <p className="text-[11px] text-gray-500 mt-0.5">
                 Appears as the instructor introduction in open-enrollment class emails. Leave blank
-                to skip the paragraph entirely.
+                to skip the paragraph entirely. It&apos;s also the bio on the public team page when
+                &ldquo;Show on the team page&rdquo; is on below.
               </p>
             </div>
+
+            {/* PL-358: the PUBLIC profile — the /team page and the class
+                pages' instructor cards render from these fields (one
+                source; nothing is hand-curated elsewhere). */}
+            <fieldset className="border border-gray-200 rounded-lg p-3">
+              <legend className="text-xs font-semibold text-hgl-slate px-1">
+                Public profile — the team page &amp; class pages render from this
+              </legend>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 font-semibold mb-1">
+                    Credential line
+                  </label>
+                  <input
+                    value={credential}
+                    onChange={(e) => setCredential(e.target.value)}
+                    placeholder='e.g. "International SAT, Math"'
+                    className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 font-semibold mb-1">
+                    Order on the team page
+                  </label>
+                  <input
+                    type="number"
+                    value={teamOrder}
+                    onChange={(e) => setTeamOrder(e.target.value)}
+                    placeholder="blank = after the ordered ones"
+                    className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-5 mt-2 text-sm text-gray-700">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={showOnTeam} onChange={(e) => setShowOnTeam(e.target.checked)} />
+                  Show on the team page
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={featuredOnClasses}
+                    onChange={(e) => setFeaturedOnClasses(e.target.checked)}
+                  />
+                  Feature on the class pages&apos; instructors section
+                </label>
+              </div>
+              <div className="mt-3">
+                {instructorId ? (
+                  <HeadshotControl
+                    instructorId={instructorId}
+                    headshot={headshot}
+                    onChanged={(h) => setHeadshot(h)}
+                  />
+                ) : (
+                  <p className="text-xs text-gray-500 italic">
+                    Save the new instructor first, then upload their headshot here.
+                  </p>
+                )}
+              </div>
+            </fieldset>
 
             <div>
               <label className="block text-xs text-gray-600 font-semibold mb-1">

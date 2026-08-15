@@ -101,7 +101,21 @@ const loadPage = cache(async (slug: string) => {
       .eq('status', 'open')
     siblings = (data as any[]) ?? []
   }
-  return { cls: cls as any, spotsTaken, blocks, feeders, siblings }
+  // PL-358: the instructors section's cards render from instructor PROFILES
+  // (one source — the same rows /team renders), never hand-written copy.
+  let featuredInstructors: any[] = []
+  try {
+    const { data } = await supabase
+      .from('instructors')
+      .select('id, name, credential, headshot, team_order')
+      .eq('featured_on_classes', true)
+      .order('team_order', { ascending: true, nullsFirst: false })
+      .order('name')
+    featuredInstructors = (data as any[]) ?? []
+  } catch {
+    featuredInstructors = []
+  }
+  return { cls: cls as any, spotsTaken, blocks, feeders, siblings, featuredInstructors }
 })
 
 function heroTitleFor(cls: any): string {
@@ -173,7 +187,7 @@ export default async function PublicClassPage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
-  const { cls, spotsTaken, blocks, feeders, siblings } = await loadPage(slug)
+  const { cls, spotsTaken, blocks, feeders, siblings, featuredInstructors } = await loadPage(slug)
 
   const block = (key: string) => blocks.find((b) => b.key === key) ?? null
   const stateBody = (key: string, fallback: string) => block(key)?.body_markdown ?? fallback
@@ -602,6 +616,46 @@ export default async function PublicClassPage({
                   </div>
                 ) : (
                   body
+                )}
+                {/* PL-358: featured cards render FROM instructor profiles —
+                    the same rows /team renders; the block body above is the
+                    intro line only. */}
+                {featuredInstructors.length > 0 && (
+                  <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {featuredInstructors.map((p: any) => {
+                      const shot = parseClassPageImage(p.headshot)
+                      return (
+                        <div key={p.id} className="bg-white rounded-lg shadow-sm p-4 text-center">
+                          {shot ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              {...imageAttrs(shot)}
+                              sizes="96px"
+                              loading="lazy"
+                              decoding="async"
+                              className="w-24 h-24 rounded-full object-cover mx-auto border border-gray-200"
+                            />
+                          ) : (
+                            <div
+                              aria-hidden
+                              className="w-24 h-24 rounded-full bg-hgl-slate/10 text-hgl-slate flex items-center justify-center text-xl font-bold mx-auto"
+                            >
+                              {String(p.name)
+                                .split(/\s+/)
+                                .map((w: string) => w[0] ?? '')
+                                .slice(0, 2)
+                                .join('')
+                                .toUpperCase()}
+                            </div>
+                          )}
+                          <p className="mt-2 font-bold text-hgl-slate text-sm">{p.name}</p>
+                          {p.credential && (
+                            <p className="text-xs uppercase tracking-wide text-gray-500 mt-0.5">{p.credential}</p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </section>
             )
