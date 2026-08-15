@@ -6,6 +6,7 @@ import SessionCalendar from '../../components/SessionCalendar'
 import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
 import InterestCapture from '../../components/InterestCapture'
 import { bySessionStart, formatDateOnly, publicTimeCityLabel } from '../../utils/dates'
+import { renderSiteMarkdown } from '../../utils/site-md'
 
 type SessionRow = {
   session_date: string
@@ -41,6 +42,8 @@ type ClassDetails = {
   followOnDiscount?: { amount: number; code: string; endDate: string } | null
   /** PL-279: plain-English note when the link's discount no longer applies. */
   followOnDiscountNote?: string | null
+  /** PL-357: the add-1-on-1 step's pitch copy, from the flow-only block. */
+  upsellPitchMarkdown?: string | null
 }
 
 function fmtTime(t: string | null) {
@@ -417,24 +420,17 @@ export default function RegistrationPage() {
       <div className="min-h-screen bg-gray-50 p-10">
         <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
           <h1 className="text-2xl font-bold text-hgl-slate mb-4">Add 1-on-1 tutoring?</h1>
-          <div className="text-gray-700 space-y-4 mb-6">
-            <p>
-              After the group class, the biggest point gains come from regular, individualized
-              attention over several weeks. Our 1-on-1 tutoring sessions are tailored to each
-              student and designed to overcome their specific weaknesses, exploit their strengths,
-              and refine student-specific strategies. These sessions work in tandem with the group
-              course, and are perfect for students who are taking the test multiple times, reaching
-              for exceptionally high scores, or facing unique challenges. Students receiving 1-on-1
-              tutoring also receive unlimited access to online practice materials and extra
-              diagnostic tests with score reports.
-            </p>
-            <p>
-              1-on-1 tutoring hours are only discounted when purchased alongside a group class.
-              Choose your amount of 1-on-1 hours and we&apos;ll contact you to schedule them
-              anytime based on your needs and availability. Hours are transferable and never
-              expire.
-            </p>
-          </div>
+          {/* PL-357: the upsell copy renders FROM the flow-only content
+              block (ONE source — Settings → Class pages edits reach here).
+              The old hardcoded paragraphs were deleted only after verifying
+              the block renders text-identical copy. Absent block = no pitch
+              paragraphs; the heading and package buttons carry the flow. */}
+          {classDetails.upsellPitchMarkdown && (
+            <div
+              className="text-gray-700 space-y-4 mb-6 [&_p]:text-gray-700"
+              dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(classDetails.upsellPitchMarkdown) }}
+            />
+          )}
           {pendingCheckout.enrollments.length === 1 ? (
             <>
               <div className="space-y-3 mb-6">

@@ -93,6 +93,21 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
   // (PHASE4_SPEC §12: better than a cancellation notice).
   const cancelled = (cls as { status?: string }).status === 'cancelled'
 
+  // PL-357: the registration flow's second-page upsell copy renders from
+  // the flow-only content block (ONE source — edits on Settings → Class
+  // pages reach families). Absent block/table degrades to no pitch copy.
+  let upsellPitchMarkdown: string | null = null
+  try {
+    const { data: pitch } = await supabase
+      .from('site_content_blocks')
+      .select('body_markdown')
+      .eq('key', 'one-on-one-pitch')
+      .maybeSingle()
+    upsellPitchMarkdown = pitch?.body_markdown ?? null
+  } catch {
+    upsellPitchMarkdown = null
+  }
+
   return NextResponse.json({
     ...publicClass,
     cancelled,
@@ -101,5 +116,6 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     promoAvailable: Boolean(promo_code?.trim()),
     followOnDiscount,
     followOnDiscountNote,
+    upsellPitchMarkdown,
   })
 }

@@ -165,9 +165,9 @@ function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; 
 
 const SECTION_LABELS: Record<string, string> = {
   included: "What's included in a class? (four cards)",
-  // PL-352 (amendment): the upsell is OUT of the landing page — this copy is
-  // kept here for the registration flow only.
-  pitch: '1-on-1 tutoring pitch — NOT shown on class pages (the upsell lives on the registration flow’s second page)',
+  // PL-352/357: the upsell is OUT of the landing page and this block IS the
+  // registration flow's second-page copy — the label tells the truth now.
+  pitch: '1-on-1 tutoring pitch — shown on the registration flow’s second page (the "Add 1-on-1 tutoring?" step), not on class pages. Edit here.',
   instructors: 'Instructors',
   faq: 'FAQs (write questions as "### Question" lines, answers underneath)',
   closing: 'Closing call-to-action (the price renders from each class record — never type prices here)',
