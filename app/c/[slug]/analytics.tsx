@@ -42,14 +42,21 @@ export default function ClassPageAnalytics({ classId }: { classId: string }) {
     track('visit')
     if (new URLSearchParams(window.location.search).has('via')) track('arrival:shortlink')
 
+    // "Seen" = 40% of the section is visible, OR the section fills half the
+    // screen — the second rule is what lets a tall section (FAQs on a phone)
+    // ever count; 40% of it alone may exceed the whole viewport. The extra
+    // low thresholds just give the coverage rule crossings to fire on.
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
           const name = (e.target as HTMLElement).dataset.section
-          if (e.isIntersecting && name) track(`section:${name}`)
+          if (!e.isIntersecting || !name) continue
+          if (e.intersectionRatio >= 0.4 || e.intersectionRect.height >= window.innerHeight * 0.5) {
+            track(`section:${name}`)
+          }
         }
       },
-      { threshold: 0.4 }
+      { threshold: [0, 0.1, 0.2, 0.3, 0.4] }
     )
     document.querySelectorAll('[data-section]').forEach((el) => io.observe(el))
 
