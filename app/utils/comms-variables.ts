@@ -1,5 +1,5 @@
 import type { EnrollmentEmailContext, Audience } from './email'
-import { autopayNudgeCopyHtml } from './autopay-nudge'
+import { autopayNudgeCopyHtml } from './autopay-nudge-copy'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
 import {
   coverageAlertDetails,

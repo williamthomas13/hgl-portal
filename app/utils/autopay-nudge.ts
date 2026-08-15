@@ -5,23 +5,14 @@
 // families already on autopay — never nag the converted — and callers in
 // wrong-tone contexts (dunning-exhausted alerts, refund/agreement emails,
 // payment-failure emails about a *failing* saved card) simply don't call it.
+// The pure copy lives in autopay-nudge-copy.ts (client-safe — the editor
+// sample renders through it, the PL-96 drift guard).
 
 import { emailBaseUrl } from './base-url'
 import { autopayToken } from './tutoring-billing'
+import { autopayNudgeCopyHtml, type AutopayNudgeTone } from './autopay-nudge-copy'
 
-export type AutopayNudgeTone = 'invoice' | 'welcome' | 'transition'
-
-const INTROS: Record<AutopayNudgeTone, string> = {
-  invoice: 'Prefer not to think about this each month?',
-  welcome: 'Prefer not to think about invoices?',
-  transition: 'Prefer not to think about the monthly invoices?',
-}
-
-/** The copy, pure — the editor sample renders through THIS (PL-96 drift
- *  guard), with its fixed sample link. */
-export function autopayNudgeCopyHtml(link: string, tone: AutopayNudgeTone = 'invoice'): string {
-  return `<p style="color:#64748b;font-size:13px">${INTROS[tone]} <a href="${link}" style="color:#00AEEE">Set up autopay</a> and each month's confirmed invoice charges your saved card or bank account automatically.</p>`
-}
+export { autopayNudgeCopyHtml, type AutopayNudgeTone }
 
 /** The block real sends compose: '' for autopay families, else the pitch
  *  with the family's tokenized consent link (the existing
