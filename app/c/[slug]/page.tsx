@@ -13,6 +13,7 @@ import {
 import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, renderSiteMarkdown } from '../../utils/site-md'
 import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
+import ClassPageAnalytics from './analytics'
 
 // PL-348: the public class page — the portal-hosted replacement for the
 // per-class Squarespace pages (Option A). Top half is CLASS-SPECIFIC and
@@ -194,6 +195,9 @@ export default async function PublicClassPage({
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* PL-350: first-party section/click counting (DNT-respecting; the
+          fine-print block discloses it). */}
+      <ClassPageAnalytics classId={cls.id} />
       {/* ── Hero: class-specific, live from the record ──────────────────── */}
       <section id="hero" data-section="hero" style={{ background: accent }}>
         <div className="max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white">
@@ -291,7 +295,12 @@ export default async function PublicClassPage({
             <h2 className="text-2xl font-bold text-hgl-slate mb-4">What&apos;s included in a class?</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {includedBlocks.map((b) => (
-                <div key={b.key} className="bg-white rounded-lg shadow-sm p-5" id={b.key === 'included-instruction' ? 'curriculum' : undefined}>
+                <div
+                  key={b.key}
+                  className="bg-white rounded-lg shadow-sm p-5"
+                  id={b.key === 'included-instruction' ? 'curriculum' : undefined}
+                  data-section={b.key === 'included-instruction' ? 'curriculum' : undefined}
+                >
                   <h3 className="font-bold text-hgl-slate mb-2">{b.heading}</h3>
                   <div className="space-y-3 text-sm" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(b.body_markdown) }} />
                 </div>

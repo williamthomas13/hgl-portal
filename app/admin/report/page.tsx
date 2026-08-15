@@ -26,6 +26,20 @@ import {
 const money = (n: number | undefined) =>
   n == null ? '' : `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 
+// PL-350: plain-English names for the class pages' counted sections, in
+// page order.
+const PAGE_SECTIONS: [string, string][] = [
+  ['hero', 'Top of page'],
+  ['schedule', 'Schedule'],
+  ['whats-included', "What's included"],
+  ['curriculum', 'Curriculum preview'],
+  ['pitch', '1-on-1 pitch'],
+  ['instructors', 'Instructors'],
+  ['faq', 'FAQs'],
+  ['closing', 'Closing call-to-action'],
+  ['fine-print', 'Fine print'],
+]
+
 export default function TermReportPage() {
   const [report, setReport] = useState<any>(null)
   const [error, setError] = useState('')
@@ -44,6 +58,11 @@ export default function TermReportPage() {
       })
       .catch(() => setError("Couldn't load the report."))
   }, [])
+
+  // PL-350: the class-page readership rollup — counts only, staff-wide,
+  // scoped to the same PL-347 period as everything else on this page.
+  const [pageStats, setPageStats] = useState<any>(null)
+  const [pageStatsNote, setPageStatsNote] = useState('')
 
   const isAdmin = report?.role === 'admin'
   const classes: any[] = useMemo(() => report?.classes ?? [], [report])
@@ -76,6 +95,25 @@ export default function TermReportPage() {
       }),
     [periodKind, customFrom, customTo, months]
   )
+
+  // PL-350: refetch the readership rollup whenever the period lens moves.
+  useEffect(() => {
+    const qs = new URLSearchParams()
+    if (period.fromMonth) qs.set('from', period.fromMonth)
+    if (period.toMonth) qs.set('to', period.toMonth)
+    fetch(`/api/admin/report/class-pages${qs.size ? `?${qs}` : ''}`)
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok) {
+          setPageStats(null)
+          setPageStatsNote(j.error ?? `The server returned ${r.status}.`)
+        } else {
+          setPageStats(j)
+          setPageStatsNote('')
+        }
+      })
+      .catch(() => setPageStatsNote("Couldn't load the class-page readership numbers."))
+  }, [period.fromMonth, period.toMonth])
 
   const filtered = classes.filter(
     (c) =>
@@ -461,6 +499,64 @@ export default function TermReportPage() {
                 )}
               </div>
             )}
+
+            {/* PL-350: what do parents actually read on the public class
+                pages? Counts only (first-party, no cookies, DNT honored) —
+                the same numbers for admins and managers. */}
+            <div id="class-pages" className="bg-white rounded-lg shadow-md p-5">
+              <h2 className="text-lg font-bold text-hgl-slate mb-1">Class-page readership</h2>
+              <p className="text-xs text-gray-500 mb-3">
+                First-party counts from the public /c pages — visits, what got read, and register
+                clicks. Counted without cookies or personal data; browsers asking not to be
+                tracked aren&apos;t counted. Showing {monthLabel}.
+              </p>
+              {pageStatsNote && <p className="text-sm text-gray-500 italic">{pageStatsNote}</p>}
+              {pageStats && pageStats.totals.visits === 0 && !pageStatsNote && (
+                <p className="text-sm text-gray-500 italic">
+                  No page views counted in {monthLabel} yet — the pages are live but nothing has
+                  pointed parents at them.
+                </p>
+              )}
+              {pageStats && pageStats.totals.visits > 0 && (
+                <div className="space-y-4 text-sm">
+                  <p className="text-gray-700">
+                    <strong className="text-hgl-slate">All classes:</strong> {pageStats.totals.visits} visit
+                    {pageStats.totals.visits === 1 ? '' : 's'} · {pageStats.totals.registerClicks} register click
+                    {pageStats.totals.registerClicks === 1 ? '' : 's'} · {pageStats.totals.shortlinkArrivals} from
+                    hgl.co links.{' '}
+                    {PAGE_SECTIONS.filter(([k]) => pageStats.totals.sections[k])
+                      .map(([k, name]) => `${name} seen by ${Math.min(100, Math.round((pageStats.totals.sections[k] / pageStats.totals.visits) * 100))}%`)
+                      .join(' · ')}
+                  </p>
+                  <div className="divide-y divide-gray-100">
+                    {pageStats.classes.map((c: any) => (
+                      <div key={c.id} className="py-2">
+                        <p className="font-semibold text-hgl-slate">
+                          {c.slug ? (
+                            <a href={`/c/${c.slug}`} target="_blank" rel="noreferrer" className="text-hgl-blue hover:underline">
+                              {c.label}
+                            </a>
+                          ) : (
+                            c.label
+                          )}
+                          <span className="font-normal text-gray-600">
+                            {' '}— {c.visits} visit{c.visits === 1 ? '' : 's'} · {c.registerClicks} register click
+                            {c.registerClicks === 1 ? '' : 's'} · {c.shortlinkArrivals} from hgl.co links
+                          </span>
+                        </p>
+                        {c.visits > 0 && (
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {PAGE_SECTIONS.filter(([k]) => c.sections[k])
+                              .map(([k, name]) => `${name} seen by ${Math.min(100, Math.round((c.sections[k] / c.visits) * 100))}%`)
+                              .join(' · ') || 'No sections counted yet.'}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
