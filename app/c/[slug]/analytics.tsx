@@ -5,7 +5,8 @@ import { useEffect } from 'react'
 // PL-350: the class page's first-party counter. Counts three things, once
 // per pageview each: the visit (+ whether it arrived via an hgl.co
 // shortlink — the ?via tag PL-349 adds), which sections actually enter the
-// viewport (IntersectionObserver over the page's [data-section] landmarks),
+// viewport (IntersectionObserver over the page's [data-section] landmarks —
+// the set the page renders; the server whitelist is the source of truth),
 // and register-button clicks. Respects Do-Not-Track and Global Privacy
 // Control by doing nothing at all. No cookies, no identifiers — the beacon
 // body is the class id and metric names only.

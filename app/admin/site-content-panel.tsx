@@ -19,7 +19,9 @@ type Block = {
 
 const SECTION_LABELS: Record<string, string> = {
   included: "What's included in a class? (four cards)",
-  pitch: '1-on-1 tutoring pitch',
+  // PL-352 (amendment): the upsell is OUT of the landing page — this copy is
+  // kept here for the registration flow only.
+  pitch: '1-on-1 tutoring pitch — NOT shown on class pages (the upsell lives on the registration flow’s second page)',
   instructors: 'Instructors',
   faq: 'FAQs (write questions as "### Question" lines, answers underneath)',
   closing: 'Closing call-to-action (the price renders from each class record — never type prices here)',

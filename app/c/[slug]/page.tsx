@@ -183,7 +183,8 @@ export default async function PublicClassPage({
   const faqBlocks = blocks.filter((b) => b.section === 'faq')
   const includedBlocks = blocks.filter((b) => b.section === 'included')
   const finePrintBlocks = blocks.filter((b) => b.section === 'fine-print')
-  const pitch = block('one-on-one-pitch')
+  // PL-352 (amendment): the 1-on-1 upsell ('one-on-one-pitch') deliberately
+  // does NOT render here — it lives on the registration flow's second page.
   const instructors = block('instructors')
   const closing = block('closing-cta')
   const waitlistNote = block('waitlist-note')
@@ -312,13 +313,6 @@ export default async function PublicClassPage({
                 </div>
               ))}
             </div>
-          </section>
-        )}
-
-        {pitch && (
-          <section id="pitch" data-section="pitch" className="rounded-lg border-l-4 bg-white shadow-sm p-6" style={{ borderColor: accent }}>
-            <h2 className="text-xl font-bold text-hgl-slate mb-3">{pitch.heading}</h2>
-            <div className="space-y-3 text-gray-700" dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(pitch.body_markdown) }} />
           </section>
         )}
 

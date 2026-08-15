@@ -7,7 +7,8 @@ import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 // is persisted, and Do-Not-Track / Global Privacy Control requests are
 // dropped here too (the client already respects them — this is the belt).
 
-const METRIC_RE = /^(visit|register-click|arrival:shortlink|section:(hero|schedule|whats-included|pitch|curriculum|instructors|faq|fine-print|closing))$/
+// PL-352: 'pitch' left the page (the upsell lives on the registration flow).
+const METRIC_RE = /^(visit|register-click|arrival:shortlink|section:(hero|schedule|whats-included|curriculum|instructors|faq|fine-print|closing))$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function POST(request: Request) {

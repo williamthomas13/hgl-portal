@@ -33,7 +33,6 @@ const PAGE_SECTIONS: [string, string][] = [
   ['schedule', 'Schedule'],
   ['whats-included', "What's included"],
   ['curriculum', 'Curriculum preview'],
-  ['pitch', '1-on-1 pitch'],
   ['instructors', 'Instructors'],
   ['faq', 'FAQs'],
   ['closing', 'Closing call-to-action'],
