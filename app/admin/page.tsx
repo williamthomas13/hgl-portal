@@ -10,6 +10,7 @@ import InstructorsPanel, { type Instructor } from './instructors-panel'
 import CancelClassPanel from './cancel-class-panel'
 import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-wizard'
 import CollateralCard, { type CollateralFields } from './collateral-card'
+import SiteContentPanel from './site-content-panel'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import GcalPanel from './tutoring/gcal-panel'
@@ -672,6 +673,8 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
       // whose dashboard keeps the card).
       { id: 'health', label: 'System health' },
       { id: 'pricing', label: 'Price list' },
+      // PL-348: the shared content every public /c/{slug} class page renders.
+      { id: 'classpage', label: 'Class pages' },
       // PL-202: the Quo calls integration (setup + enable switch).
       { id: 'calls', label: 'Phone calls' },
       // PL-198: View-as files here (Scarlett's Jul 29 filing).
@@ -1345,6 +1348,10 @@ export default function AdminDashboard() {
         promo_code: c.promo_code ?? null,
         promo_amount: c.promo_amount ?? null,
         promo_deadline: c.promo_deadline ?? null,
+        // PL-348: repeat cohorts usually sell the same way. Key included
+        // only once the migration has landed (ship-dark guard — the wizard
+        // spreads this into its insert).
+        ...('selling_bullets' in c ? { selling_bullets: c.selling_bullets ?? null } : {}),
       },
     })
     setWizardSourceLabel(
@@ -2736,6 +2743,7 @@ export default function AdminDashboard() {
                 fields={c}
                 school={schools.find((s) => s.id === c.school_id) ?? null}
                 onSaved={fetchRosters}
+                slug={c.slug ?? null}
               />
             )
           })()}
@@ -2825,6 +2833,17 @@ export default function AdminDashboard() {
             defaultOpen
           >
             {simManager ? <SimManagerHidden what="The price list" /> : <PricingPanel />}
+          </CollapsibleSection>
+        </div>
+
+        {/* PL-348: the shared class-page content blocks. */}
+        <div className={activeSection === 'classpage' ? '' : 'hidden'}>
+          <CollapsibleSection
+            title="Class pages"
+            subtitle="The shared sections every public class page (/c/…) renders — edit once, all pages update"
+            defaultOpen
+          >
+            <SiteContentPanel />
           </CollapsibleSection>
         </div>
 

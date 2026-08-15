@@ -79,6 +79,8 @@ export type WizardPrefill = {
     promo_code: string | null
     promo_amount: number | null
     promo_deadline: string | null
+    /** PL-348: hero bullets on the public /c/{slug} page, one per line. */
+    selling_bullets?: string | null
   }
 }
 
@@ -190,6 +192,8 @@ export default function ClassWizard({
     initial?.collateral?.promo_amount != null ? String(initial.collateral.promo_amount) : ''
   )
   const [promoDeadline, setPromoDeadline] = useState(initial?.collateral?.promo_deadline ?? '')
+  // PL-348: the public class page's hero bullets (one per line).
+  const [sellingBullets, setSellingBullets] = useState(initial?.collateral?.selling_bullets ?? '')
   // 'Skip for now (remind me later)' stamps collateral_reminder_at on the
   // class -> the state-driven Needs Attention row.
   const [skipForNow, setSkipForNow] = useState(false)
@@ -594,6 +598,13 @@ export default function ClassWizard({
       // step, and this belt catches any path that skips both.
       practice_test_count: practiceTestCount.trim() === '' ? 2 : Math.trunc(Number(practiceTestCount)),
       flyer_blurb: flyerBlurb.trim() || null,
+      // PL-348: the public page's hero bullets (one per line). Included only
+      // when set — or when the duplicate prefill carried the key (so clearing
+      // the textarea beats the spread above) — so class creation keeps
+      // working before the migration lands.
+      ...(sellingBullets.trim() || (initial?.collateral && 'selling_bullets' in initial.collateral)
+        ? { selling_bullets: sellingBullets.trim() || null }
+        : {}),
     }
     if (!Number.isFinite(newClass.practice_test_count) || newClass.practice_test_count < 0) {
       setMessage('Error: the number of practice tests must be a whole number (0 or more).')
@@ -668,6 +679,7 @@ export default function ClassWizard({
     setPromoCode('')
     setPromoAmount('')
     setPromoDeadline('')
+    setSellingBullets('')
     setSkipForNow(false)
     setDefaultLocation('')
     setSessions([])
@@ -1560,6 +1572,56 @@ export default function ClassWizard({
                 placeholder="Optional — used on the Spanish letter"
                 className={inputCls}
               />
+            </div>
+            {/* PL-348: the public class page's hero bullets. Facts like
+                price and deadline render from the class record — these
+                bullets are the selling points only. */}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Public page selling bullets (one per line)
+              </label>
+              <textarea
+                value={sellingBullets}
+                onChange={(e) => setSellingBullets(e.target.value)}
+                rows={5}
+                placeholder={'16 hours of instruction with an expert instructor\nSmall group size\n…'}
+                className={inputCls}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Shown at the top of the public class page (/c/{'{'}slug{'}'}). Price and the
+                registration deadline appear there automatically — don&apos;t type them here.{' '}
+                {sellingBullets.trim() === '' && (
+                  <button
+                    type="button"
+                    className="text-hgl-blue underline"
+                    onClick={() => {
+                      // Prefill from the class details on this wizard — all
+                      // facts, no invented claims; every line is editable.
+                      const totalMinutes = sessions.reduce((s, x) => {
+                        const [sh, sm] = (x.start_time || '').split(':').map(Number)
+                        const [eh, em] = (x.end_time || '').split(':').map(Number)
+                        const d = (eh ?? 0) * 60 + (em ?? 0) - ((sh ?? 0) * 60 + (sm ?? 0))
+                        return s + (Number.isFinite(d) && d > 0 ? d : 0)
+                      }, 0)
+                      const hours = Math.round(totalMinutes / 60)
+                      const tests = Math.trunc(Number(practiceTestCount)) || 0
+                      setSellingBullets(
+                        [
+                          hours > 0 ? `${hours} hours of instruction with an expert instructor` : 'Expert live instruction',
+                          capacity.trim() ? `Small group size (${capacity.trim()} or fewer students)` : null,
+                          tests > 0 ? `${tests} full-length digital diagnostic exam${tests === 1 ? '' : 's'} with detailed score reports` : null,
+                          '1 free personalized 30-minute strategy session per student',
+                          'Curriculum workbook with integrated practice problems',
+                        ]
+                          .filter(Boolean)
+                          .join('\n')
+                      )
+                    }}
+                  >
+                    Suggest bullets from the class details
+                  </button>
+                )}
+              </p>
             </div>
           </div>
 

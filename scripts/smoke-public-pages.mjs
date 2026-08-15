@@ -28,6 +28,16 @@ check('API /class-info bad slug returns 404', res.status === 404, `status ${res.
 const body = await res.json().catch(() => null)
 check('API 404 body carries an error message', typeof body?.error === 'string')
 
+// --- PL-348: /c/{bad} is server-rendered and must NEVER 404 — printed
+// collateral and hgl.co shortlinks land here, so a stale link gets the
+// honest no-active-class page with the consultation door.
+const cRes = await fetch(`${base}/c/${BAD_SLUG}`)
+check('public class page bad slug returns 200 (never a 404)', cRes.status === 200, `status ${cRes.status}`)
+const cHtml = await cRes.text().catch(() => '')
+check('public class page bad slug renders the honest state card',
+  /No active class|no class open for registration/i.test(cHtml))
+check('public class page bad slug offers the consultation door', cHtml.includes('/inquire'))
+
 // --- Pages: friendly 404 renders, exactly one class-info fetch --------------
 const chromePath =
   process.env.CHROME_PATH ??

@@ -21,6 +21,8 @@ export type CollateralFields = {
   promo_code: string | null
   promo_amount: number | null
   promo_deadline: string | null
+  /** PL-348: hero bullets on the public /c/{slug} page, one per line. */
+  selling_bullets?: string | null
 }
 
 export default function CollateralCard({
@@ -31,6 +33,7 @@ export default function CollateralCard({
   fields,
   school,
   onSaved,
+  slug = null,
 }: {
   classId: string
   classType: string
@@ -39,6 +42,8 @@ export default function CollateralCard({
   fields: CollateralFields
   school: (School & { collateral_language?: string | null }) | null
   onSaved: () => void
+  /** PL-348: the class slug — shown as the public page link when present. */
+  slug?: string | null
 }) {
   const [form, setForm] = useState({
     short_link: fields.short_link ?? '',
@@ -50,6 +55,7 @@ export default function CollateralCard({
     promo_code: fields.promo_code ?? '',
     promo_amount: fields.promo_amount != null ? String(fields.promo_amount) : '',
     promo_deadline: fields.promo_deadline ?? '',
+    selling_bullets: fields.selling_bullets ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -106,6 +112,10 @@ export default function CollateralCard({
         promo_code: form.promo_code.trim() || null,
         promo_amount: form.promo_amount.trim() ? Number(form.promo_amount) : null,
         promo_deadline: form.promo_deadline || null,
+        // PL-348 ship-dark guard: only write the column once the migration
+        // has landed (the loaded row carries the key) — otherwise EVERY
+        // collateral save would break on the unknown column.
+        ...('selling_bullets' in fields ? { selling_bullets: form.selling_bullets.trim() || null } : {}),
       })
       .eq('id', classId)
     setSaving(false)
@@ -503,6 +513,31 @@ export default function CollateralCard({
             className="mt-1 w-full border rounded p-1.5"
           />
         </div>
+        {/* PL-348: hero bullets for the public /c/{slug} page. Ship-dark
+            guard: the field only renders once the migration has landed
+            (the loaded row carries the key), matching the save guard. */}
+        {'selling_bullets' in fields && (
+          <div className="col-span-3">
+            <label className="block text-xs text-gray-600">
+              Public page selling bullets (one per line) — the hero list on{' '}
+              {slug ? (
+                <a href={`/c/${slug}`} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
+                  the public class page ↗
+                </a>
+              ) : (
+                'the public class page'
+              )}
+              ; price and deadline render there automatically
+            </label>
+            <textarea
+              value={form.selling_bullets}
+              onChange={(e) => set('selling_bullets', e.target.value)}
+              rows={4}
+              placeholder={'16 hours of instruction with an expert instructor\nSmall group size\n…'}
+              className="mt-1 w-full border rounded p-1.5"
+            />
+          </div>
+        )}
         <div className={langs.includes('es') ? 'col-span-3 sm:col-span-2' : 'col-span-3'}>
           <label className="block text-xs text-gray-600">
             Extra letter paragraph{langs.includes('es') && langs.includes('en') ? ' (English letter)' : ''} —
