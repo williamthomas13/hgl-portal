@@ -22,7 +22,7 @@ for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 const out = path.join(process.cwd(), 'scripts', '.tmp-build-regress-report')
 rmSync(out, { recursive: true, force: true })
 execSync(
-  `npx tsc app/utils/term-report.ts app/utils/tutor-hours-report.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`,
+  `npx tsc app/utils/term-report.ts app/utils/tutor-hours-report.ts app/utils/report-period.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`,
   { stdio: 'inherit' }
 )
 const require = createRequire(import.meta.url)
@@ -142,8 +142,9 @@ try {
   check('12. tutor-hours category keys are stable machine keys',
     hoursReport.rows.every((r) => /^(1on1|worktype|class|consult):/.test(r.key)), JSON.stringify(hoursReport.rows.map((r) => r.key).slice(0, 5)))
 
-  // PL-345: the dashboard snapshot holds the same line — the manager variant
-  // carries counts and hours only, never a dollar-shaped key.
+  // PL-345/347: the dashboard snapshot holds the same line — the manager
+  // variant carries counts and hours only, never a dollar-shaped key, and
+  // the PL-347 period figures survive stripped to counts+hours.
   const fullSnapshot = {
     role: 'admin',
     enrolledAllTime: 12,
@@ -151,6 +152,9 @@ try {
     activeEngagements: 4,
     hoursThisMonth: 21.5,
     monthLabel: 'August',
+    period: { kind: 'this-quarter', label: 'Q3 2026 · July–September', previousLabel: 'Q2 2026' },
+    periodFigures: { enrolled: 5, hours: 12, revenue: 1000 },
+    previousFigures: { enrolled: 2, hours: 8, revenue: 600 },
     revenue: { classes: 950, tutoring: 300, packages: 400, grand: 1650 },
     projection: { total: 675, monthLabel: 'September 2026', generateDay: 20 },
   }
@@ -162,6 +166,69 @@ try {
   check('14. snapshot manager payload keeps the enrollment-side numbers',
     managerSnapshot.enrolledAllTime === 12 && managerSnapshot.enrolledThisMonth === 3 &&
     managerSnapshot.hoursThisMonth === 21.5 && !('revenue' in managerSnapshot) && !('projection' in managerSnapshot), '')
+  check('15. snapshot manager keeps period counts+hours, drops period revenue',
+    managerSnapshot.periodFigures?.enrolled === 5 && managerSnapshot.periodFigures?.hours === 12 &&
+    !('revenue' in (managerSnapshot.periodFigures ?? {})) &&
+    managerSnapshot.previousFigures?.enrolled === 2 && !('revenue' in (managerSnapshot.previousFigures ?? {})) &&
+    managerSnapshot.period?.previousLabel === 'Q2 2026', JSON.stringify(managerSnapshot.periodFigures))
+
+  // ── PL-347: report-period.ts — boundaries, twins, and the All-time parity
+  // guarantee (E). The clock is PINNED so quarter/year math is deterministic.
+  const rp = require(path.join(out, 'report-period.js'))
+  const NOW = new Date('2026-08-15T18:00:00Z') // Denver: 2026-08-15
+
+  const allTime = rp.resolvePeriod('all-time', { now: NOW })
+  check('16. all-time period is unbounded and admits every month bucket',
+    allTime.fromMonth === null && allTime.toMonth === null && allTime.previous === null &&
+    rp.monthInPeriod(QA_MONTH, allTime) && rp.monthInPeriod('unscheduled', allTime) && rp.monthInPeriod('unknown', allTime), '')
+
+  // The mechanical parity check: scoping the REAL report by All time changes
+  // nothing — same row counts, same revenue sums, equal to report.totals.
+  const inAll = (rows) => rows.filter((r) => rp.monthInPeriod(r.month, allTime))
+  const sum = (rows) => Number(rows.reduce((s, r) => s + (r.revenue ?? 0), 0).toFixed(2))
+  check('17. PARITY: All-time-scoped report === the unscoped report (rows and dollars)',
+    inAll(report.classes).length === report.classes.length &&
+    inAll(report.tutoringByMonth).length === report.tutoringByMonth.length &&
+    inAll(report.packages).length === report.packages.length &&
+    sum(inAll(report.classes)) === report.totals.classRevenue &&
+    sum(inAll(report.tutoringByMonth)) === report.totals.tutoringRevenue &&
+    sum(inAll(report.packages)) === report.totals.packageRevenue,
+    JSON.stringify({ cls: sum(inAll(report.classes)), totals: report.totals.classRevenue }))
+
+  const q = rp.resolvePeriod('this-quarter', { now: NOW })
+  check('18. this-quarter (Denver Aug 2026) = Jul–Sep w/ Q2 twin and plain label',
+    q.fromMonth === '2026-07' && q.toMonth === '2026-09' &&
+    q.label === 'Q3 2026 · July–September' &&
+    q.previous.fromMonth === '2026-04' && q.previous.toMonth === '2026-06' && q.previous.label === 'Q2 2026',
+    JSON.stringify(q))
+
+  const tm = rp.resolvePeriod('this-month', { now: NOW })
+  const lm = rp.resolvePeriod('last-month', { now: NOW })
+  const ty = rp.resolvePeriod('this-year', { now: NOW })
+  check('19. this-month / last-month / this-year bounds + previous twins',
+    tm.fromMonth === '2026-08' && tm.toMonth === '2026-08' && tm.previous.fromMonth === '2026-07' &&
+    lm.fromMonth === '2026-07' && lm.toMonth === '2026-07' && lm.previous.fromMonth === '2026-06' &&
+    ty.fromMonth === '2026-01' && ty.toMonth === '2026-12' &&
+    ty.previous.fromMonth === '2025-01' && ty.previous.toMonth === '2025-12' && ty.previous.label === '2025',
+    JSON.stringify({ tm: tm.label, lm: lm.label, ty: ty.label }))
+
+  const cust = rp.resolvePeriod('custom', { now: NOW, fromMonth: '2026-03', toMonth: '2026-05' })
+  const rev = rp.resolvePeriod('custom', { now: NOW, fromMonth: '2026-05', toMonth: '2026-03' })
+  check('20. custom range: equal-length previous twin, year-crossing twin months, reversed inputs normalized',
+    cust.fromMonth === '2026-03' && cust.toMonth === '2026-05' &&
+    cust.previous.fromMonth === '2025-12' && cust.previous.toMonth === '2026-02' &&
+    cust.label === 'March–May 2026' &&
+    rev.fromMonth === '2026-03' && rev.toMonth === '2026-05', JSON.stringify(cust))
+
+  check('21. bounded periods exclude the honest non-month buckets + respect bounds',
+    !rp.monthInPeriod('unscheduled', q) && !rp.monthInPeriod('unknown', q) &&
+    rp.monthInPeriod('2026-07', q) && rp.monthInPeriod('2026-09', q) &&
+    !rp.monthInPeriod('2026-06', q) && !rp.monthInPeriod('2026-10', q), '')
+
+  check('22. enrolledByMonth carries the fixture month as a COUNT (manager-safe path)',
+    typeof report.enrolledByMonth === 'object' &&
+    Object.values(report.enrolledByMonth).every((v) => Number.isInteger(v)) &&
+    'enrolledByMonth' in manager, '')
 } finally {
   await destroy()
   rmSync(out, { recursive: true, force: true })

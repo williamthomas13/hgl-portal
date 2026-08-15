@@ -1,12 +1,25 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import {
+  PERIOD_OPTIONS,
+  monthInPeriod,
+  monthLongLabel,
+  resolvePeriod,
+  type PeriodKind,
+} from '../../utils/report-period'
 
 // PL-204: "how's this term going" without opening QuickBooks. Plain tables
-// with totals, filters compose (school × month × class type), read-only,
+// with totals, filters compose (school × period × class type), read-only,
 // rows deep-link their class/tutoring pages. The API decides what this page
 // can even see: admins get the revenue view + enrollment view; managers get
 // enrollment only (their payload carries no dollar fields at all).
+// PL-347: the bare month dropdown grew into THE reporting-period selector
+// (report-period.ts is the one source of boundaries); months live on as the
+// "Custom months" option. Every section scopes to the period consistently —
+// classes by class month, 1-on-1 by invoice month, packages by purchase
+// month — and each header states the period plainly. All time stays the
+// default: it's what this page truthfully was.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -17,7 +30,9 @@ export default function TermReportPage() {
   const [report, setReport] = useState<any>(null)
   const [error, setError] = useState('')
   const [school, setSchool] = useState('')
-  const [month, setMonth] = useState('')
+  const [periodKind, setPeriodKind] = useState<PeriodKind>('all-time')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const [classType, setClassType] = useState('')
 
   useEffect(() => {
@@ -33,17 +48,52 @@ export default function TermReportPage() {
   const isAdmin = report?.role === 'admin'
   const classes: any[] = useMemo(() => report?.classes ?? [], [report])
   const schools = [...new Set(classes.map((c) => c.school))].sort()
-  const months = [...new Set(classes.map((c) => c.month))].sort().reverse()
+  // Custom-range choices: every real month any section knows about (the
+  // honest non-month buckets 'unscheduled'/'unknown' are not offerable).
+  const months = useMemo(
+    () =>
+      [
+        ...new Set(
+          [
+            ...classes.map((c) => c.month),
+            ...((report?.tutoringByMonth ?? []) as any[]).map((t) => t.month),
+            ...((report?.packages ?? []) as any[]).map((p) => p.month),
+          ].filter((m) => /^\d{4}-\d{2}$/.test(m ?? ''))
+        ),
+      ]
+        .sort()
+        .reverse(),
+    [classes, report]
+  )
   const types = [...new Set(classes.map((c) => c.classType))].sort()
+
+  // PL-347: ONE resolved period drives every section on this page.
+  const period = useMemo(
+    () =>
+      resolvePeriod(periodKind, {
+        fromMonth: customFrom || months[months.length - 1],
+        toMonth: customTo || months[0],
+      }),
+    [periodKind, customFrom, customTo, months]
+  )
 
   const filtered = classes.filter(
     (c) =>
       (!school || c.school === school) &&
-      (!month || c.month === month) &&
+      monthInPeriod(c.month, period) &&
       (!classType || c.classType === classType)
   )
   const filteredRevenue = filtered.reduce((s, c) => s + (c.revenue ?? 0), 0)
   const filteredEnrolled = filtered.reduce((s, c) => s + c.enrolled, 0)
+
+  // The 1-on-1 and package tables scope to the same period (by invoice month
+  // and purchase month respectively — each table says so).
+  const tutoringRows: any[] = ((report?.tutoringByMonth ?? []) as any[]).filter((t) =>
+    monthInPeriod(t.month, period)
+  )
+  const packageRows: any[] = ((report?.packages ?? []) as any[]).filter((p) =>
+    monthInPeriod(p.month, period)
+  )
 
   // PL-346: revenue by service — computed from the SAME payload fields the
   // rest of this page renders (the PL-204 paid columns; nothing recomputed),
@@ -54,12 +104,8 @@ export default function TermReportPage() {
   // school-scoped) and the header says so.
   const serviceSlices = (() => {
     if (!isAdmin || !report) return null
-    const tutoring = (report.tutoringByMonth as any[])
-      .filter((t) => !month || t.month === month)
-      .reduce((s, t) => s + (t.revenue ?? 0), 0)
-    const packages = (report.packages as any[])
-      .filter((p) => !month || p.month === month)
-      .reduce((s, p) => s + (p.revenue ?? 0), 0)
+    const tutoring = tutoringRows.reduce((s, t) => s + (t.revenue ?? 0), 0)
+    const packages = packageRows.reduce((s, p) => s + (p.revenue ?? 0), 0)
     // Validated categorical slots 1–3 (dataviz palette; the aqua slot's
     // contrast WARN is covered by direct labels + the table beside it).
     const slices = [
@@ -84,9 +130,9 @@ export default function TermReportPage() {
     }
     return { slices, total, percents }
   })()
-  const monthLabel = month
-    ? new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-    : 'all months'
+  // The in-sentence period phrase every section header uses ("August 2026",
+  // "Q3 2026 (July–September)", "all time").
+  const monthLabel = period.phrase
 
   return (
     <div className="min-h-screen bg-gray-50 p-10">
@@ -116,10 +162,41 @@ export default function TermReportPage() {
                 <option value="">All schools</option>
                 {schools.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-              <select value={month} onChange={(e) => setMonth(e.target.value)} className="border border-gray-300 rounded p-1.5 bg-white">
-                <option value="">All months</option>
-                {months.map((m) => <option key={m} value={m}>{m}</option>)}
+              {/* PL-347: the period selector (report-period.ts is the one
+                  source of boundaries). Months live on as Custom months. */}
+              <select
+                value={periodKind}
+                onChange={(e) => setPeriodKind(e.target.value as PeriodKind)}
+                className="border border-gray-300 rounded p-1.5 bg-white"
+              >
+                {PERIOD_OPTIONS.map((o) => (
+                  <option key={o.kind} value={o.kind}>{o.name}</option>
+                ))}
               </select>
+              {periodKind === 'custom' && (
+                <>
+                  <label className="flex items-center gap-1.5 text-gray-600">
+                    from
+                    <select
+                      value={customFrom || months[months.length - 1] || ''}
+                      onChange={(e) => setCustomFrom(e.target.value)}
+                      className="border border-gray-300 rounded p-1.5 bg-white"
+                    >
+                      {months.map((m) => <option key={m} value={m}>{monthLongLabel(m)}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-gray-600">
+                    through
+                    <select
+                      value={customTo || months[0] || ''}
+                      onChange={(e) => setCustomTo(e.target.value)}
+                      className="border border-gray-300 rounded p-1.5 bg-white"
+                    >
+                      {months.map((m) => <option key={m} value={m}>{monthLongLabel(m)}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
               <select value={classType} onChange={(e) => setClassType(e.target.value)} className="border border-gray-300 rounded p-1.5 bg-white">
                 <option value="">All class types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -219,7 +296,12 @@ export default function TermReportPage() {
             )}
 
             <div id="classes" className="bg-white rounded-lg shadow-md p-5">
-              <h2 className="text-lg font-bold text-hgl-slate mb-3">Classes</h2>
+              <h2 className="text-lg font-bold text-hgl-slate mb-1">Classes</h2>
+              <p className="text-xs text-gray-500 mb-3">
+                {period.kind === 'all-time'
+                  ? 'Every class, all time.'
+                  : `Classes whose first session falls in ${monthLabel}.`}
+              </p>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
@@ -269,6 +351,7 @@ export default function TermReportPage() {
                 <h2 className="text-lg font-bold text-hgl-slate mb-3">1-on-1 tutoring</h2>
                 <p className="text-xs text-gray-500 mb-2">
                   {report.activeEngagements} active engagement{report.activeEngagements === 1 ? '' : 's'} · paid invoices by month
+                  {period.kind !== 'all-time' && ` · showing ${monthLabel}`}
                 </p>
                 <table className="min-w-full text-sm">
                   <thead>
@@ -279,7 +362,7 @@ export default function TermReportPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {(report.tutoringByMonth ?? []).map((t: any) => (
+                    {tutoringRows.map((t: any) => (
                       <tr key={t.month}>
                         <td className="py-2 pr-4">
                           <a href="/admin/tutoring" className="text-hgl-blue underline">{t.month}</a>
@@ -288,12 +371,22 @@ export default function TermReportPage() {
                         {isAdmin && <td className="py-2 pr-4 text-right font-semibold">{money(t.revenue)}</td>}
                       </tr>
                     ))}
+                    {tutoringRows.length === 0 && (
+                      <tr>
+                        <td colSpan={isAdmin ? 3 : 2} className="py-2 pr-4 text-gray-500 italic">
+                          No paid invoices in {monthLabel}.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
 
               <div id="packages" className="bg-white rounded-lg shadow-md p-5">
                 <h2 className="text-lg font-bold text-hgl-slate mb-3">Hours packages</h2>
+                <p className="text-xs text-gray-500 mb-2">
+                  By purchase month{period.kind !== 'all-time' && ` · showing ${monthLabel}`}
+                </p>
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide border-b border-gray-200">
@@ -305,7 +398,7 @@ export default function TermReportPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {(report.packages ?? []).map((p: any) => (
+                    {packageRows.map((p: any) => (
                       <tr key={p.month}>
                         <td className="py-2 pr-4">{p.month}</td>
                         <td className="py-2 pr-4">{p.sold}</td>
@@ -314,6 +407,13 @@ export default function TermReportPage() {
                         {isAdmin && <td className="py-2 pr-4 text-right font-semibold">{money(p.revenue)}</td>}
                       </tr>
                     ))}
+                    {packageRows.length === 0 && (
+                      <tr>
+                        <td colSpan={isAdmin ? 5 : 4} className="py-2 pr-4 text-gray-500 italic">
+                          No packages purchased in {monthLabel}.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -321,13 +421,44 @@ export default function TermReportPage() {
 
             {isAdmin && report.totals && (
               <div id="totals" className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-5 text-sm">
-                <h2 className="text-lg font-bold text-hgl-slate mb-2">All-time totals</h2>
-                <div className="flex flex-wrap gap-x-8 gap-y-1">
-                  <span>Classes: <strong>{money(report.totals.classRevenue)}</strong></span>
-                  <span>Tutoring invoices: <strong>{money(report.totals.tutoringRevenue)}</strong></span>
-                  <span>Packages: <strong>{money(report.totals.packageRevenue)}</strong></span>
-                  <span className="text-hgl-slate">Everything: <strong>{money(report.totals.grand)}</strong></span>
-                </div>
+                {period.kind === 'all-time' ? (
+                  <>
+                    <h2 className="text-lg font-bold text-hgl-slate mb-2">All-time totals</h2>
+                    <div className="flex flex-wrap gap-x-8 gap-y-1">
+                      <span>Classes: <strong>{money(report.totals.classRevenue)}</strong></span>
+                      <span>Tutoring invoices: <strong>{money(report.totals.tutoringRevenue)}</strong></span>
+                      <span>Packages: <strong>{money(report.totals.packageRevenue)}</strong></span>
+                      <span className="text-hgl-slate">Everything: <strong>{money(report.totals.grand)}</strong></span>
+                    </div>
+                  </>
+                ) : (
+                  // PL-347: the same card through the period lens — summed
+                  // from the page's own period-scoped rows (nothing
+                  // recomputed). The school/class-type filters deliberately
+                  // don't scope this card, matching the all-time behavior.
+                  (() => {
+                    const cls = classes
+                      .filter((c) => monthInPeriod(c.month, period))
+                      .reduce((s, c) => s + (c.revenue ?? 0), 0)
+                    const tut = tutoringRows.reduce((s: number, t: any) => s + (t.revenue ?? 0), 0)
+                    const pkg = packageRows.reduce((s: number, p: any) => s + (p.revenue ?? 0), 0)
+                    return (
+                      <>
+                        <h2 className="text-lg font-bold text-hgl-slate mb-2">Totals · {monthLabel}</h2>
+                        <div className="flex flex-wrap gap-x-8 gap-y-1">
+                          <span>Classes: <strong>{money(cls)}</strong></span>
+                          <span>Tutoring invoices: <strong>{money(tut)}</strong></span>
+                          <span>Packages: <strong>{money(pkg)}</strong></span>
+                          <span className="text-hgl-slate">Everything: <strong>{money(cls + tut + pkg)}</strong></span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {/* PL-116 {' '} rule — JSX eats the boundary space. */}
+                          Scoped to {monthLabel}{' '}— the school and class-type filters don&apos;t apply to this card.
+                        </p>
+                      </>
+                    )
+                  })()
+                )}
               </div>
             )}
           </>

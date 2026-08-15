@@ -39,6 +39,10 @@ export type TermReport = {
    *  current Denver month — the snapshot card's "+N this month" delta. A
    *  COUNT (manager-safe), computed in the same pass as everything else. */
   enrolledThisMonth: number
+  /** PL-347: the same paid/refund-filtered enrollments COUNTED per Denver
+   *  month of enrolled_at — what lets any reporting period sum enrollments
+   *  without new queries. Counts only (manager-safe). */
+  enrolledByMonth: Record<string, number>
   totals?: { classRevenue: number; tutoringRevenue: number; packageRevenue: number; grand: number }
 }
 
@@ -84,6 +88,7 @@ export async function loadTermReport(): Promise<TermReport> {
   const byClass = new Map<string, { enrolled: number; revenue: number }>()
   const thisDenverMonth = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7)
   let enrolledThisMonth = 0
+  const enrolledByMonth: Record<string, number> = {}
   for (const e of ((enrRes.data as any[]) ?? [])) {
     if (!PAID_STATUSES.includes(e.payment_status)) continue
     if (e.cancellation_outcome === 'refunded' || e.cancellation_outcome === 'refund_requested') continue
@@ -91,13 +96,11 @@ export async function loadTermReport(): Promise<TermReport> {
     entry.enrolled++
     entry.revenue += Number(e.class_price_paid ?? one<any>(e.classes)?.price ?? 0)
     byClass.set(e.class_id, entry)
-    // PL-345: the same paid/refund rules drive the this-month delta.
-    if (
-      e.enrolled_at &&
-      new Date(e.enrolled_at).toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7) ===
-        thisDenverMonth
-    ) {
-      enrolledThisMonth++
+    // PL-345/347: the same paid/refund rules drive the per-month counts.
+    if (e.enrolled_at) {
+      const m = new Date(e.enrolled_at).toLocaleDateString('en-CA', { timeZone: 'America/Denver' }).slice(0, 7)
+      enrolledByMonth[m] = (enrolledByMonth[m] ?? 0) + 1
+      if (m === thisDenverMonth) enrolledThisMonth++
     }
   }
 
@@ -157,6 +160,7 @@ export async function loadTermReport(): Promise<TermReport> {
     packages,
     activeEngagements: ((engRes.data as any[]) ?? []).length,
     enrolledThisMonth,
+    enrolledByMonth,
     totals: {
       classRevenue: Number(classRevenue.toFixed(2)),
       tutoringRevenue: Number(tutoringRevenue.toFixed(2)),
@@ -179,6 +183,7 @@ export function stripRevenue(report: TermReport): TermReport {
     packages: report.packages.map(({ revenue: _r, ...rest }) => rest),
     activeEngagements: report.activeEngagements,
     enrolledThisMonth: report.enrolledThisMonth, // a count — manager-safe
+    enrolledByMonth: report.enrolledByMonth, // counts — manager-safe
     // no totals key at all
   }
 }
@@ -192,6 +197,14 @@ export function stripRevenue(report: TermReport): TermReport {
 // a term concept lands, both surfaces move together.
 // ---------------------------------------------------------------------------
 
+/** PL-347: the numbers a period lens speaks about. `revenue` is ADMIN-ONLY
+ *  and stripped server-side for managers, same rule as everything else. */
+export type SnapshotPeriodFigures = {
+  enrolled: number
+  hours: number
+  revenue?: number
+}
+
 export type ReportSnapshot = {
   role: 'admin' | 'manager'
   /** Paid, non-refunded enrollments (the report's own counting rules). */
@@ -201,14 +214,23 @@ export type ReportSnapshot = {
   hoursThisMonth: number
   /** "August" — the month the delta and hours speak about. */
   monthLabel: string
+  /** PL-347: the lens this snapshot was computed through. 'all-time' renders
+   *  the classic PL-345 card; any other kind renders periodFigures with
+   *  deltas vs previousFigures ("↑ 3 vs Q2 2026"). */
+  period?: { kind: string; label: string; previousLabel: string | null }
+  periodFigures?: SnapshotPeriodFigures
+  previousFigures?: SnapshotPeriodFigures
   /** ADMIN-ONLY — stripped server-side for managers. */
   revenue?: { classes: number; tutoring: number; packages: number; grand: number }
   projection?: { total: number; monthLabel: string; generateDay: number }
 }
 
 /** The manager snapshot: dollar fields ABSENT, not hidden (the PL-204 rule —
- *  the regression gate deep-scans this shape too). */
+ *  the regression gate deep-scans this shape too). Period figures survive as
+ *  counts and hours only. */
 export function stripSnapshotRevenue(s: ReportSnapshot): ReportSnapshot {
+  const stripFigures = (f: SnapshotPeriodFigures | undefined) =>
+    f ? { enrolled: f.enrolled, hours: f.hours } : undefined
   return {
     role: 'manager',
     enrolledAllTime: s.enrolledAllTime,
@@ -216,6 +238,9 @@ export function stripSnapshotRevenue(s: ReportSnapshot): ReportSnapshot {
     activeEngagements: s.activeEngagements,
     hoursThisMonth: s.hoursThisMonth,
     monthLabel: s.monthLabel,
+    ...(s.period ? { period: s.period } : {}),
+    ...(s.periodFigures ? { periodFigures: stripFigures(s.periodFigures) } : {}),
+    ...(s.previousFigures ? { previousFigures: stripFigures(s.previousFigures) } : {}),
     // no revenue, no projection
   }
 }

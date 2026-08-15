@@ -116,6 +116,32 @@ type UpcomingClass = {
   href: string
 }
 
+// PL-347: the snapshot card's plain-English vs-previous-period delta —
+// "↑ 3 vs Q2 2026". Absent previous data renders nothing (never a fake 0).
+function SnapshotDelta({
+  current,
+  previous,
+  vs,
+  isMoney = false,
+}: {
+  current: number
+  previous: number | undefined
+  vs: string | null
+  isMoney?: boolean
+}) {
+  if (previous == null || vs == null) return null
+  const diff = Number((current - previous).toFixed(2))
+  const magnitude = isMoney
+    ? `$${Math.abs(diff).toLocaleString('en-US')}`
+    : `${Math.abs(diff).toLocaleString('en-US')}`
+  if (diff === 0) return <span className="text-xs text-gray-400"> · even with {vs}</span>
+  return (
+    <span className={`text-xs font-semibold ${diff > 0 ? 'text-green-700' : 'text-amber-700'}`}>
+      {' '}· {diff > 0 ? '↑' : '↓'} {magnitude} vs {vs}
+    </span>
+  )
+}
+
 export default function DashboardPanel({
   simulatedManager = false,
 }: {
@@ -139,16 +165,40 @@ export default function DashboardPanel({
     activeEngagements: number
     hoursThisMonth: number
     monthLabel: string
+    period?: { kind: string; label: string; previousLabel: string | null }
+    periodFigures?: { enrolled: number; hours: number; revenue?: number }
+    previousFigures?: { enrolled: number; hours: number; revenue?: number }
     revenue?: { grand: number }
     projection?: { total: number; monthLabel: string; generateDay: number }
   } | null>(null)
   useEffect(() => {
+    // No ?period= → the server applies the caller's persisted lens (PL-347).
     fetch('/api/admin/report/snapshot')
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
       .then((json) => {
         if (json) setSnapshot(json)
       })
+  }, [])
+  // PL-347: switch the card's period lens; the choice persists per staff
+  // member (staff_prefs key report_snapshot_period — fire-and-forget).
+  const [snapshotBusy, setSnapshotBusy] = useState(false)
+  const changeSnapshotPeriod = useCallback(async (kind: string) => {
+    setSnapshotBusy(true)
+    fetch('/api/admin/report/snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period: kind }),
+    }).catch(() => {})
+    try {
+      const res = await fetch(`/api/admin/report/snapshot?period=${encodeURIComponent(kind)}`)
+      if (res.ok) {
+        const json = await res.json().catch(() => null)
+        if (json) setSnapshot(json)
+      }
+    } finally {
+      setSnapshotBusy(false)
+    }
   }, [])
   const [error, setError] = useState('')
   const [health, setHealth] = useState<SystemHealth | null>(null)
@@ -508,11 +558,90 @@ export default function DashboardPanel({
             headline numbers from the PL-204/218/333 machinery (no
             recomputation; managers get the enrollment side only, stripped
             server-side). Informational: every number is a door, actions
-            stay on their own surfaces. */}
+            stay on their own surfaces. PL-347: a mini period selector —
+            the lens persists per staff member; any lens except All time
+            renders period figures with vs-previous deltas. */}
         <div className="bg-white rounded-lg shadow-md border-t-4 border-green-600 p-5">
-          <h2 className="text-sm font-bold text-hgl-slate mb-2">This term at a glance</h2>
-          {snapshot ? (
-            <ul className="text-sm space-y-1.5">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h2 className="text-sm font-bold text-hgl-slate">This term at a glance</h2>
+            {snapshot && (
+              <select
+                value={snapshot.period?.kind ?? 'all-time'}
+                onChange={(e) => changeSnapshotPeriod(e.target.value)}
+                disabled={snapshotBusy}
+                className="border border-gray-300 rounded p-1 bg-white text-xs text-gray-700"
+                aria-label="Reporting period for this card"
+              >
+                <option value="all-time">All time</option>
+                <option value="this-month">This month</option>
+                <option value="last-month">Last month</option>
+                <option value="this-quarter">This quarter</option>
+                <option value="this-year">This year</option>
+              </select>
+            )}
+          </div>
+          {snapshot && snapshot.period && snapshot.period.kind !== 'all-time' && snapshot.periodFigures ? (
+            <ul className={`text-sm space-y-1.5 ${snapshotBusy ? 'opacity-60' : ''}`}>
+              <li className="text-xs text-gray-400">{snapshot.period.label}</li>
+              <li>
+                <a href="/admin/report#classes" className="text-gray-700 hover:text-hgl-blue">
+                  <span className="text-xl font-bold text-hgl-slate">{snapshot.periodFigures.enrolled}</span>{' '}
+                  paid enrollments
+                  <SnapshotDelta
+                    current={snapshot.periodFigures.enrolled}
+                    previous={snapshot.previousFigures?.enrolled}
+                    vs={snapshot.period.previousLabel}
+                  />
+                </a>
+              </li>
+              <li>
+                <a href="/admin?tab=classes" className="text-gray-700 hover:text-hgl-blue">
+                  {/* PL-116 {' '} rule — "4live" otherwise. */}
+                  <span className="text-xl font-bold text-hgl-slate">{liveClassCount}</span>{' '}live &amp;
+                  scheduled classes
+                </a>
+              </li>
+              <li>
+                <a href="/admin/tutoring?section=timecards" className="text-gray-700 hover:text-hgl-blue">
+                  <span className="text-xl font-bold text-hgl-slate">{snapshot.periodFigures.hours}</span>{' '}
+                  tutoring hours delivered
+                  <SnapshotDelta
+                    current={snapshot.periodFigures.hours}
+                    previous={snapshot.previousFigures?.hours}
+                    vs={snapshot.period.previousLabel}
+                  />
+                </a>
+              </li>
+              {snapshot.periodFigures.revenue != null && !simulatedManager && (
+                <li>
+                  <a href="/admin/report#totals" className="text-gray-700 hover:text-hgl-blue">
+                    <span className="text-xl font-bold text-hgl-slate">
+                      ${snapshot.periodFigures.revenue.toLocaleString('en-US')}
+                    </span>{' '}
+                    collected — classes, packages &amp; paid invoices
+                    <SnapshotDelta
+                      current={snapshot.periodFigures.revenue}
+                      previous={snapshot.previousFigures?.revenue}
+                      vs={snapshot.period.previousLabel}
+                      isMoney
+                    />
+                  </a>
+                </li>
+              )}
+              {snapshot.projection && !simulatedManager && (
+                <li>
+                  <a href="/admin/tutoring?section=billing" className="text-gray-700 hover:text-hgl-blue">
+                    <span className="text-xl font-bold text-hgl-slate">
+                      ${snapshot.projection.total.toLocaleString('en-US')}
+                    </span>{' '}
+                    projected for {snapshot.projection.monthLabel} — generates on the{' '}
+                    {snapshot.projection.generateDay}th
+                  </a>
+                </li>
+              )}
+            </ul>
+          ) : snapshot ? (
+            <ul className={`text-sm space-y-1.5 ${snapshotBusy ? 'opacity-60' : ''}`}>
               <li>
                 <a href="/admin/report#classes" className="text-gray-700 hover:text-hgl-blue">
                   <span className="text-xl font-bold text-hgl-slate">{snapshot.enrolledAllTime}</span>{' '}
