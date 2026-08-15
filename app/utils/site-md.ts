@@ -53,6 +53,20 @@ export function renderSiteMarkdown(markdown: string): string {
   return html.join('\n')
 }
 
+/** PL-359: the plain-text reading of a block — JSON-LD text fields and
+ *  meta descriptions want prose, not markup. */
+export function plainTextFromMarkdown(markdown: string): string {
+  return markdown
+    .replace(/\r\n/g, '\n')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^###\s+/gm, '')
+    .replace(/^-\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /** Split a FAQ block ("### Question" + answer paragraphs) into items. */
 export function parseFaqItems(markdown: string): { question: string; answerMarkdown: string }[] {
   const items: { question: string; answerMarkdown: string }[] = []

@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
-import { renderSiteMarkdown } from '../utils/site-md'
+import { plainTextFromMarkdown, renderSiteMarkdown } from '../utils/site-md'
 import { CONSULT_HREF } from '../components/ClassStateCard'
+import { emailBaseUrl } from '../utils/base-url'
 
 // PL-358: the public team page — GENERATED from instructor profiles (the
 // one instructors table; show_on_team + team_order decide who and in what
@@ -15,6 +16,11 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   title: 'Our Team — Higher Ground Learning',
   description: 'The instructors and staff behind Higher Ground Learning.',
+  openGraph: {
+    title: 'Our Team — Higher Ground Learning',
+    description: 'The instructors and staff behind Higher Ground Learning.',
+    siteName: 'Higher Ground Learning',
+  },
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -37,8 +43,34 @@ export default async function TeamPage() {
     .order('name')
   const people = ((data as any[]) ?? [])
 
+  // PL-359 A: Person markup from the same profile rows the page renders.
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': 'https://www.highergroundlearning.com/#org',
+        name: 'Higher Ground Learning',
+        url: 'https://www.highergroundlearning.com',
+      },
+      ...people.map((p) => {
+        const shot = parseClassPageImage(p.headshot)
+        return {
+          '@type': 'Person',
+          name: p.name,
+          ...(p.credential ? { jobTitle: p.credential } : {}),
+          ...(shot ? { image: imageAttrs(shot).src } : {}),
+          ...(p.bio ? { description: plainTextFromMarkdown(p.bio) } : {}),
+          worksFor: { '@id': 'https://www.highergroundlearning.com/#org' },
+          url: `${emailBaseUrl()}/team`,
+        }
+      }),
+    ],
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <section className="bg-hgl-slate">
         <div className="max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white">
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">Our team</h1>

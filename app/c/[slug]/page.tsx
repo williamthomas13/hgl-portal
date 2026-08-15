@@ -13,7 +13,8 @@ import {
 } from '../../utils/dates'
 import { zonedToUtc } from '../../utils/tutoring'
 import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
-import { parseFaqItems, renderSiteMarkdown } from '../../utils/site-md'
+import { parseFaqItems, plainTextFromMarkdown, renderSiteMarkdown } from '../../utils/site-md'
+import { emailBaseUrl } from '../../utils/base-url'
 import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
 import ClassPageAnalytics from './analytics'
 import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
@@ -175,9 +176,38 @@ export async function generateMetadata({
   const { slug } = await params
   const { cls } = await loadPage(slug)
   if (!cls) return { title: 'Classes — Higher Ground Learning', robots: { index: false } }
+  // PL-359 B/E: only LIVE pages are index-worthy; cancelled/closed states
+  // carry noindex (they're honest dead-ends, not content).
+  const sessions = ([...(cls.sessions ?? [])] as any[]).sort(bySessionStart)
+  const firstSession = effectiveStartDate(cls.start_date, sessions)
+  const close = String(cls.registration_close_date ?? firstSession ?? '').slice(0, 10)
+  const timezone = cls.timezone ?? one<any>(cls.schools)?.timezone ?? DEFAULT_TIMEZONE
+  const todayInZone = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
+  const dead = cls.status === 'cancelled' || !close || todayInZone > close
+  const title = `${heroTitleFor(cls)} — Higher Ground Learning`
+  const bullets = String(cls.selling_bullets ?? '')
+    .split('\n')
+    .map((b: string) => b.replace(/^[-•]\s*/, '').trim())
+    .filter(Boolean)
+  const description =
+    bullets.length > 0
+      ? bullets.join(' · ').slice(0, 300)
+      : `Live ${cls.class_type} class from Higher Ground Learning — schedule, what's included, and registration.`
+  const heroImage = parseClassPageImage(cls.hero_image)
+  const ogImage = heroImage
+    ? imageAttrs(heroImage).src
+    : one<any>(cls.schools)?.logo_url ?? undefined
   return {
-    title: `${heroTitleFor(cls)} — Higher Ground Learning`,
-    description: `Live ${cls.class_type} class from Higher Ground Learning — schedule, what's included, and registration.`,
+    title,
+    description,
+    ...(dead ? { robots: { index: false } } : {}),
+    openGraph: {
+      title,
+      description,
+      url: `${emailBaseUrl()}/c/${cls.slug}`,
+      siteName: 'Higher Ground Learning',
+      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+    },
   }
 }
 
@@ -358,8 +388,68 @@ export default async function PublicClassPage({
     </a>
   )
 
+  // PL-359 A: JSON-LD composed FROM THE RECORD (the financial-facts rule
+  // applies to markup too — price/availability/dates are never hand-typed).
+  // Honest degrade: fields we can't state truthfully are omitted.
+  const base = emailBaseUrl()
+  const lastSession = sessions[sessions.length - 1]?.session_date ?? cls.start_date
+  const org = {
+    '@type': 'Organization',
+    '@id': 'https://www.highergroundlearning.com/#org',
+    name: 'Higher Ground Learning',
+    url: 'https://www.highergroundlearning.com',
+  }
+  const faqItems = faqBlocks.flatMap((b) => parseFaqItems(b.body_markdown))
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      org,
+      {
+        '@type': 'Course',
+        name: heroTitleFor(cls),
+        description:
+          bullets.length > 0
+            ? bullets.join(' · ')
+            : `Live ${cls.class_type} class from Higher Ground Learning.`,
+        provider: { '@id': org['@id'] },
+        offers: {
+          '@type': 'Offer',
+          price: price,
+          priceCurrency: 'USD',
+          availability: isFull ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock',
+          validThrough: String(registrationClose).slice(0, 10),
+          url: `${base}${registerHref}`,
+        },
+        hasCourseInstance: {
+          '@type': 'CourseInstance',
+          courseMode: online ? 'Online' : 'Onsite',
+          startDate: firstSession,
+          endDate: lastSession,
+          ...(online
+            ? { location: { '@type': 'VirtualLocation', url: `${base}/c/${cls.slug}` } }
+            : cls.default_location
+              ? { location: { '@type': 'Place', name: cls.default_location, address: cls.default_location } }
+              : {}),
+        },
+      },
+      ...(faqItems.length > 0
+        ? [
+            {
+              '@type': 'FAQPage',
+              mainEntity: faqItems.map((f) => ({
+                '@type': 'Question',
+                name: f.question,
+                acceptedAnswer: { '@type': 'Answer', text: plainTextFromMarkdown(f.answerMarkdown) },
+              })),
+            },
+          ]
+        : []),
+    ],
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       {/* PL-350: first-party section/click counting (DNT-respecting; the
           fine-print block discloses it). */}
       <ClassPageAnalytics classId={cls.id} />
