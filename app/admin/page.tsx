@@ -2140,9 +2140,10 @@ export default function AdminDashboard() {
                           {en.offline_payment_method === 'comp' ? 'comp ($0)' : `paid by ${en.offline_payment_method}`}
                         </span>
                       )}
-                      {/* PL-361 D: a staff-created Pending has its actions on
-                          the row — resend the payment link, or cancel. */}
-                      {en.source === 'staff' && en.payment_status === 'Pending' && (
+                      {/* PL-361 D / PL-363: a staff-created or imported
+                          Pending has its actions on the row — send/resend
+                          the payment link, or cancel. */}
+                      {(en.source === 'staff' || en.source === 'import') && en.payment_status === 'Pending' && (
                         <>
                           <button
                             onClick={async () => {

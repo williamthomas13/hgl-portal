@@ -181,9 +181,9 @@ export async function GET() {
   const { data: staleStaffPending } = await supabase
     .from('enrollments')
     .select(
-      'id, class_id, enrolled_at, source_recorded_by, students ( first_name, last_name ), classes ( class_type, status, schools ( nickname ) )'
+      'id, class_id, enrolled_at, source, source_recorded_by, students ( first_name, last_name ), classes ( class_type, status, schools ( nickname ) )'
     )
-    .eq('source', 'staff')
+    .in('source', ['staff', 'import'])
     .eq('payment_status', 'Pending')
     .lt('enrolled_at', new Date(now.getTime() - 3 * 86400000).toISOString())
 
@@ -214,10 +214,13 @@ export async function GET() {
     if (cls?.status === 'cancelled') continue
     const student = one<any>(e.students)
     const studentName = student ? `${student.first_name} ${student.last_name}` : 'A student'
+    const imported = e.source === 'import'
     attention.push({
       id: `staff-pending-${e.id}`,
-      kind: 'Staff registration awaiting payment',
-      text: `${studentName} was registered by staff for ${one<any>(cls?.schools)?.nickname ?? 'HGL'} ${cls?.class_type ?? ''} on ${plainDate(String(e.enrolled_at).slice(0, 10), todayIso)} and hasn't paid — resend the payment link or cancel the registration from the roster.`,
+      kind: imported ? 'Imported registration awaiting payment' : 'Staff registration awaiting payment',
+      text: imported
+        ? `${studentName}'s registration for ${one<any>(cls?.schools)?.nickname ?? 'HGL'} ${cls?.class_type ?? ''} came over unpaid in the cutover import — email them the payment link or cancel it from the roster (automatic reminders deliberately don't run on imported rows).`
+        : `${studentName} was registered by staff for ${one<any>(cls?.schools)?.nickname ?? 'HGL'} ${cls?.class_type ?? ''} on ${plainDate(String(e.enrolled_at).slice(0, 10), todayIso)} and hasn't paid — resend the payment link or cancel the registration from the roster.`,
       href: `/admin?class=${e.class_id}`,
       since: e.enrolled_at,
     })

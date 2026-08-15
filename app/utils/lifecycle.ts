@@ -53,6 +53,8 @@ export type EnrollmentRow = {
   id: string
   payment_status: 'Pending' | 'Paid' | 'Completed' | 'Expired' | 'Waitlisted' | 'Refunded'
   enrolled_at: string
+  /** PL-361/363: null = online; 'staff' = staff-assisted; 'import' = cutover import. */
+  source: string | null
   paid_at: string | null
   amountPaid: number | null
   accommodations: string | null
@@ -229,7 +231,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     instructors ( name, email, bio ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
-      id, payment_status, enrolled_at, paid_at, amount_paid,
+      id, payment_status, enrolled_at, paid_at, amount_paid, source,
       accommodations, previous_scores, notes,
       waitlist_offer_sent_at, waitlist_offer_expires_at, waitlist_offer_round,
       enrollment_addons ( hours, price_paid, tutoring_packages ( name ) ),
@@ -261,6 +263,9 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           id: e.id,
           payment_status: e.payment_status,
           enrolled_at: e.enrolled_at,
+          // PL-363: 'import' rows are cutover imports — the PR ladder and
+          // expiry sweep leave them alone (staff-managed at cutover).
+          source: e.source ?? null,
           paid_at: e.paid_at ?? null,
           amountPaid: e.amount_paid != null ? Number(e.amount_paid) : null,
           accommodations: e.accommodations ?? null,

@@ -218,6 +218,11 @@ async function sendToAudiences(opts: {
 async function sweepPaymentReminders(bundle: ClassBundle, c: Counters) {
   for (const e of bundle.enrollments) {
     if (e.payment_status !== 'Pending') continue
+    // PL-363: cutover-imported Pendings are staff-managed — the old system
+    // already told these families everything, and their original
+    // registration date would make the ladder fire all four reminders and
+    // expire the row at once. They surface on Needs Attention instead.
+    if (e.source === 'import') continue
     const age = hoursSince(e.enrolled_at)
 
     if (age >= PAYMENT_EXPIRY_HOURS) {

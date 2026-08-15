@@ -86,6 +86,8 @@ export function projectBundle(bundle: ClassBundle, prePackages: TutoringPackage[
 
   for (const e of bundle.enrollments) {
     if (e.payment_status === 'Pending') {
+      // PL-363: imported Pendings never enter the PR ladder — no projection.
+      if (e.source === 'import') continue
       for (const r of PAYMENT_REMINDERS) {
         out.push({
           dedupe_key: `payment_reminder_${r.n}:${e.id}`,
