@@ -66,7 +66,9 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 // REAL page component against a clearly-labeled synthetic class (never a DB
 // row). The slug pattern carries the course key so course-scoped blocks
 // inherit exactly as they would on a real class.
-const SAMPLE_SLUG_RE = /^sample--([a-z0-9-]{2,64})$/
+// PL-373: '…--online' exercises delivery_mode='online' on the synthetic
+// sample (so the admin can preview the online image variants + title).
+const SAMPLE_SLUG_RE = /^sample--([a-z0-9-]{2,64}?)(--online)?$/
 
 function sampleClass(courseKey: string) {
   // Next four Saturdays starting ~3 weeks out, 10:00–12:00 — plausible,
@@ -141,7 +143,7 @@ const loadPage = cache(async (slug: string) => {
     try {
       const { data } = await supabase
         .from('site_content_blocks')
-        .select('key, section, heading, body_markdown, sort_order, image, scope, course_key, class_id')
+        .select('key, section, heading, body_markdown, sort_order, image, image_online, scope, course_key, class_id')
         .order('sort_order')
       blocks = (data as any[]) ?? []
     } catch {
@@ -164,6 +166,10 @@ const loadPage = cache(async (slug: string) => {
     }
     const sampleCls = sampleClass(sampleMatch[1]) as any
     if (sampleName) sampleCls.class_type = `${sampleName} (sample)`
+    if (sampleMatch[2]) {
+      sampleCls.delivery_mode = 'online'
+      sampleCls.default_location = 'https://zoom.us/j/000-sample'
+    }
     return {
       cls: sampleCls,
       spotsTaken: 3,
@@ -205,7 +211,7 @@ const loadPage = cache(async (slug: string) => {
   try {
     const { data } = await supabase
       .from('site_content_blocks')
-      .select('key, section, heading, body_markdown, sort_order, image, scope, course_key, class_id')
+      .select('key, section, heading, body_markdown, sort_order, image, image_online, scope, course_key, class_id')
       .order('section')
       .order('sort_order')
     blocks = (data as any[]) ?? []
@@ -442,6 +448,10 @@ export default async function PublicClassPage({
   // practice exams / diagnostic FAQs only when the class has diagnostics.
   const isSchoolClass = Boolean(cls.school_id)
   const hasDiagnostics = cls.has_diagnostics !== false
+  // PL-373: online classes show a block's online image variant when one
+  // exists — otherwise the main image (never a broken frame).
+  const blockImage = (b: any) =>
+    parseClassPageImage(online && b.image_online ? b.image_online : b.image)
   const respectsRecord = (b: any) =>
     b.key === 'included-strategy' || b.key === 'faq-strategy'
       ? isSchoolClass
@@ -846,7 +856,7 @@ export default async function PublicClassPage({
         {(courseSections.length > 0 || (locationBlock && !online && !school)) && (
           <section id="course" data-section="course" className="space-y-10">
             {courseSections.map((b) => {
-              const img = parseClassPageImage(b.image)
+              const img = blockImage(b)
               const beside = img && (img.layout === 'left' || img.layout === 'right')
               const body = (
                 <div className="space-y-3" dangerouslySetInnerHTML={{ __html: md(b.body_markdown) }} />
@@ -909,7 +919,7 @@ export default async function PublicClassPage({
                   {/* PL-351: card images sit on top regardless of the
                       layout hint — the two-column card grid has no side. */}
                   <BlockImg
-                    image={parseClassPageImage(b.image)}
+                    image={blockImage(b)}
                     sizes="(min-width: 768px) 322px, calc(100vw - 80px)"
                     className="rounded mb-3"
                   />
@@ -926,7 +936,7 @@ export default async function PublicClassPage({
             // PL-351: standalone sections honor the layout hint — image-left,
             // image-right (text beside it from md up; stacked on mobile), or
             // full-width above the text.
-            const img = parseClassPageImage(instructors.image)
+            const img = blockImage(instructors)
             const beside = img && (img.layout === 'left' || img.layout === 'right')
             const body = (
               <div className="space-y-3" dangerouslySetInnerHTML={{ __html: md(instructors.body_markdown) }} />

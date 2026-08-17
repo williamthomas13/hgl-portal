@@ -17,13 +17,17 @@ const VARIANT_WIDTHS = [480, 960, 1600]
 const LAYOUTS = ['left', 'right', 'hero'] as const
 
 type Target =
-  | { table: 'site_content_blocks'; column: 'image'; match: { key: string } }
+  | { table: 'site_content_blocks'; column: 'image' | 'image_online'; match: { key: string } }
   | { table: 'classes'; column: 'hero_image'; match: { id: string } }
   | { table: 'instructors'; column: 'headshot'; match: { id: string } }
 
 function resolveTarget(target: unknown, key: unknown, classId: unknown): Target | null {
   if (target === 'block' && typeof key === 'string' && key) {
     return { table: 'site_content_blocks', column: 'image', match: { key } }
+  }
+  // PL-373: the per-block ONLINE image variant.
+  if (target === 'block-online' && typeof key === 'string' && key) {
+    return { table: 'site_content_blocks', column: 'image_online', match: { key } }
   }
   if (target === 'class-hero' && typeof classId === 'string' && classId) {
     return { table: 'classes', column: 'hero_image', match: { id: classId } }

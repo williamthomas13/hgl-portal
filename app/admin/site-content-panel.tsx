@@ -15,6 +15,8 @@ type Block = {
   body_markdown: string
   sort_order: number
   image: unknown
+  /** PL-373: online-class variant. */
+  image_online?: unknown
   scope?: string | null
   course_key?: string | null
   class_id?: string | null
@@ -27,7 +29,20 @@ type Block = {
 
 // PL-351: per-block image controls — upload (alt text REQUIRED first),
 // replace, alt/layout edits, and remove behind an inline confirm.
-function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; image: unknown; onChanged: () => void }) {
+function BlockImageControls({
+  blockKey,
+  image,
+  onChanged,
+  target = 'block',
+  emptyLabel = 'no image — text-only block',
+}: {
+  blockKey: string
+  image: unknown
+  onChanged: () => void
+  /** PL-373: 'block-online' edits the online-class variant. */
+  target?: 'block' | 'block-online'
+  emptyLabel?: string
+}) {
   const img = parseClassPageImage(image)
   const [alt, setAlt] = useState(img?.alt ?? '')
   const [layout, setLayout] = useState(img?.layout ?? 'right')
@@ -40,7 +55,7 @@ function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; 
     setMsg('')
     try {
       const body = new FormData()
-      body.set('target', 'block')
+      body.set('target', target)
       body.set('key', blockKey)
       body.set('file', file)
       body.set('alt', alt)
@@ -60,7 +75,7 @@ function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; 
       const res = await fetch('/api/admin/site-content/image', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'block', key: blockKey, alt, layout }),
+        body: JSON.stringify({ target, key: blockKey, alt, layout }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) setMsg(json.error ?? 'Saving failed.')
@@ -76,7 +91,7 @@ function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; 
       const res = await fetch('/api/admin/site-content/image', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'block', key: blockKey }),
+        body: JSON.stringify({ target, key: blockKey }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) setMsg(json.error ?? 'Removing failed.')
@@ -100,7 +115,7 @@ function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; 
             className="h-20 w-auto rounded border border-gray-200 object-cover"
           />
         ) : (
-          <span className="text-xs text-gray-400 italic self-center">no image — text-only block</span>
+          <span className="text-xs text-gray-400 italic self-center">{emptyLabel}</span>
         )}
         <div className="flex-1 min-w-56 space-y-1.5">
           <input
@@ -150,7 +165,7 @@ function BlockImageControls({ blockKey, image, onChanged }: { blockKey: string; 
           {!alt.trim() && <p className="text-xs text-gray-400">Add alt text first — uploads without it are refused.</p>}
           {confirmRemove && (
             <div className="bg-red-50 border border-red-200 rounded p-2 text-xs space-x-2">
-              <span className="text-red-900">Remove this image from every class page?</span>
+              <span className="text-red-900">{target === 'block-online' ? 'Remove the online variant? Online classes fall back to the main image.' : 'Remove this image from every class page?'}</span>
               <button onClick={remove} disabled={busy} className="font-bold text-red-700 underline">
                 Remove it
               </button>
@@ -489,6 +504,19 @@ export default function SiteContentPanel() {
           )}
         </p>
         <BlockImageControls blockKey={b.key} image={b.image} onChanged={blockChanged} />
+        {/* PL-373: the online-class variant — shown when the class's
+            delivery mode is online; blank = the main image everywhere. */}
+        <p className="text-[11px] text-gray-500 mt-2 mb-0.5 font-semibold">
+          Image shown for online classes (optional — blank means the image above shows for
+          every class)
+        </p>
+        <BlockImageControls
+          blockKey={b.key}
+          image={(b as unknown as { image_online?: unknown }).image_online}
+          onChanged={blockChanged}
+          target="block-online"
+          emptyLabel="no online variant — online classes show the main image"
+        />
       </div>
     )
   }
