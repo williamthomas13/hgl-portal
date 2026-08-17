@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Pontano_Sans } from 'next/font/google'
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { plainTextFromMarkdown, renderSiteMarkdown } from '../utils/site-md'
@@ -12,6 +13,9 @@ import { emailBaseUrl } from '../utils/base-url'
 // links here until the launch-tail cutover swaps the Squarespace nav link.
 
 export const dynamic = 'force-dynamic'
+
+// PL-374 B: the brand body face (Google font — legal to self-host).
+const pontano = Pontano_Sans({ subsets: ['latin'], weight: ['400', '700'] })
 
 export const metadata: Metadata = {
   title: 'Our Team — Higher Ground Learning',
@@ -74,7 +78,7 @@ export default async function TeamPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <section className="bg-hgl-slate">
         <div className="max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white">

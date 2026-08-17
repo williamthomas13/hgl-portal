@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { cache } from 'react'
+import { Pontano_Sans } from 'next/font/google'
+import { Fragment, cache } from 'react'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { usableAccent } from '../../utils/collateral'
 import {
@@ -31,6 +32,29 @@ import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../util
 // parents arrive from email/WhatsApp.
 
 export const dynamic = 'force-dynamic'
+
+// PL-374 B: the brand site's body face — Pontano Sans is a Google font, so
+// it ships legally, self-hosted by next/font (no runtime request; survives
+// the Squarespace decommission). Headings stay on the current stack: the
+// brand headings are adonis-web + proxima-nova (Adobe Fonts, licensed via
+// Squarespace — NOT self-hostable); the closest-match proposal awaits
+// Scarlett's sign-off in the ship notes rather than shipping a lookalike.
+const pontano = Pontano_Sans({ subsets: ['latin'], weight: ['400', '700'] })
+
+// PL-374 A: the brand-site homepage hero (the SLC-headquarters shot),
+// served from OUR bucket — never hotlinked from squarespace-cdn (it dies at
+// decommission). One hero everywhere: school and no-school classes alike.
+const PAGE_HERO: ClassPageImage = {
+  path: 'hero/hgl-hq-2500w.webp',
+  alt: 'The Higher Ground Learning space in downtown Salt Lake City — mountain mural, foosball table, and mezzanine',
+  width: 2500,
+  height: 1667,
+  variants: [
+    { path: 'hero/hgl-hq-800w.webp', width: 800 },
+    { path: 'hero/hgl-hq-1600w.webp', width: 1600 },
+    { path: 'hero/hgl-hq-2500w.webp', width: 2500 },
+  ],
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function one<T>(v: T | T[] | null | undefined): T | null {
@@ -625,7 +649,7 @@ export default async function PublicClassPage({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
       {!isSample && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       )}
@@ -640,13 +664,39 @@ export default async function PublicClassPage({
         </div>
       )}
       {/* ── Hero: class-specific, live from the record ──────────────────── */}
-      <section id="hero" data-section="hero" style={{ background: accent }}>
-        <div className="max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white">
-          {school?.logo_url && (
+      {/* PL-374 A: the brand hero image replaces the school-accent field —
+          dark scrim keeps the white text readable; the accent color plays a
+          SMALL role now (the thin top rule here + the register buttons). */}
+      <section
+        id="hero"
+        data-section="hero"
+        className="relative overflow-hidden bg-hgl-slate"
+        style={{ borderTop: `4px solid ${accent}` }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          {...imageAttrs(PAGE_HERO)}
+          sizes="100vw"
+          className="absolute inset-0 h-full w-full object-cover"
+          decoding="async"
+        />
+        <div aria-hidden className="absolute inset-0 bg-hgl-slate/80" />
+        <div className="relative max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white">
+          {school?.logo_url ? (
             <div className="inline-block bg-white rounded-lg p-2 mb-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={school.logo_url} alt={`${school.name} logo`} className="h-14 w-auto" />
             </div>
+          ) : (
+            /* PL-375: no-school classes carry the Higher Ground logo in the
+               same slot — the white mark reads over the hero scrim; same
+               size/placement so both page variants are one design. */
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src="/collateral/hgl-logo-white.png"
+              alt="Higher Ground Learning logo"
+              className="h-16 w-auto mb-4"
+            />
           )}
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">{heroTitleFor(cls)}</h1>
           <p className="mt-2 text-white/90">
@@ -746,11 +796,17 @@ export default async function PublicClassPage({
                         own local time; same-offset cities share one line. */}
                     {feederGroupsFor(s).length > 0 ? (
                       <span className="text-gray-600">
+                        {/* PL-374: the separator lives OUTSIDE the nowrap
+                            group so the line can wrap between cities on
+                            narrow screens (Pontano runs wider than the old
+                            system face and pushed this past 375px). */}
                         {feederGroupsFor(s).map((g, gi) => (
-                          <span key={gi} className="whitespace-nowrap">
-                            {gi > 0 && <span className="text-gray-300"> · </span>}
-                            {g.range} <span className="text-gray-400">{g.cities.join(', ')}</span>
-                          </span>
+                          <Fragment key={gi}>
+                            {gi > 0 && <span className="text-gray-300"> · </span>}{' '}
+                            <span className="whitespace-nowrap">
+                              {g.range} <span className="text-gray-400">{g.cities.join(', ')}</span>
+                            </span>
+                          </Fragment>
                         ))}
                       </span>
                     ) : (
