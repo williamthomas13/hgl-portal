@@ -395,8 +395,28 @@ export default async function PublicClassPage({
   // class rows render on that class only. Pre-migration rows carry no scope
   // and count as shared.
   const isShared = (b: any) => !b.scope || b.scope === 'shared'
-  const faqBlocks = blocks.filter((b) => isShared(b) && b.section === 'faq')
-  const includedBlocks = blocks.filter((b) => isShared(b) && b.section === 'included')
+  // PL-369: shared copy respects the class record (facts from the record,
+  // never from copy): strategy sessions exist for SCHOOL classes only;
+  // practice exams / diagnostic FAQs only when the class has diagnostics.
+  const isSchoolClass = Boolean(cls.school_id)
+  const hasDiagnostics = cls.has_diagnostics !== false
+  const respectsRecord = (b: any) =>
+    b.key === 'included-strategy' || b.key === 'faq-strategy'
+      ? isSchoolClass
+      : b.key === 'included-exams' || b.key === 'faq-diagnostics'
+        ? hasDiagnostics
+        : true
+  const faqBlocks = blocks.filter((b) => isShared(b) && b.section === 'faq' && respectsRecord(b))
+  const includedBlocks = blocks
+    .filter((b) => isShared(b) && b.section === 'included' && respectsRecord(b))
+    .map((b) =>
+      // PL-369 A: mode-aware title, composed from the record — one card, no
+      // duplicate for online. Only the untouched default heading transforms;
+      // a Scarlett-edited heading always wins.
+      b.key === 'included-instruction' && online && b.heading === 'Live class instruction'
+        ? { ...b, heading: 'Live online class instruction' }
+        : b
+    )
   const finePrintBlocks = blocks.filter((b) => isShared(b) && b.section === 'fine-print')
   const courseBlocks = blocks
     .filter(

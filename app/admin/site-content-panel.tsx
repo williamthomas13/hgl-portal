@@ -182,6 +182,19 @@ const SECTION_LABELS: Record<string, string> = {
 // flow-only and lives in its own last group.
 const SECTION_ORDER = ['included', 'instructors', 'faq', 'closing', 'fine-print', 'states']
 
+// PL-369: conditional blocks say WHEN they show — the walkthrough must read
+// honestly. Conditions live in the /c renderer (facts from the class
+// record); these labels only describe them.
+const BLOCK_CONDITIONS: Record<string, string> = {
+  'included-instruction':
+    'Shows for every class. When the class is ONLINE, the title automatically reads "Live online class instruction" (only while the heading is the default).',
+  'included-strategy':
+    "Shows only for SCHOOL classes — open-enrollment/HGL-taught classes don't include strategy sessions.",
+  'included-exams': 'Shows only when the class has diagnostic tests (the wizard checkbox).',
+  'faq-strategy': 'Shows only for SCHOOL classes (same rule as the strategy-sessions card).',
+  'faq-diagnostics': 'Shows only when the class has diagnostic tests.',
+}
+
 type PreviewInfo = {
   shared: { url: string; sample: boolean }
   courses: Record<string, { displayName: string; url: string; sample: boolean }>
@@ -441,6 +454,11 @@ export default function SiteContentPanel() {
             {busyKey === b.key ? 'Saving…' : 'Save'}
           </button>
         </div>
+        {BLOCK_CONDITIONS[b.key] && (
+          <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1 mb-2">
+            {BLOCK_CONDITIONS[b.key]}
+          </p>
+        )}
         <textarea
           value={d.body_markdown}
           onChange={(e) => setDrafts((prev) => ({ ...prev, [b.key]: { ...d, body_markdown: e.target.value } }))}
