@@ -30,6 +30,29 @@ export function formatDateShort(iso: string): string {
   return formatDateOnly(iso, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+/** "September 12, 2026" — long form without the weekday (PL-380). */
+export function formatDateLong(iso: string): string {
+  return formatDateOnly(iso, { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+/** PL-380: a plain-English calendar-date range — "August 1 – 15, 2026",
+ *  "August 25 – September 8, 2026", "December 20, 2026 – January 3, 2027".
+ *  THE one range formatter for pay periods and report spans. */
+export function formatDateRange(startIso: string, endIso: string): string {
+  const a = utcAnchor(startIso)
+  const b = utcAnchor(endIso)
+  if (startIso.slice(0, 10) === endIso.slice(0, 10)) return formatDateLong(startIso)
+  const sameYear = a.getUTCFullYear() === b.getUTCFullYear()
+  const sameMonth = sameYear && a.getUTCMonth() === b.getUTCMonth()
+  if (sameMonth) {
+    return `${formatDateOnly(startIso, { month: 'long', day: 'numeric' })} – ${b.getUTCDate()}, ${b.getUTCFullYear()}`
+  }
+  if (sameYear) {
+    return `${formatDateOnly(startIso, { month: 'long', day: 'numeric' })} – ${formatDateOnly(endIso, { month: 'long', day: 'numeric' })}, ${b.getUTCFullYear()}`
+  }
+  return `${formatDateLong(startIso)} – ${formatDateLong(endIso)}`
+}
+
 /** "02 September 2026" — the admin-wide date format. */
 export function formatDateAdmin(iso: string): string {
   return formatDateOnly(iso, { day: '2-digit', month: 'long', year: 'numeric' }, 'en-GB')
@@ -105,12 +128,20 @@ export function formatTimestampAdmin(iso: string): string {
  *  rendered in the given IANA zone WITH a plain-English zone label:
  *  "Thursday, July 30, 3:00 PM (Mexico City time)". Leaf-safe on purpose:
  *  registry variables (client-reachable) and email composers share it. */
-export function zonedDeadline(iso: string | Date, timezone: string, location?: string | null): string {
+export function zonedDeadline(
+  iso: string | Date,
+  timezone: string,
+  location?: string | null,
+  cityLabel?: string | null
+): string {
   const when = new Date(iso).toLocaleString('en-US', {
     timeZone: timezone,
     weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
-  return `${when} (${friendlyZoneCity(timezone, location)} time)`
+  // PL-382: callers that know the class's public city (via
+  // publicTimeCityLabel / contextTimeCityLabel) pass it — the PL-305
+  // location heuristic is only the fallback.
+  return `${when} (${cityLabel ?? friendlyZoneCity(timezone, location)} time)`
 }
 
 /** "America/Mexico_City" → "Mexico City" — the plain-English city half of an
@@ -153,11 +184,20 @@ export function friendlyZoneCity(timezone: string, location?: string | null): st
  *  city read from the location string (PL-305) → the generic zone city as
  *  the last resort. ONE source for every public "… time" label; admin
  *  surfaces may keep zone ids. */
+/** PL-382: HGL's home base — what a no-school in-person class "carries" as
+ *  its city. HGL HQ is in Salt Lake City; the IANA zone would say "Denver". */
+export const HGL_HOME_CITY = 'Salt Lake City'
+
 export function publicTimeCityLabel(opts: {
   schoolCity?: string | null
   displayCities?: string | null
   location?: string | null
   timezone: string
+  /** PL-382: true for an open-enrollment (no-school) IN-PERSON class — with
+   *  no school city, no display cities, and a location that names no city
+   *  ("Room 204"), the class is at HGL's home, so the label says
+   *  "Salt Lake City", never the zone city "Denver". */
+  hglInPerson?: boolean
 }): string {
   const school = (opts.schoolCity ?? '').trim()
   if (school) return school
@@ -168,7 +208,31 @@ export function publicTimeCityLabel(opts: {
   if (cities.length === 1) return cities[0]
   if (cities.length === 2) return `${cities[0]} and ${cities[1]}`
   if (cities.length > 2) return `${cities.slice(0, -1).join(', ')}, and ${cities[cities.length - 1]}`
-  return friendlyZoneCity(opts.timezone, opts.location)
+  const fromLocation = cityFromLocation(opts.location)
+  if (fromLocation) return fromLocation
+  if (opts.hglInPerson) return HGL_HOME_CITY
+  return timezoneCityLabel(opts.timezone)
+}
+
+/** PL-382: the city label EMAILS put on times — the SAME resolution as the
+ *  public /c pages, computed from the enrollment context's own facts. ONE
+ *  source: every email "(times shown in …)" line and zoned deadline resolves
+ *  through here. */
+export function contextTimeCityLabel(c: {
+  schoolCity?: string | null
+  displayCities?: string | null
+  defaultLocation?: string | null
+  timezone: string
+  isOpenEnrollment?: boolean
+  deliveryMode?: string | null
+}): string {
+  return publicTimeCityLabel({
+    schoolCity: c.schoolCity,
+    displayCities: c.displayCities,
+    location: c.defaultLocation,
+    timezone: c.timezone,
+    hglInPerson: Boolean(c.isOpenEnrollment) && c.deliveryMode !== 'online',
+  })
 }
 
 // ---------------------------------------------------------------------------

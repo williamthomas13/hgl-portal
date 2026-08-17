@@ -63,6 +63,7 @@ export async function GET() {
             displayCities: c.display_cities,
             location: c.default_location,
             timezone: c.timezone ?? school?.timezone ?? 'America/Denver',
+            hglInPerson: !school && c.delivery_mode !== 'online',
           })
       const label = school ? `${school.name} ${c.class_type} Class` : c.class_type
       const starts = days[0] ?? c.start_date

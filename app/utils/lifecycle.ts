@@ -94,6 +94,9 @@ export type ClassBundle = {
   schoolName: string
   schoolLabel: string
   timezone: string
+  /** PL-382: school's city + the class's display_cities — publicTimeCityLabel inputs. */
+  schoolCity: string | null
+  displayCities: string | null
   /** PL-274 amendment B: per-class switches — emails/nags condition on these. */
   hasDiagnostics: boolean
   /** PL-274 amendment F: family-facing instructor intro; null drops cleanly. */
@@ -228,9 +231,9 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     default_location, synap_group, price, capacity, min_enrollment,
     min_enrollment_decision,
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
-    collateral_changed_at, timezone, has_diagnostics,
+    collateral_changed_at, timezone, has_diagnostics, display_cities,
     follow_on_class_id, fo_extended_until, fo_exclude, fo_announce_date, fo_discount_end,
-    schools ( name, nickname, timezone ),
+    schools ( name, nickname, timezone, city ),
     instructors ( name, email, bio ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
@@ -323,6 +326,10 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       // then the school's, then the default — one precedence everywhere.
       timezone: c.timezone ?? school?.timezone ?? DEFAULT_TIMEZONE,
       hasDiagnostics: c.has_diagnostics !== false,
+      // PL-382: the public city label's inputs ride the bundle so email time
+      // labels resolve exactly like the /c pages.
+      schoolCity: school?.city ?? null,
+      displayCities: c.display_cities ?? null,
       instructorBio: instructor?.bio || null,
       instructorId: c.instructor_id ?? null,
       instructorName: instructor?.name ?? instructor?.email ?? null,
@@ -421,6 +428,8 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     instructorBio: bundle.instructorBio,
     isOpenEnrollment: bundle.isOpenEnrollment,
     hasDiagnostics: bundle.hasDiagnostics,
+    schoolCity: bundle.schoolCity,
+    displayCities: bundle.displayCities,
     defaultLocation: bundle.defaultLocation,
     deliveryMode: bundle.deliveryMode,
     synapGroup: bundle.synapGroup,

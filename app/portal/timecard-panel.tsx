@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { formatDateRange } from '../utils/dates'
 import {
   CLASS_WORK_TYPE,
   DEFAULT_TUTORING_WORK_TYPE,
@@ -112,15 +113,20 @@ export default function TimecardPanel({
       <h2 className="text-lg font-bold text-hgl-slate mb-1">Timecards</h2>
       {salaried ? (
         <p className="text-xs text-gray-500 mb-4">
-          Built from the schedule automatically — review the period, fix any exception, confirm.{' '}
+          The card assumes every scheduled session happened as planned — the portal can&apos;t know
+          when a student didn&apos;t show or a session ran a different length, so if that happened,
+          mark it on the card to keep our records right.{' '}
           <span className="font-semibold text-purple-700">
             You&apos;re salaried — hours are tracked for records; they aren&apos;t paid hourly.
           </span>
         </p>
       ) : (
         <p className="text-xs text-gray-500 mb-4">
-          Built from the schedule automatically — review the period, fix any exception, confirm.
-          Hours only; pay runs through payroll as usual (1st–15th pays the 20th, 16th–end pays the 5th).
+          The card assumes every scheduled session happened as planned — the portal can&apos;t know
+          when a student didn&apos;t show or a session ran a different length, so if that happened,
+          mark it on the card to keep our records right. Marking a no-show doesn&apos;t change your
+          pay — you&apos;re paid for the reserved time either way. Hours only; pay runs through
+          payroll as usual (1st–15th pays the 20th, 16th–end pays the 5th).
         </p>
       )}
 
@@ -134,7 +140,7 @@ export default function TimecardPanel({
         <div className="border border-gray-200 rounded-lg p-4 mb-4">
           <div className="flex items-center gap-3 mb-3">
             <span className="font-semibold text-hgl-slate">
-              {actionable.period_start} → {actionable.period_end}
+              {formatDateRange(actionable.period_start, actionable.period_end)}
             </span>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${CARD_STATUS_STYLES[actionable.status]}`}>
               {actionable.status.replace('_', ' ')}
@@ -338,7 +344,7 @@ export default function TimecardPanel({
               .filter((t) => t.id !== actionableId)
               .map((t) => (
                 <tr key={t.id}>
-                  <td className="py-1.5 pr-4 text-hgl-slate">{t.period_start} → {t.period_end}</td>
+                  <td className="py-1.5 pr-4 text-hgl-slate">{formatDateRange(t.period_start, t.period_end)}</td>
                   <td className="py-1.5 pr-4">{Number(t.total_hours)}</td>
                   <td className="py-1.5">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${CARD_STATUS_STYLES[t.status]}`}>

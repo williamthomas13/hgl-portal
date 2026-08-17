@@ -5,7 +5,7 @@ import { renderMarkdownBody } from './comms-md'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { convertUrlFor, refundRequestUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 import { templateMetaFor, type RecipientRole } from './comms'
-import { formatDateFull } from './dates'
+import { contextTimeCityLabel, formatDateFull } from './dates'
 import { SCHOOL_BASED_REG_TEXT } from './exam-family'
 
 // Server-side only. Every send goes through sendOnce(), which claims a row in
@@ -65,7 +65,13 @@ export function clearFromIdentityCache() {
   fromOverrideCache = null
 }
 
-const FAQ_LINKS = `<a href="https://highergroundlearning.com/faqs#general">General</a> · <a href="https://highergroundlearning.com/faqs#diagnostic-tests">Diagnostic tests</a> · <a href="https://highergroundlearning.com/faqs#attendance">Attendance</a> · <a href="https://highergroundlearning.com/faqs#1on1">1-on-1 tutoring</a>`
+// PL-379: the "Diagnostic tests" link drops when the class has no diagnostics.
+const faqLinksFor = (ctx: { hasDiagnostics: boolean }) =>
+  `<a href="https://highergroundlearning.com/faqs#general">General</a>${
+    ctx.hasDiagnostics
+      ? ' · <a href="https://highergroundlearning.com/faqs#diagnostic-tests">Diagnostic tests</a>'
+      : ''
+  } · <a href="https://highergroundlearning.com/faqs#attendance">Attendance</a> · <a href="https://highergroundlearning.com/faqs#1on1">1-on-1 tutoring</a>`
 
 const COMPASS_URL = 'http://hgl.co/college-prep-compass'
 const REVIEW_URL = 'https://g.page/highergroundlearning/review?gm'
@@ -133,6 +139,10 @@ export type EnrollmentEmailContext = {
   isOpenEnrollment: boolean
   /** PL-274 B: per-class switches — diagnostic/Synap copy conditions on these. */
   hasDiagnostics: boolean
+  /** PL-382: the public city label's inputs (school city / display_cities) —
+   *  every email time label resolves through contextTimeCityLabel. */
+  schoolCity: string | null
+  displayCities: string | null
   defaultLocation: string | null
   deliveryMode: string
   synapGroup: string | null
@@ -399,7 +409,7 @@ export function parentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered {
       <p><strong>One more thing: we set up access for your family in the Higher Ground Learning
       portal.</strong> The button below
       opens it — and it's yours for the whole journey, not just this class. Inside you'll find
-      ${ctx.studentFirstName}'s schedule, your receipts, diagnostic scores once they're in, a
+      ${ctx.studentFirstName}'s schedule, your receipts${ctx.hasDiagnostics ? ", diagnostic scores once they're in" : ''}, a
       calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in
       never needs a password — just this email address.</p>
       ${button('View your registration', ctx.portalUrl)}
@@ -444,7 +454,7 @@ export function studentConfirmationEmail(ctx: EnrollmentEmailContext): Rendered 
       <ul style="padding-left:20px">
         <li>Practice problems with quick tips to tackle them,</li>
         <li>How you can get the most out of the class,</li>
-        <li>How to best take advantage of your free 30-minute strategy session,</li>
+        ${ctx.isOpenEnrollment ? '' : '<li>How to best take advantage of your free 30-minute strategy session,</li>'}
         <li>Common misconceptions and FAQs about the test,</li>
         <li>Which schools are test optional (and what's the difference between test optional and test blind),</li>
         <li>What to do about test anxiety,</li>
@@ -476,7 +486,7 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
   // datetime in the class's zone with a label — the sweep enforces the exact
   // instant, so a bare weekday could read a day off for the family.
   const expiry = new Date(new Date(ctx.enrolledAt).getTime() + 168 * 3_600_000)
-  const expiryDate = zonedDeadline(expiry, ctx.timezone, ctx.defaultLocation)
+  const expiryDate = zonedDeadline(expiry, ctx.timezone, ctx.defaultLocation, contextTimeCityLabel(ctx))
   const preheader =
     n === 4
       ? `After ${expiryDate}, the spot returns to the pool.`
@@ -493,7 +503,7 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
       complete the registration by making the payment here:</p>
       ${finalize}
       <p>P.S. Do you have a question about the class? It's probably answered in our FAQs here:</p>
-      <p>${FAQ_LINKS}</p>`,
+      <p>${faqLinksFor(ctx)}</p>`,
     2: `
       <p>Hi ${ctx.parentFirstName},</p>
       <p>Just circling back — ${ctx.studentFirstName}'s registration for the ${ctx.className}
@@ -503,7 +513,7 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
       will get back to you.</p>
       <p>If you're ready to go, it takes about a minute:</p>
       ${finalize}
-      <p>P.S. FAQs: ${FAQ_LINKS}</p>`,
+      <p>P.S. FAQs: ${faqLinksFor(ctx)}</p>`,
     3: `
       <p>Hi ${ctx.parentFirstName},</p>
       <p>Quick nudge: ${ctx.studentFirstName}'s spot in ${ctx.className} is still reserved but
@@ -541,7 +551,7 @@ export function staffPaymentLinkEmail(ctx: EnrollmentEmailContext): Rendered {
       <p>As soon as the payment goes through, you'll get a confirmation email and
       ${ctx.studentFirstName}'s spot is locked in.</p>
       <p>P.S. Questions about the class? Most answers are in our FAQs:</p>
-      <p>${FAQ_LINKS}</p>`
+      <p>${faqLinksFor(ctx)}</p>`
   return {
     subject,
     html: wrap(body, {
@@ -588,7 +598,7 @@ function thankYouBody(ctx: EnrollmentEmailContext) {
       where we send out useful information to help you along in this process:</p>
       <ul style="padding-left:20px">
         <li>How ${s} can get the most out of the class,</li>
-        <li>How to best take advantage of the free 30-minute strategy session,</li>
+        ${ctx.isOpenEnrollment ? '' : '<li>How to best take advantage of the free 30-minute strategy session,</li>'}
         <li>Common misconceptions and FAQs about the test,</li>
         <li>Which schools are test optional (and what's the difference between test optional and test blind),</li>
         <li>What to do about test anxiety,</li>
@@ -826,15 +836,19 @@ export function faqEmail(ctx: EnrollmentEmailContext, audience: Audience): Rende
       went to your inbox, so it's worth a search of your spam folder for next time.)</p>`
           : ''
       }
-      <p><strong>What is the 30-minute strategy session? And when can I schedule it?</strong><br/>
+      ${
+        ctx.isOpenEnrollment
+          ? ''
+          : `<p><strong>What is the 30-minute strategy session? And when can I schedule it?</strong><br/>
       Each student receives one strategy session with enrollment, during which the instructor will
       help you craft an individualized study and review plan, build a perfect test-day mindset,
-      understand your diagnostic score report, or go over day-of test strategies.</p>
+      ${ctx.hasDiagnostics ? 'understand your diagnostic score report, or go over day-of test strategies' : 'or go over day-of test strategies'}.</p>
       <p>The strategy sessions usually work best when they're done after the first week of classes,
       at the earliest. During the first class sessions, you can approach the instructor directly to
       find and schedule a time during the following week that's mutually agreeable. If you'd like
       to or need to do the strategy session earlier, however, just let us know and we can try to
-      arrange it.</p>
+      arrange it.</p>`
+      }
       <p><strong>I'm going to miss a class, show up late, and/or leave early. What should I do?</strong><br/>
       Check with your instructor to get the lesson plan, materials, and homework. You can follow-up
       with the instructor afterward if you have any questions about the material.</p>
@@ -845,7 +859,7 @@ export function faqEmail(ctx: EnrollmentEmailContext, audience: Audience): Rende
       that you missed.</p>
       <p>P.S. In case you have a question that wasn't answered here, here are even more course
       FAQs:</p>
-      <p>${FAQ_LINKS}</p>
+      <p>${faqLinksFor(ctx)}</p>
       <p>Invested in ${isStudent ? 'your' : `${ctx.studentFirstName}'s`} success,</p>
       <p>Higher Ground Learning</p>
     `,
@@ -1259,7 +1273,7 @@ export function waitlistOfferEmail(
   declineUrl: string
 ): Rendered {
   const s = ctx.studentFirstName
-  const deadline = zonedDeadline(expiresAt, ctx.timezone, ctx.defaultLocation)
+  const deadline = zonedDeadline(expiresAt, ctx.timezone, ctx.defaultLocation, contextTimeCityLabel(ctx))
   return {
     subject: `A spot just opened in ${ctx.className} 🎉`,
     html: wrap(
@@ -1272,8 +1286,9 @@ export function waitlistOfferEmail(
       too long!</p>
       ${button(`Claim ${s}'s spot`, claimUrl)}
       <p>A quick recap: the class starts ${formatDate(ctx.firstSession)}, ${classTimeHtml(ctx)}.
-      Once you register, you'll receive all the usual course information — diagnostic test access,
-      location details, and everything else — in the days before class starts. If registration
+      Once you register, you'll receive all the usual course information — ${
+        ctx.hasDiagnostics ? `${classLocationPhrase(ctx)} and diagnostic test access` : classLocationPhrase(ctx)
+      }, and everything else — in the days before class starts. If registration
       happens close to the start date, we'll send you everything you need right away.</p>
       <p>If your plans have changed and you no longer need the spot,
       <a href="${declineUrl}" style="color:#00AEEE">click here to let us know</a>. It'll also pass
@@ -1383,21 +1398,28 @@ export function lateRegistrationWelcomeEmail(
       <p>${isStudent ? "You're" : `${s} is`} registered for the ${ctx.className} class — and since
       the class starts <strong>${formatDate(ctx.firstSession)}</strong>, here's everything you need
       in one email.</p>
-      <p><strong>1. The diagnostic test — this one's time-sensitive.</strong><br/>
+      ${
+        ctx.hasDiagnostics
+          ? `<p><strong>1. The diagnostic test — this one's time-sensitive.</strong><br/>
       ${isStudent ? 'Your' : `${s}'s`} first diagnostic test is ready now. It's in two parts
       (Reading &amp; Writing, then Math), best done back-to-back in one sitting. The instructor
-      uses the results to shape the course, so please complete it <strong>before the first
-      class</strong> if at all possible.</p>
+      uses the results to shape the course, so ${isStudent ? 'you' : s} should complete it
+      <strong>before the first class</strong> if at all possible.</p>
       <p>To get ${isStudent ? 'you' : s} in: click below, hit "register," and provide some quick
       basic info${isStudent ? '' : ` — you can do it together or just pass this along to ${s}`}.</p>
-      ${synap ? button('Take the diagnostic test', synap) : ''}
-      <p><strong>2. When and where.</strong><br/>
+      ${synap ? button('Take the diagnostic test', synap) : ''}`
+          : ''
+      }
+      <p><strong>${ctx.hasDiagnostics ? '2' : '1'}. When and where.</strong><br/>
       Classes run ${classTimeHtml(ctx)}. ${classDetailsBlock}</p>
       <p>Full schedule:</p>
       ${button('View the class calendar', ctx.calendarPageUrl)}
-      <p><strong>3. Good things to know.</strong><br/>
-      Quick answers to the most common questions — class times, what to do if
-      ${isStudent ? 'you miss' : `${s} misses`} a session, the free 30-minute strategy session —
+      <p><strong>${ctx.hasDiagnostics ? '3' : '2'}. Good things to know.</strong><br/>
+      Quick answers to the most common questions — ${
+        ctx.isOpenEnrollment
+          ? `class times and what to do if ${isStudent ? 'you miss' : `${s} misses`} a session`
+          : `class times, what to do if ${isStudent ? 'you miss' : `${s} misses`} a session, the free 30-minute strategy session`
+      } —
       are in our <a href="https://highergroundlearning.com/faqs#general">FAQs</a>.</p>
       <p>Any other questions, just reply to this email. See you in class — soon!</p>
       <p>Higher Ground Learning</p>

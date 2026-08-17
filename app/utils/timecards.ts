@@ -1,4 +1,5 @@
 import { emailBaseUrl } from './base-url'
+import { formatDateRange } from './dates'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerT, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
@@ -298,20 +299,26 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
       if (tutor?.email) {
         const base = emailBaseUrl()
         const tutorFirst = tutor.name?.split(' ')[0] ?? 'there'
+        // PL-380: the pay period renders plainly ("August 1 – 15, 2026") —
+        // subject, heading, preheader, and {payPeriodRange} all from THE
+        // shared range formatter, never raw ISO dates.
+        const periodLabel = formatDateRange(p.start, p.end)
         // PL-66: registry copy when T5 is flipped live; code twin otherwise.
         const codeTwin = (): Rendered => ({
-          subject: `Your timecard for ${p.start} – ${p.end} is ready to confirm`,
+          subject: `Your timecard for ${periodLabel} is ready to confirm`,
           html: wrap(
-            `<h2 style="color:#334155">Timecard ready — ${p.start} to ${p.end}</h2>
+            `<h2 style="color:#334155">Timecard ready — ${periodLabel}</h2>
              <p>Hi ${tutorFirst},</p>
              <p>Your sessions for the pay period are in: <strong>${total ?? 0} hours</strong>.
-             The portal built this from the schedule, so usually there is nothing to fill out —
-             just glance over it, correct any exception (a no-show), and hit
+             The card assumes every scheduled session happened as planned — the portal can't know
+             when a student didn't show or a session ran a different length, so if that happened,
+             mark it on the card to keep our records right. Then hit
              <strong>Confirm timecard</strong>.</p>
              <p><a href="${base}/portal?view=tutor">Review and confirm your timecard →</a></p>
-             <p style="color:#64748b;font-size:13px">Sessions cancelled inside 24 hours and
-             no-shows are on the card on purpose — you're paid for reserved time.</p>`,
-            { preheader: `${total ?? 0} hours for ${p.start} – ${p.end}`, footer: footerT() }
+             <p style="color:#64748b;font-size:13px">Marking a no-show doesn't change your pay —
+             you're paid for the reserved time either way. That's also why sessions cancelled
+             inside 24 hours stay on the card.</p>`,
+            { preheader: `${total ?? 0} hours for ${periodLabel}`, footer: footerT() }
           ),
         })
         const email = await renderRegistered(
@@ -319,7 +326,7 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
           { parentFirstName: tutorFirst, parentEmail: tutor.email },
           {
             tutorFirstName: tutorFirst,
-            payPeriodRange: `${p.start} – ${p.end}`,
+            payPeriodRange: periodLabel,
             timecardHours: String(total ?? 0),
             timecardLink: `${base}/portal?view=tutor`,
           },

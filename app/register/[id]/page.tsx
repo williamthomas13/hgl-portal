@@ -28,6 +28,7 @@ type ClassDetails = {
   timezone?: string | null
   /** PL-353: an online class's own city list for time labels. */
   display_cities?: string | null
+  delivery_mode?: string | null
   schools: { name: string; nickname: string; timezone: string | null; city?: string | null } | null
   sessions: SessionRow[] | null
   isFull: boolean
@@ -376,6 +377,7 @@ export default function RegistrationPage() {
           displayCities: classDetails.display_cities,
           location: classDetails.default_location,
           timezone: classDetails.timezone ?? classDetails.schools?.timezone ?? 'UTC',
+          hglInPerson: !classDetails.schools && classDetails.delivery_mode !== 'online',
         })}
       />
     ) : null

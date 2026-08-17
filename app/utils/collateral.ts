@@ -31,6 +31,8 @@ export type CollateralModel = {
   inPerson: boolean
   capacity: number
   practiceTestCount: number
+  /** PL-379: diagnostic promises (counselor portal copy) condition on this. */
+  hasDiagnostics: boolean
 
   schoolName: string
   schoolNickname: string
@@ -88,7 +90,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
     .from('classes')
     .select(
       `
-      id, slug, class_type, delivery_mode, capacity, start_date,
+      id, slug, class_type, delivery_mode, capacity, start_date, has_diagnostics,
       short_link, collateral_language, letter_blurb, letter_blurb_es,
       flyer_blurb, practice_test_count, promo_code, promo_amount, promo_deadline,
       enrollment_deadline, registration_close_date,
@@ -132,6 +134,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
     inPerson: c.delivery_mode !== 'online',
     capacity: c.capacity,
     practiceTestCount: c.practice_test_count ?? 2,
+    hasDiagnostics: c.has_diagnostics !== false,
     schoolName: school?.name ?? 'your school',
     schoolNickname: school?.nickname ?? school?.name ?? 'Your school',
     schoolLogoUrl: school?.logo_url || null,

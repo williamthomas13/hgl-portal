@@ -24,6 +24,7 @@ type ClassInfo = {
   timezone: string | null
   /** PL-353: an online class's own city list for time labels. */
   display_cities?: string | null
+  delivery_mode?: string | null
   default_location: string | null
   schools: { nickname: string; timezone: string | null; city?: string | null } | null
   sessions: Session[] | null
@@ -65,7 +66,7 @@ export default function ClassCalendarPage() {
   // class, or a non-2xx/network failure above all land here).
   if (!info) return <ClassNotFound />
 
-  const label = classDisplayLabel({ schoolNickname: info.schools?.nickname ?? null, deliveryMode: (info as { delivery_mode?: string | null }).delivery_mode ?? null, shortName: null, classType: info.class_type })
+  const label = classDisplayLabel({ schoolNickname: info.schools?.nickname ?? null, deliveryMode: info.delivery_mode ?? null, shortName: null, classType: info.class_type })
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const icsPath = `/api/classes/${classId}/calendar.ics`
   const icsUrl = `${origin}${icsPath}`
@@ -136,6 +137,7 @@ export default function ClassCalendarPage() {
               displayCities: info.display_cities,
               location: info.default_location,
               timezone: (info.timezone ?? info.schools?.timezone)!,
+              hglInPerson: !info.schools && info.delivery_mode !== 'online',
             })}{' '}
             time)
           </p>

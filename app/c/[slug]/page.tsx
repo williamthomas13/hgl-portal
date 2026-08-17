@@ -415,6 +415,7 @@ export default async function PublicClassPage({
     displayCities: cls.display_cities,
     location: cls.default_location,
     timezone,
+    hglInPerson: !school && cls.delivery_mode !== 'online',
   })
   const online = cls.delivery_mode === 'online'
 
@@ -560,6 +561,7 @@ export default async function PublicClassPage({
             displayCities: sib.display_cities,
             location: sib.default_location,
             timezone: sib.timezone ?? sibSchool?.timezone ?? DEFAULT_TIMEZONE,
+            hglInPerson: !sibSchool && sib.delivery_mode !== 'online',
           }),
         ]
           .filter(Boolean)

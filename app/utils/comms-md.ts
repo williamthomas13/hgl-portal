@@ -68,11 +68,15 @@ export function renderMarkdownBody(markdown: string, vars: ResolvedVars): string
     }
 
     if (lines.every((l) => l.startsWith('- '))) {
-      html.push(
-        `<ul style="padding-left:20px">${lines
-          .map((l) => `<li>${renderInline(l.slice(2), vars)}</li>`)
-          .join('')}</ul>`
-      )
+      // PL-379: a list item whose variables all resolve empty (e.g. the
+      // strategy-session bullet on an open class) drops entirely — never an
+      // empty bullet.
+      const items = lines
+        .map((l) => renderInline(l.slice(2), vars))
+        .filter((h) => h.trim() !== '')
+      if (items.length > 0) {
+        html.push(`<ul style="padding-left:20px">${items.map((i) => `<li>${i}</li>`).join('')}</ul>`)
+      }
       continue
     }
     if (lines.every((l) => l.startsWith('> '))) {

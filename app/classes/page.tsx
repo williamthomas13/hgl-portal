@@ -81,6 +81,7 @@ export default async function ClassesBrowsePage({
       displayCities: c.display_cities,
       location: c.default_location,
       timezone,
+      hglInPerson: !school && c.delivery_mode !== 'online',
     })
     const taken = spotsTakenRaw((c.enrollments as Slot[]) ?? [])
     const seatsLeft = c.capacity != null ? Math.max(0, Number(c.capacity) - taken) : null

@@ -11,7 +11,7 @@ import {
   type CoverageEvent,
 } from './coverage-copy'
 import { leadAssignedDetails } from './lead-assign-copy'
-import { formatDateFull, zonedDeadline, friendlyZoneCity, bySessionStart } from './dates'
+import { formatDateFull, zonedDeadline, contextTimeCityLabel, bySessionStart } from './dates'
 import type { ResolvedVars } from './comms-md'
 
 // Feature A4 variable registry (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4):
@@ -51,7 +51,7 @@ export function sessionScheduleMarkdown(c: EnrollmentEmailContext): string {
     return `- ${parts.join(' · ')}`
   })
   const zoneLine = c.timezone
-    ? `\n\n(times shown in ${friendlyZoneCity(c.timezone, c.defaultLocation)} time)`
+    ? `\n\n(times shown in ${contextTimeCityLabel(c)} time)`
     : ''
   return `Here's the full session schedule:\n\n${lines.join('\n')}${zoneLine}\n\n[Add the class calendar to your own — subscribe here.](${c.calendarPageUrl})`
 }
@@ -537,6 +537,70 @@ export const VARIABLES: Record<string, VariableDef> = {
         ? `**What if I didn't get the diagnostic test information?**\nNo problem — you can get to it right here: [button:Take the diagnostic test](${synapUrlValue(c)}). It's due ${fmt(c.diagnosticDueDate)}, the day before your first class.`
         : '',
   },
+  // ------- PL-379: diagnostics/strategy-session copy conditions on the SAME
+  // class facts as the /c pages (PL-369) — strategy sessions exist for
+  // SCHOOL classes only, diagnostic promises only when the class has them.
+  vfaqStrategyQa: {
+    description:
+      "PL-379: #3's strategy-session Q&A — EMPTY for open (no-school) classes; the score-report mention inside drops when the class has no diagnostics",
+    block: true,
+    md: true,
+    resolve: (c) =>
+      c.isOpenEnrollment
+        ? ''
+        : `**What is the 30-minute strategy session? And when can I schedule it?**\nEach student receives one strategy session with enrollment, during which the instructor will help you craft an individualized study and review plan, build a perfect test-day mindset, ${
+            c.hasDiagnostics ? 'understand your diagnostic score report, or go over day-of test strategies' : 'or go over day-of test strategies'
+          }.\n\nThe strategy sessions usually work best when they're done after the first week of classes, at the earliest. During the first class sessions, you can approach the instructor directly to find and schedule a time during the following week that's mutually agreeable. If you'd like to or need to do the strategy session earlier, however, just let us know and we can try to arrange it.`,
+  },
+  compassStrategyItem: {
+    description:
+      'PL-379: the Compass list\'s strategy-session bullet ("How to best take advantage of your/the free 30-minute strategy session,") — EMPTY for open classes, and the list renumbers/closes cleanly without it',
+    resolve: (c, a) =>
+      c.isOpenEnrollment
+        ? ''
+        : `How to best take advantage of ${a === 'student' ? 'your' : 'the'} free 30-minute strategy session,`,
+  },
+  portalScoresClause: {
+    description:
+      'PL-379: E0-P\'s portal-contents clause ", diagnostic scores once they\'re in" — EMPTY when the class has no diagnostics',
+    resolve: (c) => (c.hasDiagnostics ? ", diagnostic scores once they're in" : ''),
+  },
+  csPortalContentsPhrase: {
+    description:
+      'PL-379: the counselor-portal contents phrase — includes "diagnostic scores once the class is underway" only when the class has diagnostics',
+    resolve: (c) =>
+      c.hasDiagnostics
+        ? `live enrollment for ${c.className}, attendance, and diagnostic scores once the class is underway`
+        : `live enrollment for ${c.className} and attendance`,
+  },
+  lrDiagnosticSection: {
+    description:
+      "PL-379: LR's numbered diagnostic-test section (heading, how-to-get-in, button) — EMPTY when the class has no diagnostics; {lrWhenNumber}/{lrKnowNumber} renumber the sections below it",
+    block: true,
+    md: true,
+    resolve: (c, a) =>
+      c.hasDiagnostics
+        ? `**1. The diagnostic test — this one's time-sensitive.**\n${a === 'student' ? 'Your' : `${s(c)}'s`} first diagnostic test is ready now. It's in two parts (Reading & Writing, then Math), best done back-to-back in one sitting. The instructor uses the results to shape the course, so ${a === 'student' ? 'you' : s(c)} should complete it **before the first class** if at all possible.\n\nTo get ${a === 'student' ? 'you' : s(c)} in: click below, hit "register," and provide some quick basic info${a === 'student' ? '' : ` — you can do it together or just pass this along to ${s(c)}`}.\n\n[button:Take the diagnostic test](${synapUrlValue(c)})`
+        : '',
+  },
+  lrWhenNumber: {
+    description: 'PL-379: LR\'s "When and where" section number — 2 when the diagnostic section is above it, 1 when that section dropped (no diagnostics)',
+    resolve: (c) => (c.hasDiagnostics ? '2' : '1'),
+  },
+  lrKnowNumber: {
+    description: 'PL-379: LR\'s "Good things to know" section number — 3 with diagnostics, 2 without',
+    resolve: (c) => (c.hasDiagnostics ? '3' : '2'),
+  },
+  lrFaqTopicsPhrase: {
+    description:
+      'PL-379: LR\'s FAQ-topics list — mentions the free strategy session only for school classes (open classes: just class times + missed sessions)',
+    resolve: (c, a) => {
+      const miss = a === 'student' ? 'you miss' : `${s(c)} misses`
+      return c.isOpenEnrollment
+        ? `class times and what to do if ${miss} a session`
+        : `class times, what to do if ${miss} a session, the free 30-minute strategy session`
+    },
+  },
   instructorBioBlock: {
     description: 'PL-274 F: the instructor-introduction paragraph from instructors.bio — EMPTY when no bio is on record (never a dangling sentence)',
     block: true,
@@ -612,7 +676,7 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'When a pending registration expires (7 days after signup) — zoned datetime (PL-118)',
     resolve: (c) =>
       // PL-305: the class's own city when the location names one.
-      zonedDeadline(new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000), c.timezone, c.defaultLocation),
+      zonedDeadline(new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000), c.timezone, c.defaultLocation, contextTimeCityLabel(c)),
   },
 
   // --- links ------------------------------------------------------------------
@@ -629,10 +693,15 @@ export const VARIABLES: Record<string, VariableDef> = {
   reviewLink: { description: 'Google review page', resolve: () => 'https://g.page/highergroundlearning/review?gm' },
   discountLink: { description: 'Discounted tutoring page', resolve: () => 'https://highergroundprep.com/discount' },
   faqLinks: {
-    description: 'The four FAQ section links, inline',
+    description:
+      'The FAQ section links, inline — PL-379: the "Diagnostic tests" link drops when the class has no diagnostics',
     block: true,
-    resolve: () =>
-      `<a href="https://highergroundlearning.com/faqs#general">General</a> · <a href="https://highergroundlearning.com/faqs#diagnostic-tests">Diagnostic tests</a> · <a href="https://highergroundlearning.com/faqs#attendance">Attendance</a> · <a href="https://highergroundlearning.com/faqs#1on1">1-on-1 tutoring</a>`,
+    resolve: (c) =>
+      `<a href="https://highergroundlearning.com/faqs#general">General</a>${
+        c.hasDiagnostics
+          ? ' · <a href="https://highergroundlearning.com/faqs#diagnostic-tests">Diagnostic tests</a>'
+          : ''
+      } · <a href="https://highergroundlearning.com/faqs#attendance">Attendance</a> · <a href="https://highergroundlearning.com/faqs#1on1">1-on-1 tutoring</a>`,
   },
 
   // --- pronoun pairs (audience-aware; spec: paired variables, no conditionals)
@@ -1213,6 +1282,8 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   instructorBio: null,
   isOpenEnrollment: false,
   hasDiagnostics: true,
+  schoolCity: 'Sample City',
+  displayCities: null,
   defaultLocation: 'Room 204',
   deliveryMode: 'in_person',
   synapGroup: 'https://hgl.synap.ac/groups/sample',

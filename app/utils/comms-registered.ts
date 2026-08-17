@@ -29,6 +29,9 @@ export type TutoringStub = {
   /** PL-66: counselor/alert sends carry real school + first-session facts. */
   schoolName?: string
   firstSession?: string
+  /** PL-379: the class's real diagnostics switch (CS portal copy conditions
+   *  on it) — defaults true, matching the historical stub behavior. */
+  hasDiagnostics?: boolean
 }
 
 export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext {
@@ -67,7 +70,9 @@ export function tutoringStubContext(stub: TutoringStub): EnrollmentEmailContext 
     instructorName: null,
     instructorBio: null,
     isOpenEnrollment: false,
-    hasDiagnostics: true,
+    hasDiagnostics: stub.hasDiagnostics ?? true,
+    schoolCity: null,
+    displayCities: null,
     defaultLocation: null,
     deliveryMode: 'online',
     synapGroup: null,

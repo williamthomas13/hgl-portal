@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { formatDateRange } from '../../utils/dates'
 import { supabase } from '../../utils/supabase'
 import { ConfirmAction } from './confirm'
 import {
@@ -306,7 +307,7 @@ export default function TimecardsPanel() {
           <div key={p} className="border border-gray-200 rounded-lg p-4">
             <div className="flex items-center gap-3 mb-2">
               <span className="font-bold text-hgl-slate">
-                {p} → {periodRows[0].period_end}
+                {formatDateRange(p, periodRows[0].period_end)}
               </span>
               <span className="text-xs text-gray-400">
                 payday the {Number(p.slice(8, 10)) === 1 ? '20th' : '5th'}

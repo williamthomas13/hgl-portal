@@ -45,7 +45,7 @@ If you have any questions between now and then, you can respond to this email (b
 
 {registrationDetailsBlock}
 
-**One more thing: we set up access for your family in the Higher Ground Learning portal.** The button below opens it — and it's yours for the whole journey, not just this class. Inside you'll find {studentFirstName}'s schedule, your receipts, diagnostic scores once they're in, a calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in never needs a password — just this email address.
+**One more thing: we set up access for your family in the Higher Ground Learning portal.** The button below opens it — and it's yours for the whole journey, not just this class. Inside you'll find {studentFirstName}'s schedule, your receipts{portalScoresClause}, a calendar feed you can subscribe to, and 1-on-1 tutoring whenever you want it. Signing in never needs a password — just this email address.
 
 [button:View your registration]({portalLink})`,
   },
@@ -77,7 +77,7 @@ Until then, you might be interested in signing up for our free [College Prep Com
 
 - Practice problems with quick tips to tackle them,
 - How you can get the most out of the class,
-- How to best take advantage of your free 30-minute strategy session,
+- {compassStrategyItem}
 - Common misconceptions and FAQs about the test,
 - Which schools are test optional (and what's the difference between test optional and test blind),
 - What to do about test anxiety,
@@ -237,7 +237,7 @@ In the days before the course starts, you and {studentFirstName} will receive th
 By the way, you might be interested in [College Prep Compass]({compassLink}), where we send out useful information to help you along in this process:
 
 - How {studentFirstName} can get the most out of the class,
-- How to best take advantage of the free 30-minute strategy session,
+- {compassStrategyItem}
 - Common misconceptions and FAQs about the test,
 - Which schools are test optional (and what's the difference between test optional and test blind),
 - What to do about test anxiety,
@@ -660,10 +660,7 @@ Are you still here? You are? Okay, here are a few regular FAQs, just for you:
 
 {vfaqDiagnosticQa}
 
-**What is the 30-minute strategy session? And when can I schedule it?**
-Each student receives one strategy session with enrollment, during which the instructor will help you craft an individualized study and review plan, build a perfect test-day mindset, understand your diagnostic score report, or go over day-of test strategies.
-
-The strategy sessions usually work best when they're done after the first week of classes, at the earliest. During the first class sessions, you can approach the instructor directly to find and schedule a time during the following week that's mutually agreeable. If you'd like to or need to do the strategy session earlier, however, just let us know and we can try to arrange it.
+{vfaqStrategyQa}
 
 **I'm going to miss a class, show up late, and/or leave early. What should I do?**
 Check with your instructor to get the lesson plan, materials, and homework. You can follow-up with the instructor afterward if you have any questions about the material.
@@ -865,7 +862,7 @@ Good news — a spot just opened up in the {className} class, and {studentFirstN
 
 [button:Claim {studentFirstName}'s spot]({claimLink})
 
-A quick recap: the class starts {firstSessionDate}, {classTime}. Once you register, you'll receive all the usual course information — diagnostic test access, location details, and everything else — in the days before class starts. If registration happens close to the start date, we'll send you everything you need right away.
+A quick recap: the class starts {firstSessionDate}, {classTime}. Once you register, you'll receive all the usual course information — {e1IncludesPhrase}, and everything else — in the days before class starts. If registration happens close to the start date, we'll send you everything you need right away.
 
 If your plans have changed and you no longer need the spot, [click here to let us know]({declineLink}). It'll also pass to the next family automatically after the deadline.
 
@@ -911,22 +908,17 @@ Higher Ground Learning`,
 
 {youre_or_name_is} registered for the {className} class — and since the class starts **{firstSessionDate}**, here's everything you need in one email.
 
-**1. The diagnostic test — this one's time-sensitive.**
-{Your_or_names} first diagnostic test is ready now. It's in two parts (Reading & Writing, then Math), best done back-to-back in one sitting. The instructor uses the results to shape the course, so please complete it **before the first class** if at all possible.
+{lrDiagnosticSection}
 
-To get in: click below, hit "register," and provide some quick basic info.
-
-[button:Take the diagnostic test]({synapGroupLink})
-
-**2. When and where.**
+**{lrWhenNumber}. When and where.**
 Classes run {classTime}. {classDetailsBlock}
 
 Full schedule:
 
 [button:View the class calendar]({calendarLink})
 
-**3. Good things to know.**
-Quick answers to the most common questions — class times, what to do if {you_miss_or_name_misses} a session, the free 30-minute strategy session — are in our [FAQs](https://highergroundlearning.com/faqs#general).
+**{lrKnowNumber}. Good things to know.**
+Quick answers to the most common questions — {lrFaqTopicsPhrase} — are in our [FAQs](https://highergroundlearning.com/faqs#general).
 
 Any other questions, just reply to this email. See you in class — soon!
 
@@ -1505,7 +1497,7 @@ The registration deadline is **{enrollmentDeadline}**, and the first session is 
 - A **letter** meant to be shared with parents (forward it in your parent communications, or print it)
 - A **flyer** meant for students — it works well on bulletin boards, hallway screens, and in student newsletters
 
-One more thing that makes your life easier: **we set up a school portal for you** with Higher Ground. Sign in at [{portalLink}]({portalLink}) with just this email address — no password needed, we'll send you a login link. In it you'll find live enrollment for {className}, attendance, and diagnostic scores once the class is underway.
+One more thing that makes your life easier: **we set up a school portal for you** with Higher Ground. Sign in at [{portalLink}]({portalLink}) with just this email address — no password needed, we'll send you a login link. In it you'll find {csPortalContentsPhrase}.
 
 Below is a sample email you could use to introduce the course to students and parents. And as always — if you'd like any changes to the schedule or anything else, just reply. I'm happy to help however I can.
 
@@ -1725,11 +1717,11 @@ Higher Ground Learning`,
 
 Hi {tutorFirstName},
 
-Your sessions for the pay period are in: **{timecardHours} hours**. The portal built this from the schedule, so usually there is nothing to fill out — just glance over it, correct any exception (a no-show), and hit **Confirm timecard**.
+Your sessions for the pay period are in: **{timecardHours} hours**. The card assumes every scheduled session happened as planned — the portal can't know when a student didn't show or a session ran a different length, so if that happened, mark it on the card to keep our records right. Then hit **Confirm timecard**.
 
 [Review and confirm your timecard →]({timecardLink})
 
-Sessions cancelled inside 24 hours and no-shows are on the card on purpose — you're paid for reserved time.`,
+Marking a no-show doesn't change your pay — you're paid for the reserved time either way. That's also why sessions cancelled inside 24 hours stay on the card.`,
   },
   // PL-111: session-note reminders. Drafts — Scarlett ramps the copy; the
   // code twin in session-notes.ts sends until these flip live.

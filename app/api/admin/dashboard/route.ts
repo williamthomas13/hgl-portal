@@ -529,7 +529,7 @@ export async function GET() {
     attention.push({
       id: `refund-${e.id}`,
       kind: 'Refund requested',
-      text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'} requested a refund of the cancelled ${one<any>(cls?.schools)?.nickname ?? ''} ${cls?.class_type ?? 'class'} fee (${String(e.refund_requested_at).slice(0, 10)}) — issue it in Stripe, then mark the enrollment Refunded.`,
+      text: `${st ? `${st.first_name} ${st.last_name}` : 'A family'} requested a refund of the cancelled ${one<any>(cls?.schools)?.nickname ?? ''} ${cls?.class_type ?? 'class'} fee (${plainDate(String(e.refund_requested_at).slice(0, 10), todayIso)}) — issue it in Stripe, then mark the enrollment Refunded.`,
       href: `/admin?class=${e.class_id}&enrollment=${e.id}`,
     })
   }

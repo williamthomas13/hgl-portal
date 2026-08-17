@@ -95,6 +95,15 @@ export default async function ShortlinkPage({
       if (isRedirectError(e)) throw e
     }
 
+    // JSX renders outside the try/catch blocks (a component error would not
+    // be caught there anyway — lint rule) — the tries only compute props.
+    let capture: { schoolId: string | null; classType: string; heading: string; sub: string } | null = null
+    const renderCapture = (c: NonNullable<typeof capture>) => (
+      <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+        <EvergreenCapture schoolId={c.schoolId} classType={c.classType} heading={c.heading} sub={c.sub} />
+      </div>
+    )
+
     // PL-378 B: permanent per-SCHOOL links — newest OPEN class, else the
     // school-branded interest capture. These links NEVER 404 (logos,
     // counselor bookmarks, old emails).
@@ -123,20 +132,17 @@ export default async function ShortlinkPage({
           .order('created_at', { ascending: false })
           .limit(1)
         const label = school.nickname ?? school.name
-        return (
-          <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
-            <EvergreenCapture
-              schoolId={school.id}
-              classType={lastCls?.[0]?.class_type ?? 'SAT Prep'}
-              heading={`No upcoming class at ${label} right now`}
-              sub="Leave your email and we'll let you know the moment the next class opens for registration — nothing else, no newsletter."
-            />
-          </div>
-        )
+        capture = {
+          schoolId: school.id,
+          classType: lastCls?.[0]?.class_type ?? 'SAT Prep',
+          heading: `No upcoming class at ${label} right now`,
+          sub: "Leave your email and we'll let you know the moment the next class opens for registration — nothing else, no newsletter.",
+        }
       }
     } catch (e) {
       if (isRedirectError(e)) throw e
     }
+    if (capture) return renderCapture(capture)
 
     // PL-378 C: permanent per-COURSE links (no-school courses) — newest open
     // class of the course, else the interest capture naming the course.
@@ -166,20 +172,17 @@ export default async function ShortlinkPage({
           meta.display_name ??
           lastCls?.[0]?.class_type ??
           meta.course_key.split('-').map((w: string) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
-        return (
-          <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
-            <EvergreenCapture
-              schoolId={null}
-              classType={lastCls?.[0]?.class_type ?? courseName}
-              heading={`No upcoming ${courseName} class right now`}
-              sub="Leave your email and we'll let you know the moment the next one opens for registration — nothing else, no newsletter."
-            />
-          </div>
-        )
+        capture = {
+          schoolId: null,
+          classType: lastCls?.[0]?.class_type ?? courseName,
+          heading: `No upcoming ${courseName} class right now`,
+          sub: "Leave your email and we'll let you know the moment the next one opens for registration — nothing else, no newsletter.",
+        }
       }
     } catch (e) {
       if (isRedirectError(e)) throw e
     }
+    if (capture) return renderCapture(capture)
 
     return honestCard(null)
   }

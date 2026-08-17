@@ -171,6 +171,7 @@ export async function GET(request: Request) {
       schoolName: model.schoolName,
       classType: model.classType,
       firstSession: model.firstSession,
+      hasDiagnostics: model.hasDiagnostics,
     })
     const vars = { ...extra, counselorFirstName: contactRows[0]?.name?.split(' ')[0] ?? 'there' }
     const withA = await renderDbEmail('CS_CLASS_CONFIRMED', stub, 'parent', vars)
@@ -345,6 +346,7 @@ export async function POST(request: Request) {
           schoolName: model.schoolName,
           classType: model.classType,
           firstSession: model.firstSession,
+          hasDiagnostics: model.hasDiagnostics,
         }),
         'parent',
         { ...extra, counselorFirstName: c.first_name ?? 'there' }
@@ -423,6 +425,7 @@ export async function POST(request: Request) {
         schoolName: model.schoolName,
         classType: model.classType,
         firstSession: model.firstSession,
+        hasDiagnostics: model.hasDiagnostics,
       }),
       'parent',
       { ...extra, counselorFirstName: c.first_name ?? 'there' },
