@@ -157,6 +157,8 @@ export default function InstructorEditor({
   // internal (timecards/QBO matching).
   const [publicName, setPublicName] = useState('')
   const [credential, setCredential] = useState('')
+  // PL-372: the line under the name on class-page cards (schools list).
+  const [classesDisplayLine, setClassesDisplayLine] = useState('')
   const [showOnTeam, setShowOnTeam] = useState(false)
   const [teamOrder, setTeamOrder] = useState('')
   const [featuredOnClasses, setFeaturedOnClasses] = useState(false)
@@ -211,7 +213,7 @@ export default function InstructorEditor({
               `id, email, name, phone, bio, subjects, subjects_with_prep, timezone, google_calendar_id,
                default_meeting_link, offer_windows, pay_type_titles, pay_type, calendar_color,
                pref_notes_reminders, pref_class_digests, pref_fyi_copies,
-               credential, public_name, show_on_team, team_order, featured_on_classes, headshot`
+               credential, public_name, classes_display_line, show_on_team, team_order, featured_on_classes, headshot`
             )
             .eq('id', instructorId)
             .maybeSingle(),
@@ -225,6 +227,7 @@ export default function InstructorEditor({
           setBio((row as { bio?: string | null }).bio ?? '')
           setCredential((row as any).credential ?? '')
           setPublicName((row as any).public_name ?? '')
+          setClassesDisplayLine((row as any).classes_display_line ?? '')
           setShowOnTeam((row as any).show_on_team === true)
           setTeamOrder((row as any).team_order != null ? String((row as any).team_order) : '')
           setFeaturedOnClasses((row as any).featured_on_classes === true)
@@ -276,6 +279,7 @@ export default function InstructorEditor({
       // control, not here).
       credential: credential.trim() || null,
       public_name: publicName.trim() || null,
+      classes_display_line: classesDisplayLine.trim() || null,
       show_on_team: showOnTeam,
       team_order: teamOrder.trim() === '' ? null : Math.trunc(Number(teamOrder)),
       featured_on_classes: featuredOnClasses,
@@ -446,6 +450,21 @@ export default function InstructorEditor({
                   />
                   Feature on the class pages&apos; instructors section
                 </label>
+              </div>
+              <div className="mt-2">
+                <label className="block text-xs text-gray-600 font-semibold mb-1">
+                  Shown under the name on class pages
+                </label>
+                <input
+                  value={classesDisplayLine}
+                  onChange={(e) => setClassesDisplayLine(e.target.value)}
+                  placeholder='e.g. "ASF · ISD" — blank shows the credential line'
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                />
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  The team page always shows the credential line; this only changes the class
+                  pages&apos; featured cards.
+                </p>
               </div>
               <div className="mt-3">
                 {instructorId ? (

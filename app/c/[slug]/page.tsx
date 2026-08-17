@@ -127,7 +127,7 @@ const loadPage = cache(async (slug: string) => {
     try {
       const { data } = await supabase
         .from('instructors')
-        .select('id, name, public_name, credential, headshot, team_order')
+        .select('id, name, public_name, credential, classes_display_line, headshot, team_order')
         .eq('featured_on_classes', true)
         .order('team_order', { ascending: true, nullsFirst: false })
         .order('name')
@@ -220,7 +220,7 @@ const loadPage = cache(async (slug: string) => {
   try {
     const { data } = await supabase
       .from('instructors')
-      .select('id, name, public_name, credential, headshot, team_order')
+      .select('id, name, public_name, credential, classes_display_line, headshot, team_order')
       .eq('featured_on_classes', true)
       .order('team_order', { ascending: true, nullsFirst: false })
       .order('name')
@@ -925,8 +925,11 @@ export default async function PublicClassPage({
                             </div>
                           )}
                           <p className="mt-2 font-bold text-hgl-slate text-sm">{p.name}</p>
-                          {p.credential && (
-                            <p className="text-xs uppercase tracking-wide text-gray-500 mt-0.5">{p.credential}</p>
+                          {/* PL-372: class pages show the schools line when
+                              set; blank falls back to the job title. /team
+                              keeps credential untouched. */}
+                          {(p.classes_display_line || p.credential) && (
+                            <p className="text-xs uppercase tracking-wide text-gray-500 mt-0.5">{p.classes_display_line || p.credential}</p>
                           )}
                         </div>
                       )
