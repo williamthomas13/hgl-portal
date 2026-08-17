@@ -23,6 +23,43 @@ export async function POST(req: Request) {
   // Honeypot: bots fill the invisible field; humans never do.
   if (str(body.company)) return NextResponse.json({ ok: true })
 
+  // PL-378: the evergreen-link capture — no class row exists (that's the
+  // point), so school/classType arrive directly; source marks the door.
+  if (body.evergreen === true) {
+    const email = str(body.email)?.toLowerCase() ?? null
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      return NextResponse.json({ error: 'Please enter a valid email address.' }, { status: 400 })
+    }
+    const classType = str(body.classType, 100)
+    if (!classType) return NextResponse.json({ error: 'Missing class type.' }, { status: 400 })
+    const schoolId = str(body.schoolId, 100)
+    const { error } = await supabase.from('class_interest').upsert(
+      {
+        email,
+        student_name: str(body.studentName, 200),
+        school_id: schoolId || null,
+        class_type: classType,
+        source: 'evergreen-link',
+      },
+      { onConflict: 'email,school_id,class_type', ignoreDuplicates: false }
+    )
+    if (error && error.code !== '23505') {
+      // Upsert can still conflict-fail when school_id is null (nulls never
+      // match a unique constraint) — a duplicate row is harmless there.
+      const { error: insErr } = await supabase.from('class_interest').insert([
+        {
+          email,
+          student_name: str(body.studentName, 200),
+          school_id: schoolId || null,
+          class_type: classType,
+          source: 'evergreen-link',
+        },
+      ])
+      if (insErr) return NextResponse.json({ error: 'That did not save — try again?' }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true })
+  }
+
   const classId = str(body.classId, 100)
   const email = str(body.email)?.toLowerCase() ?? null
   const studentName = str(body.studentName)

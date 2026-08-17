@@ -31,5 +31,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
   }
   entries.push({ url: `${base}/team` })
+  // PL-378: the public classes browse page.
+  entries.push({ url: `${base}/classes` })
   return entries
 }

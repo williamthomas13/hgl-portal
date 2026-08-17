@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
-import { Pontano_Sans } from 'next/font/google'
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { plainTextFromMarkdown, renderSiteMarkdown } from '../utils/site-md'
 import { CONSULT_HREF } from '../components/ClassStateCard'
 import { emailBaseUrl } from '../utils/base-url'
+import { pontano } from '../components/public-skin'
 
 // PL-358: the public team page — GENERATED from instructor profiles (the
 // one instructors table; show_on_team + team_order decide who and in what
@@ -14,8 +14,7 @@ import { emailBaseUrl } from '../utils/base-url'
 
 export const dynamic = 'force-dynamic'
 
-// PL-374 B: the brand body face (Google font — legal to self-host).
-const pontano = Pontano_Sans({ subsets: ['latin'], weight: ['400', '700'] })
+// PL-374: shared public skin.
 
 export const metadata: Metadata = {
   title: 'Our Team — Higher Ground Learning',

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { ConfirmAction } from './tutoring/confirm'
 
 // PL-349: Classes → Short links — every hgl.co code, what it points at,
 // when it last changed, and a REPOINT control ("aisct" means "AISCT's
@@ -301,6 +302,158 @@ export default function ShortlinksPanel() {
         >
           Add short link
         </button>
+      </div>
+      <EvergreenAndLegacy />
+    </div>
+  )
+}
+
+
+// PL-378 (+amendment): evergreen links + the hgl.co legacy-forward map —
+// managed beside the class shortcodes they must never collide with (the
+// server refuses collisions across every namespace with a plain reason).
+function EvergreenAndLegacy() {
+  const [data, setData] = useState<{
+    schools: { id: string; name: string; nickname: string | null; evergreen_code: string | null }[]
+    courses: { course_key: string; display_name: string | null; evergreen_code: string | null }[]
+    legacy: { code: string; destination: string; note: string | null }[]
+  } | null>(null)
+  const [msg, setMsg] = useState('')
+  const [newLegacy, setNewLegacy] = useState({ code: '', destination: '', note: '' })
+
+  const load = async () => {
+    const res = await fetch('/api/admin/evergreen')
+    const json = await res.json().catch(() => null)
+    if (res.ok && json) setData(json)
+  }
+  useEffect(() => {
+    load()
+  }, [])
+  if (!data) return null
+
+  const post = async (body: Record<string, unknown>) => {
+    setMsg('')
+    const res = await fetch('/api/admin/evergreen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setMsg(json.error ?? 'That change failed.')
+      return false
+    }
+    await load()
+    return true
+  }
+
+  const codeInput = (value: string | null, onSave: (v: string) => void, placeholder: string) => (
+    <input
+      defaultValue={value ?? ''}
+      placeholder={placeholder}
+      onBlur={(e) => {
+        const v = e.target.value.trim().toLowerCase()
+        if (v !== (value ?? '')) onSave(v)
+      }}
+      className="border border-gray-300 rounded px-2 py-1 text-sm w-36 font-mono"
+    />
+  )
+
+  return (
+    <div className="mt-8 space-y-6">
+      {msg && <p className="text-sm text-red-600 font-semibold">{msg}</p>}
+      <div className="border border-gray-200 rounded-lg p-4">
+        <p className="font-bold text-hgl-slate mb-1">Evergreen school links</p>
+        <p className="text-xs text-gray-500 mb-3">
+          A school&apos;s permanent link — it always works, even between classes: it opens the
+          school&apos;s newest open class, and when nothing is open it becomes a leave-your-email
+          page. Class shortcodes above stay as-is for point-in-time shares.
+        </p>
+        <ul className="space-y-1.5">
+          {data.schools.map((sc) => (
+            <li key={sc.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-hgl-slate min-w-48">{sc.nickname ?? sc.name}</span>
+              <span className="text-gray-400">hgl.co/</span>
+              {codeInput(sc.evergreen_code, (v) => post({ action: 'set_school_code', id: sc.id, code: v }), 'no code yet')}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="border border-gray-200 rounded-lg p-4">
+        <p className="font-bold text-hgl-slate mb-1">Evergreen course links</p>
+        <p className="text-xs text-gray-500 mb-3">
+          Same idea for no-school courses — one permanent URL each (this is how follow-up and
+          HGL-taught classes stay findable with no counselor sharing). &quot;/act&quot; is taken by
+          the legacy 1-on-1 tutoring forward below — pick something like /actprep.
+        </p>
+        <ul className="space-y-1.5">
+          {data.courses.map((cm) => (
+            <li key={cm.course_key} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-hgl-slate min-w-48">{cm.display_name ?? cm.course_key}</span>
+              <span className="text-gray-400">hgl.co/</span>
+              {codeInput(cm.evergreen_code, (v) => post({ action: 'set_course_code', id: cm.course_key, code: v }), 'no code yet')}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="border border-gray-200 rounded-lg p-4">
+        <p className="font-bold text-hgl-slate mb-1">Legacy hgl.co forwards</p>
+        <p className="text-xs text-gray-500 mb-3">
+          Registrar-level forwards that must keep working after the DNS cutover — the portal
+          serves each as a permanent redirect. Retire rows here once a forward is no longer
+          needed (that frees the code for evergreen use).
+        </p>
+        <ul className="space-y-1.5 mb-3">
+          {data.legacy.map((lr) => (
+            <li key={lr.code} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-mono text-hgl-slate">/{lr.code}</span>
+              <span className="text-gray-400">→</span>
+              <span className="text-gray-600 break-all">{lr.destination}</span>
+              {lr.note && <span className="text-xs text-gray-400">({lr.note})</span>}
+              <ConfirmAction
+                label="retire"
+                message={`Retire the /${lr.code} forward? Anyone using the old link lands on the honest no-active-class page instead.`}
+                confirmLabel="Yes, retire it"
+                className="text-xs text-red-600 underline"
+                confirmClassName="text-xs text-red-700 font-semibold underline"
+                onConfirm={() => post({ action: 'delete_legacy', code: lr.code })}
+              />
+            </li>
+          ))}
+          {data.legacy.length === 0 && <li className="text-sm text-gray-400 italic">none recorded</li>}
+        </ul>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-gray-400">hgl.co/</span>
+          <input
+            value={newLegacy.code}
+            onChange={(e) => setNewLegacy((p) => ({ ...p, code: e.target.value }))}
+            placeholder="code"
+            className="border border-gray-300 rounded px-2 py-1 w-28 font-mono"
+          />
+          <span className="text-gray-400">→</span>
+          <input
+            value={newLegacy.destination}
+            onChange={(e) => setNewLegacy((p) => ({ ...p, destination: e.target.value }))}
+            placeholder="https://highergroundlearning.com/…"
+            className="border border-gray-300 rounded px-2 py-1 w-72"
+          />
+          <input
+            value={newLegacy.note}
+            onChange={(e) => setNewLegacy((p) => ({ ...p, note: e.target.value }))}
+            placeholder="note"
+            className="border border-gray-300 rounded px-2 py-1 w-40"
+          />
+          <button
+            onClick={async () => {
+              const ok = await post({ action: 'set_legacy', ...newLegacy })
+              if (ok) setNewLegacy({ code: '', destination: '', note: '' })
+            }}
+            disabled={!newLegacy.code.trim() || !newLegacy.destination.trim()}
+            className="bg-hgl-slate text-white text-xs font-bold py-1.5 px-3 rounded disabled:opacity-40"
+          >
+            Add forward
+          </button>
+        </div>
       </div>
     </div>
   )

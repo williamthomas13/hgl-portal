@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { Pontano_Sans } from 'next/font/google'
 import { Fragment, cache } from 'react'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { usableAccent } from '../../utils/collateral'
@@ -20,6 +19,7 @@ import { examFamilyFor, SCHOOL_BASED_REG_TEXT } from '../../utils/exam-family'
 import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
 import ClassPageAnalytics from './analytics'
 import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
+import { pontano, PAGE_HERO } from '../../components/public-skin'
 
 // PL-348: the public class page — the portal-hosted replacement for the
 // per-class Squarespace pages (Option A). Top half is CLASS-SPECIFIC and
@@ -33,28 +33,8 @@ import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../util
 
 export const dynamic = 'force-dynamic'
 
-// PL-374 B: the brand site's body face — Pontano Sans is a Google font, so
-// it ships legally, self-hosted by next/font (no runtime request; survives
-// the Squarespace decommission). Headings stay on the current stack: the
-// brand headings are adonis-web + proxima-nova (Adobe Fonts, licensed via
-// Squarespace — NOT self-hostable); the closest-match proposal awaits
-// Scarlett's sign-off in the ship notes rather than shipping a lookalike.
-const pontano = Pontano_Sans({ subsets: ['latin'], weight: ['400', '700'] })
-
-// PL-374 A: the brand-site homepage hero (the SLC-headquarters shot),
-// served from OUR bucket — never hotlinked from squarespace-cdn (it dies at
-// decommission). One hero everywhere: school and no-school classes alike.
-const PAGE_HERO: ClassPageImage = {
-  path: 'hero/hgl-hq-2500w.webp',
-  alt: 'The Higher Ground Learning space in downtown Salt Lake City — mountain mural, foosball table, and mezzanine',
-  width: 2500,
-  height: 1667,
-  variants: [
-    { path: 'hero/hgl-hq-800w.webp', width: 800 },
-    { path: 'hero/hgl-hq-1600w.webp', width: 1600 },
-    { path: 'hero/hgl-hq-2500w.webp', width: 2500 },
-  ],
-}
+// PL-374: the shared public skin (Pontano Sans + the brand hero) lives in
+// components/public-skin — /team and /classes use the same pair.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function one<T>(v: T | T[] | null | undefined): T | null {

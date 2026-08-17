@@ -1,6 +1,8 @@
-import { redirect } from 'next/navigation'
+import { permanentRedirect, redirect } from 'next/navigation'
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { ClassStateCard } from '../components/ClassStateCard'
+import EvergreenCapture from '../components/EvergreenCapture'
+import { pontano } from '../components/public-skin'
 
 // PL-349: hgl.co/{code} — the shortlink resolver. A known code 302s (Next's
 // temporary redirect) to its class's public /c/{slug} page carrying
@@ -17,6 +19,11 @@ import { ClassStateCard } from '../components/ClassStateCard'
 export const dynamic = 'force-dynamic'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/** next's redirect()/permanentRedirect() throw a control-flow error — our
+ *  fail-soft try/catches must rethrow it, never swallow it. */
+function isRedirectError(e: unknown): boolean {
+  return typeof (e as { digest?: string })?.digest === 'string' && String((e as { digest?: string }).digest).startsWith('NEXT_REDIRECT')
+}
 function one<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
   return Array.isArray(v) ? ((v[0] as T) ?? null) : v
@@ -74,7 +81,108 @@ export default async function ShortlinkPage({
     row = null // table not migrated yet — every code falls through honestly
   }
 
-  if (!row) return honestCard(null)
+  if (!row) {
+    // PL-378 amendment: hgl.co legacy registrar forwards survive the DNS
+    // cutover as 301s (admin-editable in the Shortlinks panel).
+    try {
+      const { data: legacy } = await supabase
+        .from('legacy_redirects')
+        .select('destination')
+        .eq('code', code)
+        .maybeSingle()
+      if (legacy?.destination) permanentRedirect(legacy.destination)
+    } catch (e) {
+      if (isRedirectError(e)) throw e
+    }
+
+    // PL-378 B: permanent per-SCHOOL links — newest OPEN class, else the
+    // school-branded interest capture. These links NEVER 404 (logos,
+    // counselor bookmarks, old emails).
+    try {
+      const { data: school } = await supabase
+        .from('schools')
+        .select('id, name, nickname')
+        .eq('evergreen_code', code)
+        .maybeSingle()
+      if (school) {
+        const { data: openCls } = await supabase
+          .from('classes')
+          .select('slug, created_at')
+          .eq('school_id', school.id)
+          .eq('status', 'open')
+          .not('slug', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (openCls?.[0]?.slug) redirect(`/c/${openCls[0].slug}?via=${encodeURIComponent(code)}`)
+        // Interest rows key on the class type the family would be notified
+        // about — the school's most recent class's type.
+        const { data: lastCls } = await supabase
+          .from('classes')
+          .select('class_type, created_at')
+          .eq('school_id', school.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        const label = school.nickname ?? school.name
+        return (
+          <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+            <EvergreenCapture
+              schoolId={school.id}
+              classType={lastCls?.[0]?.class_type ?? 'SAT Prep'}
+              heading={`No upcoming class at ${label} right now`}
+              sub="Leave your email and we'll let you know the moment the next class opens for registration — nothing else, no newsletter."
+            />
+          </div>
+        )
+      }
+    } catch (e) {
+      if (isRedirectError(e)) throw e
+    }
+
+    // PL-378 C: permanent per-COURSE links (no-school courses) — newest open
+    // class of the course, else the interest capture naming the course.
+    try {
+      const { data: meta } = await supabase
+        .from('course_meta')
+        .select('course_key, display_name')
+        .eq('evergreen_code', code)
+        .maybeSingle()
+      if (meta) {
+        const { data: openCls } = await supabase
+          .from('classes')
+          .select('slug, created_at')
+          .eq('course_key', meta.course_key)
+          .eq('status', 'open')
+          .not('slug', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (openCls?.[0]?.slug) redirect(`/c/${openCls[0].slug}?via=${encodeURIComponent(code)}`)
+        const { data: lastCls } = await supabase
+          .from('classes')
+          .select('class_type, created_at')
+          .eq('course_key', meta.course_key)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        const courseName =
+          meta.display_name ??
+          lastCls?.[0]?.class_type ??
+          meta.course_key.split('-').map((w: string) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
+        return (
+          <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+            <EvergreenCapture
+              schoolId={null}
+              classType={lastCls?.[0]?.class_type ?? courseName}
+              heading={`No upcoming ${courseName} class right now`}
+              sub="Leave your email and we'll let you know the moment the next one opens for registration — nothing else, no newsletter."
+            />
+          </div>
+        )
+      }
+    } catch (e) {
+      if (isRedirectError(e)) throw e
+    }
+
+    return honestCard(null)
+  }
 
   // A known code counts, hit or idle — the count is the "does printed
   // collateral still get scanned?" signal (per code, per Denver day).

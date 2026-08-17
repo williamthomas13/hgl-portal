@@ -8,8 +8,14 @@ email first (classes).
 
 1. **Resend paid plan** — before any real class email (one registration wave exceeds the
    100/day free tier).
-2. **DNS cutover** (the batch-36 7-step runbook) after Scarlett's walkthrough clears.
-3. **Mid-flight class imports** — per class, in any order (idempotent):
+2. **hgl.co legacy forwards (PL-378 amendment — BEFORE the DNS cutover):** Scarlett
+   inventories every live registrar-level hgl.co forward (log into the registrar and list
+   them; known today: hgl.co/act → highergroundlearning.com/act, already entered) and adds
+   each in **Settings → Shortlinks → Legacy hgl.co forwards** — after the cutover the portal
+   answers ALL of hgl.co, and any forward not in that list dies. Rows are editable/retirable
+   there later.
+3. **DNS cutover** (the batch-36 7-step runbook) after Scarlett's walkthrough clears.
+4. **Mid-flight class imports** — per class, in any order (idempotent):
    ```
    node scripts/import-class-registrations.mjs --class <slug> --csv <export.csv> \
      --mapping <mapping.json> --baseline <baseline.json> --by scarlett@highergroundlearning.com
@@ -26,29 +32,31 @@ email first (classes).
      next point. Imported Paid rows are NOT posted to QBO (the old system already
      booked that revenue). Imported Pendings are exempt from the automatic reminder
      ladder/expiry — they surface on Needs Attention with a send-payment-link action.
-4. **Registration handoff for the two accruing classes:** repoint their MailerLite
+5. **Registration handoff for the two accruing classes:** repoint their MailerLite
    forms / Squarespace buttons at the portal registration links (`hgl.co` shortcodes),
    then run the SAME import once more as the final sweep — anyone who registered in the
    gap comes over; dedupe by student+class makes the double-import harmless.
-5. Verify each imported roster (counts vs the sheet; spot-check a family portal login).
+6. Verify each imported roster (counts vs the sheet; spot-check a family portal login).
 
 ## Phase 2 — tutoring cutover (later, separate)
 
-6. **QBO family import** (`scripts/import-qbo-families.mjs`, the PL-34 importer).
-7. Monthly generation, autopay ramp, tutoring templates per the existing plan.
+7. **QBO family import** (`scripts/import-qbo-families.mjs`, the PL-34 importer).
+8. Monthly generation, autopay ramp, tutoring templates per the existing plan.
 
 ## Launch tail — AFTER 1–2 stable cycles (not at cutover)
 
-8. **MailerLite decommission:**
+9. **Squarespace "Classes" nav → the portal's /classes browse page** (PL-378 A) — repoint
+   the nav link at cutover; the sqsp classes grid is replaced by the portal page.
+10. **MailerLite decommission:**
    - Export ALL lists + consent history (keep the archive).
    - Export the UNSUBSCRIBES and land them in portal suppression **before any portal
      campaign sends**: `node scripts/import-mailerlite-suppressions.mjs --csv unsubscribed.csv`
      (feeds the `marketing_suppressions` gate inside `sendOnce` — the PL-201 choke point).
    - Replace remaining Squarespace signup forms with portal-leads capture.
    - Close the MailerLite account.
-9. **Squarespace: DOWNGRADE from Commerce to a site-only plan — do NOT cancel** (the
+11. **Squarespace: DOWNGRADE from Commerce to a site-only plan — do NOT cancel** (the
    brand site stays). Export order history first. Gate: the PL-364 Printful add-on flow
    has round-tripped one real order in sandbox/test mode (notebooks are the last thing
    Commerce still does).
-10. **Zapier** per the existing plan.
-11. Rich-results tester pass on /c pages + /team (PL-359 launch-tail item).
+12. **Zapier** per the existing plan.
+13. Rich-results tester pass on /c pages + /team (PL-359 launch-tail item).
