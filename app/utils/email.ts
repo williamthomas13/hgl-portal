@@ -6,6 +6,7 @@ import { supabaseAdmin as supabase } from "./supabase-admin"
 import { convertUrlFor, refundRequestUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 import { templateMetaFor, type RecipientRole } from './comms'
 import { formatDateFull } from './dates'
+import { SCHOOL_BASED_REG_TEXT } from './exam-family'
 
 // Server-side only. Every send goes through sendOnce(), which claims a row in
 // email_log first — Stripe webhook retries and cron re-runs never double-send.
@@ -123,7 +124,7 @@ export type EnrollmentEmailContext = {
   className: string
   /** Uniform session time range, or null → copy says "see the class calendar". */
   classTime: string | null
-  examInfo: { examName: string; regLabel: string; regUrl: string } | null
+  examInfo: { examName: string; schoolBased: boolean; regLabel: string | null; regUrl: string | null } | null
   instructorName: string | null
   /** PL-274 F: family-facing instructor intro paragraph; null drops cleanly. */
   instructorBio: string | null
@@ -786,10 +787,14 @@ export function synapAccessStudentEmail(ctx: EnrollmentEmailContext): Rendered {
 export function faqEmail(ctx: EnrollmentEmailContext, audience: Audience): Rendered {
   const isStudent = audience === 'student'
   const synap = synapUrl(ctx)
-  const examFaq = ctx.examInfo
-    ? `NO. You must register for official exams through the
+  // PL-368: PSAT has no public registration link — it goes through the
+  // student's school, and the answer says so instead of linking wrongly.
+  const examFaq = ctx.examInfo?.schoolBased
+    ? `NO. You must register for official exams through the ${SCHOOL_BASED_REG_TEXT}.`
+    : ctx.examInfo
+      ? `NO. You must register for official exams through the
        <a href="${ctx.examInfo.regUrl}">${ctx.examInfo.regLabel}</a>.`
-    : `NO. You must register for official exams through the official testing organization's website.`
+      : `NO. You must register for official exams through the official testing organization's website.`
   const examName = ctx.examInfo?.examName ?? 'official exam'
   return {
     subject: `${ctx.className} – here are some VFAQs`,

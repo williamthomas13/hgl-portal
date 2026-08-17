@@ -6,6 +6,7 @@ import type { EnrollmentEmailContext, SessionInfo } from './email'
 import { bySessionStart, formatDateFull as formatDate } from './dates'
 import { checkToken, mintToken, signingSecret } from './signing'
 import { classTutoringTier } from './tutoring-tier'
+import { examFamilyFor } from './exam-family'
 
 // Shared plumbing for the email lifecycle: loads every class with its school,
 // sessions, and enrollments in one query, and provides the timezone-aware
@@ -626,15 +627,17 @@ export function classTimeFor(sessions: SessionInfo[]): string | null {
     : fmt(first.start_time as string)
 }
 
-/** Exam family from class_type: drives the exam-registration FAQ answer. */
-export function examInfoFor(classType: string): { examName: string; regLabel: string; regUrl: string } | null {
-  if (/sat/i.test(classType)) {
-    return { examName: 'SAT', regLabel: 'College Board Website', regUrl: 'https://www.collegeboard.org' }
-  }
-  if (/act/i.test(classType)) {
-    return { examName: 'ACT', regLabel: 'ACT Website', regUrl: 'https://www.act.org' }
-  }
-  return null
+/** Exam family from class_type: drives the exam-registration FAQ answer.
+ *  PL-368: delegates to THE one switch (exam-family.ts) — the /c pages use
+ *  the same helper, so the two sides can never disagree on SAT/ACT/PSAT.
+ *  PSAT: schoolBased=true, regLabel/regUrl null — composers render plain
+ *  school-based wording, never a wrong College Board link. */
+export function examInfoFor(
+  classType: string
+): { examName: string; schoolBased: boolean; regLabel: string | null; regUrl: string | null } | null {
+  const fam = examFamilyFor(classType)
+  if (!fam) return null
+  return { examName: fam.examName, schoolBased: fam.schoolBased, regLabel: fam.regLabel, regUrl: fam.regUrl }
 }
 
 // Resume-payment links for the PR1-4 "Finalize Registration" buttons.

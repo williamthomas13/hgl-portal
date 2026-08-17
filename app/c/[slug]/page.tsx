@@ -15,6 +15,7 @@ import { zonedToUtc } from '../../utils/tutoring'
 import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, plainTextFromMarkdown, renderSiteMarkdown } from '../../utils/site-md'
 import { emailBaseUrl } from '../../utils/base-url'
+import { examFamilyFor, SCHOOL_BASED_REG_TEXT } from '../../utils/exam-family'
 import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
 import ClassPageAnalytics from './analytics'
 import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
@@ -416,17 +417,21 @@ export default async function PublicClassPage({
   // PL-355 E: block copy may reference the record's facts as variables —
   // the address and the exam name (one shared exam-registration block, no
   // SAT/ACT fork). Substituted BEFORE markdown rendering; never money.
-  const examName = /\bACT\b/i.test(String(cls.class_type)) ? 'ACT' : 'SAT'
-  const examLink =
-    examName === 'ACT'
-      ? 'https://global.act.org/content/global/en/products-and-services/the-act-non-us/registration.html'
-      : 'https://satsuite.collegeboard.org/sat/registration/international-testing/dates-deadlines'
+  // PL-368: THE one exam-family switch (exam-family.ts — shared with the
+  // email side). PSAT has no public registration link: a markdown link
+  // wrapping {examRegistrationLink} collapses to plain school-based wording
+  // instead of rendering a wrong College Board URL.
+  const fam = examFamilyFor(String(cls.class_type))
+  const examName = fam?.examName ?? 'SAT'
   const md = (s: string) =>
     renderSiteMarkdown(
       String(s)
         .replaceAll('{address}', cls.default_location ?? 'our office')
         .replaceAll('{examName}', examName)
-        .replaceAll('{examRegistrationLink}', examLink)
+        .replace(/\[([^\]]*)\]\(\{examRegistrationLink\}\)/g, (_m, label) =>
+          fam?.pageRegUrl ? `[${label}](${fam.pageRegUrl})` : `the ${SCHOOL_BASED_REG_TEXT}`
+        )
+        .replaceAll('{examRegistrationLink}', fam?.pageRegUrl ?? `the ${SCHOOL_BASED_REG_TEXT}`)
     )
 
   // PL-355 B: feeder-city time groups. Each feeder school contributes its

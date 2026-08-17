@@ -1,5 +1,6 @@
 import type { EnrollmentEmailContext, Audience } from './email'
 import { autopayNudgeCopyHtml } from './autopay-nudge-copy'
+import { SCHOOL_BASED_REG_TEXT } from './exam-family'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
 import {
   coverageAlertDetails,
@@ -585,16 +586,19 @@ export const VARIABLES: Record<string, VariableDef> = {
     resolve: (c) => (c.deliveryMode === 'online' ? 'Meeting link' : 'Classroom location'),
   },
   examName: {
-    description: 'SAT / ACT / "the exam"',
+    description: 'SAT / ACT / PSAT / "the exam"',
     resolve: (c) => c.examInfo?.examName ?? 'the exam',
   },
   examRegistrationLink: {
-    description: 'College Board / ACT registration link, per class type',
+    description:
+      'College Board / ACT registration link per class type; PSAT composes plain school-based wording (registration goes through the school, no public link)',
     block: true,
     resolve: (c) =>
-      c.examInfo
-        ? `<a href="${c.examInfo.regUrl}">${c.examInfo.regLabel}</a>`
-        : `the official testing organization's website`,
+      c.examInfo?.schoolBased
+        ? SCHOOL_BASED_REG_TEXT
+        : c.examInfo
+          ? `<a href="${c.examInfo.regUrl}">${c.examInfo.regLabel}</a>`
+          : `the official testing organization's website`,
   },
 
   // --- money / registration --------------------------------------------------
@@ -1204,7 +1208,7 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   classType: 'SAT Prep',
   className: 'SIS SAT Prep',
   classTime: '10:00 AM to 12:00 PM',
-  examInfo: { examName: 'SAT', regLabel: 'College Board Website', regUrl: 'https://www.collegeboard.org' },
+  examInfo: { examName: 'SAT', schoolBased: false, regLabel: 'College Board Website', regUrl: 'https://www.collegeboard.org' },
   instructorName: 'Jordan Rivera',
   instructorBio: null,
   isOpenEnrollment: false,
