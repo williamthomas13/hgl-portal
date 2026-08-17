@@ -443,16 +443,17 @@ export default async function PublicClassPage({
   // instead of rendering a wrong College Board URL.
   const fam = examFamilyFor(String(cls.class_type))
   const examName = fam?.examName ?? 'SAT'
-  const md = (s: string) =>
-    renderSiteMarkdown(
-      String(s)
-        .replaceAll('{address}', cls.default_location ?? 'our office')
-        .replaceAll('{examName}', examName)
-        .replace(/\[([^\]]*)\]\(\{examRegistrationLink\}\)/g, (_m, label) =>
-          fam?.pageRegUrl ? `[${label}](${fam.pageRegUrl})` : `the ${SCHOOL_BASED_REG_TEXT}`
-        )
-        .replaceAll('{examRegistrationLink}', fam?.pageRegUrl ?? `the ${SCHOOL_BASED_REG_TEXT}`)
-    )
+  // sub() is the raw-text substitution — FAQ QUESTIONS and JSON-LD go
+  // through it too (they bypass markdown rendering); md() wraps it.
+  const sub = (s: string) =>
+    String(s)
+      .replaceAll('{address}', cls.default_location ?? 'our office')
+      .replaceAll('{examName}', examName)
+      .replace(/\[([^\]]*)\]\(\{examRegistrationLink\}\)/g, (_m, label) =>
+        fam?.pageRegUrl ? `[${label}](${fam.pageRegUrl})` : `the ${SCHOOL_BASED_REG_TEXT}`
+      )
+      .replaceAll('{examRegistrationLink}', fam?.pageRegUrl ?? `the ${SCHOOL_BASED_REG_TEXT}`)
+  const md = (s: string) => renderSiteMarkdown(sub(s))
 
   // PL-355 B: feeder-city time groups. Each feeder school contributes its
   // city + timezone; per session, cities whose local time renders the same
@@ -530,7 +531,7 @@ export default async function PublicClassPage({
     name: 'Higher Ground Learning',
     url: 'https://www.highergroundlearning.com',
   }
-  const faqItems = faqBlocks.flatMap((b) => parseFaqItems(b.body_markdown))
+  const faqItems = faqBlocks.flatMap((b) => parseFaqItems(sub(b.body_markdown)))
   const jsonLd = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -899,7 +900,7 @@ export default async function PublicClassPage({
                 <div key={b.key}>
                   <h3 className="text-sm font-bold uppercase tracking-wide text-gray-500 mb-2">{b.heading}</h3>
                   <div className="bg-white rounded-lg shadow-sm divide-y divide-gray-100">
-                    {parseFaqItems(b.body_markdown).map((item, i) => (
+                    {parseFaqItems(sub(b.body_markdown)).map((item, i) => (
                       <details key={i} className="group px-4 py-3">
                         <summary className="cursor-pointer font-medium text-hgl-slate list-none flex justify-between gap-3">
                           {item.question}
