@@ -111,22 +111,36 @@ export default function ClassWizard({
   contacts,
   instructors,
   initial,
+  resumeDraft,
   onSchoolsChange,
   onContactsChange,
   onInstructorsChange,
   onCreated,
+  onDraftSaved,
 }: {
   schools: School[]
   contacts: ContactAtSchool[]
   instructors: Instructor[]
   /** Copy-a-previous-class prefill — pass a fresh `key` with it to remount. */
   initial?: WizardPrefill
+  /** PL-370: resuming a saved draft — full wizard state + the row to
+   *  update on later saves (and delete when the class is created). */
+  resumeDraft?: { id: string; state: Record<string, unknown> }
   onSchoolsChange: () => void
   onContactsChange: () => void
   onInstructorsChange: () => void
   onCreated: () => void
+  /** PL-370: a draft was saved/updated — the drafts list refreshes. */
+  onDraftSaved?: () => void
 }) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
+  // PL-370: a resumed draft hydrates every field below (dv() = draft value).
+  const d = resumeDraft?.state as Record<string, any> | undefined
+  const dv = <T,>(key: string, fallback: T): T => (d && key in d ? (d[key] as T) : fallback)
+  const [draftId, setDraftId] = useState<string | null>(resumeDraft?.id ?? null)
+  const [draftMsg, setDraftMsg] = useState('')
+  const [savingDraft, setSavingDraft] = useState(false)
+
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(dv('step', 1) as 1 | 2 | 3 | 4 | 5)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   // PL-288: the post-create closure screen (Add another / Back to classes /
@@ -141,34 +155,34 @@ export default function ClassWizard({
   const [messageStep, setMessageStep] = useState<1 | 2 | 3 | 4 | null>(null)
 
   // -- step 1: details ------------------------------------------------------
-  const [schoolId, setSchoolId] = useState(initial?.schoolId ?? '')
+  const [schoolId, setSchoolId] = useState(dv('schoolId', initial?.schoolId ?? ''))
   // PL-274: open-enrollment classes have NO school. Two flavors: online
   // (asks its timezone explicitly) and in-person at Higher Ground (Denver).
-  const [openKind, setOpenKind] = useState<'' | 'online' | 'hgl'>('')
-  const [openTimezone, setOpenTimezone] = useState('America/Denver')
+  const [openKind, setOpenKind] = useState<'' | 'online' | 'hgl'>(dv('openKind', ''))
+  const [openTimezone, setOpenTimezone] = useState(dv('openTimezone', 'America/Denver'))
   // PL-353: the city list an ONLINE class labels its times with ("Milan,
   // Munich") — public pages never show a bare IANA zone city.
-  const [displayCities, setDisplayCities] = useState('')
-  const [counselorId, setCounselorId] = useState('') // '' = all school contacts; never copied
-  const [classType, setClassType] = useState(initial?.classType ?? '')
-  const [instructorId, setInstructorId] = useState(initial?.instructorId ?? '')
-  const [price, setPrice] = useState(initial?.price ?? '')
-  const [capacity, setCapacity] = useState(initial?.capacity ?? '')
+  const [displayCities, setDisplayCities] = useState(dv('displayCities', ''))
+  const [counselorId, setCounselorId] = useState(dv('counselorId', '')) // '' = all school contacts; never copied
+  const [classType, setClassType] = useState(dv('classType', initial?.classType ?? ''))
+  const [instructorId, setInstructorId] = useState(dv('instructorId', initial?.instructorId ?? ''))
+  const [price, setPrice] = useState(dv('price', initial?.price ?? ''))
+  const [capacity, setCapacity] = useState(dv('capacity', initial?.capacity ?? ''))
   const [deliveryMode, setDeliveryMode] = useState<'in_person' | 'online'>(
-    initial?.deliveryMode ?? 'in_person'
+    dv('deliveryMode', initial?.deliveryMode ?? 'in_person')
   )
-  const [minEnrollment, setMinEnrollment] = useState(initial?.minEnrollment ?? '8')
-  const [enrollmentDeadline, setEnrollmentDeadline] = useState('') // cohort-specific; never copied
-  const [deadlineEdited, setDeadlineEdited] = useState(false)
-  const [registrationClose, setRegistrationClose] = useState('') // cohort-specific; never copied
-  const [synapGroup, setSynapGroup] = useState(initial?.synapGroup ?? '')
+  const [minEnrollment, setMinEnrollment] = useState(dv('minEnrollment', initial?.minEnrollment ?? '8'))
+  const [enrollmentDeadline, setEnrollmentDeadline] = useState(dv('enrollmentDeadline', '')) // cohort-specific; never copied
+  const [deadlineEdited, setDeadlineEdited] = useState(dv('deadlineEdited', false))
+  const [registrationClose, setRegistrationClose] = useState(dv('registrationClose', '')) // cohort-specific; never copied
+  const [synapGroup, setSynapGroup] = useState(dv('synapGroup', initial?.synapGroup ?? ''))
   // PL-274 amendment B: two independent per-class switches — emails and nags
   // condition on them (diagnostics-off drops diagnostic promises/reminders;
   // Synap-off drops Synap links; both off skips #2 entirely).
-  const [hasDiagnostics, setHasDiagnostics] = useState(true)
+  const [hasDiagnostics, setHasDiagnostics] = useState(dv('hasDiagnostics', true))
   // PL-311: explicit follow-up flag (open-enrollment classes only) — gates
   // the roster's FO marketing controls.
-  const [isFollowOn, setIsFollowOn] = useState(false)
+  const [isFollowOn, setIsFollowOn] = useState(dv('isFollowOn', false))
   // PL-316: per-row session editing (same pickers as the add form).
   const [editIdx, setEditIdx] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState<SessionDraft | null>(null)
@@ -182,27 +196,27 @@ export default function ClassWizard({
   const [bulkShiftDays, setBulkShiftDays] = useState('')
   // PL-106: collateral basics are part of creating the class, not an
   // afterthought on the card — the card keeps full editing + regeneration.
-  const [shortLink, setShortLink] = useState(initial?.collateral?.short_link ?? '')
-  const [collateralLang, setCollateralLang] = useState(initial?.collateral?.collateral_language ?? '')
+  const [shortLink, setShortLink] = useState(dv('shortLink', initial?.collateral?.short_link ?? ''))
+  const [collateralLang, setCollateralLang] = useState(dv('collateralLang', initial?.collateral?.collateral_language ?? ''))
   // PL-239 (Scarlett, Jul 30): practice tests DEFAULT to 2, editable — the
   // create can never hit the DB's not-null constraint from an untouched field.
   const [practiceTestCount, setPracticeTestCount] = useState(
-    initial?.collateral?.practice_test_count != null ? String(initial.collateral.practice_test_count) : '2'
+    dv('practiceTestCount', initial?.collateral?.practice_test_count != null ? String(initial.collateral.practice_test_count) : '2')
   )
-  const [flyerBlurb, setFlyerBlurb] = useState(initial?.collateral?.flyer_blurb ?? '')
+  const [flyerBlurb, setFlyerBlurb] = useState(dv('flyerBlurb', initial?.collateral?.flyer_blurb ?? ''))
   // PL-237: the rest of the collateral card's fields live on the wizard's
   // Branding & Collateral step now (letter paragraphs + the promo trio).
-  const [letterBlurb, setLetterBlurb] = useState(initial?.collateral?.letter_blurb ?? '')
-  const [letterBlurbEs, setLetterBlurbEs] = useState(initial?.collateral?.letter_blurb_es ?? '')
-  const [promoCode, setPromoCode] = useState(initial?.collateral?.promo_code ?? '')
+  const [letterBlurb, setLetterBlurb] = useState(dv('letterBlurb', initial?.collateral?.letter_blurb ?? ''))
+  const [letterBlurbEs, setLetterBlurbEs] = useState(dv('letterBlurbEs', initial?.collateral?.letter_blurb_es ?? ''))
+  const [promoCode, setPromoCode] = useState(dv('promoCode', initial?.collateral?.promo_code ?? ''))
   const [promoAmount, setPromoAmount] = useState(
-    initial?.collateral?.promo_amount != null ? String(initial.collateral.promo_amount) : ''
+    dv('promoAmount', initial?.collateral?.promo_amount != null ? String(initial.collateral.promo_amount) : '')
   )
-  const [promoDeadline, setPromoDeadline] = useState(initial?.collateral?.promo_deadline ?? '')
+  const [promoDeadline, setPromoDeadline] = useState(dv('promoDeadline', initial?.collateral?.promo_deadline ?? ''))
   // PL-348: the public class page's hero bullets (one per line).
-  const [sellingBullets, setSellingBullets] = useState(initial?.collateral?.selling_bullets ?? '')
+  const [sellingBullets, setSellingBullets] = useState(dv('sellingBullets', initial?.collateral?.selling_bullets ?? ''))
   // PL-355 D: the public page's prerequisite line (follow-up classes mainly).
-  const [prerequisiteNote, setPrerequisiteNote] = useState(initial?.collateral?.prerequisite_note ?? '')
+  const [prerequisiteNote, setPrerequisiteNote] = useState(dv('prerequisiteNote', initial?.collateral?.prerequisite_note ?? ''))
   // 'Skip for now (remind me later)' stamps collateral_reminder_at on the
   // class -> the state-driven Needs Attention row.
   const [skipForNow, setSkipForNow] = useState(false)
@@ -210,10 +224,10 @@ export default function ClassWizard({
   const [schoolAccent, setSchoolAccent] = useState('')
   const [schoolLanguage, setSchoolLanguage] = useState('en')
   const [brandingMsg, setBrandingMsg] = useState('')
-  const [defaultLocation, setDefaultLocation] = useState(initial?.defaultLocation ?? '')
+  const [defaultLocation, setDefaultLocation] = useState(dv('defaultLocation', initial?.defaultLocation ?? ''))
 
   // -- step 2: sessions ------------------------------------------------------
-  const [sessions, setSessions] = useState<SessionDraft[]>(initial?.sessions ?? [])
+  const [sessions, setSessions] = useState<SessionDraft[]>(dv('sessions', initial?.sessions ?? []))
   const [draft, setDraft] = useState<SessionDraft>({
     session_date: '',
     start_time: '',
@@ -542,6 +556,49 @@ export default function ClassWizard({
     }
   }
 
+  // PL-370: "Save draft" from any step. Minimal validity only — a working
+  // name (school or class type); the FULL validation belongs to the real
+  // create path when the wizard finishes. Server-side rows, never browser
+  // storage.
+  function draftName(): string {
+    const schoolLabel = school?.nickname ?? school?.name ?? (isOpen ? 'HGL' : '')
+    return [schoolLabel, classType.trim()].filter(Boolean).join(' — ')
+  }
+  async function handleSaveDraft() {
+    const name = draftName()
+    if (!name) {
+      setDraftMsg('Give the draft a working name first — pick a school or type a class name.')
+      return
+    }
+    setSavingDraft(true)
+    setDraftMsg('')
+    try {
+      const state = {
+        step, schoolId, openKind, openTimezone, displayCities, counselorId, classType,
+        instructorId, price, capacity, deliveryMode, minEnrollment, enrollmentDeadline,
+        deadlineEdited, registrationClose, synapGroup, hasDiagnostics, isFollowOn,
+        shortLink, collateralLang, practiceTestCount, flyerBlurb, letterBlurb,
+        letterBlurbEs, promoCode, promoAmount, promoDeadline, sellingBullets,
+        prerequisiteNote, defaultLocation, sessions,
+      }
+      const res = await fetch('/api/admin/class-drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draftId ?? undefined, name, state }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setDraftMsg(json.error ?? 'Saving the draft failed.')
+        return
+      }
+      setDraftId(json.id)
+      setDraftMsg('Draft saved — find it under "Draft classes" on the Classes tab whenever you come back.')
+      onDraftSaved?.()
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
   async function handleCreate() {
     if ((!school && !isOpen) || sessions.length === 0 || !allDated) return
     setSaving(true)
@@ -677,6 +734,16 @@ export default function ClassWizard({
     // PL-288: a dedicated closure screen replaces the old inline banner that
     // sat confusingly on top of an already-reset wizard.
     setCreatedSummary({ classId: created.id, label: classType.trim() || 'The class', sessionCount: sorted.length })
+    // PL-370: the draft became a real class — the saved state is done.
+    if (draftId) {
+      fetch('/api/admin/class-drafts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draftId }),
+      }).catch(() => {})
+      setDraftId(null)
+      onDraftSaved?.()
+    }
     // Reset for the next class.
     setStep(1)
     setSchoolId('')
@@ -1882,7 +1949,26 @@ export default function ClassWizard({
         </div>
       )}
 
-      <div className="flex items-center justify-between mt-6">
+      {/* PL-370: come-back-later — available from ANY step; server-side,
+          resumable from "Draft classes" on the Classes tab. */}
+      <div className="flex flex-wrap items-center gap-3 mt-6 text-sm">
+        <button
+          type="button"
+          onClick={handleSaveDraft}
+          disabled={savingDraft}
+          className="border border-gray-300 text-gray-700 font-semibold py-1.5 px-4 rounded-md hover:border-hgl-blue hover:text-hgl-blue transition disabled:opacity-50"
+          title="Save everything as a draft and come back later — drafts are never visible to families"
+        >
+          {savingDraft ? 'Saving draft…' : draftId ? 'Update draft' : 'Save draft'}
+        </button>
+        {draftMsg && (
+          <span className={draftMsg.startsWith('Draft saved') ? 'text-green-700' : 'text-amber-700'}>
+            {draftMsg}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between mt-3">
         <button
           type="button"
           onClick={() =>

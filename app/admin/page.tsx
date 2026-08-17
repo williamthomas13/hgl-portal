@@ -966,6 +966,19 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  const fetchClassDrafts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/class-drafts')
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) setClassDrafts(json.drafts ?? [])
+    } catch {
+      /* list stays as-is */
+    }
+  }, [])
+  useEffect(() => {
+    fetchClassDrafts()
+  }, [fetchClassDrafts])
+
   const fetchRosters = useCallback(async () => {
     setFetchingRosters(true)
     const { data, error } = await supabase
@@ -1041,6 +1054,12 @@ export default function AdminDashboard() {
   // which row's payment link was just re-sent (transient ✓).
   const [staffEnrollClassId, setStaffEnrollClassId] = useState<string | null>(null)
   const [linkResentId, setLinkResentId] = useState<string | null>(null)
+  // PL-370: class-wizard drafts (server-side; resume remounts the wizard).
+  const [classDrafts, setClassDrafts] = useState<
+    { id: string; name: string; created_by: string | null; updated_at: string }[]
+  >([])
+  const [resumeDraft, setResumeDraft] = useState<{ id: string; state: Record<string, unknown> } | null>(null)
+  const [draftListError, setDraftListError] = useState('')
 
   function registrationUrl(c: ClassRow) {
     return `${window.location.origin}/register/${c.slug ?? c.id}`
@@ -2735,6 +2754,89 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <>
+              {/* PL-370: come-back-later drafts — server rows, never
+                  browser storage; a draft is invisible everywhere until the
+                  wizard finishes through the normal create path. */}
+              {classDrafts.length > 0 && (
+                <div className="mb-5 border border-gray-200 rounded-lg p-4">
+                  <p className="text-sm font-bold text-hgl-slate mb-2">Draft classes</p>
+                  {draftListError && <p className="text-xs text-red-600 mb-2">{draftListError}</p>}
+                  <ul className="space-y-1.5">
+                    {classDrafts.map((dr) => (
+                      <li key={dr.id} className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-semibold text-hgl-slate">{dr.name}</span>
+                        <span className="inline-block px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold">
+                          Draft — not visible to families
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          saved {new Date(dr.updated_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+                          {dr.created_by ? ` by ${dr.created_by}` : ''}
+                        </span>
+                        <button
+                          onClick={async () => {
+                            setDraftListError('')
+                            const res = await fetch('/api/admin/class-drafts', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ action: 'load', id: dr.id }),
+                            })
+                            const json = await res.json().catch(() => ({}))
+                            if (!res.ok) {
+                              setDraftListError(json.error ?? 'Loading the draft failed.')
+                              return
+                            }
+                            setWizardPrefill(null)
+                            setWizardSourceLabel('')
+                            setResumeDraft({ id: dr.id, state: json.draft.state })
+                            setWizardKey((k) => k + 1)
+                          }}
+                          className="text-xs text-hgl-blue underline"
+                        >
+                          resume
+                        </button>
+                        <ConfirmAction
+                          label="delete"
+                          message={`Delete the draft "${dr.name}"? Nothing else references it — this only removes the saved wizard state.`}
+                          confirmLabel="Yes, delete it"
+                          className="text-xs text-red-600 underline"
+                          confirmClassName="text-xs text-red-700 font-semibold underline"
+                          onConfirm={async () => {
+                            const res = await fetch('/api/admin/class-drafts', {
+                              method: 'DELETE',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ id: dr.id }),
+                            })
+                            if (!res.ok) {
+                              const j = await res.json().catch(() => ({}))
+                              setDraftListError(j.error ?? 'Deleting failed.')
+                            }
+                            if (resumeDraft?.id === dr.id) {
+                              setResumeDraft(null)
+                              setWizardKey((k) => k + 1)
+                            }
+                            fetchClassDrafts()
+                          }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {resumeDraft && (
+                <p className="mb-4 text-sm bg-blue-50 text-hgl-slate border border-blue-200 rounded p-3">
+                  Resumed from a saved draft — finish the steps and Create, or keep saving the
+                  draft as you go.{' '}
+                  <button
+                    onClick={() => {
+                      setResumeDraft(null)
+                      setWizardKey((k) => k + 1)
+                    }}
+                    className="underline text-hgl-blue"
+                  >
+                    Start blank instead
+                  </button>
+                </p>
+              )}
               {wizardPrefill && (
                 <p className="mb-4 text-sm bg-blue-50 text-hgl-slate border border-blue-200 rounded p-3">
                   Pre-filled from <strong>{wizardSourceLabel}</strong>{' '}— everything below is
@@ -2750,16 +2852,20 @@ export default function AdminDashboard() {
                 contacts={allCounselors}
                 instructors={instructors}
                 initial={wizardPrefill ?? undefined}
+                resumeDraft={resumeDraft ?? undefined}
                 onSchoolsChange={fetchSchools}
                 onContactsChange={fetchAllCounselors}
                 onInstructorsChange={fetchInstructors}
+                onDraftSaved={fetchClassDrafts}
                 onCreated={() => {
                   fetchRosters()
                   fetchRoomRequests()
+                  fetchClassDrafts()
                   // the wizard resets its own fields; drop the copy banner
                   // without remounting so the success message stays visible
                   setWizardPrefill(null)
                   setWizardSourceLabel('')
+                  setResumeDraft(null)
                 }}
               />
             </>
