@@ -20,6 +20,9 @@ type Block = {
   class_id?: string | null
   updated_at: string
   updated_by: string | null
+  /** PL-377: approval marker — a review is not an edit. */
+  reviewed_by: string | null
+  reviewed_at: string | null
 }
 
 // PL-351: per-block image controls — upload (alt text REQUIRED first),
@@ -209,6 +212,7 @@ function GroupHeader({
   onToggleGroup,
   onTogglePreview,
   onRefreshPreview,
+  onMarkAllReviewed,
 }: {
   label: string
   rows: Block[]
@@ -218,8 +222,10 @@ function GroupHeader({
   onToggleGroup: () => void
   onTogglePreview: () => void
   onRefreshPreview: () => void
+  onMarkAllReviewed: (keys: string[]) => void
 }) {
-  const unreviewed = rows.filter((b) => !b.updated_by).length
+  const unreviewedRows = rows.filter((b) => !b.updated_by && !b.reviewed_by)
+  const unreviewed = unreviewedRows.length
   return (
     <summary
       onClick={(e) => {
@@ -234,9 +240,22 @@ function GroupHeader({
       <span className="text-sm font-bold text-hgl-slate">{label}</span>
       <span className="text-xs text-gray-400">{rows.length} block{rows.length === 1 ? '' : 's'}</span>
       {unreviewed > 0 && (
-        <span className="text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5">
-          {unreviewed} not yet reviewed
-        </span>
+        <>
+          <span className="text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5">
+            {unreviewed} not yet reviewed
+          </span>
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onMarkAllReviewed(unreviewedRows.map((b) => b.key))
+            }}
+            className="text-xs text-hgl-blue underline"
+            title="Approve every unreviewed block in this group as-is"
+          >
+            mark all reviewed
+          </button>
+        </>
       )}
       <span className="flex-1" />
       {preview && (
@@ -313,7 +332,7 @@ export default function SiteContentPanel() {
       setPreview(json.preview ?? null)
       setOpenGroups((prev) => {
         if (prev) return prev
-        const unreviewed = (f: (b: Block) => boolean) => rows.some((b) => f(b) && !b.updated_by)
+        const unreviewed = (f: (b: Block) => boolean) => rows.some((b) => f(b) && !b.updated_by && !b.reviewed_by)
         const initial: Record<string, boolean> = {
           shared: unreviewed((b) => (!b.scope || b.scope === 'shared') && b.section !== 'pitch'),
           flow: unreviewed((b) => (!b.scope || b.scope === 'shared') && b.section === 'pitch'),
@@ -321,7 +340,8 @@ export default function SiteContentPanel() {
         }
         for (const b of rows) {
           if (b.scope === 'course' && b.course_key) {
-            initial[`course:${b.course_key}`] = initial[`course:${b.course_key}`] || !b.updated_by
+            initial[`course:${b.course_key}`] =
+              initial[`course:${b.course_key}`] || (!b.updated_by && !b.reviewed_by)
           }
         }
         return initial
@@ -390,6 +410,17 @@ export default function SiteContentPanel() {
     setPreviewNonce((n) => n + 1)
   }
 
+  // PL-377: approve-as-is — a review marker, never a fake edit.
+  const markReviewed = async (keys: string[]) => {
+    const res = await fetch('/api/admin/site-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'mark_reviewed', keys }),
+    })
+    if (res.ok) load()
+    else setError((await res.json().catch(() => ({}))).error ?? 'Marking failed.')
+  }
+
   const blockCard = (b: Block) => {
     const d = draftFor(b)
     return (
@@ -421,7 +452,23 @@ export default function SiteContentPanel() {
           {savedKey === b.key && <span className="text-green-700 font-semibold">Saved. </span>}
           {isDirty(b) && savedKey !== b.key && <span className="text-amber-700">Unsaved changes. </span>}
           Last changed {new Date(b.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
-          {b.updated_by ? ` by ${b.updated_by}` : ' (seeded copy — not yet reviewed)'}
+          {b.updated_by ? (
+            ` by ${b.updated_by}`
+          ) : b.reviewed_by ? (
+            // PL-377: approval marker, honestly separate from edits.
+            ` — approved as-is by ${b.reviewed_by}${b.reviewed_at ? `, ${new Date(b.reviewed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}` : ''}`
+          ) : (
+            <>
+              {' (seeded copy — not yet reviewed) '}
+              <button
+                onClick={() => markReviewed([b.key])}
+                className="text-hgl-blue underline"
+                title="Approve this copy as-is — records you as the reviewer without counting as an edit"
+              >
+                mark reviewed
+              </button>
+            </>
+          )}
         </p>
         <BlockImageControls blockKey={b.key} image={b.image} onChanged={blockChanged} />
       </div>
@@ -453,6 +500,7 @@ export default function SiteContentPanel() {
         onToggleGroup={() => setOpenGroups((p) => ({ ...(p ?? {}), [id]: !p?.[id] }))}
         onTogglePreview={() => setOpenPreviews((p) => ({ ...p, [id]: !p[id] }))}
         onRefreshPreview={() => setPreviewNonce((n) => n + 1)}
+        onMarkAllReviewed={markReviewed}
       />
       {openPreviews[id] && previewUrl && (
         <div className="mt-3">

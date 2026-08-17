@@ -12,7 +12,7 @@ export async function GET() {
   if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
   const { data, error } = await supabase
     .from('site_content_blocks')
-    .select('key, section, heading, body_markdown, sort_order, image, scope, course_key, class_id, updated_at, updated_by')
+    .select('key, section, heading, body_markdown, sort_order, image, scope, course_key, class_id, updated_at, updated_by, reviewed_by, reviewed_at')
     .order('section')
     .order('sort_order')
   if (error) {
@@ -141,6 +141,24 @@ export async function POST(request: Request) {
   const caller = await sessionRole('staff')
   if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
   const body = await request.json().catch(() => ({}))
+  // PL-377: approving copy as-is is a REVIEW, not an edit — it stamps
+  // reviewed_by/reviewed_at and leaves updated_by honest. Accepts one key
+  // or a list (the per-group "mark all reviewed").
+  if (body?.action === 'mark_reviewed') {
+    const keys: string[] = Array.isArray(body.keys)
+      ? body.keys.filter((k: unknown) => typeof k === 'string')
+      : typeof body.key === 'string'
+        ? [body.key]
+        : []
+    if (keys.length === 0) return NextResponse.json({ error: 'Nothing to mark.' }, { status: 400 })
+    const { error } = await supabase
+      .from('site_content_blocks')
+      .update({ reviewed_by: caller.email.toLowerCase(), reviewed_at: new Date().toISOString() })
+      .in('key', keys)
+      .is('reviewed_by', null)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
   if (body?.action === 'mint') {
     const courseKey = typeof body?.courseKey === 'string' ? body.courseKey.toLowerCase().trim() : ''
     if (!COURSE_KEY_RE.test(courseKey)) {
