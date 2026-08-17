@@ -46,10 +46,18 @@ export async function GET() {
   const courseKeys = [
     ...new Set((data ?? []).filter((b) => b.scope === 'course').map((b) => b.course_key ?? '')),
   ].filter(Boolean)
+  // PL-376 A: course_meta.display_name wins ("HGL ACT Prep"), then the
+  // newest class's type, then the prettified key.
+  const { data: metaRows } = await supabase
+    .from('course_meta')
+    .select('course_key, display_name')
+    .in('course_key', courseKeys.length ? courseKeys : ['-'])
+  const metaName = new Map(((metaRows as any[]) ?? []).map((m) => [m.course_key, m.display_name]))
   const coursePreviews: Record<string, { displayName: string; url: string; sample: boolean }> = {}
   for (const ck of courseKeys) {
     const named = classes.find((c) => c.course_key === ck && c.class_type)
     const displayName =
+      (metaName.get(ck) as string | undefined) ??
       named?.class_type ??
       ck.split('-').map((w: string) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
     const cls = pickFor(ck)

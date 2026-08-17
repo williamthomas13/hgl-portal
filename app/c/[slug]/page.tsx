@@ -88,7 +88,11 @@ function sampleClass(courseKey: string) {
     prerequisite_note: null,
     promo_code: null,
     is_follow_on: false,
-    has_diagnostics: false,
+    // PL-376: sensible sample facts — the walkthrough should SEE the
+    // conditional blocks and composed numbers (gating is proven on real
+    // classes; the sample is a layout preview).
+    has_diagnostics: true,
+    practice_test_count: 2,
   }
 }
 
@@ -97,6 +101,18 @@ const loadPage = cache(async (slug: string) => {
   if (sampleMatch) {
     // Blocks load exactly like a real page (shared + this course key's set);
     // everything class-shaped is synthetic and the page banners it.
+    // PL-376 A: the sample's naming honors course_meta.display_name.
+    let sampleName: string | null = null
+    try {
+      const { data: meta } = await supabase
+        .from('course_meta')
+        .select('display_name')
+        .eq('course_key', sampleMatch[1])
+        .maybeSingle()
+      sampleName = meta?.display_name ?? null
+    } catch {
+      sampleName = null
+    }
     let blocks: any[] = []
     try {
       const { data } = await supabase
@@ -122,8 +138,10 @@ const loadPage = cache(async (slug: string) => {
     } catch {
       featuredInstructors = []
     }
+    const sampleCls = sampleClass(sampleMatch[1]) as any
+    if (sampleName) sampleCls.class_type = `${sampleName} (sample)`
     return {
-      cls: sampleClass(sampleMatch[1]) as any,
+      cls: sampleCls,
       spotsTaken: 3,
       blocks,
       feeders: [] as any[],
@@ -427,7 +445,14 @@ export default async function PublicClassPage({
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
   const heroBlurb = courseBlocks.find((b) => String(b.key).endsWith(':hero-blurb')) ?? null
   const locationBlock = courseBlocks.find((b) => String(b.key).endsWith(':location')) ?? null
-  const courseSections = courseBlocks.filter((b) => b !== heroBlurb && b !== locationBlock)
+  // PL-376 D: the practice-tests section follows the SAME fact as the
+  // included-exams card (has_diagnostics) — the two can never disagree.
+  const courseSections = courseBlocks.filter(
+    (b) =>
+      b !== heroBlurb &&
+      b !== locationBlock &&
+      (String(b.key).endsWith(':practice-tests') ? hasDiagnostics : true)
+  )
   // PL-352 (amendment): the 1-on-1 upsell ('one-on-one-pitch') deliberately
   // does NOT render here — it lives on the registration flow's second page.
   const instructors = block('instructors')
@@ -443,6 +468,24 @@ export default async function PublicClassPage({
   // instead of rendering a wrong College Board URL.
   const fam = examFamilyFor(String(cls.class_type))
   const examName = fam?.examName ?? 'SAT'
+  // PL-376 C: class facts as tokens — never hand-written into copy.
+  // {instructionHours} sums the REAL sessions (digit style: "8 hours",
+  // "7.5 hours", "1 hour"; unschedulable → plain "hours" so grammar holds).
+  // {practiceTestCount} is the full pluralized phrase ("2 full-length
+  // practice tests" / "1 full-length practice test") so any value reads.
+  const totalMinutes = sessions.reduce((sum: number, sess: any) => {
+    if (!sess.start_time || !sess.end_time) return sum
+    const [sh, sm] = String(sess.start_time).split(':').map(Number)
+    const [eh, em] = String(sess.end_time).split(':').map(Number)
+    const mins = eh * 60 + em - (sh * 60 + sm)
+    return mins > 0 ? sum + mins : sum
+  }, 0)
+  const hoursNum = Math.round((totalMinutes / 60) * 10) / 10
+  const instructionHours =
+    hoursNum > 0 ? `${hoursNum % 1 === 0 ? hoursNum.toFixed(0) : hoursNum} hour${hoursNum === 1 ? '' : 's'}` : 'hours'
+  const testCount = Number(cls.practice_test_count ?? 0)
+  const practiceTestPhrase =
+    testCount > 0 ? `${testCount} full-length practice test${testCount === 1 ? '' : 's'}` : 'practice tests'
   // sub() is the raw-text substitution — FAQ QUESTIONS and JSON-LD go
   // through it too (they bypass markdown rendering); md() wraps it.
   const sub = (s: string) =>
@@ -453,6 +496,8 @@ export default async function PublicClassPage({
         fam?.pageRegUrl ? `[${label}](${fam.pageRegUrl})` : `the ${SCHOOL_BASED_REG_TEXT}`
       )
       .replaceAll('{examRegistrationLink}', fam?.pageRegUrl ?? `the ${SCHOOL_BASED_REG_TEXT}`)
+      .replaceAll('{instructionHours}', instructionHours)
+      .replaceAll('{practiceTestCount}', practiceTestPhrase)
   const md = (s: string) => renderSiteMarkdown(sub(s))
 
   // PL-355 B: feeder-city time groups. Each feeder school contributes its

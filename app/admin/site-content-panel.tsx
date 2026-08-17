@@ -537,8 +537,10 @@ export default function SiteContentPanel() {
         all matching pages update. Class facts (price, schedule, deadline) always come from
         the class record, never from this copy. Formatting: **bold**, [link](https://…),
         &quot;- &quot; lists, and &quot;### &quot; sub-headings (FAQ questions). {'{address}'},
-        {' {examName}'}, and {'{examRegistrationLink}'} fill in from each class record in
-        SHARED and course blocks alike (PSAT classes get school-based registration wording
+        {' {examName}'}, {'{examRegistrationLink}'}, {'{instructionHours}'} (summed from the
+        class&apos;s real sessions — &quot;8 hours&quot;), and {'{practiceTestCount}'} (&quot;2
+        full-length practice tests&quot;, pluralized automatically) fill in from each class record
+        in SHARED and course blocks alike (PSAT classes get school-based registration wording
         instead of a link).
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
