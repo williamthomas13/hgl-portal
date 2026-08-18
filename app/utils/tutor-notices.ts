@@ -390,8 +390,9 @@ export async function composeTutorNotice(
   const studentNames = uniq(deltas.map((c) => c.studentFirst)).join(' & ')
   const subjectNames = uniq(deltas.map((c) => c.subjectName)).join(' & ')
 
+  // PL-394: the change leads; the glance line bridges into the reference list.
   const glanceLine =
-    'Worth a quick glance even if you live in your calendar — your Google Calendar is already updated, but this email is the recap of what moved.'
+    'Your Google Calendar is already updated — below is the full upcoming schedule for reference, worth a quick glance even if you live in your calendar.'
 
   return renderRegistered(
     'T3_TUTOR_NOTICE',
@@ -412,9 +413,9 @@ export async function composeTutorNotice(
       subject: `${countPhrase}: ${studentNames} — ${subjectNames}`,
       html: wrap(
         `<h3 style="color:#334155">${countPhrase}</h3>
-${tutorScheduleBlock}
 ${tutorChangeBlock}
-<p>${glanceLine}</p>`,
+<p>${glanceLine}</p>
+${tutorScheduleBlock}`,
         { preheader: 'Your Google Calendar is already updated — this is the recap of what moved.', footer: footerStaff() }
       ),
     })

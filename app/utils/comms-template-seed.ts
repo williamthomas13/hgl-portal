@@ -1891,18 +1891,19 @@ It's saved with the rest of the handoff, so you don't need to keep this email.
     audience: 'parent',
     from_identity: 'info',
     category: 'transactional',
-    // PL-81: coalesced notice — subject scales with the batch, the current
-    // schedule leads, deltas follow, and the glance line closes.
+    // PL-81: coalesced notice — subject scales with the batch. PL-394: the
+    // CHANGE leads (it is the point of the email); the full schedule follows
+    // as reference with the glance line bridging.
     subject: '{scheduleChangeCountPhrase}: {studentNames} — {tutoringSubject}',
     preheader: 'Your Google Calendar is already updated — this is the recap of what moved.',
     footer_note: null,
     body_markdown: `## {scheduleChangeCountPhrase}
 
-{tutorScheduleBlock}
-
 {tutorChangeBlock}
 
-Worth a quick glance even if you live in your calendar — your Google Calendar is already updated, but this email is the recap of what moved.`,
+Your Google Calendar is already updated — below is the full upcoming schedule for reference, worth a quick glance even if you live in your calendar.
+
+{tutorScheduleBlock}`,
   },
 
   // --- Internal [HGL Admin] alerts (the sender adds the [HGL Admin] prefix) --
