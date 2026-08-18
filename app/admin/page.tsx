@@ -254,8 +254,6 @@ type ClassRow = {
   fo_short_name: string | null
   /** PL-279: this FEEDER cohort's extended follow-up discount deadline. */
   fo_extended_until: string | null
-  /** PL-293: the class's Squarespace marketing page. */
-  marketing_url: string | null
   /** PL-294: open classes — auto-extend under-minimum cohorts (default off). */
   fo_auto_extend: boolean
   /** PL-295C: per-cohort overrides on the FEEDER. */
@@ -1289,7 +1287,6 @@ export default function AdminDashboard() {
       | 'fo_short_name'
       | 'fo_auto_extend'
       | 'is_follow_on'
-      | 'marketing_url'
       | 'display_cities'
       | 'price'
       | 'capacity'
@@ -1950,18 +1947,9 @@ export default function AdminDashboard() {
                     </span>
                   </p>
                 )}
-                {/* PL-293: the class's Squarespace marketing page — the FO
-                    emails' "More info" link and the register page's class-page
-                    pointer compose from this; blank drops both cleanly. */}
-                {!c.school_id && c.is_follow_on === true && (
-                  <InlineEditableText
-                    label="Marketing page URL"
-                    value={c.marketing_url}
-                    emptyText='not set — no "More info" link in follow-up emails or on the register page'
-                    title="The class's marketing page (e.g. https://hgl.co/advanced-sat)"
-                    onSave={(v) => handleClassField(c, 'marketing_url', v)}
-                  />
-                )}
+                {/* PL-384: the Marketing page URL field retired — follow-up emails and
+                    the register page now compose the class's OWN page URL (the
+                    permanent code link when it resolves). Column drops next batch. */}
                 {/* PL-311: the feeder side. A flagged follow-up (Deep Dive) never
                     shows this — a follow-up has no follow-up (chain one by
                     flagging both and the dropdown returns). */}

@@ -11,7 +11,7 @@ import { useEffect } from 'react'
 // Control by doing nothing at all. No cookies, no identifiers — the beacon
 // body is the class id and metric names only.
 
-export default function ClassPageAnalytics({ classId }: { classId: string }) {
+export default function ClassPageAnalytics({ classId, viaCode }: { classId: string; viaCode?: string }) {
   useEffect(() => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const nav = navigator as any
@@ -41,7 +41,9 @@ export default function ClassPageAnalytics({ classId }: { classId: string }) {
     }
 
     track('visit')
-    if (new URLSearchParams(window.location.search).has('via')) track('arrival:shortlink')
+    // PL-384: a code-SERVED view is itself a shortlink arrival (no ?via
+    // redirect hop anymore); legacy ?via tags still count.
+    if (viaCode || new URLSearchParams(window.location.search).has('via')) track('arrival:shortlink')
 
     // "Seen" = 40% of the section is visible, OR the section fills half the
     // screen — the second rule is what lets a tall section (FAQs on a phone)
@@ -80,6 +82,6 @@ export default function ClassPageAnalytics({ classId }: { classId: string }) {
       if (timer) clearTimeout(timer)
       flush()
     }
-  }, [classId])
+  }, [classId, viaCode])
   return null
 }

@@ -795,9 +795,9 @@ export const VARIABLES: Record<string, VariableDef> = {
     description: 'THIS cohort\'s discount deadline, written out (e.g. "Friday, September 25, 2026") — computed from the recipient\'s feeder class, extension-aware',
     resolve: (c) => c.followOn?.endDate ?? '',
   },
-  // PL-293: the small "More info" pointer to the class's Squarespace
-  // marketing page (classes.marketing_url) — EMPTY when no page is set, so
-  // nothing dangles.
+  // PL-384 (was PL-293): the small "More info" pointer to the class's OWN
+  // page — the permanent /{code} URL when it resolves, else /c/{slug};
+  // composed, never a hand-typed field. EMPTY when the class has no page.
   // PL-299: the hours-block confirmation email's numbers (extras-resolved —
   // the sweep computes them from the live drawdown).
   blockHoursLeft: {
@@ -823,7 +823,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   },
   followOnInfoBlock: {
     description:
-      'PL-293: "More info about the class →" linking the class\'s marketing page (set per class on the roster) — EMPTY when no marketing page is set',
+      'PL-384: "More info about the class →" linking the class\'s OWN page (the permanent code URL when it resolves) — EMPTY when the class has no page',
     block: true,
     md: true,
     resolve: (c) =>

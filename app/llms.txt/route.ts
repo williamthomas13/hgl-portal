@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { emailBaseUrl } from '../utils/base-url'
 import { publicTimeCityLabel } from '../utils/dates'
+import { preferredClassPath } from '../utils/evergreen'
 
 // PL-359 D: /llms.txt — the plain-text front door for LLM crawlers and
 // assistants. GENERATED from the same records the pages render (schools,
@@ -23,7 +24,7 @@ export async function GET() {
     supabase
       .from('classes')
       .select(
-        'id, slug, class_type, status, is_follow_on, start_date, registration_close_date, timezone, display_cities, default_location, schools ( name, city, timezone ), sessions ( session_date )'
+        'id, slug, class_type, status, is_follow_on, start_date, registration_close_date, timezone, display_cities, default_location, school_id, course_key, schools ( name, city, timezone ), sessions ( session_date )'
       )
       .eq('status', 'open')
       .not('slug', 'is', null),
@@ -49,6 +50,15 @@ export async function GET() {
     }
   }
 
+  // PL-384: llms.txt shares the PERMANENT code URLs where they resolve.
+  const pathByClass = new Map<string, string>()
+  const registerPathByClass = new Map<string, string>()
+  for (const c of ((classes as any[]) ?? [])) {
+    const p = await preferredClassPath({ id: c.id, slug: c.slug, school_id: c.school_id ?? null, course_key: c.course_key ?? null })
+    pathByClass.set(c.id, p)
+    registerPathByClass.set(c.id, p.startsWith('/c/') ? `/register/${c.slug}` : `${p}/register`)
+  }
+
   const live = (((classes as any[]) ?? []))
     .map((c) => {
       const days = (c.sessions ?? []).map((s: any) => s.session_date).sort()
@@ -67,7 +77,7 @@ export async function GET() {
           })
       const label = school ? `${school.name} ${c.class_type} Class` : c.class_type
       const starts = days[0] ?? c.start_date
-      return `- ${label} (${city}; starts ${starts}): ${base}/c/${c.slug} — register at ${base}/register/${c.slug}`
+      return `- ${label} (${city}; starts ${starts}): ${base}${pathByClass.get(c.id) ?? `/c/${c.slug}`} — register at ${base}${registerPathByClass.get(c.id) ?? `/register/${c.slug}`}`
     })
     .filter(Boolean)
 

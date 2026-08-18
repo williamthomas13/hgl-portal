@@ -1,0 +1,54 @@
+import type { Metadata } from 'next'
+import { permanentRedirect } from 'next/navigation'
+import EvergreenCapture from '../../components/EvergreenCapture'
+import { pontano } from '../../components/public-skin'
+import { RegistrationForm } from '../../register/[id]/registration-form'
+import { bumpCodeVisit, resolveEvergreen } from '../../utils/evergreen'
+
+// PL-384 B: /{code}/register — the permanent registration address. Resolves
+// the SAME class the code serves and renders the registration form in place;
+// nothing open → the same interest-capture state (a printed register link
+// never strands). Never indexed (forms aren't content).
+
+export const dynamic = 'force-dynamic'
+
+const CODE_RE = /^[a-z0-9-]{1,32}$/
+
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: 'Register — Higher Ground Learning', robots: { index: false } }
+}
+
+export default async function EvergreenRegisterPage({
+  params,
+}: {
+  params: Promise<{ code: string }>
+}) {
+  const code = decodeURIComponent((await params).code).toLowerCase().trim()
+  const fallbackCapture = (heading: string, classType: string, schoolId: string | null) => (
+    <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+      <EvergreenCapture
+        schoolId={schoolId}
+        classType={classType}
+        heading={heading}
+        sub="Leave your email and we'll let you know the moment the next class opens for registration — nothing else, no newsletter."
+      />
+    </div>
+  )
+  if (!CODE_RE.test(code)) {
+    return fallbackCapture('No upcoming class at this link right now', 'SAT Prep', null)
+  }
+  const res = await resolveEvergreen(code)
+  if (res.kind === 'legacy') permanentRedirect(res.destination)
+  if (res.kind === 'school' || res.kind === 'course') {
+    await bumpCodeVisit(code)
+    if (res.classSlug) return <RegistrationForm idOrSlug={res.classSlug} />
+    return fallbackCapture(
+      res.kind === 'school'
+        ? `No upcoming class at ${res.label} right now`
+        : `No upcoming ${res.label} class right now`,
+      res.classType,
+      res.kind === 'school' ? res.schoolId : null
+    )
+  }
+  return fallbackCapture('No upcoming class at this link right now', 'SAT Prep', null)
+}

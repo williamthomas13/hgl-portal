@@ -104,7 +104,6 @@ export async function GET() {
     { data: availStudents },
     { data: refundRequests },
     { data: brokenTemplateSends },
-    { data: shortLinks },
   ] = await Promise.all([
     supabase
       .from('classes')
@@ -164,14 +163,6 @@ export async function GET() {
       .not('payload->unresolved_tokens', 'is', null)
       .order('sent_at', { ascending: false })
       .limit(50),
-    // PL-349: shortcodes + their target class (cancelled targets INCLUDED —
-    // a finished target is exactly what the repoint nudge looks for). If the
-    // table isn't migrated yet, data is null and the nudge simply never fires.
-    supabase
-      .from('short_links')
-      .select(
-        'code, class_id, school_id, updated_at, classes ( id, class_type, status, school_id, start_date, schools ( nickname ), sessions ( session_date ) )'
-      )
   ])
 
   // PL-361 D: a staff-created registration that never got paid must not sit
@@ -258,37 +249,9 @@ export async function GET() {
       since: c.collateral_reminder_at,
     })
   }
-  // PL-349: the repoint nudge — repointing is deliberate, remembering
-  // shouldn't be. STATE-DRIVEN: a shortcode whose target class is finished
-  // (last session past, or cancelled) while its school has a NEW live class
-  // shows a row; it clears itself the moment the code is repointed (or
-  // retired). Never auto-repoints — the row is the memory, the click is the
-  // decision.
-  for (const sl of ((shortLinks as any[]) ?? [])) {
-    const target = one<any>(sl.classes)
-    const targetLastDay = target
-      ? ((target.sessions ?? []).map((s: any) => s.session_date).sort().at(-1) ?? target.start_date)
-      : null
-    const finished = !target || target.status === 'cancelled' || (targetLastDay != null && targetLastDay < todayIso)
-    if (!finished) continue
-    const schoolId = target?.school_id ?? sl.school_id
-    if (!schoolId) continue
-    const candidate = liveClasses
-      .filter((c) => c.school_id === schoolId && c.id !== target?.id)
-      .sort((a, b) => firstDayOf(a).localeCompare(firstDayOf(b)))[0]
-    if (!candidate) continue
-    const oldLabel = target
-      ? `${one<any>(target.schools)?.nickname ?? ''} ${target.class_type}`.trim() +
-        (target.status === 'cancelled' ? ' (cancelled)' : ' (finished)')
-      : 'nothing'
-    attention.push({
-      id: `shortlink-repoint-${sl.code}`,
-      kind: 'Short link points at a finished class',
-      text: `hgl.co/${sl.code} still points to ${oldLabel} — repoint it to ${label(candidate)}?`,
-      href: `/admin?tab=classes&section=shortlinks&repoint=${encodeURIComponent(sl.code)}`,
-      since: sl.updated_at,
-    })
-  }
+  // PL-384: the PL-349 repoint nudge retired — codes are evergreen and
+  // resolve to the newest open class automatically; there is nothing to
+  // repoint anymore.
   const in3d = new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10)
   for (const c of liveClasses) {
     const paid = (c.enrollments ?? []).filter((e: any) => ['Paid', 'Completed'].includes(e.payment_status)).length

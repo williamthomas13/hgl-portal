@@ -2,36 +2,46 @@ import type { MetadataRoute } from 'next'
 import { supabaseAdmin as supabase } from './utils/supabase-admin'
 import { emailBaseUrl } from './utils/base-url'
 
-// PL-359 B: only the pages we WANT indexed — live/upcoming class pages and
-// the team page. Cancelled/finished classes stay out (their /c pages also
-// carry noindex); honest lastmod from the record's own timestamps, omitted
-// when nothing trustworthy exists.
+// PL-384 (supersedes PL-359 B): the sitemap lists THE permanent addresses —
+// every school/course evergreen /{code} URL (each always serves something
+// honest: the open class, or the interest capture), plus /classes and /team.
+// /c/{slug} pages are internal plumbing now: always noindex, never listed.
+// lastmod rides the code's currently-served class when one is open.
 
 export const dynamic = 'force-dynamic'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = emailBaseUrl()
-  const today = new Date().toISOString().slice(0, 10)
-  const { data } = await supabase
-    .from('classes')
-    .select('slug, status, start_date, registration_close_date, collateral_changed_at, created_at, sessions ( session_date )')
-    .eq('status', 'open')
-    .not('slug', 'is', null)
-
   const entries: MetadataRoute.Sitemap = []
-  for (const c of ((data as any[]) ?? [])) {
-    const days = (c.sessions ?? []).map((s: any) => s.session_date).sort()
-    const close = String(c.registration_close_date ?? days[0] ?? c.start_date ?? '').slice(0, 10)
-    if (!close || close < today) continue // registration over → not index-worthy
-    const lastmod = c.collateral_changed_at ?? c.created_at ?? null
-    entries.push({
-      url: `${base}/c/${c.slug}`,
-      ...(lastmod ? { lastModified: new Date(lastmod) } : {}),
-    })
+
+  const [{ data: schools }, { data: courses }, { data: classes }] = await Promise.all([
+    supabase.from('schools').select('id, evergreen_code').not('evergreen_code', 'is', null),
+    supabase.from('course_meta').select('course_key, evergreen_code').not('evergreen_code', 'is', null),
+    supabase
+      .from('classes')
+      .select('school_id, course_key, status, collateral_changed_at, created_at')
+      .eq('status', 'open'),
+  ])
+
+  const lastmodFor = (match: (c: any) => boolean): Date | null => {
+    const stamps = ((classes as any[]) ?? [])
+      .filter(match)
+      .map((c) => c.collateral_changed_at ?? c.created_at)
+      .filter(Boolean)
+      .sort()
+    return stamps.length > 0 ? new Date(stamps[stamps.length - 1]) : null
   }
-  entries.push({ url: `${base}/team` })
-  // PL-378: the public classes browse page.
+
+  for (const s of ((schools as any[]) ?? [])) {
+    const lastmod = lastmodFor((c) => c.school_id === s.id)
+    entries.push({ url: `${base}/${s.evergreen_code}`, ...(lastmod ? { lastModified: lastmod } : {}) })
+  }
+  for (const m of ((courses as any[]) ?? [])) {
+    const lastmod = lastmodFor((c) => !c.school_id && c.course_key === m.course_key)
+    entries.push({ url: `${base}/${m.evergreen_code}`, ...(lastmod ? { lastModified: lastmod } : {}) })
+  }
   entries.push({ url: `${base}/classes` })
+  entries.push({ url: `${base}/team` })
   return entries
 }

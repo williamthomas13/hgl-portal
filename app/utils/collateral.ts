@@ -94,7 +94,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
       short_link, collateral_language, letter_blurb, letter_blurb_es,
       flyer_blurb, practice_test_count, promo_code, promo_amount, promo_deadline,
       enrollment_deadline, registration_close_date,
-      schools ( name, nickname, logo_url, accent_color, collateral_language, timezone ),
+      schools ( name, nickname, logo_url, accent_color, collateral_language, timezone, evergreen_code ),
       sessions ( session_date, start_time, end_time )
     `
     )
@@ -110,7 +110,12 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
   const base = emailBaseUrl()
   const slug = c.slug ?? c.id
   const registerUrl = `${base}/register/${slug}?src=flyer`
-  const shortLink = (c.short_link ?? '').trim() || null
+  // PL-384: the printed link IS the school's evergreen code (one link per
+  // school, never repointed) — the stored per-class short_link text survives
+  // only as the fallback until its phase-2 drop.
+  const shortLink = school?.evergreen_code
+    ? `hgl.co/${school.evergreen_code}`
+    : (c.short_link ?? '').trim() || null
 
   // PL-266: "always current" includes promotions — a promo whose deadline
   // has passed (school-local calendar date) renders as if it never existed,

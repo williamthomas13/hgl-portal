@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server'
 import { sessionRole } from '../../../utils/staff-gate'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 
-// PL-378 (+amendment): evergreen link codes (per school + per course) and
-// the hgl.co legacy-forward map. ONE collision validator across every
-// namespace that answers on hgl.co paths — reserved app routes, class
-// shortcodes, school codes, course codes, legacy forwards — with a
-// plain-English reason for each refusal ("/act already forwards to…").
+// PL-378 → PL-384: THE link registry — one evergreen code per school/course
+// (the class-shortcode layer folded in; codes serve pages in place) plus the
+// hgl.co legacy-forward map, with the pin escape hatch for the
+// two-open-classes case. ONE collision validator across every namespace that
+// answers on hgl.co paths — reserved app routes, school codes, course codes,
+// legacy forwards — with a plain-English reason for each refusal.
 
 const CODE_RE = /^[a-z0-9-]{2,32}$/
 
@@ -23,17 +24,12 @@ const RESERVED = new Set([
 /** Every taken code across the namespaces, with a plain-English owner. */
 async function codeOwner(code: string, ignore?: { kind: string; id: string }): Promise<string | null> {
   if (RESERVED.has(code)) return `"/${code}" is a reserved portal page`
-  const [{ data: sl }, { data: sch }, { data: cm }, { data: lr }] = await Promise.all([
-    supabase.from('short_links').select('code, classes ( class_type )').eq('code', code).maybeSingle(),
+  const [{ data: sch }, { data: cm }, { data: lr }] = await Promise.all([
     supabase.from('schools').select('id, name, nickname').eq('evergreen_code', code).maybeSingle(),
     supabase.from('course_meta').select('course_key, display_name').eq('evergreen_code', code).maybeSingle(),
     supabase.from('legacy_redirects').select('code, destination').eq('code', code).maybeSingle(),
   ])
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  if (sl) {
-    const ct = (Array.isArray((sl as any).classes) ? (sl as any).classes[0] : (sl as any).classes)?.class_type
-    return `"/${code}" is already a class shortcode${ct ? ` (${ct})` : ''} — class shortcodes stay as-is for point-in-time shares`
-  }
   if (sch && !(ignore?.kind === 'school' && ignore.id === sch.id)) {
     return `"/${code}" is already ${sch.nickname ?? sch.name}'s evergreen school link`
   }
@@ -49,12 +45,64 @@ async function codeOwner(code: string, ignore?: { kind: string; id: string }): P
 export async function GET() {
   const caller = await sessionRole('staff')
   if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
-  const [{ data: schools }, { data: courses }, { data: legacy }] = await Promise.all([
-    supabase.from('schools').select('id, name, nickname, evergreen_code').order('name'),
-    supabase.from('course_meta').select('course_key, display_name, evergreen_code').order('course_key'),
-    supabase.from('legacy_redirects').select('code, destination, note, updated_at').order('code'),
-  ])
-  return NextResponse.json({ schools: schools ?? [], courses: courses ?? [], legacy: legacy ?? [] })
+  const [{ data: schools }, { data: courses }, { data: legacy }, { data: openClasses }, { data: clicks }] =
+    await Promise.all([
+      supabase.from('schools').select('id, name, nickname, evergreen_code, evergreen_pin_class_id').order('name'),
+      supabase
+        .from('course_meta')
+        .select('course_key, display_name, evergreen_code, evergreen_pin_class_id')
+        .order('course_key'),
+      supabase.from('legacy_redirects').select('code, destination, note, updated_at').order('code'),
+      supabase
+        .from('classes')
+        .select('id, slug, class_type, status, school_id, course_key, created_at, start_date')
+        .eq('status', 'open')
+        .not('slug', 'is', null)
+        .order('created_at', { ascending: false }),
+      supabase.from('short_link_clicks').select('code, day, clicks'),
+    ])
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  // PL-384: what each code SERVES right now (pin wins while open, else
+  // newest open, else the interest capture) + click history (the counter
+  // carried straight over from the shortcode era — same codes, same table).
+  const cutoff = new Date(Date.now() - 14 * 86400_000).toLocaleDateString('en-CA')
+  const clicksFor = (code: string | null) => {
+    if (!code) return { total: 0, last14: 0 }
+    const rows = ((clicks as any[]) ?? []).filter((r) => r.code === code)
+    return {
+      total: rows.reduce((a, r) => a + Number(r.clicks), 0),
+      last14: rows.filter((r) => r.day >= cutoff).reduce((a, r) => a + Number(r.clicks), 0),
+    }
+  }
+  const open = (openClasses as any[]) ?? []
+  const servingFor = (filter: (c: any) => boolean, pinId: string | null) => {
+    const pinned = pinId ? open.find((c) => c.id === pinId) ?? null : null
+    const auto = open.filter(filter)[0] ?? null
+    const serving = pinned ?? auto
+    return serving
+      ? { classId: serving.id, label: serving.class_type, pinned: Boolean(pinned) }
+      : null
+  }
+  return NextResponse.json({
+    schools: ((schools as any[]) ?? []).map((sc) => ({
+      ...sc,
+      serving: sc.evergreen_code ? servingFor((c) => c.school_id === sc.id, sc.evergreen_pin_class_id) : null,
+      candidates: open.filter((c) => c.school_id === sc.id).map((c) => ({ id: c.id, label: c.class_type })),
+      clicks: clicksFor(sc.evergreen_code),
+    })),
+    courses: ((courses as any[]) ?? []).map((cm) => ({
+      ...cm,
+      serving: cm.evergreen_code
+        ? servingFor((c) => !c.school_id && c.course_key === cm.course_key, cm.evergreen_pin_class_id)
+        : null,
+      candidates: open
+        .filter((c) => !c.school_id && c.course_key === cm.course_key)
+        .map((c) => ({ id: c.id, label: c.class_type })),
+      clicks: clicksFor(cm.evergreen_code),
+    })),
+    legacy: legacy ?? [],
+  })
 }
 
 export async function POST(req: Request) {
@@ -86,6 +134,31 @@ export async function POST(req: Request) {
         : await supabase
             .from('course_meta')
             .upsert({ course_key: id, evergreen_code: code || null, updated_at: new Date().toISOString() }, { onConflict: 'course_key' })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  if (action === 'set_school_pin' || action === 'set_course_pin') {
+    const id = typeof body?.id === 'string' ? body.id : ''
+    const classId = typeof body?.classId === 'string' && body.classId ? body.classId : null
+    if (!id) return NextResponse.json({ error: 'Missing id.' }, { status: 400 })
+    if (classId) {
+      const { data: cls } = await supabase.from('classes').select('id, status').eq('id', classId).maybeSingle()
+      if (!cls) return NextResponse.json({ error: 'That class no longer exists.' }, { status: 400 })
+      if (cls.status !== 'open') {
+        return NextResponse.json(
+          { error: 'Only an open class can be pinned — a closed pin would just fall back to auto anyway.' },
+          { status: 400 }
+        )
+      }
+    }
+    const { error } =
+      action === 'set_school_pin'
+        ? await supabase.from('schools').update({ evergreen_pin_class_id: classId }).eq('id', id)
+        : await supabase
+            .from('course_meta')
+            .update({ evergreen_pin_class_id: classId, updated_at: new Date().toISOString() })
+            .eq('course_key', id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }

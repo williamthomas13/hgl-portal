@@ -1,5 +1,6 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { emailBaseUrl } from './base-url'
+import { preferredClassPath } from './evergreen'
 import { mintToken, checkToken } from './signing'
 import { renderDbEmail } from './comms-db-render'
 import { sendOnce } from './email'
@@ -83,9 +84,10 @@ export type FollowOnTarget = {
   shortName: string
   promoCode: string | null
   promoAmount: number | null
-  /** PL-293: the class's Squarespace marketing page; null drops the
-   *  "More info" link everywhere. */
-  marketingUrl: string | null
+  /** PL-384 (retires PL-293's marketing_url): the class's OWN page — the
+   *  permanent /{code} URL when its course code resolves to it, else
+   *  /c/{slug}. Composed, never a hand-typed field. */
+  pagePath: string | null
   /** PL-294: auto-extend cohorts whose deadline passes while this class is
    *  under its minimum. Default off. */
   autoExtend: boolean
@@ -101,7 +103,7 @@ export async function loadFollowOnTarget(classId: string): Promise<FollowOnTarge
   const { data } = await supabase
     .from('classes')
     .select(
-      'id, slug, class_type, status, school_id, fo_short_name, promo_code, promo_amount, marketing_url, fo_auto_extend, min_enrollment, enrollment_deadline, registration_close_date, start_date, sessions ( session_date )'
+      'id, slug, class_type, status, school_id, course_key, fo_short_name, promo_code, promo_amount, fo_auto_extend, min_enrollment, enrollment_deadline, registration_close_date, start_date, sessions ( session_date )'
     )
     .eq('id', classId)
     .maybeSingle()
@@ -117,7 +119,9 @@ export async function loadFollowOnTarget(classId: string): Promise<FollowOnTarge
     shortName: (data.fo_short_name as string | null)?.trim() || data.class_type,
     promoCode: (data.promo_code as string | null)?.trim() || null,
     promoAmount: data.promo_amount != null ? Number(data.promo_amount) : null,
-    marketingUrl: (data.marketing_url as string | null)?.trim() || null,
+    pagePath: data.slug
+      ? await preferredClassPath({ id: data.id, slug: data.slug, school_id: data.school_id ?? null, course_key: data.course_key ?? null })
+      : null,
     autoExtend: Boolean(data.fo_auto_extend),
     minEnrollment: data.min_enrollment != null && Number(data.min_enrollment) >= 1 ? Number(data.min_enrollment) : 3,
     registrationDeadline:
@@ -155,7 +159,7 @@ export function followOnOfferFor(
     discountAmount: `$${Number(target.promoAmount).toFixed(0)}`,
     discountCode: target.promoCode ?? '',
     endDate: foLongDate(window.deadline),
-    infoUrl: target.marketingUrl,
+    infoUrl: target.pagePath ? `${emailBaseUrl()}${target.pagePath}` : null,
   }
 }
 

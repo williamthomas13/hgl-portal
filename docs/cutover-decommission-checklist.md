@@ -11,9 +11,13 @@ email first (classes).
 2. **hgl.co legacy forwards (PL-378 amendment — BEFORE the DNS cutover):** Scarlett
    inventories every live registrar-level hgl.co forward (log into the registrar and list
    them; known today: hgl.co/act → highergroundlearning.com/act, already entered) and adds
-   each in **Settings → Shortlinks → Legacy hgl.co forwards** — after the cutover the portal
+   each in **Classes → Short links → Legacy hgl.co forwards** — after the cutover the portal
    answers ALL of hgl.co, and any forward not in that list dies. Rows are editable/retirable
    there later.
+   **PL-384 note:** the printed class codes (isd, mis, nido, sls) need NO registrar action
+   and NO reprinting — they are their schools' evergreen codes now; the portal serves each
+   code's newest open class right at hgl.co/{code} (interest page between classes), with
+   registration at hgl.co/{code}/register. Click history carried over unchanged.
 3. **DNS cutover** (the batch-36 7-step runbook) after Scarlett's walkthrough clears.
 4. **Mid-flight class imports** — per class, in any order (idempotent):
    ```
@@ -33,7 +37,8 @@ email first (classes).
      booked that revenue). Imported Pendings are exempt from the automatic reminder
      ladder/expiry — they surface on Needs Attention with a send-payment-link action.
 5. **Registration handoff for the two accruing classes:** repoint their MailerLite
-   forms / Squarespace buttons at the portal registration links (`hgl.co` shortcodes),
+   forms / Squarespace buttons at the permanent registration links
+   (`hgl.co/{code}/register` — the PL-384 evergreen codes, never per-class links),
    then run the SAME import once more as the final sweep — anyone who registered in the
    gap comes over; dedupe by student+class makes the double-import harmless.
 6. Verify each imported roster (counts vs the sheet; spot-check a family portal login).

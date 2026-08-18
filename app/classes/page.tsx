@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { publicTimeCityLabel, formatDateFull, bySessionStart, effectiveStartDate } from '../utils/dates'
+import { preferredClassPath } from '../utils/evergreen'
 import { DEFAULT_TIMEZONE } from '../utils/lifecycle'
 import { imageAttrs } from '../utils/class-page-images'
 import { pontano, PAGE_HERO } from '../components/public-skin'
@@ -13,7 +14,8 @@ import { CONSULT_HREF } from '../components/ClassStateCard'
 // consistency), city filtering like the sqsp page, and capacity states
 // COMPOSED from the record ("Class full" / "Only N spots left") with the
 // same spots-taken computation the /c pages use — never hand-typed. Cards
-// link to /c/{slug}. Wizard drafts (PL-370) have no classes rows, so they
+// link to the class's permanent code URL when one resolves (PL-384), else
+// /c/{slug}. Wizard drafts (PL-370) have no classes rows, so they
 // can never appear here. A modest past-classes list mirrors the sqsp page.
 
 export const dynamic = 'force-dynamic'
@@ -61,7 +63,7 @@ export default async function ClassesBrowsePage({
     .from('classes')
     .select(
       `id, slug, class_type, status, price, capacity, delivery_mode, default_location, timezone,
-       display_cities, registration_close_date, start_date, course_key,
+       display_cities, registration_close_date, start_date, course_key, school_id,
        schools ( name, nickname, city, timezone, logo_url ),
        sessions ( session_date, start_time, end_time ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
@@ -88,6 +90,8 @@ export default async function ClassesBrowsePage({
     return {
       id: c.id,
       slug: c.slug,
+      schoolId: c.school_id ?? null,
+      courseKey: c.course_key ?? null,
       label: school ? `${school.name} ${c.class_type} Class` : String(c.class_type),
       school,
       online: c.delivery_mode === 'online',
@@ -99,11 +103,19 @@ export default async function ClassesBrowsePage({
       seatsLeft,
     }
   })
+  // PL-384: cards link to the PERMANENT code URL when the class's
+  // school/course code currently resolves to it; /c/{slug} only for the rest.
+  const rowsWithHrefs = await Promise.all(
+    rows.map(async (r) => ({
+      ...r,
+      pageHref: await preferredClassPath({ id: r.id, slug: r.slug, school_id: r.schoolId, course_key: r.courseKey }),
+    }))
+  )
 
-  const upcoming = rows
+  const upcoming = rowsWithHrefs
     .filter((c) => c.registerable && !c.past)
     .sort((a, b) => String(a.firstSession).localeCompare(String(b.firstSession)))
-  const past = rows
+  const past = rowsWithHrefs
     .filter((c) => c.past || !c.registerable)
     .sort((a, b) => String(b.firstSession).localeCompare(String(a.firstSession)))
     .slice(0, 6)
@@ -168,7 +180,7 @@ export default async function ClassesBrowsePage({
             {visible.map((c) => (
               <a
                 key={c.id}
-                href={`/c/${c.slug}`}
+                href={c.pageHref}
                 className="bg-white rounded-lg shadow-sm p-5 flex flex-col gap-3 border border-transparent hover:border-hgl-blue transition"
               >
                 <div className="flex items-center gap-3">

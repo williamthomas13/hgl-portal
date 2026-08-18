@@ -3,333 +3,52 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ConfirmAction } from './tutoring/confirm'
 
-// PL-349: Classes → Short links — every hgl.co code, what it points at,
-// when it last changed, and a REPOINT control ("aisct" means "AISCT's
-// current class"; next season the code repoints and printed collateral
-// never dies). Inline confirm banners only — repointing is deliberate.
-// Deep-linked by the dashboard's repoint nudge as
-// /admin?tab=classes&section=shortlinks&repoint={code} (the nudge row is
-// the memory, the click here is the decision).
+// PL-384 (supersedes PL-349): Classes → Short links under the ONE link
+// model — one link per school or course, evergreen; it always works, even
+// between classes. Codes serve their newest open class's page in place;
+// nothing open → the leave-your-email page at the same URL. The old
+// class-shortcode layer (and its repoint machinery) is gone — the printed
+// codes (isd, mis, nido, sls) carried over as their schools' codes, click
+// history intact. Pins cover the two-open-classes case, plainly badged.
 
-type LinkRow = {
-  code: string
-  classId: string | null
-  schoolId: string | null
-  schoolNickname: string | null
-  target: { id: string; slug: string | null; label: string; status: string; startDate: string | null } | null
-  updatedAt: string
-  updatedBy: string | null
-  clicks: { total: number; last14: number }
+type Serving = { classId: string; label: string; pinned: boolean } | null
+type Candidate = { id: string; label: string }
+type Clicks = { total: number; last14: number }
+type SchoolRow = {
+  id: string
+  name: string
+  nickname: string | null
+  evergreen_code: string | null
+  evergreen_pin_class_id: string | null
+  serving: Serving
+  candidates: Candidate[]
+  clicks: Clicks
 }
-type Candidate = { id: string; slug: string | null; schoolId: string | null; label: string; startDate: string | null }
+type CourseRow = {
+  course_key: string
+  display_name: string | null
+  evergreen_code: string | null
+  evergreen_pin_class_id: string | null
+  serving: Serving
+  candidates: Candidate[]
+  clicks: Clicks
+}
+type LegacyRow = { code: string; destination: string; note: string | null }
 
 export default function ShortlinksPanel() {
-  const [links, setLinks] = useState<LinkRow[] | null>(null)
-  const [candidates, setCandidates] = useState<Candidate[]>([])
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  // Per-row in-flight edit: which code is repointing/retiring, and to what.
-  const [repoint, setRepoint] = useState<{ code: string; classId: string } | null>(null)
-  const [retiring, setRetiring] = useState('')
-  const [busy, setBusy] = useState(false)
-  // Create form.
-  const [newCode, setNewCode] = useState('')
-  const [newClassId, setNewClassId] = useState('')
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/shortlinks')
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(json.error ?? `The server returned ${res.status}.`)
-        setLinks(null)
-        return
-      }
-      setLinks(json.links ?? [])
-      setCandidates(json.candidates ?? [])
-      setError('')
-    } catch {
-      setError("Couldn't load the short links — check your connection.")
-    }
-  }, [])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  // Deep-link: ?repoint={code} pre-opens that row's repoint control with the
-  // school's first live class suggested (window.location, not
-  // useSearchParams — the topline precedent, no Suspense boundary needed).
-  useEffect(() => {
-    if (!links) return
-    const code = new URLSearchParams(window.location.search).get('repoint')
-    if (!code) return
-    const row = links.find((l) => l.code === code)
-    if (!row) return
-    const suggested = candidates.find(
-      (c) => c.schoolId != null && c.schoolId === row.schoolId && c.id !== row.target?.id
-    )
-    setRepoint((cur) => cur ?? { code, classId: suggested?.id ?? '' })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [links === null])
-
-  async function post(payload: Record<string, unknown>, doneNote: string) {
-    setBusy(true)
-    setNotice('')
-    try {
-      const res = await fetch('/api/admin/shortlinks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(json.error ?? 'That change failed.')
-        return false
-      }
-      setError('')
-      setNotice(doneNote)
-      await load()
-      return true
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const targetNote = (l: LinkRow) => {
-    if (!l.target) return <span className="text-amber-700">nothing — idle code</span>
-    const finished = l.target.status === 'cancelled'
-    return (
-      <>
-        {l.target.slug ? (
-          <a href={`/c/${l.target.slug}`} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
-            {l.target.label}
-          </a>
-        ) : (
-          l.target.label
-        )}
-        {finished && <span className="text-xs text-amber-700 ml-1.5">cancelled — visitors get the honest state page</span>}
-      </>
-    )
-  }
-
-  if (error && !links) return <p className="text-sm text-red-600">{error}</p>
-  if (!links) return <p className="text-sm text-gray-500">Loading…</p>
-
-  return (
-    <div className="space-y-4">
-      <p className="text-xs text-gray-500">
-        A code is a PERMANENT printed address — hgl.co/aisct means &ldquo;AISCT&apos;s current
-        class&rdquo;. When a new class opens, repoint the code instead of reprinting collateral.
-        Unknown or idle codes land on the honest no-active-class page, never a 404. Click counts
-        are per day, first-party only.
-      </p>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {notice && <p className="text-sm text-green-700">{notice}</p>}
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide border-b border-gray-200">
-              <th className="py-2 pr-4">Code</th>
-              <th className="py-2 pr-4">Points at</th>
-              <th className="py-2 pr-4">Clicks (14 days / all)</th>
-              <th className="py-2 pr-4">Last changed</th>
-              <th className="py-2 pr-4">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {links.map((l) => (
-              <tr key={l.code} className="align-top">
-                <td className="py-2 pr-4 whitespace-nowrap">
-                  <a href={`/${l.code}`} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
-                    hgl.co/{l.code}
-                  </a>
-                </td>
-                <td className="py-2 pr-4">
-                  {targetNote(l)}
-                  {repoint?.code === l.code && (
-                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-2.5 space-y-2">
-                      <select
-                        value={repoint.classId}
-                        onChange={(e) => setRepoint({ code: l.code, classId: e.target.value })}
-                        className="w-full border border-gray-300 rounded p-1.5 bg-white text-sm"
-                      >
-                        <option value="">Pick the class this code should open…</option>
-                        {candidates.map((c) => (
-                          <option key={c.id} value={c.id}>{c.label}</option>
-                        ))}
-                      </select>
-                      {repoint.classId && (
-                        <p className="text-xs text-amber-900">
-                          Point <strong>hgl.co/{l.code}</strong> at{' '}
-                          <strong>{candidates.find((c) => c.id === repoint.classId)?.label}</strong>? Anyone
-                          using the printed link lands on that class&apos;s page from now on.
-                        </p>
-                      )}
-                      <div className="flex gap-2">
-                        <button
-                          disabled={busy || !repoint.classId}
-                          onClick={async () => {
-                            const ok = await post(
-                              { action: 'repoint', code: l.code, classId: repoint.classId },
-                              `hgl.co/${l.code} repointed.`
-                            )
-                            if (ok) setRepoint(null)
-                          }}
-                          className="bg-amber-600 text-white text-xs font-bold py-1.5 px-3 rounded disabled:opacity-40"
-                        >
-                          {busy ? 'Repointing…' : 'Repoint'}
-                        </button>
-                        <button
-                          disabled={busy}
-                          onClick={() => setRepoint(null)}
-                          className="bg-gray-100 text-gray-700 text-xs font-bold py-1.5 px-3 rounded"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {retiring === l.code && (
-                    <div className="mt-2 bg-red-50 border border-red-200 rounded p-2.5 space-y-2">
-                      <p className="text-xs text-red-900">
-                        Retire <strong>hgl.co/{l.code}</strong>? Anything printed with it will land on
-                        the honest no-active-class page (never a 404). Click history is kept.
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          disabled={busy}
-                          onClick={async () => {
-                            const ok = await post({ action: 'retire', code: l.code }, `hgl.co/${l.code} retired.`)
-                            if (ok) setRetiring('')
-                          }}
-                          className="bg-red-600 text-white text-xs font-bold py-1.5 px-3 rounded disabled:opacity-40"
-                        >
-                          {busy ? 'Retiring…' : 'Retire the code'}
-                        </button>
-                        <button
-                          disabled={busy}
-                          onClick={() => setRetiring('')}
-                          className="bg-gray-100 text-gray-700 text-xs font-bold py-1.5 px-3 rounded"
-                        >
-                          Keep it
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </td>
-                <td className="py-2 pr-4 whitespace-nowrap text-gray-600">
-                  {l.clicks.last14} / {l.clicks.total}
-                </td>
-                <td className="py-2 pr-4 text-gray-500 text-xs">
-                  {new Date(l.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
-                  {l.updatedBy ? <><br />by {l.updatedBy}</> : ''}
-                </td>
-                <td className="py-2 pr-4 whitespace-nowrap">
-                  <button
-                    onClick={() => {
-                      setRetiring('')
-                      setRepoint(repoint?.code === l.code ? null : { code: l.code, classId: '' })
-                    }}
-                    className="text-xs text-hgl-blue underline mr-3"
-                  >
-                    Repoint…
-                  </button>
-                  <button
-                    onClick={() => {
-                      setRepoint(null)
-                      setRetiring(retiring === l.code ? '' : l.code)
-                    }}
-                    className="text-xs text-red-600 underline"
-                  >
-                    Retire…
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {links.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-3 text-gray-500 italic">
-                  No short links yet — add the first one below.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="border border-gray-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="block text-xs text-gray-600">New code</label>
-          <div className="flex items-center gap-1 mt-1">
-            <span className="text-sm text-gray-500">hgl.co/</span>
-            <input
-              type="text"
-              value={newCode}
-              onChange={(e) => setNewCode(e.target.value.toLowerCase())}
-              placeholder="aisct"
-              className="border border-gray-300 rounded p-1.5 text-sm w-32"
-            />
-          </div>
-        </div>
-        <div className="flex-1 min-w-56">
-          <label className="block text-xs text-gray-600">Opens</label>
-          <select
-            value={newClassId}
-            onChange={(e) => setNewClassId(e.target.value)}
-            className="mt-1 w-full border border-gray-300 rounded p-1.5 bg-white text-sm"
-          >
-            <option value="">Pick a class…</option>
-            {candidates.map((c) => (
-              <option key={c.id} value={c.id}>{c.label}</option>
-            ))}
-          </select>
-        </div>
-        <button
-          disabled={busy || !newCode.trim() || !newClassId}
-          onClick={async () => {
-            const ok = await post(
-              { action: 'create', code: newCode.trim(), classId: newClassId },
-              `hgl.co/${newCode.trim()} created.`
-            )
-            if (ok) {
-              setNewCode('')
-              setNewClassId('')
-            }
-          }}
-          className="bg-hgl-slate text-white text-xs font-bold py-2 px-4 rounded disabled:opacity-40"
-        >
-          Add short link
-        </button>
-      </div>
-      <EvergreenAndLegacy />
-    </div>
-  )
-}
-
-
-// PL-378 (+amendment): evergreen links + the hgl.co legacy-forward map —
-// managed beside the class shortcodes they must never collide with (the
-// server refuses collisions across every namespace with a plain reason).
-function EvergreenAndLegacy() {
-  const [data, setData] = useState<{
-    schools: { id: string; name: string; nickname: string | null; evergreen_code: string | null }[]
-    courses: { course_key: string; display_name: string | null; evergreen_code: string | null }[]
-    legacy: { code: string; destination: string; note: string | null }[]
-  } | null>(null)
+  const [data, setData] = useState<{ schools: SchoolRow[]; courses: CourseRow[]; legacy: LegacyRow[] } | null>(null)
   const [msg, setMsg] = useState('')
   const [newLegacy, setNewLegacy] = useState({ code: '', destination: '', note: '' })
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const res = await fetch('/api/admin/evergreen')
     const json = await res.json().catch(() => null)
     if (res.ok && json) setData(json)
-  }
+    else setMsg("Couldn't load the links — check your connection.")
+  }, [])
   useEffect(() => {
     load()
-  }, [])
-  if (!data) return null
+  }, [load])
 
   const post = async (body: Record<string, unknown>) => {
     setMsg('')
@@ -347,6 +66,8 @@ function EvergreenAndLegacy() {
     return true
   }
 
+  if (!data) return <p className="text-sm text-gray-500 italic">Loading links…</p>
+
   const codeInput = (value: string | null, onSave: (v: string) => void, placeholder: string) => (
     <input
       defaultValue={value ?? ''}
@@ -359,32 +80,95 @@ function EvergreenAndLegacy() {
     />
   )
 
+  const servingLine = (row: { evergreen_code: string | null; serving: Serving; clicks: Clicks }) =>
+    row.evergreen_code ? (
+      <>
+        {row.serving ? (
+          <span className="text-xs text-gray-500">
+            now showing <span className="font-semibold text-gray-700">{row.serving.label}</span>
+            {row.serving.pinned && (
+              <span className="ml-1 inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">
+                pinned to {row.serving.label}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400 italic">between classes — showing the interest page</span>
+        )}
+        <span className="text-xs text-gray-400">
+          {row.clicks.total} visit{row.clicks.total === 1 ? '' : 's'}
+          {row.clicks.last14 > 0 ? ` (${row.clicks.last14} in the last 14 days)` : ''}
+        </span>
+      </>
+    ) : null
+
+  const pinControl = (
+    row: { evergreen_code: string | null; evergreen_pin_class_id: string | null; candidates: Candidate[] },
+    save: (classId: string | null) => void
+  ) => {
+    if (!row.evergreen_code || row.candidates.length < 2) {
+      // With 0–1 open classes "newest open" can't surprise anyone — no pin UI.
+      return row.evergreen_pin_class_id ? (
+        <button onClick={() => save(null)} className="text-xs text-gray-500 underline">
+          unpin
+        </button>
+      ) : null
+    }
+    return (
+      <span className="flex items-center gap-1 text-xs">
+        <span className="text-gray-400" title="Two classes are open at once — pin the link to one so a new class opening doesn't steal it mid-campaign. A pinned class that closes falls back to newest-open automatically.">
+          pin:
+        </span>
+        <select
+          value={row.evergreen_pin_class_id ?? ''}
+          onChange={(e) => save(e.target.value || null)}
+          className="border border-gray-300 rounded p-0.5 text-xs bg-white max-w-48"
+        >
+          <option value="">auto (newest open)</option>
+          {row.candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        {row.evergreen_pin_class_id && (
+          <button onClick={() => save(null)} className="text-gray-500 underline">
+            unpin
+          </button>
+        )}
+      </span>
+    )
+  }
+
   return (
-    <div className="mt-8 space-y-6">
+    <div className="space-y-6">
+      <p className="text-sm text-gray-600">
+        <span className="font-semibold text-hgl-slate">One link per school or course — it always
+        works, even between classes.</span>{' '}
+        Each code shows the newest open class right at hgl.co/{'{code}'} (no redirect), and turns
+        into a leave-your-email page when nothing is open. Registration lives at
+        hgl.co/{'{code}'}/register. Printed codes never need reprinting or repointing.
+      </p>
       {msg && <p className="text-sm text-red-600 font-semibold">{msg}</p>}
       <div className="border border-gray-200 rounded-lg p-4">
-        <p className="font-bold text-hgl-slate mb-1">Evergreen school links</p>
-        <p className="text-xs text-gray-500 mb-3">
-          A school&apos;s permanent link — it always works, even between classes: it opens the
-          school&apos;s newest open class, and when nothing is open it becomes a leave-your-email
-          page. Class shortcodes above stay as-is for point-in-time shares.
-        </p>
+        <p className="font-bold text-hgl-slate mb-3">School links</p>
         <ul className="space-y-1.5">
           {data.schools.map((sc) => (
             <li key={sc.id} className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-semibold text-hgl-slate min-w-48">{sc.nickname ?? sc.name}</span>
               <span className="text-gray-400">hgl.co/</span>
               {codeInput(sc.evergreen_code, (v) => post({ action: 'set_school_code', id: sc.id, code: v }), 'no code yet')}
+              {servingLine(sc)}
+              {pinControl(sc, (classId) => post({ action: 'set_school_pin', id: sc.id, classId }))}
             </li>
           ))}
         </ul>
       </div>
       <div className="border border-gray-200 rounded-lg p-4">
-        <p className="font-bold text-hgl-slate mb-1">Evergreen course links</p>
+        <p className="font-bold text-hgl-slate mb-1">Course links</p>
         <p className="text-xs text-gray-500 mb-3">
-          Same idea for no-school courses — one permanent URL each (this is how follow-up and
-          HGL-taught classes stay findable with no counselor sharing). &quot;/act&quot; is taken by
-          the legacy 1-on-1 tutoring forward below — pick something like /actprep.
+          Same idea for no-school courses (follow-ups, HGL-taught classes). &quot;/act&quot; is
+          taken by the legacy 1-on-1 tutoring forward below — pick something like /actprep.
         </p>
         <ul className="space-y-1.5">
           {data.courses.map((cm) => (
@@ -392,6 +176,8 @@ function EvergreenAndLegacy() {
               <span className="font-semibold text-hgl-slate min-w-48">{cm.display_name ?? cm.course_key}</span>
               <span className="text-gray-400">hgl.co/</span>
               {codeInput(cm.evergreen_code, (v) => post({ action: 'set_course_code', id: cm.course_key, code: v }), 'no code yet')}
+              {servingLine(cm)}
+              {pinControl(cm, (classId) => post({ action: 'set_course_pin', id: cm.course_key, classId }))}
             </li>
           ))}
         </ul>

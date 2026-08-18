@@ -1,3 +1,4 @@
+import { preferredClassPath } from '../../../utils/evergreen'
 import { emailBaseUrl } from '../../../utils/base-url'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      `id, slug, status, school_id, class_type, start_date, short_link,
+      `id, slug, status, school_id, course_key, class_type, start_date, short_link,
        schools ( nickname ),
        sessions ( session_date, start_time )`
     )
@@ -53,12 +54,22 @@ export async function POST(req: Request) {
   // the pitch first. The portal register URL is only the fallback when no
   // short link is on the class (the notify prompt warns about that state
   // before the Ops Director confirms).
+  // PL-384: the button lands on the class's PERMANENT page (the /{code} URL
+  // when the school/course code resolves to it) — the pitch-first landing.
+  // Stored short_link text is only the pre-fold fallback; the portal
+  // register URL is the last resort.
+  const pagePath = cls.slug
+    ? await preferredClassPath({ id: cls.id, slug: cls.slug, school_id: cls.school_id ?? null, course_key: (cls as any).course_key ?? null })
+    : null
   const shortLink = (cls.short_link ?? '').trim()
-  const registrationLink = shortLink
-    ? /^https?:\/\//i.test(shortLink)
-      ? shortLink
-      : `https://${shortLink}`
-    : `${base}/register/${cls.slug ?? cls.id}?src=interest`
+  const registrationLink =
+    pagePath && !pagePath.startsWith('/c/')
+      ? `${base}${pagePath}`
+      : shortLink
+        ? /^https?:\/\//i.test(shortLink)
+          ? shortLink
+          : `https://${shortLink}`
+        : `${base}/register/${cls.slug ?? cls.id}?src=interest`
   const classSummaryLine = `<strong>${cls.school_id ? `${schoolNickname} ${cls.class_type}` : cls.class_type}</strong> — starts ${formatDateAdmin(firstSession)}`
 
   // PL-274: open-enrollment classes match interest rows by class type alone
