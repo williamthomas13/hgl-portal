@@ -97,6 +97,95 @@ const CONTACT_METHOD_LABELS: Record<string, string> = {
   email: 'email',
 }
 
+// PL-386: ONE inline editor for the profile's contact facts — every fact
+// that shows here is editable where it's read (admin/ops only by page
+// access; instructors never reach /admin). `warning` renders a plain-English
+// caution the save must walk past (the load-bearing email edit). `options`
+// renders a select instead of a text input.
+function FactEdit({
+  label,
+  value,
+  warning,
+  options,
+  onSave,
+}: {
+  label: string
+  value: string | null
+  warning?: string
+  options?: { value: string; label: string }[]
+  onSave: (next: string) => Promise<string | null> // returns an error message or null
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  if (!editing) {
+    return (
+      <button
+        onClick={() => {
+          setDraft(value ?? '')
+          setErr('')
+          setEditing(true)
+        }}
+        className="text-[11px] text-gray-400 underline hover:text-hgl-blue align-baseline ml-1"
+        title={`Edit ${label.toLowerCase()}`}
+      >
+        edit
+      </button>
+    )
+  }
+  return (
+    <span className="inline-flex flex-col gap-1 ml-1 align-top max-w-full">
+      {warning && (
+        <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          {warning}
+        </span>
+      )}
+      <span className="inline-flex items-center gap-1 flex-wrap">
+        {options ? (
+          <select
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="border border-gray-300 rounded p-1 text-xs bg-white"
+          >
+            <option value="">—</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="border border-gray-300 rounded p-1 text-xs w-52 max-w-full"
+            placeholder={label}
+          />
+        )}
+        <button
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true)
+            setErr('')
+            const e = await onSave(draft)
+            setSaving(false)
+            if (e) setErr(e)
+            else setEditing(false)
+          }}
+          className="text-[11px] font-bold text-white bg-hgl-blue rounded px-2 py-0.5 disabled:opacity-40"
+        >
+          save
+        </button>
+        <button onClick={() => setEditing(false)} className="text-[11px] text-gray-500 underline">
+          cancel
+        </button>
+      </span>
+      {err && <span className="text-[11px] text-red-600 font-semibold max-w-72">{err}</span>}
+    </span>
+  )
+}
+
 // PL-232: the billing address — collected optionally at intake, editable
 // here by admin AND manager (contact info, not an owner-level corner). No
 // QBO auto-sync: the bookkeeper copies it when creating the QBO customer.
@@ -323,6 +412,32 @@ export default function FamilyProfilePage() {
     })
   }, [familyId])
 
+  // PL-386: one save path for every contact fact — plain-English refusals
+  // come back as inline messages (the duplicate-email 409 includes a link).
+  const saveFact = useCallback(
+    async (body: Record<string, unknown>): Promise<string | null> => {
+      try {
+        const res = await fetch('/api/admin/family-facts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          return json.duplicateFamilyId
+            ? `${json.error} → /admin/families/${json.duplicateFamilyId}`
+            : (json.error ?? `The server returned ${res.status}.`)
+        }
+        await load()
+        return null
+      } catch {
+        return "Couldn't reach the server — check your connection."
+      }
+    },
+    [load]
+  )
+
+
   useEffect(() => {
     load()
   }, [load])
@@ -356,10 +471,21 @@ export default function FamilyProfilePage() {
 
   // The intake protocol card reads the freshest intake on file for anyone in
   // the household (contact prefs are household-level answers).
-  const intake = d.leads.find((l) => l.intake)?.intake ?? null
+  const intakeLead = d.leads.find((l) => l.intake) ?? null
+  const intake = intakeLead?.intake ?? null
+  // PL-386: the arrival instruction names the STUDENT ("text Janeson"), not
+  // "the student" — the intake's own student first, else the household's
+  // single student, else the honest generic.
+  const intakeStudent =
+    d.students.find((st) => st.id === intakeLead?.student_id) ??
+    (d.students.length === 1 ? d.students[0] : null)
   const protocolLine =
     intake?.absentContactWho
-      ? `If the student hasn't arrived: ${intake.absentContactHow === 'text' ? 'text' : 'call'} the ${intake.absentContactWho}.`
+      ? `If the student hasn't arrived: ${intake.absentContactHow === 'text' ? 'text' : 'call'} ${
+          intake.absentContactWho === 'student'
+            ? (intakeStudent?.first_name ?? 'the student')
+            : 'the parent'
+        }.`
       : null
 
   const latestAcceptance = d.acceptances[0] ?? null
@@ -407,6 +533,18 @@ export default function FamilyProfilePage() {
                   {intake?.preferredContactMethod && (
                     <> — prefers {CONTACT_METHOD_LABELS[intake.preferredContactMethod] ?? intake.preferredContactMethod}</>
                   )}
+                  {intakeLead && (
+                    <FactEdit
+                      label="Preferred contact method"
+                      value={intake?.preferredContactMethod ?? null}
+                      options={[
+                        { value: 'call', label: 'call' },
+                        { value: 'text', label: 'text' },
+                        { value: 'email', label: 'email' },
+                      ]}
+                      onSave={(v) => saveFact({ action: 'update_intake', leadId: intakeLead.id, fields: { preferredContactMethod: v } })}
+                    />
+                  )}
                 </p>
                 <p className="text-sm text-gray-700 mt-0.5">
                   {fam.parent_email && <Email v={fam.parent_email} />}
@@ -417,15 +555,63 @@ export default function FamilyProfilePage() {
                 {protocolLine && (
                   <p className="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-3">
                     {protocolLine}
+                    {intakeLead && (
+                      <FactEdit
+                        label="If the student hasn't arrived, reach"
+                        value={intake?.absentContactWho ?? null}
+                        options={[
+                          { value: 'student', label: intakeStudent?.first_name ? `the student (${intakeStudent.first_name})` : 'the student' },
+                          { value: 'parent', label: 'the parent' },
+                        ]}
+                        onSave={(v) => saveFact({ action: 'update_intake', leadId: intakeLead.id, fields: { absentContactWho: v } })}
+                      />
+                    )}
+                    {intakeLead && (
+                      <FactEdit
+                        label="How"
+                        value={intake?.absentContactHow ?? null}
+                        options={[
+                          { value: 'text', label: 'text' },
+                          { value: 'call', label: 'call' },
+                        ]}
+                        onSave={(v) => saveFact({ action: 'update_intake', leadId: intakeLead.id, fields: { absentContactHow: v } })}
+                      />
+                    )}
                   </p>
                 )}
-                {intake?.emergencyName && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Emergency contact: {intake.emergencyName}
-                    {intake.emergencyRelation && ` (${intake.emergencyRelation})`}
-                    {intake.emergencyPhone && <> · <Phone v={intake.emergencyPhone} /></>}
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 mt-2">
+                  Emergency contact:{' '}
+                  {intake?.emergencyName ? (
+                    <>
+                      {intake.emergencyName}
+                      {intake.emergencyRelation && ` (${intake.emergencyRelation})`}
+                      {intake.emergencyPhone && <> · <Phone v={intake.emergencyPhone} /></>}
+                    </>
+                  ) : intakeLead ? (
+                    'none on file'
+                  ) : (
+                    'no intake on file — these answers get captured at intake'
+                  )}
+                  {intakeLead && (
+                    <>
+                      <FactEdit
+                        label="Emergency contact name"
+                        value={intake?.emergencyName ?? null}
+                        onSave={(v) => saveFact({ action: 'update_intake', leadId: intakeLead.id, fields: { emergencyName: v } })}
+                      />
+                      <FactEdit
+                        label="Relation"
+                        value={intake?.emergencyRelation ?? null}
+                        onSave={(v) => saveFact({ action: 'update_intake', leadId: intakeLead.id, fields: { emergencyRelation: v } })}
+                      />
+                      <FactEdit
+                        label="Emergency phone"
+                        value={intake?.emergencyPhone ?? null}
+                        onSave={(v) => saveFact({ action: 'update_intake', leadId: intakeLead.id, fields: { emergencyPhone: v } })}
+                      />
+                    </>
+                  )}
+                </p>
               </div>
 
               <CollapsibleSection title="Household" subtitle="Guardians, portal access, agreement, preferences" defaultOpen>
@@ -434,11 +620,32 @@ export default function FamilyProfilePage() {
                     <p className="font-semibold text-hgl-slate">
                       {parentName}
                       <span className="ml-2 text-xs font-normal text-gray-500">parent</span>
+                      <FactEdit
+                        label="Parent first name"
+                        value={fam.parent_first_name}
+                        onSave={(v) => saveFact({ action: 'update_parent', familyId: fam.id, fields: { parent_first_name: v } })}
+                      />
+                      <FactEdit
+                        label="Parent last name"
+                        value={fam.parent_last_name}
+                        onSave={(v) => saveFact({ action: 'update_parent', familyId: fam.id, fields: { parent_last_name: v } })}
+                      />
                     </p>
                     <p className="text-xs text-gray-600">
                       {fam.parent_email && <Email v={fam.parent_email} />}
+                      <FactEdit
+                        label="Parent email"
+                        value={fam.parent_email}
+                        warning="Careful — this email is how the family signs in AND where every email goes; a typo locks them out. Saved edits record your name and the time."
+                        onSave={(v) => saveFact({ action: 'update_parent', familyId: fam.id, fields: { parent_email: v } })}
+                      />
                       {fam.parent_email && fam.parent_phone && ' · '}
                       {fam.parent_phone && <Phone v={fam.parent_phone} />}
+                      <FactEdit
+                        label="Parent phone"
+                        value={fam.parent_phone}
+                        onSave={(v) => saveFact({ action: 'update_parent', familyId: fam.id, fields: { parent_phone: v } })}
+                      />
                     </p>
                     {fam.guardian2_name && (
                       <p className="text-xs text-gray-600 mt-1">
@@ -596,13 +803,66 @@ export default function FamilyProfilePage() {
                     <dl className="text-sm grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 mt-3">
                       <div>
                         <dt className="text-xs font-semibold text-gray-500">Email</dt>
-                        <dd className="text-xs">{st.student_email ? <Email v={st.student_email} /> : '—'}</dd>
+                        <dd className="text-xs">
+                          {st.student_email ? <Email v={st.student_email} /> : '—'}
+                          <FactEdit
+                            label="Student email"
+                            value={st.student_email}
+                            onSave={(v) => saveFact({ action: 'update_student', studentId: st.id, fields: { student_email: v } })}
+                          />
+                        </dd>
                       </div>
                       <div>
                         <dt className="text-xs font-semibold text-gray-500">Phone</dt>
-                        <dd className="text-xs">{st.student_phone ? <Phone v={st.student_phone} /> : '—'}</dd>
+                        <dd className="text-xs">
+                          {st.student_phone ? <Phone v={st.student_phone} /> : '—'}
+                          <FactEdit
+                            label="Student phone"
+                            value={st.student_phone}
+                            onSave={(v) => saveFact({ action: 'update_student', studentId: st.id, fields: { student_phone: v } })}
+                          />
+                        </dd>
                       </div>
-                      {st.special_needs && (
+                      <div>
+                        <dt className="text-xs font-semibold text-gray-500">Pronouns</dt>
+                        <dd className="text-xs">
+                          {pronounsDisplayLabel(st.pronouns) ?? 'not set (emails use they/them)'}
+                          <FactEdit
+                            label="Pronouns"
+                            value={st.pronouns}
+                            options={[
+                              { value: 'she_her', label: 'she/her' },
+                              { value: 'he_him', label: 'he/him' },
+                              { value: 'they_them', label: 'they/them' },
+                              { value: 'name_only', label: 'name only' },
+                            ]}
+                            onSave={(v) => saveFact({ action: 'update_student', studentId: st.id, fields: { pronouns: v } })}
+                          />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold text-gray-500">Grade</dt>
+                        <dd className="text-xs">
+                          {st.grade_level ?? '—'}
+                          <FactEdit
+                            label="Grade"
+                            value={st.grade_level}
+                            onSave={(v) => saveFact({ action: 'update_student', studentId: st.id, fields: { grade_level: v } })}
+                          />
+                        </dd>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <dt className="text-xs font-semibold text-gray-500">Learning notes</dt>
+                        <dd className="text-xs">
+                          {st.special_needs ?? '—'}
+                          <FactEdit
+                            label="Learning notes"
+                            value={st.special_needs}
+                            onSave={(v) => saveFact({ action: 'update_student', studentId: st.id, fields: { special_needs: v } })}
+                          />
+                        </dd>
+                      </div>
+                      {false && st.special_needs && (
                         <div className="sm:col-span-2">
                           <dt className="text-xs font-semibold text-gray-500">Learning notes</dt>
                           <dd className="text-xs">{st.special_needs}</dd>

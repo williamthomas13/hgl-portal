@@ -638,7 +638,12 @@ function IntakeAnswers({ intake }: { intake: Record<string, any> }) {
       {row(
         "If student hasn't arrived",
         intake.absentContactWho
-          ? `${intake.absentContactHow ?? 'contact'} the ${intake.absentContactWho}`
+          ? `${intake.absentContactHow ?? 'contact'} ${
+              // PL-386: name the student, never "the student".
+              intake.absentContactWho === 'student'
+                ? (intake.studentFirst ?? 'the student')
+                : 'the parent'
+            }`
           : null
       )}
       {row('Emergency contact', [intake.emergencyName, intake.emergencyPhone, intake.emergencyRelation].filter(Boolean).join(' · '))}
