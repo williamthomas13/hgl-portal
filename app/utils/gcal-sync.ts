@@ -483,9 +483,12 @@ export async function auditTutoringTimeDrift(tutorId?: string): Promise<TimeDrif
        tutoring_engagements ( subjects ( name ) ),
        instructors ( name, email, google_calendar_id, timezone )`
     )
-    .in('status', ['confirmed', 'proposed'])
+    // PL-393: 'completed' rides along and the window reaches 14 days BACK —
+    // a drift whose session time passes (and auto-completes) must stay
+    // visible with past-appropriate resolutions, never vanish silently.
+    .in('status', ['confirmed', 'proposed', 'completed'])
     .not('gcal_event_id', 'is', null)
-    .gt('starts_at', new Date(now).toISOString())
+    .gt('starts_at', new Date(now - 14 * 86_400_000).toISOString())
     .lt('starts_at', new Date(now + 60 * 86_400_000).toISOString())
   if (tutorId) q = q.eq('tutor_id', tutorId)
   const { data: sessions } = await q

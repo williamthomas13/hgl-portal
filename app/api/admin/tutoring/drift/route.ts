@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, drift })
   }
 
-  if (body.action === 'adopt' || body.action === 'revert') {
+  if (body.action === 'adopt' || body.action === 'revert' || body.action === 'record_no_show' || body.action === 'record_forfeited') {
     if (!body.sessionId) return NextResponse.json({ error: 'Missing session id.' }, { status: 400 })
     const { data: row } = await supabase
       .from('calendar_drift')
@@ -44,9 +44,31 @@ export async function POST(req: Request) {
     if (body.action === 'adopt') {
       if (!row.cal_starts_at || !row.cal_ends_at) {
         return NextResponse.json(
-          { error: 'The calendar event was DELETED, so there is no time to adopt — use Revert to restore the event, or cancel/forfeit the session from its row if the deletion was the intent.' },
+          { error: 'The calendar event was DELETED, so there is no time to adopt — use Revert to restore the event, or record what happened with the no-show/forfeit buttons if the deletion was the intent.' },
           { status: 400 }
         )
+      }
+      // PL-393: a session whose time already passed (auto-completed) can't
+      // run the reschedule machinery (nothing future to re-notice) — adopt
+      // AS-HAPPENED: the record moves to the time the session actually ran;
+      // open timecards/invoices follow from the sessions table as always.
+      const { data: sess } = await supabase
+        .from('tutoring_sessions')
+        .select('status')
+        .eq('id', body.sessionId)
+        .maybeSingle()
+      if (sess?.status === 'completed') {
+        const { error } = await supabase
+          .from('tutoring_sessions')
+          .update({
+            starts_at: row.cal_starts_at,
+            ends_at: row.cal_ends_at,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', body.sessionId)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        await supabase.from('calendar_drift').delete().eq('session_id', body.sessionId)
+        return NextResponse.json({ ok: true, adopted: true, asHappened: true })
       }
       const result = await rescheduleSession({
         id: body.sessionId,
@@ -59,6 +81,30 @@ export async function POST(req: Request) {
       await supabase.from('calendar_drift').delete().eq('session_id', body.sessionId)
       after(() => Promise.allSettled([processGcalQueue(), result.followUp()]))
       return NextResponse.json({ ok: true, adopted: true, notice: result.notice, replacementId: result.replacementId })
+    }
+
+    // PL-393: past-appropriate outcomes — the session's time passed while
+    // the drift sat unresolved; record what ACTUALLY happened. Same
+    // mechanics as the session row's own cancel actions (reserved-time pay
+    // rules unchanged: no-shows/forfeits stay payable per T5).
+    if (body.action === 'record_no_show' || body.action === 'record_forfeited') {
+      const outcome = body.action === 'record_no_show' ? 'no_show' : 'forfeited'
+      const { error } = await supabase
+        .from('tutoring_sessions')
+        .update({
+          status: outcome,
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: 'staff',
+          cancel_note: 'Recorded from the calendar-drift banner (PL-393) — the session time passed with the drift unresolved.',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', body.sessionId)
+        .in('status', ['proposed', 'confirmed', 'completed'])
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      await supabase.from('calendar_drift').delete().eq('session_id', body.sessionId)
+      await enqueueGcalSync(body.sessionId, 'drift banner past-session outcome (PL-393)')
+      after(() => processGcalQueue())
+      return NextResponse.json({ ok: true, recorded: outcome })
     }
 
     // revert: the state-driven worker patches the event back to the

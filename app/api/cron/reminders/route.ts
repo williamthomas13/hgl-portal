@@ -1890,7 +1890,9 @@ export async function GET(req: Request) {
           <p>The family hasn't been told and billing hasn't changed — none of the machinery has run.
           <strong>Adopt</strong> (runs the normal reschedule: parent notice, fee logic, timecards) or
           <strong> revert</strong> their calendar, from the banner on
-          <a href="${emailBaseUrl()}/admin/tutoring?family=${d.familyId ?? ''}" style="color:#00AEEE">the tutoring page</a>.</p>`,
+          <a href="${emailBaseUrl()}/admin/tutoring?family=${d.familyId ?? ''}" style="color:#00AEEE">${d.studentFirst}'s tutoring page</a>.
+          The banner stays until you decide — if the session's time passes first, it switches to
+          asking what actually happened (adopt as-happened, no-show, or forfeit).</p>`,
         }).catch((e) => console.error('drift alert failed:', e))
       }
     }

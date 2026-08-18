@@ -54,7 +54,7 @@ export default function DriftBanner() {
     scan()
   }, [scan])
 
-  async function resolve(sessionId: string, action: 'adopt' | 'revert') {
+  async function resolve(sessionId: string, action: 'adopt' | 'revert' | 'record_no_show' | 'record_forfeited') {
     setBusy(sessionId)
     setResult((m) => ({ ...m, [sessionId]: '' }))
     try {
@@ -68,10 +68,14 @@ export default function DriftBanner() {
         setResult((m) => ({
           ...m,
           [sessionId]: json.adopted
-            ? `Adopted — the normal reschedule ran (${json.notice === 'late' ? 'LATE notice: the $40/h fee logic applies' : 'free reschedule'}), the family gets their notice, and the calendars converge.`
+            ? json.asHappened
+              ? 'Recorded as happened at the moved time — timecards and billing read from the corrected session.'
+              : `Adopted — the normal reschedule ran (${json.notice === 'late' ? 'LATE notice: the $40/h fee logic applies' : 'free reschedule'}), the family gets their notice, and the calendars converge.`
             : json.reverted
               ? 'Reverted — the calendar event is being patched back to the portal time.'
-              : (json.note ?? 'Resolved.'),
+              : json.recorded
+                ? `Recorded as ${json.recorded === 'no_show' ? 'a no-show' : 'forfeited'} — the reserved-time pay rules apply as usual.`
+                : (json.note ?? 'Resolved.'),
         }))
         setRows((r) => r.filter((x) => x.sessionId !== sessionId))
       } else {
@@ -91,15 +95,21 @@ export default function DriftBanner() {
         Calendar edited outside the portal — {rows.length} session
         {rows.length === 1 ? '' : 's'} need a decision
       </p>
-      {rows.map((d) => (
+      {rows.map((d) => {
+        // PL-393: once the session's time has PASSED, the questions change —
+        // the banner never vanishes; it asks what actually happened.
+        const past = new Date(d.portalStartsAt).getTime() < Date.now()
+        return (
         <div key={d.sessionId} id={`drift-${d.sessionId}`} className="bg-white border border-amber-200 rounded p-3">
           <p className="text-amber-900">
             <strong>
               {d.calStartsAt
-                ? `${d.tutorFirst} moved ${d.studentFirst}'s ${d.subjectName} session in their Google Calendar — ${fmtT(d.portalStartsAt)} → ${fmtT(d.calStartsAt)}.`
-                : `${d.tutorFirst} deleted ${d.studentFirst}'s ${d.subjectName} session event (${fmtT(d.portalStartsAt)}) from their Google Calendar.`}
+                ? `${d.tutorFirst} moved ${d.studentFirst}'s ${d.subjectName} session in their Google Calendar — ${fmtT(d.portalStartsAt)} → ${fmtT(d.calStartsAt)}${past ? ', and its time has now passed' : ''}.`
+                : `${d.tutorFirst} deleted ${d.studentFirst}'s ${d.subjectName} session event (${fmtT(d.portalStartsAt)}) from their Google Calendar${past ? ', and its time has now passed' : ''}.`}
             </strong>{' '}
-            The family hasn&apos;t been told and billing hasn&apos;t changed.
+            {past
+              ? 'Record what actually happened — the choice sets the timecard and billing record.'
+              : "The family hasn't been told and billing hasn't changed."}
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
             {d.calStartsAt && (
@@ -107,18 +117,42 @@ export default function DriftBanner() {
                 disabled={busy === d.sessionId}
                 onClick={() => resolve(d.sessionId, 'adopt')}
                 className="bg-hgl-slate text-white font-bold px-3 py-1.5 rounded disabled:opacity-50"
-                title="Runs the NORMAL reschedule with the calendar's time — parent notice, fee logic, timecards; never a back door"
+                title={past
+                  ? "The session happened at the moved time — the record moves to it; timecards/billing read the corrected session"
+                  : "Runs the NORMAL reschedule with the calendar's time — parent notice, fee logic, timecards; never a back door"}
               >
-                Adopt the new time
+                {past ? 'It happened at the moved time' : 'Adopt the new time'}
               </button>
+            )}
+            {past && (
+              <>
+                <button
+                  disabled={busy === d.sessionId}
+                  onClick={() => resolve(d.sessionId, 'record_no_show')}
+                  className="border border-amber-500 text-amber-800 font-bold px-3 py-1.5 rounded disabled:opacity-50"
+                  title="The student didn't show — pay for the reserved time is unchanged (the T5 rules), the record says no-show"
+                >
+                  Mark no-show
+                </button>
+                <button
+                  disabled={busy === d.sessionId}
+                  onClick={() => resolve(d.sessionId, 'record_forfeited')}
+                  className="border border-amber-500 text-amber-800 font-bold px-3 py-1.5 rounded disabled:opacity-50"
+                  title="The session didn't happen (late cancellation) — the reserved slot stays billable per the 24-hour rule"
+                >
+                  Didn&apos;t happen — forfeit
+                </button>
+              </>
             )}
             <button
               disabled={busy === d.sessionId}
               onClick={() => resolve(d.sessionId, 'revert')}
               className="border border-gray-400 text-gray-700 font-bold px-3 py-1.5 rounded disabled:opacity-50"
-              title="Patches the calendar event back to the portal's time"
+              title={past
+                ? "The portal's time was right — the record stands as scheduled and the Google event is patched back"
+                : "Patches the calendar event back to the portal's time"}
             >
-              Revert {d.tutorFirst}&apos;s calendar
+              {past ? 'Keep the portal time' : `Revert ${d.tutorFirst}'s calendar`}
             </button>
             {d.familyId && (
               <a href={`/admin/tutoring?family=${d.familyId}`} className="underline text-hgl-blue">
@@ -132,7 +166,8 @@ export default function DriftBanner() {
             </p>
           )}
         </div>
-      ))}
+        )
+      })}
       {rows.length === 0 &&
         Object.entries(result)
           .filter(([, v]) => v)
