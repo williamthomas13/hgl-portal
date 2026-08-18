@@ -102,9 +102,23 @@ export function renderMarkdownBody(markdown: string, vars: ResolvedVars): string
       continue
     }
 
-    // A lone [button:…] paragraph renders as the standard CTA block.
-    if (lines.length === 1 && /^\[button:[^\]]+\]\([^)]+\)$/.test(lines[0])) {
-      html.push(`<p style="margin:20px 0">${renderInline(lines[0], vars)}</p>`)
+    // PL-392: [button:…] is ALWAYS block-level. A button embedded in a
+    // paragraph is pulled onto its own CTA line (in source order) and the
+    // surrounding sentence fragments render as their own paragraphs — broken
+    // copy stays VISIBLE in every composer-path render instead of hiding a
+    // button mid-sentence.
+    if (/\[button:[^\]]+\]\([^)]+\)/.test(block)) {
+      const segments = block.split(/(\[button:[^\]]+\]\([^)]+\))/)
+      for (const seg of segments) {
+        const trimmed = seg.trim()
+        if (!trimmed) continue
+        if (/^\[button:[^\]]+\]\([^)]+\)$/.test(trimmed)) {
+          html.push(`<p style="margin:20px 0">${renderInline(trimmed, vars)}</p>`)
+        } else {
+          const segLines = trimmed.split('\n').map((l) => l.trim()).filter(Boolean)
+          html.push(`<p>${segLines.map((l) => renderInline(l, vars)).join('<br/>')}</p>`)
+        }
+      }
       continue
     }
 

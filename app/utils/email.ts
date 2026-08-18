@@ -826,14 +826,18 @@ export function faqEmail(ctx: EnrollmentEmailContext, audience: Audience): Rende
             : `${ctx.defaultLocation} — see you there!`
           : "We don't have that information confirmed just yet, but we'll write you again when we know!"
       }</p>
-      <p>Are you still here? You are? Okay, here are a few regular FAQs, just for you:</p>
+      ${
+        ctx.hasDiagnostics || !ctx.isOpenEnrollment
+          ? '<p>Are you still here? You are? Okay, here are a few regular FAQs, just for you:</p>'
+          : ''
+      }
       ${
         ctx.hasDiagnostics
           ? `<p><strong>What if I didn't get the diagnostic test information?</strong><br/>
-      No problem — you can get to it right here:</p>
-      ${synap ? button('Take the diagnostic test', synap) : ''}
-      <p>It's due ${formatDate(ctx.diagnosticDueDate)}, the day before your first class. (It also
-      went to your inbox, so it's worth a search of your spam folder for next time.)</p>`
+      No problem — the test is right here, due ${formatDate(ctx.diagnosticDueDate)}, the day
+      before your first class. (It also went to your inbox, so it's worth a search of your spam
+      folder for next time.)</p>
+      ${synap ? button('Take the diagnostic test', synap) : ''}`
           : ''
       }
       ${

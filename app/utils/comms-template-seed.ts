@@ -656,7 +656,7 @@ NO. You must register for official exams through the {examRegistrationLink}.
 
 {vfaqLocationAnswer}
 
-Are you still here? You are? Okay, here are a few regular FAQs, just for you:
+{vfaqBridgeLine}
 
 {vfaqDiagnosticQa}
 
@@ -1278,7 +1278,9 @@ Great news — {studentFirstName}'s 1-on-1 tutoring with {tutorName} is all set 
 
 A couple of things to make life easier:
 
-[button:Add to your calendar]({calendarLink}) — subscribe once and every session (and any future change) shows up automatically.
+[button:Add to your calendar]({calendarLink})
+
+Subscribe once and every session (and any future change) shows up automatically.
 
 [button:Download the schedule (PDF)]({schedulePdfLink})
 

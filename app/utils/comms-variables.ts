@@ -529,12 +529,22 @@ export const VARIABLES: Record<string, VariableDef> = {
     },
   },
   vfaqDiagnosticQa: {
-    description: 'PL-274: #3\'s diagnostic Q&A — EMPTY when the class has no diagnostics',
+    description: 'PL-274: #3\'s diagnostic Q&A — EMPTY when the class has no diagnostics. PL-392: whole sentence, button on its own line.',
     block: true,
     md: true,
     resolve: (c) =>
       c.hasDiagnostics
-        ? `**What if I didn't get the diagnostic test information?**\nNo problem — you can get to it right here: [button:Take the diagnostic test](${synapUrlValue(c)}). It's due ${fmt(c.diagnosticDueDate)}, the day before your first class.`
+        ? `**What if I didn't get the diagnostic test information?**\nNo problem — the test is right here, due ${fmt(c.diagnosticDueDate)}, the day before your first class.\n\n[button:Take the diagnostic test](${synapUrlValue(c)})`
+        : '',
+  },
+  vfaqBridgeLine: {
+    description:
+      'PL-391: #3\'s "Are you still here?" bridge — renders only when at least one gated Q&A (diagnostics or strategy) follows it, so the joke never introduces a list that is not there',
+    block: true,
+    md: true,
+    resolve: (c) =>
+      c.hasDiagnostics || !c.isOpenEnrollment
+        ? 'Are you still here? You are? Okay, here are a few regular FAQs, just for you:'
         : '',
   },
   // ------- PL-379: diagnostics/strategy-session copy conditions on the SAME
