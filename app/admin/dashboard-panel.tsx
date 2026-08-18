@@ -1,5 +1,6 @@
 'use client'
 
+import { formatDateAdmin } from '../utils/dates'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVisibleInterval } from '../components/use-visible-interval'
 import { SystemHealthBody, type SystemHealth } from './system-health-card'
@@ -513,7 +514,7 @@ export default function DashboardPanel({
               {upcoming.map((c) => (
                 <li key={c.id}>
                   <a href={c.href} className="text-gray-700 hover:text-hgl-blue">
-                    <span className="font-semibold text-hgl-slate">{c.label}</span> · starts {c.startDate} ·{' '}
+                    <span className="font-semibold text-hgl-slate">{c.label}</span> · starts {formatDateAdmin(c.startDate)} ·{' '}
                     {c.paid} paid{c.min != null ? ` / min ${c.min}` : ''}
                   </a>
                 </li>

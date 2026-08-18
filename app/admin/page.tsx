@@ -236,6 +236,8 @@ type ClassRow = {
   school_id: string | null
   /** PL-274: class-level timezone (open-enrollment classes); wins over school. */
   timezone: string | null
+  /** PL-353/383: the public city list for an online open class's time labels. */
+  display_cities: string | null
   has_diagnostics: boolean
   delivery_mode: string
   min_enrollment: number | null
@@ -1050,6 +1052,8 @@ export default function AdminDashboard() {
   // Registration links (pasted into Squarespace "Register" buttons)
   // ---------------------------------------------------------------------------
   const [copiedClassId, setCopiedClassId] = useState<string | null>(null)
+  // PL-383: the class card's setup fields live in ONE expandable section.
+  const [detailsOpenFor, setDetailsOpenFor] = useState<Record<string, boolean>>({})
   // PL-361: which class card has the "Register a family" panel open, and
   // which row's payment link was just re-sent (transient ✓).
   const [staffEnrollClassId, setStaffEnrollClassId] = useState<string | null>(null)
@@ -1140,13 +1144,10 @@ export default function AdminDashboard() {
     fetchRosters()
   }
 
-  async function handleEditSlug(c: ClassRow) {
-    const next = prompt(
-      'Registration URL slug (lowercase letters, numbers, dashes):',
-      c.slug ?? ''
-    )
-    if (next == null) return
-    const cleaned = next
+  // PL-383: slug edits move inline (setup section) — the old native prompt
+  // is gone (no-native-dialogs rule). Same cleaning + uniqueness handling.
+  async function handleSlugSave(c: ClassRow, next: string | null) {
+    const cleaned = (next ?? '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
@@ -1165,6 +1166,25 @@ export default function AdminDashboard() {
     }
     fetchRosters()
   }
+
+  // PL-383: plain-number setup fields (price, capacity, minimum) — refuse
+  // nonsense in plain English instead of writing it.
+  async function handleNumericClassField(
+    c: ClassRow,
+    field: 'price' | 'capacity' | 'min_enrollment',
+    raw: string | null,
+    rules: { min: number; integer?: boolean }
+  ) {
+    const n = Number((raw ?? '').trim())
+    if (!Number.isFinite(n) || n < rules.min || (rules.integer && !Number.isInteger(n))) {
+      setActionNotice(
+        `That needs to be a ${rules.integer ? 'whole number' : 'number'} of at least ${rules.min}.`
+      )
+      return
+    }
+    await handleClassField(c, field, n)
+  }
+
 
   // Refunds are Option A (SPEC v2.5 §13): money moves in the Stripe dashboard
   // only — this just records the refund. The status change frees the capacity
@@ -1269,8 +1289,12 @@ export default function AdminDashboard() {
       | 'fo_short_name'
       | 'fo_auto_extend'
       | 'is_follow_on'
-      | 'marketing_url',
-    value: string | boolean | null
+      | 'marketing_url'
+      | 'display_cities'
+      | 'price'
+      | 'capacity'
+      | 'min_enrollment',
+    value: string | boolean | number | null
   ) {
     const { error } = await supabase
       .from('classes')
@@ -1689,88 +1713,6 @@ export default function AdminDashboard() {
                 {c.timezone ? '(class timezone — open enrollment)' : '(from the school record)'}
               </span>
             </p>
-            {/* PL-310: ONE switch (diagnostics run through Synap — a second
-                Synap toggle modeled a distinction that doesn't exist),
-                editable where it's read — the email sequence conditions on it. */}
-            <p className="text-sm text-gray-600 flex items-center gap-4 flex-wrap">
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={c.has_diagnostics !== false}
-                  onChange={(e) => handleClassField(c, 'has_diagnostics', e.target.checked)}
-                />
-                <span className="font-semibold">Has diagnostics</span>
-              </label>
-              <span className="text-xs text-gray-400">
-                off = the email sequence drops diagnostic/Synap content for this class
-              </span>
-            </p>
-            {/* PL-311: the explicit follow-up flag — what gates the FO
-                marketing controls below. Auto-set when a feeder first links
-                this class; editable here. Only open classes can be one. */}
-            {!c.school_id && (
-              <p className="text-sm text-gray-600 flex items-center gap-1.5 flex-wrap">
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={c.is_follow_on === true}
-                    onChange={(e) => handleClassField(c, 'is_follow_on', e.target.checked)}
-                  />
-                  <span className="font-semibold">This is a follow-up class</span>
-                </label>
-                <span className="text-xs text-gray-400">
-                  marketed to students finishing a feeder class — shows the marketing controls
-                  below; a follow-up doesn&apos;t get its own feeder dropdown
-                </span>
-                {!c.is_follow_on && rosters.some((f) => f.follow_on_class_id === c.id) && (
-                  <span className="text-xs text-amber-700 font-semibold">
-                    ⚠ a feeder class points its follow-up at this class but the flag is off —
-                    the marketing controls stay hidden until it&apos;s checked
-                  </span>
-                )}
-              </p>
-            )}
-            {/* PL-294 + PL-311: only on flagged follow-up classes. Default
-                off — the deliberate Extend action on the feeder card stays
-                the recommended path. */}
-            {!c.school_id && c.is_follow_on === true && (
-              <p className="text-sm text-gray-600 flex items-center gap-1.5 flex-wrap">
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={c.fo_auto_extend === true}
-                    onChange={(e) => handleClassField(c, 'fo_auto_extend', e.target.checked)}
-                  />
-                  <span className="font-semibold">Auto-extend follow-up discounts</span>
-                </label>
-                <span className="text-xs text-gray-400">
-                  on = when a feeder cohort&apos;s discount deadline passes while this class is
-                  still under its minimum, the sweep extends that cohort a week and sends the
-                  extension pair (once per cohort)
-                </span>
-              </p>
-            )}
-            {/* PL-293: the class's Squarespace marketing page — the FO
-                emails' "More info" link and the register page's class-page
-                pointer compose from this; blank drops both cleanly. */}
-            {!c.school_id && c.is_follow_on === true && (
-              <InlineEditableText
-                label="Marketing page URL"
-                value={c.marketing_url}
-                emptyText='not set — no "More info" link in follow-up emails or on the register page'
-                title="The class's marketing page (e.g. https://hgl.co/advanced-sat)"
-                onSave={(v) => handleClassField(c, 'marketing_url', v)}
-              />
-            )}
-            {/* PL-250: visible and editable even when unset — counselors
-                often skip the form and just reply by email with the room. */}
-            <InlineEditableText
-              label="Location"
-              value={c.default_location}
-              emptyText="not set"
-              title="The class's default location — sessions without their own location fall back to this"
-              onSave={(v) => handleClassField(c, 'default_location', v)}
-            />
             {c.counselor_id && (() => {
               const contact = allCounselors.find((x) => x.id === c.counselor_id)
               return contact ? (
@@ -1801,12 +1743,6 @@ export default function AdminDashboard() {
                 </p>
               )
             })()}
-            <InlineEditableText
-              label="Synap group"
-              value={c.synap_group}
-              emptyText="not set"
-              onSave={(v) => handleClassField(c, 'synap_group', v)}
-            />
             <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
               <span className="font-semibold">Registration link:</span>
               <code className="bg-gray-100 rounded px-2 py-0.5 text-xs">
@@ -1818,48 +1754,253 @@ export default function AdminDashboard() {
               >
                 {copiedClassId === c.id ? 'Copied!' : 'Copy'}
               </button>
+            </p>
+            {/* PL-383: ONE expandable section for the class-SETUP fields —
+                collapsed by default so the card stays about the daily-use
+                things (roster, status, registration link). */}
+            <div className="mt-2">
               <button
-                onClick={() => handleEditSlug(c)}
-                className="text-xs text-gray-500 underline hover:text-hgl-blue"
+                type="button"
+                onClick={() => setDetailsOpenFor((m) => ({ ...m, [c.id]: !m[c.id] }))}
+                className="text-sm font-semibold text-hgl-slate underline hover:text-hgl-blue"
               >
-                edit slug
+                {detailsOpenFor[c.id] ? '▾ Edit class details' : '▸ Edit class details'}
               </button>
-            </p>
-            {/* PL-287: the DEADLINE (commit-by, what run/travel/re-promote
-                decisions run on — the flyer prints it) is the surfaced date;
-                the automatic sign-up cutoff demotes to a small setup line. */}
-            <p className="text-sm text-gray-600 flex items-center gap-2">
-              <span
-                className="font-semibold"
-                title="The commit-by date decisions run on — run or cancel, book travel, ask the counselor to re-promote. The flyer prints this date."
-              >
-                Registration deadline:
-              </span>
-              {c.enrollment_deadline ? (
-                formatDateAdmin(c.enrollment_deadline)
-              ) : (
-                <span className="italic text-gray-500">
-                  not set — falls back to registration close{c.registration_close_date ? '' : ' (first session)'}
-                </span>
+              {detailsOpenFor[c.id] && (
+              <div className="mt-2 border border-gray-200 rounded-lg p-3 space-y-1.5 bg-gray-50">
+                {/* PL-250: visible and editable even when unset — counselors
+                    often skip the form and just reply by email with the room. */}
+                <InlineEditableText
+                  label="Location"
+                  value={c.default_location}
+                  emptyText="not set"
+                  title="The class's default location — sessions without their own location fall back to this"
+                  onSave={(v) => handleClassField(c, 'default_location', v)}
+                />
+                <InlineEditableText
+                  label="Synap group"
+                  value={c.synap_group}
+                  emptyText="not set"
+                  onSave={(v) => handleClassField(c, 'synap_group', v)}
+                />
+                {/* PL-383: "Cities shown with the times" — the wizard field,
+                    finally editable post-creation. Open-enrollment ONLINE
+                    classes only; every consumer (page + email time labels via
+                    publicTimeCityLabel) follows the save immediately. */}
+                {!c.school_id && c.delivery_mode === 'online' && (
+                  <InlineEditableText
+                    label="Cities shown with the times"
+                    value={c.display_cities}
+                    emptyText={`not set — time labels fall back to the timezone's own city`}
+                    title={'Optional, comma-separated ("Milan, Munich"); blank = the timezone\u2019s own city'}
+                    onSave={(v) => handleClassField(c, 'display_cities', v)}
+                  />
+                )}
+                {/* PL-383: slug edit moves in here (setup, not daily use) — no
+                    more native prompt; the warning rides the label. */}
+                <InlineEditableText
+                  label="Registration URL slug"
+                  value={c.slug}
+                  emptyText="not set"
+                  title="Careful: changing the slug breaks any already-shared /register or /c links to the old address — the hgl.co code link is the one to share. Lowercase letters, numbers, dashes."
+                  onSave={(v) => handleSlugSave(c, v)}
+                />
+                {/* PL-383: wizard-only traps now editable — price/capacity/
+                    minimum (existing paid registrations keep their price
+                    snapshots; capacity feeds spots-left + waitlist math). */}
+                <InlineEditableText
+                  label="Price (USD)"
+                  value={String(c.price)}
+                  emptyText="not set"
+                  title="New registrations pay this; already-paid families keep their price snapshot"
+                  onSave={(v) => handleNumericClassField(c, 'price', v, { min: 0 })}
+                />
+                <InlineEditableText
+                  label="Capacity"
+                  value={String(c.capacity)}
+                  emptyText="not set"
+                  title="Seats before the waitlist starts — spots-left everywhere follows this"
+                  onSave={(v) => handleNumericClassField(c, 'capacity', v, { min: 1, integer: true })}
+                />
+                <InlineEditableText
+                  label="Minimum enrollment"
+                  value={c.min_enrollment != null ? String(c.min_enrollment) : null}
+                  emptyText="not set"
+                  title="The run/cancel line — the below-minimum decision zone keys on this"
+                  onSave={(v) => handleNumericClassField(c, 'min_enrollment', v, { min: 1, integer: true })}
+                />
+                {/* PL-287: the DEADLINE (commit-by, what run/travel/re-promote
+                    decisions run on — the flyer prints it) is the surfaced date;
+                    the automatic sign-up cutoff demotes to a small setup line. */}
+                <p className="text-sm text-gray-600 flex items-center gap-2">
+                  <span
+                    className="font-semibold"
+                    title="The commit-by date decisions run on — run or cancel, book travel, ask the counselor to re-promote. The flyer prints this date."
+                  >
+                    Registration deadline:
+                  </span>
+                  {c.enrollment_deadline ? (
+                    formatDateAdmin(c.enrollment_deadline)
+                  ) : (
+                    <span className="italic text-gray-500">
+                      not set — falls back to registration close{c.registration_close_date ? '' : ' (first session)'}
+                    </span>
+                  )}
+                  {/* PL-289: a real calendar picker instead of the typed prompt. */}
+                  <input
+                    type="date"
+                    value={c.enrollment_deadline ?? ''}
+                    onChange={(e) => handleDateField(c, 'enrollment_deadline', e.target.value || null)}
+                    className="border border-gray-200 rounded px-1 py-0.5 text-xs"
+                    title="Pick the commit-by date — the flyer prints this"
+                  />
+                  {c.enrollment_deadline && (
+                    <button
+                      onClick={() => handleDateField(c, 'enrollment_deadline', null)}
+                      className="text-xs text-gray-500 underline hover:text-hgl-blue"
+                      title="Back to the default (registration close, or the first session)"
+                    >
+                      clear
+                    </button>
+                  )}
+                </p>
+                <p className="text-xs text-gray-500 flex items-center gap-2">
+                  <span title="The automatic cutoff — the register page stops taking sign-ups after this date. A setup detail; decisions run on the deadline above.">
+                    Registration closes (sign-up cutoff):{' '}
+                    {c.registration_close_date
+                      ? formatDateAdmin(c.registration_close_date)
+                      : 'first session (default)'}
+                  </span>
+                  {/* PL-289: same calendar picker as the deadline above. */}
+                  <input
+                    type="date"
+                    value={c.registration_close_date ?? ''}
+                    onChange={(e) => handleDateField(c, 'registration_close_date', e.target.value || null)}
+                    className="border border-gray-200 rounded px-1 py-0.5 text-xs"
+                    title="Pick the automatic sign-up cutoff — blank means the first session"
+                  />
+                  {c.registration_close_date && (
+                    <button
+                      onClick={() => handleDateField(c, 'registration_close_date', null)}
+                      className="underline hover:text-hgl-blue"
+                      title="Back to the default (first session)"
+                    >
+                      clear
+                    </button>
+                  )}
+                </p>
+                {/* PL-310: ONE switch (diagnostics run through Synap — a second
+                    Synap toggle modeled a distinction that doesn't exist),
+                    editable where it's read — the email sequence conditions on it. */}
+                <p className="text-sm text-gray-600 flex items-center gap-4 flex-wrap">
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={c.has_diagnostics !== false}
+                      onChange={(e) => handleClassField(c, 'has_diagnostics', e.target.checked)}
+                    />
+                    <span className="font-semibold">Has diagnostics</span>
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    off = the email sequence drops diagnostic/Synap content for this class
+                  </span>
+                </p>
+                {/* PL-311: the explicit follow-up flag — what gates the FO
+                    marketing controls below. Auto-set when a feeder first links
+                    this class; editable here. Only open classes can be one. */}
+                {!c.school_id && (
+                  <p className="text-sm text-gray-600 flex items-center gap-1.5 flex-wrap">
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={c.is_follow_on === true}
+                        onChange={(e) => handleClassField(c, 'is_follow_on', e.target.checked)}
+                      />
+                      <span className="font-semibold">This is a follow-up class</span>
+                    </label>
+                    <span className="text-xs text-gray-400">
+                      marketed to students finishing a feeder class — shows the marketing controls
+                      below; a follow-up doesn&apos;t get its own feeder dropdown
+                    </span>
+                    {!c.is_follow_on && rosters.some((f) => f.follow_on_class_id === c.id) && (
+                      <span className="text-xs text-amber-700 font-semibold">
+                        ⚠ a feeder class points its follow-up at this class but the flag is off —
+                        the marketing controls stay hidden until it&apos;s checked
+                      </span>
+                    )}
+                  </p>
+                )}
+                {/* PL-294 + PL-311: only on flagged follow-up classes. Default
+                    off — the deliberate Extend action on the feeder card stays
+                    the recommended path. */}
+                {!c.school_id && c.is_follow_on === true && (
+                  <p className="text-sm text-gray-600 flex items-center gap-1.5 flex-wrap">
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={c.fo_auto_extend === true}
+                        onChange={(e) => handleClassField(c, 'fo_auto_extend', e.target.checked)}
+                      />
+                      <span className="font-semibold">Auto-extend follow-up discounts</span>
+                    </label>
+                    <span className="text-xs text-gray-400">
+                      on = when a feeder cohort&apos;s discount deadline passes while this class is
+                      still under its minimum, the sweep extends that cohort a week and sends the
+                      extension pair (once per cohort)
+                    </span>
+                  </p>
+                )}
+                {/* PL-293: the class's Squarespace marketing page — the FO
+                    emails' "More info" link and the register page's class-page
+                    pointer compose from this; blank drops both cleanly. */}
+                {!c.school_id && c.is_follow_on === true && (
+                  <InlineEditableText
+                    label="Marketing page URL"
+                    value={c.marketing_url}
+                    emptyText='not set — no "More info" link in follow-up emails or on the register page'
+                    title="The class's marketing page (e.g. https://hgl.co/advanced-sat)"
+                    onSave={(v) => handleClassField(c, 'marketing_url', v)}
+                  />
+                )}
+                {/* PL-311: the feeder side. A flagged follow-up (Deep Dive) never
+                    shows this — a follow-up has no follow-up (chain one by
+                    flagging both and the dropdown returns). */}
+                {c.is_follow_on !== true && (
+                  <p className="text-sm text-gray-600 flex items-center gap-2">
+                    <span className="font-semibold" title="Parents of this class's students see the follow-up as a 'you might be interested in' card in their portal">
+                      Follow-up class:
+                    </span>
+                    <select
+                      value={c.follow_on_class_id ?? ''}
+                      onChange={(e) => handleFollowOnChange(c, e.target.value)}
+                      className="border border-gray-300 rounded p-0.5 text-xs bg-white max-w-64"
+                    >
+                      <option value="">none</option>
+                      {rosters
+                        .filter((other) => other.id !== c.id && other.status !== 'cancelled')
+                        .map((other) => (
+                          <option key={other.id} value={other.id}>
+                            {classDisplayLabel({ schoolNickname: other.schools?.nickname ?? null, deliveryMode: other.delivery_mode, shortName: other.fo_short_name, classType: other.class_type })} (starts{' '}
+                            {formatDateAdmin(other.start_date)})
+                          </option>
+                        ))}
+                    </select>
+                  </p>
+                )}
+                {/* PL-279 + PL-311: the short marketing name Scarlett's FO copy
+                    italicizes ("Deep Dive") — only on flagged follow-up classes. */}
+                {!c.school_id && c.is_follow_on === true && (
+                  <InlineEditableText
+                    label="Short marketing name"
+                    value={c.fo_short_name}
+                    emptyText={`not set — follow-up emails say "${c.class_type}"`}
+                    title='The short name the follow-up emails italicize ("Deep Dive"). Blank = the full class name.'
+                    onSave={(v) => handleClassField(c, 'fo_short_name', v)}
+                  />
+                )}
+              </div>
               )}
-              {/* PL-289: a real calendar picker instead of the typed prompt. */}
-              <input
-                type="date"
-                value={c.enrollment_deadline ?? ''}
-                onChange={(e) => handleDateField(c, 'enrollment_deadline', e.target.value || null)}
-                className="border border-gray-200 rounded px-1 py-0.5 text-xs"
-                title="Pick the commit-by date — the flyer prints this"
-              />
-              {c.enrollment_deadline && (
-                <button
-                  onClick={() => handleDateField(c, 'enrollment_deadline', null)}
-                  className="text-xs text-gray-500 underline hover:text-hgl-blue"
-                  title="Back to the default (registration close, or the first session)"
-                >
-                  clear
-                </button>
-              )}
-            </p>
+            </div>
             {/* PL-335: the decision zone — the Needs Attention row lands
                 here, and each of the three choices actually resolves it. */}
             {showDecisionZone && (
@@ -1891,7 +2032,7 @@ export default function AdminDashboard() {
                       coming up — extend the deadline, run the class anyway, or cancel it.
                     </p>
                     <p className="text-amber-800 text-xs">
-                      Extending (pick a later date on the deadline picker above) is a snooze, not
+                      Extending (open Edit class details and pick a later date on the deadline picker) is a snooze, not
                       a dismissal — the reminder returns if enrollment is still short near the new
                       date. Cancelling uses the Cancel class… button below.
                     </p>
@@ -1908,56 +2049,6 @@ export default function AdminDashboard() {
                 )}
               </div>
             )}
-            <p className="text-xs text-gray-500 flex items-center gap-2">
-              <span title="The automatic cutoff — the register page stops taking sign-ups after this date. A setup detail; decisions run on the deadline above.">
-                Registration closes (sign-up cutoff):{' '}
-                {c.registration_close_date
-                  ? formatDateAdmin(c.registration_close_date)
-                  : 'first session (default)'}
-              </span>
-              {/* PL-289: same calendar picker as the deadline above. */}
-              <input
-                type="date"
-                value={c.registration_close_date ?? ''}
-                onChange={(e) => handleDateField(c, 'registration_close_date', e.target.value || null)}
-                className="border border-gray-200 rounded px-1 py-0.5 text-xs"
-                title="Pick the automatic sign-up cutoff — blank means the first session"
-              />
-              {c.registration_close_date && (
-                <button
-                  onClick={() => handleDateField(c, 'registration_close_date', null)}
-                  className="underline hover:text-hgl-blue"
-                  title="Back to the default (first session)"
-                >
-                  clear
-                </button>
-              )}
-            </p>
-            {/* PL-311: the feeder side. A flagged follow-up (Deep Dive) never
-                shows this — a follow-up has no follow-up (chain one by
-                flagging both and the dropdown returns). */}
-            {c.is_follow_on !== true && (
-              <p className="text-sm text-gray-600 flex items-center gap-2">
-                <span className="font-semibold" title="Parents of this class's students see the follow-up as a 'you might be interested in' card in their portal">
-                  Follow-up class:
-                </span>
-                <select
-                  value={c.follow_on_class_id ?? ''}
-                  onChange={(e) => handleFollowOnChange(c, e.target.value)}
-                  className="border border-gray-300 rounded p-0.5 text-xs bg-white max-w-64"
-                >
-                  <option value="">none</option>
-                  {rosters
-                    .filter((other) => other.id !== c.id && other.status !== 'cancelled')
-                    .map((other) => (
-                      <option key={other.id} value={other.id}>
-                        {classDisplayLabel({ schoolNickname: other.schools?.nickname ?? null, deliveryMode: other.delivery_mode, shortName: other.fo_short_name, classType: other.class_type })} (starts{' '}
-                        {formatDateAdmin(other.start_date)})
-                      </option>
-                    ))}
-                </select>
-              </p>
-            )}
             {/* PL-279: the FO campaign runs when the follow-up is an OPEN
                 class with a promo — this cohort's window + the deliberate
                 Extend action live here, on the feeder. */}
@@ -1968,17 +2059,6 @@ export default function AdminDashboard() {
                   <FoExtendControl classRow={c} followOn={target} onChanged={fetchRosters} />
                 ) : null
               })()}
-            {/* PL-279 + PL-311: the short marketing name Scarlett's FO copy
-                italicizes ("Deep Dive") — only on flagged follow-up classes. */}
-            {!c.school_id && c.is_follow_on === true && (
-              <InlineEditableText
-                label="Short marketing name"
-                value={c.fo_short_name}
-                emptyText={`not set — follow-up emails say "${c.class_type}"`}
-                title='The short name the follow-up emails italicize ("Deep Dive"). Blank = the full class name.'
-                onSave={(v) => handleClassField(c, 'fo_short_name', v)}
-              />
-            )}
             {!isCancelled && (
               <div className="mt-2">
                 <CancelClassPanel
@@ -3004,7 +3084,7 @@ export default function AdminDashboard() {
               .filter((c) => c.status !== 'cancelled')
               .map((c) => (
                 <option key={c.id} value={c.id}>
-                  {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })} · starts {c.start_date}
+                  {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })} · starts {formatDateAdmin(c.start_date)}
                   {c.collateral_reminder_at && !c.short_link ? ' — collateral not set up' : ''}
                 </option>
               ))}
