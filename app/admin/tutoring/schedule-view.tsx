@@ -77,6 +77,10 @@ type DragState =
   | { kind: 'create'; dayIso: string; startY: number; endY: number }
   | { kind: 'move'; index: number; y: number; grabOffset: number }
   | { kind: 'resize'; index: number; y: number }
+  // PL-387 B: dragging an EXISTING session chip (week mode). The pointer
+  // stays captured on the chip; the drop day comes from elementFromPoint.
+  | { kind: 'session-move'; sessionId: string; fromDayIso: string; dayIso: string; y: number; grabOffset: number; durH: number; moved: boolean }
+  | { kind: 'session-resize'; sessionId: string; dayIso: string; y: number; startH: number; moved: boolean }
 
 /** 'HH:MM' → "4:00 PM". */
 function fmtHHMMLocal(hhmm: string): string {
@@ -271,6 +275,26 @@ export default function ScheduleView({
   const [proposal, setProposal] = useState<RecurrenceSlotUI[]>([])
   const [proposalStartWeek, setProposalStartWeek] = useState<string | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
+  // PL-387 B: a dropped session drag awaits its inline decision — "just this
+  // session" (the normal reschedule mechanics, fee window included) vs "this
+  // and future weekly slots" (the engagement's recurrence updates + future
+  // unbilled sessions re-project). Nothing moves until a button is pressed.
+  const [pendingMove, setPendingMove] = useState<null | {
+    session: SessionRow
+    newStartsAt: string
+    newEndsAt: string
+    resize: boolean
+    late: boolean
+    conflictLabel: string | null
+    recurrence: RecurrenceSlotUI[] | null
+    matchedSlotIndex: number | null
+    targetWeekday: number
+    targetStartHHMM: string
+    newDurationMinutes: number
+    busySaving: boolean
+    error: string
+  }>(null)
+  const suppressChipClickRef = useRef(false)
   const [horizonWeeks, setHorizonWeeks] = useState(12)
   const [proposalMsg, setProposalMsg] = useState('')
   useEffect(() => {
@@ -357,18 +381,231 @@ export default function ScheduleView({
             : s
         )
       )
-    } else {
+    } else if (dragState.kind === 'resize') {
       const end = snapQuarter(dragState.y)
+      const idx = dragState.index
       setProposal((p) =>
         p.map((s, i) => {
-          if (i !== dragState.index) return s
+          if (i !== idx) return s
           const startH = hhmmToHours(s.start_time)
           const minutes = Math.round((end - startH) * 60)
           return { ...s, duration_minutes: Math.max(15, Math.min(480, minutes)) }
         })
       )
     }
+    // session-move/session-resize commit through sessionDragEnd (their own
+    // pointerup handler on the chip) — nothing to do here.
     setDragState(null)
+  }
+
+  // PL-387 B: drag an existing session chip — move (grab body) or resize
+  // (grab the bottom edge). Live proposed/confirmed only; week mode only.
+  function beginSessionDrag(e: React.PointerEvent<HTMLButtonElement>, s: SessionRow, dayIso: string) {
+    if (mode !== 'week' || e.button !== 0) return
+    if (!['proposed', 'confirmed'].includes(s.status)) return
+    e.stopPropagation()
+    const colEl = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    const y = columnYToHours(colEl, e.clientY)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const nearBottom = e.clientY > rect.bottom - 8
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      // synthetic/odd pointers can't capture — the drag still tracks
+    }
+    const start = wallClock(s.starts_at, tz)
+    const startH = start.hour + start.minute / 60
+    setDragState(
+      nearBottom
+        ? { kind: 'session-resize', sessionId: s.id, dayIso, y, startH, moved: false }
+        : {
+            kind: 'session-move',
+            sessionId: s.id,
+            fromDayIso: dayIso,
+            dayIso,
+            y,
+            grabOffset: y - startH,
+            durH: s.duration_minutes / 60,
+            moved: false,
+          }
+    )
+  }
+
+  function sessionDragMove(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!dragState || (dragState.kind !== 'session-move' && dragState.kind !== 'session-resize')) return
+    const colEl = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    const y = columnYToHours(colEl, e.clientY)
+    // Cross-day: the day column under the pointer wins (capture keeps events
+    // on the chip; elementFromPoint sees through it via pointer-events).
+    let dayIso: string | null = null
+    const under = document.elementFromPoint(e.clientX, e.clientY)
+    const dayEl = under?.closest?.('[data-day-iso]') as HTMLElement | null
+    if (dayEl?.dataset.dayIso) dayIso = dayEl.dataset.dayIso
+    setDragState((d) => {
+      if (!d || (d.kind !== 'session-move' && d.kind !== 'session-resize')) return d
+      const moved = d.moved || Math.abs(y - d.y) > 0.1 || (d.kind === 'session-move' && dayIso != null && dayIso !== d.dayIso)
+      if (d.kind === 'session-move') return { ...d, y, dayIso: dayIso ?? d.dayIso, moved }
+      return { ...d, y, moved }
+    })
+  }
+
+  async function sessionDragEnd() {
+    if (!dragState || (dragState.kind !== 'session-move' && dragState.kind !== 'session-resize')) return
+    const d = dragState
+    setDragState(null)
+    if (!d.moved) return // a plain click — the chip's own onClick handles it
+    suppressChipClickRef.current = true
+    setTimeout(() => (suppressChipClickRef.current = false), 250)
+    const s = sessions.find((x) => x.id === d.sessionId)
+    if (!s) return
+    const orig = new Date(s.starts_at)
+    const start = wallClock(s.starts_at, tz)
+    const origStartH = start.hour + start.minute / 60
+    let newStartMs: number
+    let newDurationMinutes = s.duration_minutes
+    if (d.kind === 'session-move') {
+      const newStartH = Math.max(DAY_START, Math.min(DAY_END - d.durH, snapQuarter(d.y - d.grabOffset)))
+      const dayDelta = Math.round(
+        (new Date(d.dayIso + 'T12:00:00Z').getTime() - new Date(d.fromDayIso + 'T12:00:00Z').getTime()) / 86_400_000
+      )
+      newStartMs = orig.getTime() + dayDelta * 86_400_000 + (newStartH - origStartH) * 3_600_000
+    } else {
+      const endH = Math.max(d.startH + 0.25, snapQuarter(d.y))
+      newDurationMinutes = Math.min(480, Math.max(15, Math.round((endH - d.startH) * 60)))
+      newStartMs = orig.getTime()
+    }
+    const newStartsAt = new Date(newStartMs).toISOString()
+    const newEndsAt = new Date(newStartMs + newDurationMinutes * 60_000).toISOString()
+    if (newStartsAt === s.starts_at && newDurationMinutes === s.duration_minutes) return
+
+    // Fee window: judged on the ORIGINAL time — the same 24h rule every
+    // reschedule path applies.
+    const late = new Date(s.starts_at).getTime() - Date.now() < 24 * 3_600_000
+    // Conflict read at the drop target (warn-not-block, creation parity).
+    const targetDayIso = new Date(newStartsAt).toLocaleDateString('en-CA', { timeZone: tz })
+    const nw = wallClock(newStartsAt, tz)
+    const nStartH = nw.hour + nw.minute / 60
+    const nEndH = nStartH + newDurationMinutes / 60
+    const busyHit = blocksForDay(targetDayIso, busy).find(
+      (b) => b.top < (nEndH - DAY_START) * HOUR_PX && b.top + b.height > (nStartH - DAY_START) * HOUR_PX
+    )
+    const sessionHit = sessions.find((x) => {
+      if (x.id === s.id || !['proposed', 'confirmed'].includes(x.status)) return false
+      if (x.tutor_id !== s.tutor_id) return false
+      return new Date(x.starts_at).getTime() < Date.parse(newEndsAt) && new Date(x.ends_at).getTime() > newStartMs
+    })
+    const conflictLabel = busyHit
+      ? busyHit.label
+      : sessionHit
+        ? `${sessionHit.students?.first_name ?? 'another student'}'s session`
+        : null
+
+    // Does the drag match the engagement's recurring pattern? (Only then is
+    // "this and future weekly slots" offered.)
+    let recurrence: RecurrenceSlotUI[] | null = null
+    let matchedSlotIndex: number | null = null
+    try {
+      const { data: eng } = await supabase
+        .from('tutoring_engagements')
+        .select('recurrence')
+        .eq('id', s.engagement_id)
+        .maybeSingle()
+      recurrence = Array.isArray(eng?.recurrence) ? (eng!.recurrence as RecurrenceSlotUI[]) : []
+      const origWeekday = isoWeekday(new Date(s.starts_at).toLocaleDateString('en-CA', { timeZone: tz }))
+      const origHHMM = `${String(start.hour).padStart(2, '0')}:${String(start.minute).padStart(2, '0')}`
+      matchedSlotIndex = recurrence.findIndex(
+        (r) => r.weekday === origWeekday && r.start_time === origHHMM && r.duration_minutes === s.duration_minutes
+      )
+      if (matchedSlotIndex < 0) matchedSlotIndex = null
+    } catch {
+      recurrence = null
+    }
+
+    setPendingMove({
+      session: s,
+      newStartsAt,
+      newEndsAt,
+      resize: d.kind === 'session-resize',
+      late,
+      conflictLabel,
+      recurrence,
+      matchedSlotIndex,
+      targetWeekday: isoWeekday(targetDayIso),
+      targetStartHHMM: hoursToHHMM(snapQuarter(nStartH)),
+      newDurationMinutes,
+      busySaving: false,
+      error: '',
+    })
+  }
+
+  /** PL-387 B: "just this session" — THE reschedule path (fee rules, family
+   *  + tutor notices, gcal) exactly as the dialog's reschedule uses. */
+  async function commitSingleMove() {
+    if (!pendingMove) return
+    setPendingMove((p) => (p ? { ...p, busySaving: true, error: '' } : p))
+    const res = await fetch('/api/admin/tutoring/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'reschedule',
+        id: pendingMove.session.id,
+        new_starts_at: pendingMove.newStartsAt,
+        new_ends_at: pendingMove.newEndsAt,
+        notice: pendingMove.late ? 'late' : 'ok',
+        requested_by: 'staff',
+      }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setPendingMove((p) => (p ? { ...p, busySaving: false, error: json.error ?? 'The move failed.' } : p))
+      return
+    }
+    setPendingMove(null)
+    void load()
+  }
+
+  /** PL-387 B: "this and future weekly slots" — the matched recurrence slot
+   *  moves and future unbilled sessions re-project (the same engagement
+   *  update+regenerate the edit-schedule form uses, family+tutor notified). */
+  async function commitRecurringMove() {
+    if (!pendingMove || pendingMove.recurrence == null || pendingMove.matchedSlotIndex == null) return
+    setPendingMove((p) => (p ? { ...p, busySaving: true, error: '' } : p))
+    const updated = pendingMove.recurrence.map((r, i) =>
+      i === pendingMove.matchedSlotIndex
+        ? { weekday: pendingMove.targetWeekday, start_time: pendingMove.targetStartHHMM, duration_minutes: pendingMove.newDurationMinutes }
+        : r
+    )
+    const res = await fetch('/api/admin/tutoring/engagement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update',
+        id: pendingMove.session.engagement_id,
+        recurrence: updated,
+        regenerate: true,
+        // The staff member is looking at the consequence copy — overdraw
+        // still asks server-side; a 409-style asks land in the error line.
+      }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok || json.needsOverdrawConfirm || json.needsLocationConfirm) {
+      setPendingMove((p) =>
+        p
+          ? {
+              ...p,
+              busySaving: false,
+              error: json.needsOverdrawConfirm
+                ? `This draws ${json.overBy}h past the package — use the Students tab's schedule editor to walk past that deliberately.`
+                : json.needsLocationConfirm
+                  ? 'No location is set on this schedule — set one (or a tutor default meeting link) in the Students tab first.'
+                  : (json.error ?? 'The change failed.'),
+            }
+          : p
+      )
+      return
+    }
+    setPendingMove(null)
+    void load()
   }
 
   function beginBlockDrag(e: React.PointerEvent<HTMLDivElement>, index: number) {
@@ -641,6 +878,72 @@ export default function ScheduleView({
 
   return (
     <div className="space-y-3 text-sm">
+      {/* PL-387 B: the dropped drag's decision — inline, never a native
+          dialog; nothing moved until a button below is pressed. */}
+      {pendingMove && (
+        <div className="border border-hgl-blue/50 bg-blue-50 rounded-lg p-3 space-y-1.5">
+          <p className="font-semibold text-hgl-slate">
+            {pendingMove.resize ? 'Change the length of' : 'Move'} {pendingMove.session.students?.first_name ?? 'this student'}
+            &apos;s session?
+          </p>
+          <p className="text-gray-700">
+            {formatTimeRange(pendingMove.session.starts_at, pendingMove.session.ends_at, tz)} →{' '}
+            <strong>
+              {new Date(pendingMove.newStartsAt).toLocaleDateString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' })}
+              , {formatTimeRange(pendingMove.newStartsAt, pendingMove.newEndsAt, tz)}
+            </strong>
+          </p>
+          {pendingMove.late && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              The original time is inside 24 hours, so the family&apos;s reserved-time rules apply:
+              this counts as a late reschedule — the original slot is still billable and the
+              family&apos;s email says so plainly.
+            </p>
+          )}
+          {pendingMove.conflictLabel && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              ⚠ The new time overlaps {pendingMove.conflictLabel} — a warning, not a block.
+            </p>
+          )}
+          {pendingMove.error && <p className="text-xs text-red-600 font-semibold">{pendingMove.error}</p>}
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              onClick={() => void commitSingleMove()}
+              disabled={pendingMove.busySaving}
+              className="bg-hgl-blue text-white text-xs font-bold px-3 py-1.5 rounded disabled:opacity-40"
+            >
+              Just this session
+            </button>
+            {pendingMove.matchedSlotIndex != null && !pendingMove.resize && (
+              <button
+                onClick={() => void commitRecurringMove()}
+                disabled={pendingMove.busySaving}
+                className="bg-hgl-slate text-white text-xs font-bold px-3 py-1.5 rounded disabled:opacity-40"
+                title="The weekly pattern itself moves; upcoming not-yet-billed sessions re-plan onto the new time, the family and tutor are told, and completed or billed sessions stay put."
+              >
+                This and future weekly slots
+              </button>
+            )}
+            {pendingMove.matchedSlotIndex != null && pendingMove.resize && (
+              <button
+                onClick={() => void commitRecurringMove()}
+                disabled={pendingMove.busySaving}
+                className="bg-hgl-slate text-white text-xs font-bold px-3 py-1.5 rounded disabled:opacity-40"
+              >
+                This length for all future weekly slots
+              </button>
+            )}
+            <button onClick={() => setPendingMove(null)} className="text-xs text-gray-500 underline">
+              Cancel — nothing moves
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-500">
+            &quot;Just this session&quot; runs the normal reschedule (family + tutor notices, Google
+            Calendar, the fee rules above). The weekly option re-plans upcoming unbilled sessions
+            onto the new pattern and never touches completed or billed ones.
+          </p>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex rounded-md overflow-hidden border border-gray-300">
           {(['week', 'day'] as const).map((m) => (
@@ -911,6 +1214,7 @@ export default function ScheduleView({
                     )}
                   </div>
                   <div
+                    data-day-iso={dayIso}
                     className={`relative bg-white ${mode === 'week' && tutor ? 'cursor-crosshair' : ''}`}
                     style={{ height: (DAY_END - DAY_START) * HOUR_PX }}
                     // PL-337 A: drag on empty grid creates a proposed block.
@@ -945,18 +1249,40 @@ export default function ScheduleView({
                       const color = tutorColor(s.tutor_id)
                       const terminal = ['completed', 'rescheduled', 'forfeited', 'no_show'].includes(s.status)
                       const sTutorName = tutorNameFor(s.tutor_id)
+                      // PL-387 B: live drag echo — the grabbed chip follows
+                      // the pointer (time axis) while the decision is pending
+                      // only after drop.
+                      let echoTop = top
+                      let echoHeight = height
+                      if (dragState?.kind === 'session-move' && dragState.sessionId === s.id && dragState.moved) {
+                        const h = Math.max(
+                          DAY_START,
+                          Math.min(DAY_END - dragState.durH, snapQuarter(dragState.y - dragState.grabOffset))
+                        )
+                        echoTop = (h - DAY_START) * HOUR_PX
+                      }
+                      if (dragState?.kind === 'session-resize' && dragState.sessionId === s.id && dragState.moved) {
+                        echoHeight = Math.max(18, (snapQuarter(dragState.y) - dragState.startH) * HOUR_PX)
+                      }
+                      const draggable = mode === 'week' && ['proposed', 'confirmed'].includes(s.status)
                       return (
                         <button
                           key={s.id}
-                          onClick={() => setSelected(s)}
+                          onClick={() => {
+                            if (suppressChipClickRef.current) return
+                            setSelected(s)
+                          }}
+                          onPointerDown={draggable ? (e) => beginSessionDrag(e, s, dayIso) : undefined}
+                          onPointerMove={draggable ? sessionDragMove : undefined}
+                          onPointerUp={draggable ? () => void sessionDragEnd() : undefined}
                           className={`absolute inset-x-0.5 rounded border px-1 py-0.5 text-left text-[11px] leading-tight overflow-hidden ${
                             terminal
                               ? (STATUS_STYLES[s.status] ?? 'bg-gray-100 border-gray-300')
                               : `text-gray-900 ${s.status === 'proposed' ? 'border-dashed' : ''}`
                           }`}
                           style={{
-                            top,
-                            height,
+                            top: echoTop,
+                            height: echoHeight,
                             ...(terminal
                               ? { borderLeftColor: color, borderLeftWidth: 4, borderLeftStyle: 'solid' }
                               : { background: `${color}26`, borderColor: color, borderLeftWidth: 4 }),

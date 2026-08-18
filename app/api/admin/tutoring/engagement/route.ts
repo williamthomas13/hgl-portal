@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
 import { sendWelcomeHandoff } from '../../../../utils/intake-emails'
+import { sendPatternChangeNotices } from '../../../../utils/tutoring-emails'
 import { billMidMonthStart } from '../../../../utils/tutoring-billing'
 import {
   activatePendingEngagement,
@@ -55,6 +56,8 @@ type UpdateBody = {
   funding?: 'monthly_billed' | 'package'
   addon_id?: string | null
   recurrence?: RecurrenceSlot[]
+  /** PL-387: the edit-schedule form can move the engagement to another tutor. */
+  tutor_id?: string
   location?: string | null
   notes?: string | null
   status?: 'active' | 'paused' | 'ended'
@@ -644,7 +647,7 @@ export async function POST(req: Request) {
       }
 
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
-      for (const k of ['hourly_rate', 'funding', 'addon_id', 'recurrence', 'location', 'notes', 'status', 'end_date'] as const) {
+      for (const k of ['hourly_rate', 'funding', 'addon_id', 'recurrence', 'tutor_id', 'location', 'notes', 'status', 'end_date'] as const) {
         if (body[k] !== undefined) patch[k] = body[k]
       }
       const { data: engagement, error } = await supabase
@@ -693,7 +696,19 @@ export async function POST(req: Request) {
           unchanged: afterStarts.filter((x) => b.has(x)).length,
         }
       }
-      after(() => processGcalQueue())
+      // PL-387 A: an edited weekly pattern is a real schedule change — the
+      // family and the tutor both hear it (the same honesty rule as
+      // single-session moves; completed/billed sessions were never touched).
+      const patternChanged = body.recurrence !== undefined || body.tutor_id !== undefined
+      const realDelta = regenerate != null && (regenerate.added > 0 || regenerate.dropped > 0)
+      after(() =>
+        Promise.allSettled([
+          processGcalQueue(),
+          patternChanged && realDelta
+            ? sendPatternChangeNotices(engagement.id, regenerate!)
+            : Promise.resolve(),
+        ])
+      )
       return NextResponse.json({
         ok: true,
         id: engagement.id,

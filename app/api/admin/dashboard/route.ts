@@ -722,8 +722,8 @@ export async function GET() {
               id: `block-continue-staff-${e.id}`,
               since: e.block_continue_staff_at,
               kind: 'Continue-tutoring choice needs scheduling',
-              text: `${stu.first_name} ${stu.last_name}'s family confirmed continuing${e.block_continue_hours ? ` (${Number(e.block_continue_hours)} more hours)` : ' (monthly)'}, but the portal couldn't reserve the times — a conflict or no workable slot. Schedule the continuation; the family was told you'll sort it out with them.`,
-              href: `/admin/tutoring?family=${stu.family_id}`,
+              text: `${stu.first_name} ${stu.last_name}'s family confirmed continuing${e.block_continue_hours ? ` (${Number(e.block_continue_hours)} more hours)` : ' (monthly)'}, but the portal couldn't reserve the times (the alert email names the exact collision). Schedule the continuation — the link opens the schedule editor pre-filled; the family was told you'll sort it out with them.`,
+              href: `/admin/tutoring?continue=${e.id}&hours=${e.block_continue_hours ? Number(e.block_continue_hours) : 'monthly'}`,
               urgent: true,
             })
           }

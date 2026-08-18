@@ -63,12 +63,27 @@ export default function TutoringAdmin() {
   // the wizard, and any change bumps the version so the list recounts.
   const [draftToResume, setDraftToResume] = useState<ScheduleDraftRow | null>(null)
   const [draftsVersion, setDraftsVersion] = useState(0)
+  // PL-389B: ?continue={engagementId} deep-links "Schedule the continuation" —
+  // the Students section opens with that engagement's edit-schedule form
+  // pre-filled and the continuation context bannered.
+  const [scheduleContinuationFor, setScheduleContinuationFor] = useState<string | null>(null)
+  const [continuationBanner, setContinuationBanner] = useState<string | null>(null)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
     const family = q.get('family')
     const schedule = q.get('schedule')
     const session = q.get('session')
+    const continueFor = q.get('continue')
+    if (continueFor) {
+      setActiveSection('students')
+      setScheduleContinuationFor(continueFor)
+      const hours = q.get('hours')
+      setContinuationBanner(
+        `Scheduling the continuation the family confirmed${hours ? ` (${hours === 'monthly' ? 'monthly, until they cancel' : `${hours} more hours`})` : ''} — the current weekly pattern is pre-filled below; adjust if the old times no longer work, then Save.`
+      )
+      return
+    }
     if (session) {
       setActiveSection('schedule')
       setFocusSessionId(session)
@@ -338,6 +353,9 @@ export default function TutoringAdmin() {
                     addonHours={addonHours}
                     conversions={conversions}
                     onChange={refresh}
+                    tutors={tutors}
+                    openScheduleEditorFor={scheduleContinuationFor}
+                    continuationContext={continuationBanner}
                   />
                 </CollapsibleSection>
               </SidebarPanel>

@@ -163,7 +163,9 @@ function timeRange(start: string, end: string): string {
  *  Recurrence is the tutor's wall clock; the summary renders in the FAMILY's
  *  timezone (PL-118). One composer — every surface that writes a schedule
  *  (confirm page, T_SCHEDULE_CONFIRM/SET emails) phrases through here. */
-export function scheduleSummaryText(e: ApprovalEngagement): string {
+export function scheduleSummaryText(
+  e: Pick<ApprovalEngagement, 'recurrence' | 'start_date' | 'tutorTz' | 'familyTz'>
+): string {
   if (e.recurrence.length === 0) return 'sessions scheduled one at a time (no fixed weekly slot yet)'
   const today = new Date().toLocaleDateString('en-CA', { timeZone: e.tutorTz })
   const from = e.start_date && e.start_date > today ? e.start_date : today

@@ -708,9 +708,10 @@ async function routeContinuationToStaff(e: BlockEngagement, choice: ContinueChoi
       tutoring (<strong>${what}</strong>), but the portal couldn't reserve the continuing
       sessions with ${e.tutorName}.</p>
       ${reasonHtml}
-      <p>The family was told you'll figure it out with them. Schedule the continuation from
-      the engagement:</p>
-      <p><a href="${emailBaseUrl()}/admin/tutoring?family=${e.familyId}">Open the engagement →</a></p>`,
+      <p>The family was told you'll figure it out with them. This link opens the schedule
+      editor pre-filled with ${e.studentFirstName}'s current weekly pattern and the confirmed
+      continuation — adjust if needed and Save:</p>
+      <p><a href="${emailBaseUrl()}/admin/tutoring?continue=${e.id}&hours=${choice}">Schedule the continuation →</a></p>`,
   }).catch((err) => console.error('continue-staff alert failed (dashboard row stands):', err))
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

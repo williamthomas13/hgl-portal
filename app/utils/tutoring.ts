@@ -155,8 +155,17 @@ export function generateOccurrences(
 ): Occurrence[] {
   const out: Occurrence[] = []
   if (recurrence.length === 0) return out
+  // PL-389: identical duplicate slot rows ([Mon 16:00 ×2], seen live) must
+  // not double-book every week — the ONE generator dedupes, so every
+  // consumer (materialize, reserve, previews) is protected at the source.
+  const uniq = recurrence.filter(
+    (r, i, arr) =>
+      arr.findIndex(
+        (x) => x.weekday === r.weekday && x.start_time === r.start_time && x.duration_minutes === r.duration_minutes
+      ) === i
+  )
   const byWeekday = new Map<number, RecurrenceSlot[]>()
-  for (const slot of recurrence) {
+  for (const slot of uniq) {
     byWeekday.set(slot.weekday, [...(byWeekday.get(slot.weekday) ?? []), slot])
   }
   for (let d = fromIso; d <= toIso; d = addDaysIso(d, 1)) {

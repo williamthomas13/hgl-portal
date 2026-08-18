@@ -1,8 +1,9 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { renderRegistered } from './comms-registered'
-import { sendOnce, wrap, footerT } from './email'
+import { sendOnce, wrap, footerStaff, footerT } from './email'
 import { formatTimeRange } from './dates'
 import { recordTutorScheduleChange } from './tutor-notices'
+import { scheduleSummaryText } from './schedule-approval'
 import { autopayNudgeHtml } from './autopay-nudge'
 
 // Phase 7c tutoring emails (spec §6): T1 monthly proposal, T1b nudge,
@@ -523,3 +524,93 @@ export async function sendScheduleChangeNotices(opts: {
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** PL-387 A: a WHOLESALE weekly-pattern edit (the engagement's recurrence or
+ *  tutor changed and future sessions re-projected) is a real schedule change
+ *  — the family hears the new plan through the SAME T3_SCHEDULE_CHANGE
+ *  vehicle single-session moves use, and the tutor gets a direct note (their
+ *  Google Calendar is already updated by the sync). Completed and
+ *  already-billed sessions were never touched, and the copy says so. */
+export async function sendPatternChangeNotices(
+  engagementId: string,
+  delta: { added: number; dropped: number; unchanged: number }
+): Promise<void> {
+  try {
+    const { data: e } = await supabase
+      .from('tutoring_engagements')
+      .select(
+        `id, recurrence, start_date,
+         students ( first_name, families ( parent_first_name, parent_email, timezone ) ),
+         subjects ( name ),
+         instructors!tutoring_engagements_tutor_id_fkey ( name, email, timezone )`
+      )
+      .eq('id', engagementId)
+      .maybeSingle()
+    if (!e) return
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const student = one7c<any>(e.students)
+    const family = one7c<any>(student?.families)
+    const tutor = one7c<any>(e.instructors)
+    const subjectName = one7c<any>(e.subjects)?.name ?? 'tutoring'
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    if (!student) return
+    const summary = scheduleSummaryText({
+      recurrence: Array.isArray(e.recurrence) ? e.recurrence : [],
+      start_date: e.start_date ?? null,
+      tutorTz: tutor?.timezone ?? 'America/Denver',
+      familyTz: family?.timezone ?? tutor?.timezone ?? 'America/Denver',
+    })
+    const changeLines = [
+      `The regular weekly plan is now: <strong>${summary}</strong>.`,
+      `${delta.added} upcoming session${delta.added === 1 ? '' : 's'} were re-planned onto the new times` +
+        (delta.dropped > 0 ? ` (${delta.dropped} old slot${delta.dropped === 1 ? '' : 's'} came off the calendar)` : '') +
+        ` — sessions already completed or billed stay exactly as they were.`,
+    ]
+
+    if (family?.parent_email) {
+      const contact = await loadContactInfo()
+      const twin = () => {
+        const r = t3ScheduleChangeEmail({ studentFirst: student.first_name, changeLines, contact })
+        return { subject: r.subject, html: r.html }
+      }
+      const email = await renderRegistered(
+        'T3_SCHEDULE_CHANGE',
+        { parentFirstName: family.parent_first_name ?? 'there', parentEmail: family.parent_email, studentFirstName: student.first_name },
+        {
+          changeListBlock: `<ul style="margin:0;padding-left:20px;color:#334155">${changeLines
+            .map((l) => `<li style="margin:2px 0">${l}</li>`)
+            .join('')}</ul>`,
+        },
+        twin
+      )
+      await sendOnce({
+        dedupeKey: `t3_pattern_change:${engagementId}:${Date.now()}`,
+        emailType: 'T3_SCHEDULE_CHANGE',
+        templateKey: 'T3_SCHEDULE_CHANGE',
+        to: [family.parent_email],
+        subject: email.subject,
+        html: email.html,
+        bodySnapshotId: email.versionId,
+      })
+    }
+
+    if (tutor?.email) {
+      await sendOnce({
+        dedupeKey: `t3t_pattern_change:${engagementId}:${Date.now()}`,
+        emailType: 'T3_TUTOR_PATTERN',
+        to: [tutor.email],
+        subject: `Schedule change: ${student.first_name} — ${subjectName}`,
+        html: wrap(
+          `<h3 style="color:#334155">Schedule change</h3>
+           <p>${student.first_name}'s regular weekly plan changed to: <strong>${summary}</strong>.</p>
+           <p>${delta.added} upcoming session${delta.added === 1 ? '' : 's'} re-planned${
+             delta.dropped > 0 ? `, ${delta.dropped} old slot${delta.dropped === 1 ? '' : 's'} removed` : ''
+           } — your Google Calendar is already updated; completed and billed sessions are untouched.</p>`,
+          { preheader: `${student.first_name}'s weekly plan changed — calendar already updated.`, footer: footerStaff() }
+        ),
+      })
+    }
+  } catch (err) {
+    console.error('pattern-change notices failed (the schedule change itself stands):', err)
+  }
+}

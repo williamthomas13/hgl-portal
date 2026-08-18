@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { formatDateShort, formatTimeRange, hhmmRange } from '../../utils/dates'
 import ScoresEntry from '../../components/ScoresEntry'
 import { ConfirmAction } from './confirm'
-import { WEEKDAYS, familyLabel, fmtDay, fmtTime, type Engagement } from './types'
+import { WEEKDAYS, familyLabel, fmtDay, fmtTime, type Engagement, type RecurrenceSlotUI, type Tutor } from './types'
 import { FamilyCommsTimeline } from '../family-comms'
 
 // The "one source of truth per family" view (Phase 7a §5): student schedules
@@ -21,8 +21,18 @@ export default function EngagementsPanel({
   addonHours,
   conversions,
   onChange,
+  tutors = [],
+  openScheduleEditorFor = null,
+  continuationContext = null,
 }: {
   engagements: Engagement[]
+  /** PL-387: tutor options for the edit-schedule form (active first). */
+  tutors?: Tutor[]
+  /** PL-389B: deep-linked "Schedule the continuation" — opens this
+   *  engagement's edit-schedule form pre-filled on mount. */
+  openScheduleEditorFor?: string | null
+  /** PL-389B: the continuation context banner (confirmed hours etc.). */
+  continuationContext?: string | null
   /** engagement_id → next confirmed session ISO */
   nextSessions: Record<string, { starts_at: string; ends_at: string | null }>
   /** engagement_id → hours consumed (completed + no_show + forfeited + upcoming confirmed) */
@@ -35,6 +45,21 @@ export default function EngagementsPanel({
 }) {
   const [busyId, setBusyId] = useState('')
   const [message, setMessage] = useState('')
+  // PL-387 A: the edit-schedule form (same fields as New Student Schedule,
+  // prefilled) — saving updates the recurrence/tutor and re-projects future
+  // unbilled sessions in ONE motion (regenerate folds into save).
+  const [editFor, setEditFor] = useState<string | null>(null)
+  const [editSlots, setEditSlots] = useState<RecurrenceSlotUI[]>([])
+  const [editTutorId, setEditTutorId] = useState('')
+  const [busyWarnings, setBusyWarnings] = useState<string[]>([])
+  // No-native-dialogs: the overdraw/location walk-pasts are inline banners.
+  const [pendingUpdate, setPendingUpdate] = useState<null | {
+    id: string
+    body: Record<string, unknown>
+    done: string | ((json: Record<string, unknown>) => string)
+    text: string
+    confirmKey: 'confirm_overdraw' | 'confirm_no_location'
+  }>(null)
   // PL-30: current (active/paused) vs past (ended) schedules.
   const [view, setView] = useState<'current' | 'past'>('current')
 
@@ -136,36 +161,107 @@ export default function EngagementsPanel({
     // first (never blocked, never silent) — proceeding re-sends confirmed.
     if (json.needsOverdrawConfirm) {
       setBusyId('')
-      if (
-        window.confirm(
+      // PL-387: inline walk-past (the old native confirm violated the
+      // no-native-dialogs rule).
+      setPendingUpdate({
+        id,
+        body,
+        done,
+        confirmKey: 'confirm_overdraw',
+        text:
           `This schedule goes ${json.overBy}h past ${json.studentFirst}'s ${json.packageHours}h package ` +
-            `(${json.remaining}h left on it). The extra hours will bill at the engagement rate on the ` +
-            `monthly invoice — confirm with the family before scheduling them.\n\nRegenerate anyway?`
-        )
-      ) {
-        return update(id, { ...body, confirm_overdraw: true }, done)
-      }
-      setMessage('Nothing changed — adjust the schedule or talk to the family first.')
+          `(${json.remaining}h left on it). The extra hours will bill at the engagement rate on the ` +
+          `monthly invoice — confirm with the family before scheduling them.`,
+      })
       return
     }
     // PL-211: an edit that clears the location gets the same walk-past.
     if (json.needsLocationConfirm) {
       setBusyId('')
-      if (
-        window.confirm(
+      setPendingUpdate({
+        id,
+        body,
+        done,
+        confirmKey: 'confirm_no_location',
+        text:
           `No location set — this schedule has no location and ${json.tutorName} has no default meeting ` +
-            `link, so the tutor and family won't see where or how to meet. It will sit in Needs Attention ` +
-            `until one is set.\n\nSave anyway?`
-        )
-      ) {
-        return update(id, { ...body, confirm_no_location: true }, done)
-      }
-      setMessage('Nothing changed — add a location, or set a default meeting link on the tutor.')
+          `link, so the tutor and family won't see where or how to meet. It will sit in Needs Attention ` +
+          `until one is set.`,
+      })
       return
     }
     setMessage(res.ok ? (typeof done === 'function' ? done(json) : done) : 'Error: ' + json.error)
     setBusyId('')
-    if (res.ok) onChange()
+    if (res.ok) {
+      setEditFor(null)
+      onChange()
+    }
+  }
+
+  // PL-387 A: open the editor prefilled from the engagement (PL-389B deep
+  // links pre-open it with the continuation context bannered above).
+  const openEditor = useCallback(
+    (e: Engagement) => {
+      setEditFor(e.id)
+      setEditSlots(e.recurrence.map((r) => ({ ...r })))
+      setEditTutorId(e.tutor_id)
+      setBusyWarnings([])
+      setMessage('')
+      void checkBusyConflicts(e.tutor_id, e.recurrence)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
+  useEffect(() => {
+    if (!openScheduleEditorFor) return
+    const e = engagements.find((x) => x.id === openScheduleEditorFor)
+    if (e) openEditor(e)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openScheduleEditorFor, engagements.length])
+
+  /** PL-387: same warn-don't-block conflict read the creation wizard does —
+   *  the tutor's Google busy over the next 4 weeks vs the proposed slots. */
+  async function checkBusyConflicts(tutorId: string, slots: RecurrenceSlotUI[]) {
+    try {
+      const tz = tutors.find((t) => t.id === tutorId)?.timezone ?? 'America/Denver'
+      const timeMin = new Date().toISOString()
+      const timeMax = new Date(Date.now() + 28 * 86400_000).toISOString()
+      const res = await fetch('/api/gcal/freebusy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorId, timeMin, timeMax }),
+      })
+      const json = await res.json().catch(() => ({}))
+      const busy: { start: string; end: string; title?: string | null }[] = json.busy ?? []
+      const warnings: string[] = []
+      for (const slot of slots) {
+        for (const b of busy) {
+          const bs = new Date(b.start)
+          const dowName = bs.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' })
+          const dow = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].indexOf(dowName) + 1
+          if (dow !== slot.weekday) continue
+          const startMin = Number(bs.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).replace(':', '')) // HHMM
+          const be = new Date(b.end)
+          const endMin = Number(be.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).replace(':', ''))
+          const [sh, sm] = slot.start_time.split(':').map(Number)
+          const slotStart = sh * 100 + sm
+          const slotEndH = sh + Math.floor((sm + slot.duration_minutes) / 60)
+          const slotEndM = (sm + slot.duration_minutes) % 60
+          const slotEnd = slotEndH * 100 + slotEndM
+          if (slotStart < endMin && slotEnd > startMin) {
+            warnings.push(
+              `${WEEKDAYS[slot.weekday - 1]} ${slot.start_time} overlaps ${
+                b.title ? `"${b.title}"` : 'a busy block'
+              } on the tutor's calendar (${bs.toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' })})`
+            )
+            break
+          }
+        }
+      }
+      setBusyWarnings(warnings)
+    } catch {
+      setBusyWarnings([]) // availability unknown — scheduling continues regardless
+    }
   }
 
   /** PL-165: the regenerate answer — every press produces a visible result. */
@@ -458,6 +554,15 @@ export default function EngagementsPanel({
                         {/* PL-165: the confirm body states the scope — a
                             tooltip alone left "does it resend everything?"
                             unanswered. */}
+                        {/* PL-387 A: the edit surface the regenerate note
+                            always pointed at — edit + regenerate is ONE save. */}
+                        <button
+                          onClick={() => (editFor === e.id ? setEditFor(null) : openEditor(e))}
+                          disabled={busyId === e.id}
+                          className="text-hgl-blue font-semibold underline"
+                        >
+                          {editFor === e.id ? 'close editor' : 'edit schedule'}
+                        </button>
                         <ConfirmAction
                           label="regenerate"
                           disabled={busyId === e.id}
@@ -517,6 +622,156 @@ export default function EngagementsPanel({
                       </>
                     )}
                   </span>
+                {/* PL-387 A: the inline edit-schedule form — same fields as
+                    New Student Schedule, prefilled with the current pattern.
+                    Saving re-projects FUTURE unbilled sessions only (the
+                    engagement API's update+regenerate); family + tutor get
+                    the pattern-change notices; completed/billed sessions are
+                    never touched. */}
+                {editFor === e.id && (
+                  <div className="mt-2 border border-hgl-blue/40 bg-blue-50/40 rounded-lg p-3 space-y-2 text-sm">
+                    {continuationContext && openScheduleEditorFor === e.id && (
+                      <p className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        {continuationContext}
+                      </p>
+                    )}
+                    <p className="font-semibold text-hgl-slate">Edit schedule</p>
+                    {editSlots.map((slot, i) => (
+                      <div key={i} className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={slot.weekday}
+                          onChange={(ev) => {
+                            const v = Number(ev.target.value)
+                            setEditSlots((p) => p.map((x, j) => (j === i ? { ...x, weekday: v } : x)))
+                          }}
+                          className="border border-gray-300 rounded p-1 bg-white"
+                        >
+                          {WEEKDAYS.map((w, wi) => (
+                            <option key={w} value={wi + 1}>
+                              {w}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="time"
+                          value={slot.start_time}
+                          onChange={(ev) =>
+                            setEditSlots((p) => p.map((x, j) => (j === i ? { ...x, start_time: ev.target.value } : x)))
+                          }
+                          className="border border-gray-300 rounded p-1"
+                        />
+                        <label className="text-xs text-gray-500">
+                          for{' '}
+                          <input
+                            type="number"
+                            min={15}
+                            max={480}
+                            step={15}
+                            value={slot.duration_minutes}
+                            onChange={(ev) =>
+                              setEditSlots((p) =>
+                                p.map((x, j) => (j === i ? { ...x, duration_minutes: Number(ev.target.value) } : x))
+                              )
+                            }
+                            className="border border-gray-300 rounded p-1 w-16"
+                          />{' '}
+                          minutes
+                        </label>
+                        <button
+                          onClick={() => setEditSlots((p) => p.filter((_, j) => j !== i))}
+                          className="text-xs text-red-600 underline"
+                        >
+                          remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setEditSlots((p) => [...p, { weekday: 1, start_time: '16:00', duration_minutes: 60 }])}
+                      className="text-xs text-hgl-blue underline"
+                    >
+                      + add a weekly slot
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Tutor:</span>
+                      <select
+                        value={editTutorId}
+                        onChange={(ev) => {
+                          setEditTutorId(ev.target.value)
+                          void checkBusyConflicts(ev.target.value, editSlots)
+                        }}
+                        className="border border-gray-300 rounded p-1 bg-white"
+                      >
+                        {tutors.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name ?? t.email}
+                          </option>
+                        ))}
+                        {!tutors.some((t) => t.id === editTutorId) && (
+                          <option value={editTutorId}>{e.instructors?.name ?? 'current tutor'}</option>
+                        )}
+                      </select>
+                    </div>
+                    {busyWarnings.length > 0 && (
+                      <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 space-y-0.5">
+                        {busyWarnings.map((w, i) => (
+                          <p key={i}>⚠ {w}</p>
+                        ))}
+                        <p>Warnings, not blocks — save anyway if it's right.</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      Saving re-plans the upcoming, not-yet-billed sessions onto these times (Google
+                      Calendar follows), tells the family and {e.instructors?.name ?? 'the tutor'} what
+                      changed, and never touches completed or already-billed sessions.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          void checkBusyConflicts(editTutorId, editSlots)
+                          update(
+                            e.id,
+                            { recurrence: editSlots, tutor_id: editTutorId, regenerate: true },
+                            regenerateMessage
+                          )
+                        }}
+                        disabled={busyId === e.id || editSlots.length === 0}
+                        className="bg-hgl-blue text-white text-xs font-bold px-3 py-1.5 rounded disabled:opacity-40"
+                      >
+                        Save schedule
+                      </button>
+                      <button onClick={() => setEditFor(null)} className="text-xs text-gray-500 underline">
+                        cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {/* No-native-dialogs: overdraw / no-location walk-pasts. */}
+                {pendingUpdate && pendingUpdate.id === e.id && (
+                  <div className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded px-3 py-2 space-y-1.5 max-w-xl">
+                    <p>{pendingUpdate.text}</p>
+                    <p className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          const pu = pendingUpdate
+                          setPendingUpdate(null)
+                          void update(pu.id, { ...pu.body, [pu.confirmKey]: true }, pu.done)
+                        }}
+                        className="bg-hgl-slate text-white font-bold px-2.5 py-1 rounded"
+                      >
+                        Proceed anyway
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPendingUpdate(null)
+                          setMessage('Nothing changed.')
+                        }}
+                        className="underline text-gray-600"
+                      >
+                        Cancel
+                      </button>
+                    </p>
+                  </div>
+                )}
                 </div>
               )
             })}
