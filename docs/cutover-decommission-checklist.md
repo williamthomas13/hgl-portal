@@ -52,6 +52,22 @@ email first (classes).
 
 9. **Squarespace "Classes" nav → the portal's /classes browse page** (PL-378 A) — repoint
    the nav link at cutover; the sqsp classes grid is replaced by the portal page.
+9b. **Homepage "Upcoming classes" strip → the portal embed (PL-385).** Paste this ONCE
+   into a Squarespace CODE block where the manual strip lives (then never edit it again —
+   every future change ships portal-side):
+   ```html
+   <div id="hgl-upcoming-classes">
+     <noscript><a href="https://hgl-portal.vercel.app/classes">See upcoming classes →</a></noscript>
+   </div>
+   <script src="https://hgl-portal.vercel.app/embed/upcoming-classes.js" defer></script>
+   ```
+   (After the domain cutover the two URLs become the portal's final domain — re-paste once
+   then, or paste with the final domain at cutover time.) The strip auto-reflects classes
+   opening/closing; when nothing is open it renders a modest "join the interest list" line
+   pointing at /classes — never an empty hole. Preview any time at
+   https://hgl-portal.vercel.app/sqsp-embed-test.html (the none-open state:
+   /embed/upcoming-classes.js?preview=empty). Script blocked → the noscript "See upcoming
+   classes →" link still shows.
 10. **MailerLite decommission:**
    - Export ALL lists + consent history (keep the archive).
    - Export the UNSUBSCRIBES and land them in portal suppression **before any portal
@@ -63,5 +79,10 @@ email first (classes).
    brand site stays). Export order history first. Gate: the PL-364 Printful add-on flow
    has round-tripped one real order in sandbox/test mode (notebooks are the last thing
    Commerce still does).
+   **PL-385 gate on the downgrade target:** the chosen plan must still allow CODE/EMBED
+   blocks (Squarespace Business tier or equivalent — record the chosen plan here when
+   decided: ______). If Scarlett lands on a plan without embeds, the honest fallback is a
+   plain "See upcoming classes →" button to /classes — note it on the homepage, don't fake
+   a strip.
 12. **Zapier** per the existing plan.
 13. Rich-results tester pass on /c pages + /team (PL-359 launch-tail item).
