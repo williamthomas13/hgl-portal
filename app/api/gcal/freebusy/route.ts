@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
-import { freeBusy, listBusyEvents, loadGcalConnection, GcalApiError } from '../../../utils/gcal'
+import { freeBusy, isPortalSyncedTutoringTitle, listBusyEvents, loadGcalConnection, GcalApiError } from '../../../utils/gcal'
 import { holdActive } from '../../../utils/gcal-sync'
 import { sessionRole } from '../../../utils/staff-gate'
 
@@ -84,10 +84,14 @@ export async function POST(req: Request) {
   // events.list first so the warning can NAME the conflict ("Conflicts with:
   // Lincoln Swenson @ HGL, 2:30–3:30"); private events keep title null. Plain
   // freebusy is the fallback — titles degrade, shading survives.
-  // PL-159: the portal rows are the truth for holds — drop Google's copy of
-  // our own HOLD events so a conflict never lists twice.
+  // PL-388 (widens PL-159's HOLD dedupe): the portal's tutoring rows are the
+  // truth — sessions render as themselves in every scheduling surface, so
+  // Google's synced copies must not shade behind them as gray echoes. Gray
+  // now means "busy with something OTHER than portal tutoring" (instructor
+  // class sessions deliberately stay — real teaching time, no portal row in
+  // the tutoring grid).
   const dedupeOwnHolds = (busy: { title?: string | null }[]) =>
-    busy.filter((b) => !(b.title ?? '').startsWith('HOLD: Tutoring:'))
+    busy.filter((b) => !isPortalSyncedTutoringTitle(b.title))
   try {
     const busy = await listBusyEvents(
       conn.key,

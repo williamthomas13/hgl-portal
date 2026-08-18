@@ -302,6 +302,21 @@ export async function getGcalEvent(
 
 export type BusyBlock = { start: string; end: string }
 
+/** PL-388/389: does this Google event title belong to a TUTORING SESSION the
+ *  portal itself synced ("Tutoring: Ana — SAT", with HOLD:/XCL- prefixes)?
+ *  Tutoring busy checks must not count these — the portal's tutoring_sessions
+ *  rows are the precise truth (with own-engagement exclusions the blunt
+ *  Google echo can't honor), so every synced copy is a double-count: the
+ *  visual gray echo behind each grid block, and the false continuation
+ *  conflicts. Instructor CLASS sessions ("HGL PSAT Prep — class session")
+ *  deliberately STAY busy — they are real teaching time with no
+ *  tutoring_sessions row behind them. Private events (title withheld) are
+ *  never treated as portal-synced. */
+export function isPortalSyncedTutoringTitle(title: string | null | undefined): boolean {
+  if (!title) return false
+  return /^(HOLD:\s*)?(XCL-\s*)?Tutoring:\s/.test(title)
+}
+
 /** A busy block that knows what it is. `title` is null when the event is
  *  marked private/confidential — render those as "busy (private event)". */
 export type TitledBusyBlock = BusyBlock & { title: string | null; private: boolean; allDay: boolean }

@@ -7,7 +7,7 @@ import { renderMarkdownBody } from './comms-md'
 import { formatTimeRange } from './dates'
 import { loadTutoringPackages, studentTutoringTier } from './lifecycle'
 import { generateOccurrences, horizonEndIso, addDaysIso } from './tutoring'
-import { loadGcalConnection, deleteGcalEvent, freeBusy } from './gcal'
+import { loadGcalConnection, deleteGcalEvent, isPortalSyncedTutoringTitle, listBusyEvents } from './gcal'
 import { enqueueGcalSync, processGcalQueue } from './gcal-sync'
 
 // PL-299 → PL-323: hours-block exhaustion — the FAMILY chooses what happens
@@ -456,7 +456,7 @@ export async function recordBlockDecision(
   // PL-323C: try to reserve the continuing sessions (same tutor only).
   const reservation = await reserveContinuation(e, choice, rate)
   if (reservation.outcome === 'staff') {
-    await routeContinuationToStaff(e, choice)
+    await routeContinuationToStaff(e, choice, reservation.reason)
     await sendContinueOutcome(e, choice, rate, null)
     return { ok: true, outcome: 'staff' }
   }
@@ -514,14 +514,39 @@ async function sendContinueOutcome(
  *  own recurrence — the same veto logic the reschedule picker uses (portal
  *  sessions overlap + Google free/busy when connected). ANY conflict routes
  *  the whole thing to staff — no silent sliding of times. */
+/** "Monday, September 7, 4:00–5:00 PM" — same treatment as reserved times. */
+function friendlySessionTime(startsAt: Date, endsAt: Date, tz: string): string {
+  return `${startsAt.toLocaleDateString('en-US', {
+    timeZone: tz,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })}, ${formatTimeRange(startsAt.toISOString(), endsAt.toISOString(), tz)}`
+}
+
+export type StaffRouteReason =
+  | { kind: 'no_recurrence' }
+  | { kind: 'not_enough_slots'; found: number; needed: number }
+  | { kind: 'clash'; collisions: { slot: string; withWhat: string }[] }
+  | { kind: 'insert_failed'; message: string }
+
 async function reserveContinuation(
   e: BlockEngagement,
   choice: ContinueChoice,
   rate: number
-): Promise<{ outcome: 'reserved'; times: string[] } | { outcome: 'staff' }> {
-  if (e.recurrence.length === 0) return { outcome: 'staff' } // one-off — a human plans it
+): Promise<{ outcome: 'reserved'; times: string[] } | { outcome: 'staff'; reason: StaffRouteReason }> {
+  if (e.recurrence.length === 0) return { outcome: 'staff', reason: { kind: 'no_recurrence' } } // one-off — a human plans it
 
-  const perSession = e.recurrence[0].duration_minutes / 60
+  // PL-389: dedupe the recurrence — a duplicated slot row ([Mon 16:00 ×2],
+  // seen live on a real engagement) would double-book every reserved week.
+  const recurrence = e.recurrence.filter(
+    (r, i, arr) =>
+      arr.findIndex(
+        (x) => x.weekday === r.weekday && x.start_time === r.start_time && x.duration_minutes === r.duration_minutes
+      ) === i
+  )
+
+  const perSession = recurrence[0].duration_minutes / 60
   // 'monthly' reserves through the normal horizon (next month's end) — the
   // monthly cycle keeps materializing from there; a finite choice reserves
   // exactly the chosen hours.
@@ -542,11 +567,14 @@ async function reserveContinuation(
 
   // Look far enough ahead to cover the chosen amount (≈6 months max).
   const farEnd = choice === 'monthly' ? horizonEndIso(e.tutorTimezone) : addDaysIso(fromIso, 185)
-  const occurrences = generateOccurrences(e.recurrence, fromIso, farEnd, e.tutorTimezone)
+  const occurrences = generateOccurrences(recurrence, fromIso, farEnd, e.tutorTimezone)
     .filter((o) => o.startsAt.getTime() > fromMs)
   const candidates = targetCount == null ? occurrences : occurrences.slice(0, targetCount)
   if (candidates.length === 0 || (targetCount != null && candidates.length < targetCount)) {
-    return { outcome: 'staff' }
+    return {
+      outcome: 'staff',
+      reason: { kind: 'not_enough_slots', found: candidates.length, needed: targetCount ?? 1 },
+    }
   }
 
   const windowStart = candidates[0].startsAt
@@ -555,32 +583,58 @@ async function reserveContinuation(
   // Veto 1: portal sessions — the tutor's (or student's) other bookings.
   const { data: busyRows } = await supabase
     .from('tutoring_sessions')
-    .select('starts_at, ends_at, engagement_id')
+    .select('starts_at, ends_at, engagement_id, students ( first_name )')
     .or(`tutor_id.eq.${e.tutorId},student_id.eq.${e.studentId}`)
     .in('status', ['proposed', 'confirmed'])
     .gte('ends_at', windowStart.toISOString())
     .lte('starts_at', windowEnd.toISOString())
-  const busy = ((busyRows as any[]) ?? [])
+  const busy: { start: number; end: number; what: string }[] = ((busyRows as any[]) ?? [])
     .filter((b) => b.engagement_id !== e.id)
-    .map((b) => ({ start: new Date(b.starts_at).getTime(), end: new Date(b.ends_at).getTime() }))
+    .map((b) => ({
+      start: new Date(b.starts_at).getTime(),
+      end: new Date(b.ends_at).getTime(),
+      what: `${(Array.isArray(b.students) ? b.students[0] : b.students)?.first_name ?? 'another student'}'s session`,
+    }))
 
-  // Veto 2: Google free/busy (the tutor's personal calendar), when connected.
+  // Veto 2: the tutor's OTHER Google commitments, when connected. PL-389-A:
+  // titled events, with the portal's own synced tutoring events EXCLUDED —
+  // veto 1 already covers portal sessions precisely (incl. the
+  // own-engagement exclusion the blunt Google echo can't honor), so counting
+  // Google's copies again is exactly how false conflicts happen. Class
+  // sessions and real personal events still veto; private events veto as
+  // "a private calendar event".
   try {
     const conn = await loadGcalConnection()
     if (conn?.status === 'connected' && conn.key && e.tutorEmail) {
-      const fb = await freeBusy(conn.key, e.tutorEmail, e.tutorCalendarId, windowStart.toISOString(), windowEnd.toISOString())
-      for (const b of fb) busy.push({ start: new Date(b.start).getTime(), end: new Date(b.end).getTime() })
+      const events = await listBusyEvents(
+        conn.key,
+        e.tutorEmail,
+        e.tutorCalendarId,
+        windowStart.toISOString(),
+        windowEnd.toISOString(),
+        e.tutorTimezone
+      )
+      for (const b of events) {
+        if (isPortalSyncedTutoringTitle(b.title)) continue
+        busy.push({
+          start: new Date(b.start).getTime(),
+          end: new Date(b.end).getTime(),
+          what: b.title ? `"${b.title}" on ${e.tutorName}'s calendar` : `a private event on ${e.tutorName}'s calendar`,
+        })
+      }
     }
   } catch (err) {
-    console.error('continuation freebusy failed (portal overlap check still applied):', err)
+    console.error('continuation busy lookup failed (portal overlap check still applied):', err)
   }
 
-  const clash = candidates.some((c) => {
+  const collisions: { slot: string; withWhat: string }[] = []
+  for (const c of candidates) {
     const s = c.startsAt.getTime()
     const en = c.endsAt.getTime()
-    return busy.some((b) => s < b.end && en > b.start)
-  })
-  if (clash) return { outcome: 'staff' }
+    const hit = busy.find((b) => s < b.end && en > b.start)
+    if (hit) collisions.push({ slot: friendlySessionTime(c.startsAt, c.endsAt, e.tutorTimezone), withWhat: hit.what })
+  }
+  if (collisions.length > 0) return { outcome: 'staff', reason: { kind: 'clash', collisions } }
 
   const { data: inserted, error } = await supabase
     .from('tutoring_sessions')
@@ -598,7 +652,7 @@ async function reserveContinuation(
     .select('id, starts_at, ends_at')
   if (error || !inserted) {
     console.error('continuation reserve insert failed — routing to staff:', error?.message)
-    return { outcome: 'staff' }
+    return { outcome: 'staff', reason: { kind: 'insert_failed', message: error?.message ?? 'unknown' } }
   }
   for (const s of inserted) await enqueueGcalSync(s.id, 'block continuation reserved')
   processGcalQueue().catch((err) => console.error('gcal queue drain failed (retry sweep covers):', err))
@@ -622,13 +676,29 @@ async function reserveContinuation(
 /** Conflict / no-recurrence / anything unclear: staff take over, exactly
  *  like a reschedule request — alert + dashboard row; the parent is told
  *  "we'll figure it out for you" by the caller. */
-async function routeContinuationToStaff(e: BlockEngagement, choice: ContinueChoice) {
+async function routeContinuationToStaff(e: BlockEngagement, choice: ContinueChoice, reason: StaffRouteReason) {
   await supabase
     .from('tutoring_engagements')
     .update({ block_continue_staff_at: new Date().toISOString() })
     .eq('id', e.id)
   const what =
     choice === 'monthly' ? 'monthly, until they cancel' : `${choice} more hours`
+  // PL-389-A: the alert names the EXACT reason — "a conflict or no workable
+  // recurring time" was undiagnosable (four different failures shared it).
+  const reasonHtml =
+    reason.kind === 'no_recurrence'
+      ? `<p>Why: the engagement has <strong>no recurring weekly pattern on file</strong> — there's
+         nothing to project the continuing sessions from.</p>`
+      : reason.kind === 'not_enough_slots'
+        ? `<p>Why: only <strong>${reason.found}</strong> recurring slot${reason.found === 1 ? '' : 's'} could be
+           projected where <strong>${reason.needed}</strong> ${reason.needed === 1 ? 'was' : 'were'} needed.</p>`
+        : reason.kind === 'clash'
+          ? `<p>Why — the continuing slots collide:</p>
+             <ul>${reason.collisions
+               .map((c) => `<li><strong>${c.slot}</strong> conflicts with ${c.withWhat}</li>`)
+               .join('')}</ul>`
+          : `<p>Why: reserving the sessions failed to save (${reason.message}) — likely transient;
+             retrying from the engagement should work.</p>`
   await sendAdminAlert({
     dedupeKey: `block_continue_staff:${e.id}:${Date.now()}`,
     adminEmail: process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmail.com',
@@ -636,7 +706,8 @@ async function routeContinuationToStaff(e: BlockEngagement, choice: ContinueChoi
     body: `
       <p><strong>${e.parentFirstName}</strong> confirmed continuing ${e.studentFirstName}'s
       tutoring (<strong>${what}</strong>), but the portal couldn't reserve the continuing
-      sessions with ${e.tutorName} — a conflict or no workable recurring time.</p>
+      sessions with ${e.tutorName}.</p>
+      ${reasonHtml}
       <p>The family was told you'll figure it out with them. Schedule the continuation from
       the engagement:</p>
       <p><a href="${emailBaseUrl()}/admin/tutoring?family=${e.familyId}">Open the engagement →</a></p>`,
