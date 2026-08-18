@@ -1,6 +1,6 @@
 import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { sendOnce, wrap, footerT, type Rendered } from './email'
+import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { formatTimeRange } from './dates'
 
@@ -124,7 +124,7 @@ async function sendReminder(opts: {
            ? 'If you just added them, you are all set — this is the only reminder today.'
            : 'This is the last automatic reminder — anything still open will show when your timecard is reviewed, and approval waits for it.'
        }</p>`,
-      { preheader: `${lines.length} session${lines.length === 1 ? '' : 's'} from ${dateLabel}`, footer: footerT() }
+      { preheader: `${lines.length} session${lines.length === 1 ? '' : 's'} from ${dateLabel}`, footer: footerStaff() }
     ),
   })
   const email = await renderRegistered(
@@ -226,7 +226,7 @@ export async function sweepWeeklyNotesDigest(now: Date = new Date()): Promise<nu
            <p><a href="${notesLink}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Write the notes</a></p>
            <p>A quick line per session is plenty — families see these, and timecard approval
            checks for them.</p>`,
-          { preheader: `${lines.length} session note${lines.length === 1 ? '' : 's'} still open from last week`, footer: footerT() }
+          { preheader: `${lines.length} session note${lines.length === 1 ? '' : 's'} still open from last week`, footer: footerStaff() }
         ),
       })
       const email = await renderRegistered(

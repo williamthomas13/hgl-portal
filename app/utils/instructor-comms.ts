@@ -1,6 +1,6 @@
 import { emailBaseUrl } from './base-url'
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { sendOnce, wrap, footerT, type Rendered } from './email'
+import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { renderMarkdownBody } from './comms-md'
 import { formatDateFull, formatDateOnly } from './dates'
@@ -130,7 +130,7 @@ export async function sendInstructorWelcome(
        <p>One line on what to expect: you'll get a weekly enrollment update while registration is
        open, and an FYI copy whenever we send your families logistics emails. Nothing in those
        needs a reply — they're there so you're never out of the loop.</p>`,
-      { preheader: 'Count, calendar, and what families have been told — one page.', footer: footerT() }
+      { preheader: 'Count, calendar, and what families have been told — one page.', footer: footerStaff() }
     ),
   })
   const email = await renderRegistered('IN_WELCOME', stub, extras, fallback)
@@ -203,7 +203,7 @@ export async function sendInstructorDigest(
        · registration closes ${extras.registrationCloseDate} · first session ${formatDateFull(bundle.firstSession)}.</p>
        <p style="margin:20px 0"><a href="${extras.instructorViewLink}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your class page</a></p>
        ${extras.digestNextStepsBlock}`,
-      { preheader: 'Your weekly enrollment picture.', footer: footerT() }
+      { preheader: 'Your weekly enrollment picture.', footer: footerStaff() }
     ),
   })
   const email = await renderRegistered('IN_DIGEST', stub, extras, fallback)
@@ -309,7 +309,7 @@ export async function maybeSendInstructorFyi(
       `<p><strong>FYI — this was just sent to your ${bundle.schoolLabel} ${bundle.classType}
        families. Nothing for you to do.</strong></p>
        ${extras.familyEmailBlock}`,
-      { preheader: 'Copy of what your families just received — nothing to do.', footer: footerT() }
+      { preheader: 'Copy of what your families just received — nothing to do.', footer: footerStaff() }
     ),
   })
   const email = await renderRegistered('IN_FYI', stub, extras, fallback)
@@ -401,7 +401,7 @@ export async function sendMinEnrollmentDecisionNote(
         }),
         {}
       ),
-      { preheader: 'Where the class stands — nothing you need to do.', footer: footerT() }
+      { preheader: 'Where the class stands — nothing you need to do.', footer: footerStaff() }
     ),
   })
   const email = await renderRegistered('IN_MIN_DECISION', stub, extras, fallback)

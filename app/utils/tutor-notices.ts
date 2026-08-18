@@ -1,7 +1,7 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { renderRegistered } from './comms-registered'
 import { formatTimeRange } from './dates'
-import { sendOnce, wrap, footerT, type Rendered } from './email'
+import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 
 // PL-81: T3-T stays mandatory (Google Calendar never notifies the tutor —
 // events live on their own calendar, edited by the delegated service
@@ -415,7 +415,7 @@ export async function composeTutorNotice(
 ${tutorScheduleBlock}
 ${tutorChangeBlock}
 <p>${glanceLine}</p>`,
-        { preheader: 'Your Google Calendar is already updated — this is the recap of what moved.', footer: footerT() }
+        { preheader: 'Your Google Calendar is already updated — this is the recap of what moved.', footer: footerStaff() }
       ),
     })
   )

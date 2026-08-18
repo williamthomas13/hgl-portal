@@ -1,7 +1,7 @@
 import { emailBaseUrl } from './base-url'
 import { formatDateRange } from './dates'
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { sendOnce, wrap, footerT, type Rendered } from './email'
+import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { sessionMinutes } from './work-types'
 
@@ -318,7 +318,7 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
              <p style="color:#64748b;font-size:13px">Marking a no-show doesn't change your pay —
              you're paid for the reserved time either way. That's also why sessions cancelled
              inside 24 hours stay on the card.</p>`,
-            { preheader: `${total ?? 0} hours for ${periodLabel}`, footer: footerT() }
+            { preheader: `${total ?? 0} hours for ${periodLabel}`, footer: footerStaff() }
           ),
         })
         const email = await renderRegistered(

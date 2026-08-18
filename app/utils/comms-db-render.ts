@@ -2,7 +2,9 @@ import { supabaseAdmin as supabase } from './supabase-admin'
 import {
   PERSONAL_FROM,
   footerR,
+  footerStaff,
   footerT,
+  staffAudienceTemplate,
   wrap,
   type Audience,
   type EnrollmentEmailContext,
@@ -66,7 +68,7 @@ async function loadActiveTemplate(templateKey: string): Promise<ActiveTemplate |
  */
 export function renderVersion(
   version: { subject: string; preheader: string; body_markdown: string; footer_note: string | null },
-  meta: { from_identity: string; category: string },
+  meta: { from_identity: string; category: string; template_key?: string },
   ctx: EnrollmentEmailContext,
   audience: Audience,
   extra: ExtraVars = {}
@@ -74,11 +76,16 @@ export function renderVersion(
   const vars = resolveVariables(ctx, audience, extra)
   const bodyHtml = renderMarkdownBody(version.body_markdown, vars)
   const footer =
-    // PL-201: marketing previews/test-sends show the address+unsubscribe
-    // footer real campaign sends carry.
-    meta.category === 'relationship' || meta.category === 'marketing'
-      ? footerR(ctx.unsubscribeUrl, version.footer_note ?? undefined)
-      : footerT(version.footer_note ?? undefined)
+    // PL-390: staff-audience templates (alerts, timecards, notes, coverage,
+    // instructor digests) carry the staff footer — staff don't sign in at
+    // the family portal.
+    meta.template_key && staffAudienceTemplate(meta.template_key)
+      ? footerStaff(version.footer_note ?? undefined)
+      : // PL-201: marketing previews/test-sends show the address+unsubscribe
+        // footer real campaign sends carry.
+        meta.category === 'relationship' || meta.category === 'marketing'
+        ? footerR(ctx.unsubscribeUrl, version.footer_note ?? undefined)
+        : footerT(version.footer_note ?? undefined)
   return {
     subject: renderPlain(version.subject, vars),
     html: wrap(bodyHtml, { preheader: renderPlain(version.preheader, vars), footer }),

@@ -268,6 +268,37 @@ function portalPointer(): string {
     — sign in with just this email address, no password needed.</p>`
 }
 
+// PL-390: the staff sign-in pointer — admins, tutors, and instructors all
+// sign in at /login with their @highergroundlearning.com Google account,
+// never the family email-link portal. ONE source (like the family pointer),
+// URL from emailBaseUrl so the domain cutover updates it in one place.
+function staffPortalPointer(): string {
+  return `<p style="font-size:13px;color:#64748b">Staff sign-in is always at
+    <a href="${emailBaseUrl()}/login" style="color:#64748b">${emailBaseUrl().replace(/^https?:\/\//, '')}/login</a>
+    — use your @highergroundlearning.com Google account.</p>`
+}
+
+/** PL-390: THE staff/admin email footer — same address + reply lines as the
+ *  family footer, staff sign-in pointer instead of the family one. */
+export function footerStaff(customText?: string) {
+  return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
+    ${staffPortalPointer()}
+    <p style="font-size:13px;color:#64748b">Higher Ground Learning · ${businessAddress()} ·
+    highergroundlearning.com · questions? Just reply to this email.</p>`
+}
+
+/** PL-390: template keys whose RECIPIENTS are staff (admin alerts, tutor
+ *  timecards/notes/coverage/notices, instructor digests) — the registry
+ *  render swaps in the staff footer for these. Counselors deliberately keep
+ *  the family pointer: they sign in at /portal with just their email,
+ *  exactly as that line says. */
+export function staffAudienceTemplate(key: string): boolean {
+  return (
+    /^(AL_|IN_|SUB_)/.test(key) ||
+    ['ADMIN_INSTRUCTOR_NUDGE', 'T5_TIMECARD_READY', 'T6_NOTES_EOD', 'T6_NOTES_WEEKLY', 'T6_NOTES_NUDGE', 'T3_TUTOR_NOTICE'].includes(key)
+  )
+}
+
 export function footerT(customText?: string) {
   return `${customText ? `<p style="font-size:13px;color:#64748b">${customText}</p>` : ''}
     ${portalPointer()}
@@ -2318,7 +2349,8 @@ export async function sendAdminAlert(opts: {
     subject: opts.subject,
     html: wrap(`<h2 style="color:#334155">${opts.subject}</h2>${opts.body}`, {
       preheader: opts.subject,
-      footer: footerT(),
+      // PL-390: admin alerts carry the staff footer, not the family one.
+      footer: footerStaff(),
     }),
   })
 

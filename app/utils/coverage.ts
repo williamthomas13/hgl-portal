@@ -10,7 +10,7 @@ import {
 } from './coverage-copy'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { formatTimeRange } from './dates'
-import { sendAdminAlert, sendOnce, wrap, footerT, type Rendered } from './email'
+import { sendAdminAlert, sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { enqueueGcalSync } from './gcal-sync'
 import { loadContactInfo } from './tutoring-emails'
@@ -211,7 +211,7 @@ export async function requestCoverage(opts: {
        moves onto your schedule and calendar, and the student's session-note history opens up to
        you so you can walk in prepared.</p>
        <p style="margin:20px 0"><a href="${base}/portal?view=tutor" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Answer in your portal</a></p>`,
-      { preheader: `${session.studentFirst} · ${session.subjectName} · ${when}`, footer: footerT() }
+      { preheader: `${session.studentFirst} · ${session.subjectName} · ${when}`, footer: footerStaff() }
     ),
   })
   const email = await renderRegistered(
@@ -350,7 +350,7 @@ export async function respondCoverage(opts: {
          <p>${outcomeLine}</p>
          ${noteButton}
          <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
-        { preheader: outcomeLine.slice(0, 90), footer: footerT() }
+        { preheader: outcomeLine.slice(0, 90), footer: footerStaff() }
       ),
     })
     const email = await renderRegistered(
@@ -537,7 +537,7 @@ export async function sendCoverageNote(opts: {
        <blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid #00AEEE;background:#f8fafc">${noteHtml}</blockquote>
        <p>It's saved with the rest of the handoff, so you don't need to keep this email.</p>
        <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
-      { preheader: `${fromName} on ${session.studentFirst} — ${when}`, footer: footerT() }
+      { preheader: `${fromName} on ${session.studentFirst} — ${when}`, footer: footerStaff() }
     ),
   })
   const email = await renderRegistered(
