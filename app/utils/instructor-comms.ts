@@ -4,7 +4,8 @@ import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { renderMarkdownBody } from './comms-md'
 import { formatDateFull, formatDateOnly } from './dates'
-import { classDetailsSendDate, localDate, registrationCloseFor, type ClassBundle } from './lifecycle'
+import { classDetailsSendDate, effectiveDeadline, localDate, localHour, registrationCloseFor, type ClassBundle } from './lifecycle'
+import { createHash } from 'crypto'
 import { createGcalEvent, deleteGcalEvent, loadGcalConnection, patchGcalEvent } from './gcal'
 
 // PL-78/PL-79: instructors stop being out of the loop. Every send and every
@@ -151,12 +152,21 @@ export async function sendInstructorWelcome(
 // milestone pings (same template, variant line, distinct dedupe keys).
 // ---------------------------------------------------------------------------
 
-export type DigestVariant = 'weekly' | 'min_met' | 'class_full' | 'registration_closed'
+// PL-403 (Scarlett's operating model): the roster is MOSTLY final at the
+// registration deadline; one or two stragglers may trickle in until class
+// start. So the briefing sends promptly the morning the deadline arrives —
+// roster + the straggler caveat — and each late joiner triggers ONE short
+// grouped roster-update note. "Final" is claimed never: the old
+// registration_closed ping flipped at class-local MIDNIGHT after the close
+// date (a date column has no time-of-day) and rode the hourly sweep with no
+// hour gate — landing 11 PM the night day one ENDED. The deadline email is
+// the briefing moment; class start is just the hard stop.
+export type DigestVariant = 'weekly' | 'min_met' | 'class_full' | 'deadline_briefing' | 'roster_addition'
 
-const MILESTONE_LINES: Record<Exclude<DigestVariant, 'weekly'>, string> = {
+const MILESTONE_LINES: Record<Exclude<DigestVariant, 'weekly' | 'roster_addition'>, string> = {
   min_met: '<p><strong>🎉 The class just reached its minimum — it officially runs.</strong></p>',
   class_full: '<p><strong>The class is full — every spot is taken.</strong></p>',
-  registration_closed: '<p><strong>Registration is closed — this is the final count.</strong></p>',
+  deadline_briefing: '<p><strong>The registration deadline has arrived — here&rsquo;s your roster.</strong></p>',
 }
 
 // PL-95: the "what happens from here" footer, per variant — reassurance
@@ -171,13 +181,16 @@ export function digestNextStepsHtml(bundle: ClassBundle, variant: DigestVariant)
     return `<p style="${style}">Nothing you need to do. From here, automatically: families get the class-details email on ${fourSend} — you'll receive an FYI copy · registration stays open through ${regClose}, and you'll get another ping if the class fills · the sessions are already on your calendar.</p>`
   }
   if (variant === 'class_full') {
-    return `<p style="${style}">Registration is effectively done — you'll get the final count when it closes on ${regClose}. Nothing to do.</p>`
+    return `<p style="${style}">Registration is effectively done — you'll get your roster briefing at the deadline. Nothing to do.</p>`
   }
-  if (variant === 'registration_closed') {
+  if (variant === 'deadline_briefing') {
     const paid = bundle.enrollments.filter(
       (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
     ).length
-    return `<p style="${style}">Final roster: ${paid} student${paid === 1 ? '' : 's'}. Families get their location reminder before day one (FYI to you) · attendance lives on your class page from the first session.</p>`
+    return `<p style="${style}">Your roster: ${paid} student${paid === 1 ? '' : 's'}. Registration technically stays open until the first session (${formatDateFull(bundle.firstSession)}), so a straggler or two may still join — you'll get a short note if anyone does. Families get their location reminder before day one (FYI to you) · attendance lives on your class page from the first session.</p>`
+  }
+  if (variant === 'roster_addition') {
+    return `<p style="${style}">Nothing you need to do — the roster on your class page is always current.</p>`
   }
   return `<p style="${style}">Nothing needed — this is just your weekly picture.</p>`
 }
@@ -186,11 +199,20 @@ export async function sendInstructorDigest(
   bundle: ClassBundle,
   instructor: ClassInstructor,
   variant: DigestVariant,
-  dedupeKey: string
+  dedupeKey: string,
+  /** PL-403: the roster_addition variant's grouped "+1" line — composed by
+   *  the sweep from the actual late joiners, so it can't be a static map
+   *  entry. */
+  opts?: { additionsLine?: string }
 ): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed'> {
   const extras = {
     ...baseExtras(bundle, instructor),
-    digestMilestoneLine: variant === 'weekly' ? '' : MILESTONE_LINES[variant],
+    digestMilestoneLine:
+      variant === 'weekly'
+        ? ''
+        : variant === 'roster_addition'
+          ? (opts?.additionsLine ?? '')
+          : MILESTONE_LINES[variant],
     digestNextStepsBlock: digestNextStepsHtml(bundle, variant),
   }
   const stub = instructorStub(bundle, instructor)
@@ -233,21 +255,66 @@ export async function sweepInstructorComms(
   if ((await sendInstructorWelcome(bundle, instructor)) === 'sent') result.welcomed++
 
   const regClose = registrationCloseFor(bundle)
+  // PL-403: civil-hours gate for the sweep-ridden digests — the old code had
+  // none, so date-boundary flips sent at ~00:05 class-local (and the close
+  // ping at 11 PM Denver, after day one had ended).
+  const civilHours = localHour(bundle.timezone) >= 8
   const isMonday = new Date(today + 'T12:00:00Z').getUTCDay() === 1
-  if (isMonday && today <= regClose && today < bundle.firstSession) {
+  if (isMonday && civilHours && today <= regClose && today < bundle.firstSession) {
     if ((await sendInstructorDigest(bundle, instructor, 'weekly', `in_digest:${bundle.id}:${today}`)) === 'sent')
       result.digested++
   }
-  if (today > regClose) {
-    if (
-      (await sendInstructorDigest(
-        bundle,
-        instructor,
-        'registration_closed',
-        `in_digest_closed:${bundle.id}`
-      )) === 'sent'
-    )
+
+  // PL-403: the deadline briefing — fires the morning the registration
+  // deadline arrives (deadline day itself: the roster is "mostly final" and
+  // the copy says stragglers may still join), never after the hard close.
+  // The deadline rides the dedupe key, so extending it re-arms the briefing
+  // (the min-enrollment pattern).
+  const deadline = effectiveDeadline(bundle)
+  const briefKey = `in_digest_brief:${bundle.id}:${deadline}`
+  if (civilHours && today >= deadline && today <= regClose) {
+    if ((await sendInstructorDigest(bundle, instructor, 'deadline_briefing', briefKey)) === 'sent')
       result.digested++
+  }
+
+  // PL-403: stragglers — anyone whose payment landed AFTER the last roster
+  // email (briefing or a previous +1 note) gets ONE short grouped note per
+  // pass: "+1: {student} — now N". Only once a briefing exists (before the
+  // deadline the weekly digest is the picture), and the class must not be
+  // long over (payments can settle late).
+  if (today >= deadline && today <= bundle.lastSession) {
+    const { data: rosterSends } = await supabase
+      .from('email_sends')
+      .select('dedupe_key, created_at, status')
+      .eq('class_id', bundle.id)
+      .or(`dedupe_key.like.in_digest_brief:${bundle.id}%,dedupe_key.like.in_roster_add:${bundle.id}%`)
+    const sentRows = ((rosterSends ?? []) as { dedupe_key: string; created_at: string; status: string }[]).filter(
+      (r) => !['cancelled', 'held', 'failed'].includes(r.status)
+    )
+    const briefed = sentRows.some((r) => r.dedupe_key.startsWith('in_digest_brief:'))
+    const lastNotified = sentRows.map((r) => r.created_at).sort().pop() ?? null
+    if (briefed && lastNotified) {
+      const paidRows = bundle.enrollments.filter(
+        (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+      )
+      const stragglers = paidRows.filter((e) => e.paid_at && e.paid_at > lastNotified)
+      if (stragglers.length > 0) {
+        const now_ = paidRows.length
+        const additionsLine = `<p><strong>${stragglers
+          .map((e) => `+1: ${e.studentFirstName} ${e.studentLastName}`)
+          .join(' · ')} — now ${now_} student${now_ === 1 ? '' : 's'}.</strong></p>`
+        const idsHash = createHash('md5')
+          .update(stragglers.map((e) => e.id).sort().join('|'))
+          .digest('hex')
+          .slice(0, 12)
+        if (
+          (await sendInstructorDigest(bundle, instructor, 'roster_addition', `in_roster_add:${bundle.id}:${idsHash}`, {
+            additionsLine,
+          })) === 'sent'
+        )
+          result.digested++
+      }
+    }
   }
   void now
   return result
