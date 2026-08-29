@@ -5,6 +5,7 @@ import { classLocationSentence } from '../utils/comms-variables'
 import { supabase } from '../utils/supabase'
 import SessionCalendar from '../components/SessionCalendar'
 import { formatDateAdmin, addDays, monthYear, publicTimeCityLabel, staffTimeCityLabel } from '../utils/dates'
+import { HGL_HQ_ADDRESS } from '../utils/hgl-address'
 import { DateHint, TimeSelect, TimezoneSelect } from './ui'
 import type { Instructor } from './instructors-panel'
 import { escapeLike } from '../utils/like-escape'
@@ -884,7 +885,7 @@ export default function ClassWizard({
                   setCounselorId('')
                   setAddingContact(false)
                   setDeliveryMode(v === '__open_online' ? 'online' : 'in_person')
-                  if (v === '__open_hgl') setDefaultLocation('380 W. Pierpont Ave, Salt Lake City, UT')
+                  if (v === '__open_hgl') setDefaultLocation(HGL_HQ_ADDRESS)
                 } else {
                   setAddingSchool(false)
                   setOpenKind('')

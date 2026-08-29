@@ -11,6 +11,7 @@ import {
   publicTimeCityLabel,
   timeRangeLabel,
 } from '../../utils/dates'
+import { hglMapsQuery, isAddressShaped } from '../../utils/hgl-address'
 import { zonedToUtc } from '../../utils/tutoring'
 import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, plainTextFromMarkdown, renderSiteMarkdown } from '../../utils/site-md'
@@ -661,7 +662,21 @@ export async function ClassPageView({
           ...(online
             ? { location: { '@type': 'VirtualLocation', url: pageUrl } }
             : cls.default_location
-              ? { location: { '@type': 'Place', name: cls.default_location, address: cls.default_location } }
+              ? {
+                  // PL-399: the schema.org address must be a real address —
+                  // room-only at-HGL locations resolve to HQ; a school class
+                  // with a room-only location keeps the name and honestly
+                  // omits the address (no school address on record).
+                  location: {
+                    '@type': 'Place',
+                    name: cls.default_location,
+                    ...(school
+                      ? isAddressShaped(cls.default_location)
+                        ? { address: cls.default_location }
+                        : {}
+                      : { address: hglMapsQuery(cls.default_location) }),
+                  },
+                }
               : {}),
         },
       },
@@ -913,7 +928,7 @@ export async function ClassPageView({
                 <div className="space-y-3" dangerouslySetInnerHTML={{ __html: md(locationBlock.body_markdown) }} />
                 <p className="mt-2 text-sm">
                   <a
-                    href={`https://maps.google.com/?q=${encodeURIComponent(cls.default_location)}`}
+                    href={`https://maps.google.com/?q=${encodeURIComponent(hglMapsQuery(cls.default_location))}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-hgl-blue underline"

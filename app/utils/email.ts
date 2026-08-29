@@ -7,6 +7,7 @@ import { convertUrlFor, refundRequestUrlFor, packageSavings, type AddonRow, type
 import { templateMetaFor, type RecipientRole } from './comms'
 import { contextTimeCityLabel, formatDateFull } from './dates'
 import { SCHOOL_BASED_REG_TEXT } from './exam-family'
+import { HGL_HQ_ADDRESS } from './hgl-address'
 
 // Server-side only. Every send goes through sendOnce(), which claims a row in
 // email_log first — Stripe webhook retries and cron re-runs never double-send.
@@ -241,7 +242,8 @@ export function calendarButton(ctx: EnrollmentEmailContext) {
 // cache refreshes behind the first render of a fresh lambda and every render
 // after that reads the stored value. "USA" included on purpose: many
 // recipients are international school families.
-const DEFAULT_BUSINESS_ADDRESS = '380 W. Pierpont Ave, Salt Lake City, UT 84101, USA'
+// PL-399: ONE source with the maps/collateral address (hgl-address.ts).
+const DEFAULT_BUSINESS_ADDRESS = HGL_HQ_ADDRESS
 const addressCache = { value: DEFAULT_BUSINESS_ADDRESS, at: 0 }
 function businessAddress(): string {
   if (Date.now() - addressCache.at > 60_000) {

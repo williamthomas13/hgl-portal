@@ -282,7 +282,9 @@ const LETTER_STATIC = {
   // §10.3: letterhead prints highergroundlearning.com (prep.com only forwards).
   site: 'www.highergroundlearning.com',
   phones: ['+1 801 524 0817', '+1 801 524 0827'],
-  address: ['380 W. Pierpont Ave', 'Salt Lake City, UT'],
+  // PL-399: derived from HGL_HQ_ADDRESS (ONE source) — the letterhead had
+  // been printing zip 84109; confirmed zip is 84101.
+  address: ['380 W. Pierpont Avenue', 'Salt Lake City, UT'],
   country: { en: 'U.S.A.', es: 'EE.UU.' },
   title: { en: 'Director, International Programs', es: 'Rector, Programas Internacionales' },
 }
@@ -459,7 +461,7 @@ export function letterHtml(m: CollateralModel, lang: CollateralLanguage, assets:
   ${bottomStrip}
   <div class="bottom-content">
     <div class="bc-item">${ICON.phone}<div class="phones">${LETTER_STATIC.phones.map((p) => `<div>${p}</div>`).join('')}</div></div>
-    <div class="bc-item" style="margin-left:8mm;">${ICON.pin}<div class="bc-addr">${LETTER_STATIC.address.join('<br>')}<br>84109&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${LETTER_STATIC.country[lang]}</div></div>
+    <div class="bc-item" style="margin-left:8mm;">${ICON.pin}<div class="bc-addr">${LETTER_STATIC.address.join('<br>')}<br>84101&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${LETTER_STATIC.country[lang]}</div></div>
   </div>`
 
   return pageShell(css, body, assets, lang)
