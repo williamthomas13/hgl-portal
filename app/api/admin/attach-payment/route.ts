@@ -6,6 +6,7 @@ import { handleClassCheckoutCompleted } from '../../../utils/checkout-paid'
 import { sendAdminAlert } from '../../../utils/email'
 import { ADMIN_EMAIL } from '../../../utils/lifecycle'
 import { emailBaseUrl } from '../../../utils/base-url'
+import { staffLabel, staffNameMap } from '../../../utils/staff-names'
 
 // PL-92: the missing mechanism behind the webhook-mismatch alert's promise —
 // "Attach this payment to enrollment X" runs the normal paid-webhook
@@ -164,11 +165,13 @@ export async function POST(req: Request) {
     )
     // A console line dies with the lambda. The override is a money decision,
     // so it also goes to the Ops Director's inbox where it can be questioned.
+    // PL-395: the alert names the person; the console line above keeps the raw email.
+    const callerName = staffLabel(await staffNameMap(), caller.email)
     await sendAdminAlert({
       dedupeKey: `attach_override:${session.id}:${enrollment.id}`,
       adminEmail: ADMIN_EMAIL,
       subject: 'A payment was attached across mismatched emails',
-      body: `<p><strong>${caller.email}</strong> attached a Stripe payment to a registration whose
+      body: `<p><strong>${callerName}</strong> attached a Stripe payment to a registration whose
         email addresses don't match the payer.</p>
         <p>Payer: <strong>${payerEmail || 'none on the session'}</strong><br>
         Registration on file: ${enrollmentEmails.join(', ') || 'no address'}<br>

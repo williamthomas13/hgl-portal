@@ -7,8 +7,18 @@
 // string at UTC noon AND formats in UTC, so the output is the calendar date
 // written in the string regardless of server or browser timezone.
 
-/** Anchor a YYYY-MM-DD string at UTC noon (immune to DST edge cases). */
+/** Anchor a YYYY-MM-DD string at UTC noon (immune to DST edge cases).
+ *  PL-400: refuses non-ISO input LOUDLY — throws in dev, console.errors in
+ *  prod — instead of silently rendering "Invalid Date" to staff. The
+ *  dashboard shipped exactly that: a formatter wrapped an already-formatted
+ *  "October 13" and every browser showed garbage. Silent garbage is how it
+ *  got past review; noise is the guard. */
 function utcAnchor(iso: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(iso)) {
+    const msg = `date formatter got non-ISO input ${JSON.stringify(iso)} — pass the raw YYYY-MM-DD value, not display text (PL-400)`
+    if (process.env.NODE_ENV !== 'production') throw new Error(msg)
+    console.error(msg)
+  }
   return new Date(iso.slice(0, 10) + 'T12:00:00Z')
 }
 
@@ -177,13 +187,24 @@ export function friendlyZoneCity(timezone: string, location?: string | null): st
   return cityFromLocation(location) ?? timezoneCityLabel(timezone)
 }
 
-/** PL-353: the city label PUBLIC pages put on times — the class/school's OWN
- *  city, never the IANA zone city leaking into copy ("Düsseldorf", not
- *  "Berlin"). Resolution: the school's city field → the class's
- *  display_cities list (online classes; joined plainly when several) → a
- *  city read from the location string (PL-305) → the generic zone city as
- *  the last resort. ONE source for every public "… time" label; admin
- *  surfaces may keep zone ids. */
+/** PL-398: the city label STAFF surfaces put on times. Staff read city names
+ *  too (Scarlett's verdict retiring PL-353's admin carve-out): the org zone
+ *  America/Denver reads "Salt Lake City" (HGL's home, HGL_HOME_CITY — the
+ *  zone city "Denver" is exactly the confusion PL-305 fixed for parents),
+ *  any other zone reads its own city ("Rome" for Europe/Rome). Per-class
+ *  contexts keep using publicTimeCityLabel with the class's own facts. */
+export function staffTimeCityLabel(timezone: string): string {
+  return timezone === 'America/Denver' ? HGL_HOME_CITY : timezoneCityLabel(timezone)
+}
+
+/** PL-353 (amended PL-398): the city label pages put on times — the
+ *  class/school's OWN city, never the IANA zone city leaking into copy
+ *  ("Düsseldorf", not "Berlin"). Resolution: the school's city field → the
+ *  class's display_cities list (online classes; joined plainly when several)
+ *  → a city read from the location string (PL-305) → the generic zone city
+ *  as the last resort. ONE source for every public "… time" label.
+ *  PL-398 rule: public AND staff displays speak city names; IANA ids live in
+ *  timezone pickers, settings readouts, and debug output only. */
 /** PL-382: HGL's home base — what a no-school in-person class "carries" as
  *  its city. HGL HQ is in Salt Lake City; the IANA zone would say "Denver". */
 export const HGL_HOME_CITY = 'Salt Lake City'

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { WEEKDAYS } from './types'
 import type { Subject, Tutor } from './types'
 import { groupSubjects } from '../../utils/subject-groups'
+import { staffTimeCityLabel } from '../../utils/dates'
 
 // PL-226: tutors ARE instructors, and this panel is now a read-only
 // REPRESENTATION of that shared record + a matching FINDER (subject +
@@ -361,7 +362,7 @@ export default function TutorsPanel({
                 <td className="px-3 py-2 text-gray-600 max-w-64">
                   <SubjectSummaryCell tutor={t} subjects={subjects} filter={subjectFilter} />
                 </td>
-                <td className="px-3 py-2 text-gray-600">{t.timezone}</td>
+                <td className="px-3 py-2 text-gray-600" title={t.timezone ?? undefined}>{t.timezone ? `${staffTimeCityLabel(t.timezone)} time` : '—'}</td>
                 <td className="px-3 py-2 text-gray-600 max-w-44">
                   {(t.offer_windows ?? []).length > 0 ? (
                     <span className="text-xs">

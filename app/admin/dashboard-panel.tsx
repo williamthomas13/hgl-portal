@@ -4,6 +4,7 @@ import { formatDateAdmin } from '../utils/dates'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVisibleInterval } from '../components/use-visible-interval'
 import { SystemHealthBody, type SystemHealth } from './system-health-card'
+import { useStaffName } from './staff-name'
 
 // PL-100: the landing dashboard. Needs Attention mirrors the alert family
 // but is STATE-DRIVEN — the API recomputes every row from live state, and
@@ -111,6 +112,7 @@ function deadlineLabel(iso: string): string {
 type UpcomingClass = {
   id: string
   label: string
+  /** raw YYYY-MM-DD from the API — formatted at render (PL-400) */
   startDate: string
   paid: number
   min: number | null
@@ -150,6 +152,7 @@ export default function DashboardPanel({
    *  of the caller's real role — used by the view-as manager simulation. */
   simulatedManager?: boolean
 } = {}) {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [attention, setAttention] = useState<AttentionRow[] | null>(null)
   const [activity, setActivity] = useState<ActivityRow[]>([])
   const [upcoming, setUpcoming] = useState<UpcomingClass[]>([])
@@ -403,7 +406,7 @@ export default function DashboardPanel({
                   </span>
                   <span className="block text-gray-700 whitespace-pre-line">{linkify(r.text)}</span>
                   {r.manual && (
-                    <span className="block text-[10px] text-gray-400 mt-0.5">{r.manual.by}</span>
+                    <span className="block text-[10px] text-gray-400 mt-0.5">{staffName(r.manual.by)}</span>
                   )}
                 </>
               )

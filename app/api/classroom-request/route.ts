@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { verifyClassroomRequestToken, ADMIN_EMAIL } from '../../utils/lifecycle'
 import { sendAdminAlert } from '../../utils/email'
+import { staffLabel, staffNameMap } from '../../utils/staff-names'
 
 // Classroom-request form submit (PHASE4_SPEC §4b). Tokenized, no login.
 // Writes classes.default_location, marks the request answered, and alerts
@@ -60,11 +61,13 @@ export async function POST(request: Request) {
 
   const school = Array.isArray(cls.schools) ? cls.schools[0] : cls.schools
   const label = `${(school as { nickname?: string } | null)?.nickname ?? 'HGL'} ${cls.class_type}`
+  // PL-395: the alert names the counselor (contacts row), email as fallback.
+  const counselorName = counselorEmail ? staffLabel(await staffNameMap(), counselorEmail) : ''
   await sendAdminAlert({
     dedupeKey: `classroom_answer:${classId}:${Date.now()}`,
     adminEmail: ADMIN_EMAIL,
     subject: `Counselor set ${label} location: ${answer}`,
-    body: `<p>${counselorEmail || 'A counselor'} answered the classroom request for
+    body: `<p>${counselorName || 'A counselor'} answered the classroom request for
       <strong>${label}</strong>: <strong>${answer}</strong>.</p>
       <p>The class location is updated everywhere. If the class-details email already went out,
       the schedule-update email goes out automatically on the next hourly sweep.</p>`,

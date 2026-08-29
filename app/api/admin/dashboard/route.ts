@@ -977,8 +977,11 @@ export async function GET() {
     total: Number(overdueUnpaid.reduce((s, inv) => s + Number(inv.total ?? 0), 0).toFixed(2)),
   }
 
-  // PL-330: the card speaks plain English ("starts September 2"), never raw
-  // ISO, and "starts" means the class's real first day (PL-1).
+  // PL-330: the card speaks plain English, never raw ISO — and "starts"
+  // means the class's real first day (PL-1). PL-400: the API ships the RAW
+  // ISO date and the panel formats at render (the codebase-wide pattern);
+  // shipping pre-formatted text here is what let formatDateAdmin double-
+  // format it into "Invalid Date".
   const upcoming = liveClasses
     .filter((c) => firstDayOf(c) >= todayIso)
     .sort((a, b) => String(firstDayOf(a)).localeCompare(String(firstDayOf(b))))
@@ -986,7 +989,7 @@ export async function GET() {
     .map((c) => ({
       id: c.id,
       label: label(c),
-      startDate: plainDate(firstDayOf(c), todayIso),
+      startDate: String(firstDayOf(c) ?? '').slice(0, 10),
       paid: (c.enrollments ?? []).filter((e: any) => ['Paid', 'Completed'].includes(e.payment_status)).length,
       min: c.min_enrollment,
       cap: null as number | null,

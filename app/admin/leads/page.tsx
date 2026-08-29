@@ -6,6 +6,7 @@ import { supabase } from '../../utils/supabase'
 import { CollapsibleSection } from '../ui'
 import { ConfirmAction } from '../tutoring/confirm'
 import { LEAD_STATUS_LABELS } from '../../utils/lead-assign-copy'
+import { useStaffName } from '../staff-name'
 
 // Lead pipeline (Phase 7e, docs/PHASE7_SPEC.md §11) — replaces the Ops
 // Director's "pending students" spreadsheet. Reads run in the browser under
@@ -781,6 +782,7 @@ function LeadDetail({
   offers: Offer[]
   onChange: () => void
 }) {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [status, setStatus] = useState(lead.status)
   const [assignedTo, setAssignedTo] = useState(lead.assigned_to ?? '')
   // PL-174: the field collapses to a small affordance; empty is normal.
@@ -973,7 +975,7 @@ function LeadDetail({
           </span>
         ) : lead.assigned_to ? (
           <span>
-            Assigned to <span className="font-semibold text-gray-600">{lead.assigned_to}</span>{' '}
+            Assigned to <span className="font-semibold text-gray-600" title={lead.assigned_to}>{staffName(lead.assigned_to)}</span>{' '}
             <button type="button" className="underline text-hgl-blue" onClick={() => setAssignOpen(true)}>
               change
             </button>
@@ -1426,6 +1428,7 @@ function OffersPanel({
 // ---------------------------------------------------------------------------
 
 export default function LeadsAdmin() {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [leads, setLeads] = useState<Lead[]>([])
   const [offers, setOffers] = useState<Offer[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -1594,8 +1597,8 @@ export default function LeadsAdmin() {
                                 {lead.subjects ? ` · ${lead.subjects}` : ''} · added {fmtDay(lead.created_at)}
                               </span>
                               {lead.assigned_to && (
-                                <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
-                                  {lead.assigned_to.split('@')[0]}
+                                <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5" title={lead.assigned_to}>
+                                  {staffName(lead.assigned_to)}
                                 </span>
                               )}
                               {lead.consult_at && (

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
+import { useStaffName } from './staff-name'
 
 // PL-348: Settings → Class pages — the shared content every public /c/{slug}
 // page renders below its class-specific top. Edit once, every class page
@@ -331,6 +332,7 @@ function GroupHeader({
 }
 
 export default function SiteContentPanel() {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [blocks, setBlocks] = useState<Block[] | null>(null)
   const [preview, setPreview] = useState<PreviewInfo | null>(null)
   const [error, setError] = useState('')
@@ -486,10 +488,10 @@ export default function SiteContentPanel() {
           {isDirty(b) && savedKey !== b.key && <span className="text-amber-700">Unsaved changes. </span>}
           Last changed {new Date(b.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
           {b.updated_by ? (
-            ` by ${b.updated_by}`
+            ` by ${staffName(b.updated_by)}`
           ) : b.reviewed_by ? (
             // PL-377: approval marker, honestly separate from edits.
-            ` — approved as-is by ${b.reviewed_by}${b.reviewed_at ? `, ${new Date(b.reviewed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}` : ''}`
+            ` — approved as-is by ${staffName(b.reviewed_by)}${b.reviewed_at ? `, ${new Date(b.reviewed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}` : ''}`
           ) : (
             <>
               {' (seeded copy — not yet reviewed) '}

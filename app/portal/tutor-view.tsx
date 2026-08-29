@@ -20,6 +20,7 @@ import CoveragePanel, {
 import { supabaseAdmin } from '../utils/supabase-admin'
 import { loadContactInfo } from '../utils/tutoring-emails'
 import { escapeLike } from '../utils/like-escape'
+import { staffTimeCityLabel } from '../utils/dates'
 
 // Tutor view (Phase 7b §7): upcoming 1-on-1 sessions plus timecards. The
 // twice-monthly "reconstruct my calendar into a timecard" ritual becomes a
@@ -80,6 +81,28 @@ export default async function TutorView({
       .order('session_date')
       .limit(10),
   ])
+
+  // PL-395: handoff attributions render the instructor's NAME (the email
+  // stays the honest fallback for an address no instructor row knows).
+  const handoffEmails = [
+    ...new Set(
+      ((upcoming as any[]) ?? [])
+        .map((s) => one<any>(s.students)?.tutoring_handoff_by)
+        .filter(Boolean) as string[]
+    ),
+  ]
+  let handoffNames: Record<string, string> = {}
+  if (handoffEmails.length > 0) {
+    const { data: handoffInstructors } = await supabase
+      .from('instructors')
+      .select('email, name')
+      .in('email', handoffEmails)
+    handoffNames = Object.fromEntries(
+      ((handoffInstructors as any[]) ?? [])
+        .filter((i) => i.email && i.name)
+        .map((i) => [i.email.toLowerCase(), i.name])
+    )
+  }
 
   // Sessions on the most recent actionable (not yet approved) timecard.
   const actionable = (timecards ?? []).find((t: any) => t.status === 'open' || t.status === 'tutor_confirmed')
@@ -327,7 +350,7 @@ export default async function TutorView({
       <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-6">
         <h2 className="text-lg font-bold text-hgl-slate mb-1">Upcoming sessions</h2>
         <p className="text-xs text-gray-500 mb-4">
-          Times in {tz}. These also live on your Google Calendar — reschedules and cancellations go
+          Times in {staffTimeCityLabel(tz)} time. These also live on your Google Calendar — reschedules and cancellations go
           through {opsFirstName}, and your portal and Google Calendar both update automatically.
         </p>
         {/* PL-53d: the class instructor's handoff, shown once per student
@@ -347,7 +370,11 @@ export default async function TutorView({
               {handoffs.map((st: any) => (
                 <p key={st.id} className="text-xs text-gray-700 bg-purple-50 border border-purple-200 rounded p-2">
                   <span className="font-semibold">
-                    Handoff for {st.first_name} (from {st.tutoring_handoff_by ?? 'their class instructor'}):
+                    Handoff for {st.first_name} (from{' '}
+                    {st.tutoring_handoff_by
+                      ? (handoffNames[st.tutoring_handoff_by.toLowerCase()] ?? st.tutoring_handoff_by)
+                      : 'their class instructor'}
+                    ):
                   </span>{' '}
                   {st.tutoring_handoff_note}
                 </p>

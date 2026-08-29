@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
 import { formatTimestampAdmin } from '../utils/dates'
+import { useStaffName } from './staff-name'
 
 // QuickBooks panel (Phase 6, docs/PHASE6_SPEC.md §8): connection card + item
 // mapping (admin-only — spec §6) and the filterable sync log with retry
@@ -201,6 +202,7 @@ function DismissControl({ id, busy, onDone }: { id: string; busy: boolean; onDon
 }
 
 export default function QboPanel({ status, onStatusChange }: { status: QboStatus | null; onStatusChange: () => void }) {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [log, setLog] = useState<SyncLogRow[]>([])
   const [logFilter, setLogFilter] = useState('')
   const [busy, setBusy] = useState(false)
@@ -386,7 +388,7 @@ export default function QboPanel({ status, onStatusChange }: { status: QboStatus
                 {status.connectedBy && (
                   <span className="text-gray-400">
                     {' '}
-                    · connected by {status.connectedBy}
+                    · connected by {staffName(status.connectedBy)}
                     {status.connectedAt ? ` on ${formatTimestampAdmin(status.connectedAt)}` : ''}
                   </span>
                 )}

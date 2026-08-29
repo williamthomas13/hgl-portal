@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../utils/supabase'
 import { ConfirmAction } from './confirm'
+import { useStaffName } from '../staff-name'
 
 // Google Calendar connection panel (Phase 7a §4). Admin pastes the service-
 // account JSON key (encrypted server-side; never readable back out); staff
@@ -30,6 +31,7 @@ type FailedRow = {
 }
 
 export default function GcalPanel({ simulatedManager = false }: { simulatedManager?: boolean } = {}) {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [status, setStatus] = useState<Status | null>(null)
   const [failed, setFailed] = useState<FailedRow[]>([])
   const [saJson, setSaJson] = useState('')
@@ -114,7 +116,7 @@ export default function GcalPanel({ simulatedManager = false }: { simulatedManag
         {status.clientEmail && (
           <span className="text-gray-600">
             {status.clientEmail}
-            {status.connectedBy && <span className="text-gray-400"> · connected by {status.connectedBy}</span>}
+            {status.connectedBy && <span className="text-gray-400"> · connected by {staffName(status.connectedBy)}</span>}
           </span>
         )}
         <span className="ml-auto text-gray-500">

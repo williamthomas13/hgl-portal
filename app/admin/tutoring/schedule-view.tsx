@@ -5,7 +5,7 @@ import { supabase } from '../../utils/supabase'
 import { autoTutorColor } from '../../utils/calendar-colors'
 import { classifyNotice, isoWeekday, zonedToUtc } from '../../utils/tutoring'
 import { DateHint } from '../ui'
-import { formatTimeRange, hhmmRange } from '../../utils/dates'
+import { formatTimeRange, hhmmRange, staffTimeCityLabel } from '../../utils/dates'
 import { WEEKDAYS, fmtTime, wallClock, type RecurrenceSlotUI, type SessionRow, type Tutor } from './types'
 import type { WizardDraft } from './engagement-wizard'
 
@@ -1007,8 +1007,8 @@ export default function ScheduleView({
         </div>
         <span className="text-gray-500 text-xs">
           {mode === 'week'
-            ? `${range.days[0]} → ${range.days[6]} · times in ${tz}`
-            : `${range.days[0]} · times in ${tz}`}
+            ? `${range.days[0]} → ${range.days[6]} · times in ${staffTimeCityLabel(tz)} time`
+            : `${range.days[0]} · times in ${staffTimeCityLabel(tz)} time`}
           {mode === 'week' && busy.length > 0 && ' · gray = busy per Google Calendar'}
           {mode === 'week' &&
             selectedTutors.length > 1 &&
@@ -1517,7 +1517,7 @@ function SessionDialog({
           <p className="text-gray-500">
             {new Date(session.starts_at).toLocaleDateString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' })}
             {' · '}
-            {fmtTime(session.starts_at, tz)}–{fmtTime(session.ends_at, tz)} ({tz})
+            {fmtTime(session.starts_at, tz)}–{fmtTime(session.ends_at, tz)} ({staffTimeCityLabel(tz)} time)
           </p>
           <p className="text-xs text-gray-400 mt-1">
             Status: <span className="font-semibold">{session.status}</span>
@@ -1621,13 +1621,13 @@ function SessionDialog({
             <p className="text-xs text-gray-500">
               {action === 'reschedule' ? (
                 <>
-                  New slot (times in {tz}). Notice is auto-classified:{' '}
+                  New slot (times in {staffTimeCityLabel(tz)} time). Notice is auto-classified:{' '}
                   <span className={`font-bold ${autoNotice === 'late' ? 'text-red-600' : 'text-green-700'}`}>
                     {autoNotice === 'late' ? '< 24h — $40/hour late-reschedule policy applies (7c bills it)' : '≥ 24h — free reschedule'}
                   </span>
                 </>
               ) : (
-                `Correct this session's time (no policy classification — use Reschedule for family-requested changes). Times in ${tz}.`
+                `Correct this session's time (no policy classification — use Reschedule for family-requested changes). Times in ${staffTimeCityLabel(tz)} time.`
               )}
             </p>
             <div className="flex gap-2 items-center flex-wrap">

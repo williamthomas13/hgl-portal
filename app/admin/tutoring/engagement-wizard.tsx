@@ -5,13 +5,14 @@ import { supabase } from '../../utils/supabase'
 import { DateHint, SearchCombobox, TimeSelect } from '../ui'
 import AvailabilityGrid from '../../components/AvailabilityGrid'
 import { generateOccurrences, horizonEndIso, addDaysIso } from '../../utils/tutoring'
-import { formatTimeRange, hhmmRange } from '../../utils/dates'
+import { formatTimeRange, hhmmRange, staffTimeCityLabel } from '../../utils/dates'
 import {
   availabilitySummary,
   slotOutsideAvailability,
   suggestWeeklySlots,
   type AvailabilityRange,
 } from '../../utils/availability'
+import { useStaffName } from '../staff-name'
 import {
   WEEKDAYS,
   familyLabel,
@@ -113,6 +114,7 @@ export default function EngagementWizard({
   onDraftsChanged?: () => void
   onCreated: () => void
 }) {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [studentFilter, setStudentFilter] = useState('')
   const [studentId, setStudentId] = useState('')
   // Adopt the deep-link preload once the student list is in.
@@ -1350,7 +1352,7 @@ export default function EngagementWizard({
         {handoffNote && (
           <p className="text-xs text-gray-700 mt-1 bg-purple-50 border border-purple-200 rounded p-2">
             <span className="font-semibold">
-              Handoff from {handoffNote.by ?? 'the class instructor'}:
+              Handoff from {handoffNote.by ? staffName(handoffNote.by) : 'the class instructor'}:
             </span>{' '}
             {handoffNote.note}
           </p>
@@ -1362,7 +1364,7 @@ export default function EngagementWizard({
         <label className="block text-xs text-gray-600 font-semibold mb-1">
           4 · Weekly schedule{' '}
           <span className="font-normal text-gray-400">
-            (times in {tutor ? `${tutor.timezone}` : 'the tutor’s timezone'}; leave empty for one-off-only)
+            (times in {tutor ? `${staffTimeCityLabel(tutor.timezone)} time` : 'the tutor’s local time'}; leave empty for one-off-only)
           </span>
         </label>
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CALENDAR_COLORS, textOnColor, type CalendarStatus } from '../../utils/calendar-colors'
-import { formatDateOnly } from '../../utils/dates'
+import { formatDateOnly, staffTimeCityLabel } from '../../utils/dates'
 import { ConfirmAction } from '../tutoring/confirm'
 import { SidebarNav, CLASSES_SIDEBAR } from '../sidebar'
 
@@ -292,7 +292,7 @@ export default function AdminCalendarPage() {
         key={b.id}
         href={b.href}
         title={`${b.title} · ${fmtTime(b.startsAt)}–${fmtTime(b.endsAt)} · ${b.portalStatus}${b.tutorName ? ` · ${b.tutorName}` : ''}`}
-        className="block rounded px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden hover:opacity-85"
+        className="block h-full rounded px-1.5 py-0.5 text-[11px] leading-tight overflow-hidden hover:opacity-85"
         style={{
           background: bg,
           color: text,
@@ -369,7 +369,7 @@ export default function AdminCalendarPage() {
           ? `Week of ${formatDateOnly(rangeStartIso, { month: 'long', day: 'numeric', year: 'numeric' })}`
           : monthLabel}
       </span>
-      <span className="text-xs text-gray-400">· America/Denver</span>
+      <span className="text-xs text-gray-400">· {staffTimeCityLabel(TZ)} time</span>
       <span className="flex-1" />
       <select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} className="border rounded p-1.5">
         <option value="">everyone</option>
@@ -410,7 +410,7 @@ export default function AdminCalendarPage() {
             <h1 className="text-2xl font-bold text-hgl-slate">Calendar</h1>
             <p className="text-sm text-gray-500">
               1-on-1 sessions, class sessions, and proposed holds — all times in{' '}
-              <span className="font-semibold">America/Denver</span>. Read-only: click any block to
+              <span className="font-semibold">{staffTimeCityLabel(TZ)} time</span>. Read-only: click any block to
               open its record.
             </p>
           </div>
@@ -630,29 +630,68 @@ export default function AdminCalendarPage() {
                           />
                         )
                       })}
-                      {dayBlocks.map((b, i) => {
-                        const startH = Math.max(denverHour(b.startsAt), HOUR_START)
-                        const endH = Math.min(Math.max(denverHour(b.endsAt), startH + 0.4), HOUR_END)
-                        // naive overlap fanning: nth overlapping block indents
-                        const overlaps = dayBlocks.filter(
-                          (o, j) => j < i && o.startsAt < b.endsAt && o.endsAt > b.startsAt
-                        ).length
-                        return (
+                      {(() => {
+                        // PL-397: true duration geometry + lane layout. The
+                        // wrapper always had duration-proportional height —
+                        // the chip inside just never filled it (blockChip now
+                        // wears h-full), so every event LOOKED ~45 min tall.
+                        // Overlaps: greedy lane assignment — each block takes
+                        // the first lane free at its start, and a connected
+                        // overlap cluster splits the day column evenly by its
+                        // lane count, replacing the old 14px cascade that
+                        // buried earlier chips under later ones.
+                        type Placed = { b: Block; startH: number; endH: number; lane: number; lanes: number }
+                        const placed: Placed[] = dayBlocks.map((b) => {
+                          const startH = Math.max(denverHour(b.startsAt), HOUR_START)
+                          // Floor: an event keeps ≥0.4h of visual height (~19px at
+                          // 48px/hour) so very short sessions stay clickable;
+                          // everything ≥30 min renders its true height.
+                          const endH = Math.min(Math.max(denverHour(b.endsAt), startH + 0.4), HOUR_END)
+                          return { b, startH, endH, lane: 0, lanes: 1 }
+                        })
+                        const laneEnd: number[] = []
+                        let cluster: Placed[] = []
+                        let clusterEnd = -Infinity
+                        const closeCluster = () => {
+                          for (const p of cluster) p.lanes = laneEnd.length
+                          laneEnd.length = 0
+                          cluster = []
+                        }
+                        for (const p of placed) {
+                          if (cluster.length && p.startH >= clusterEnd) closeCluster()
+                          let lane = laneEnd.findIndex((end) => end <= p.startH)
+                          if (lane === -1) {
+                            lane = laneEnd.length
+                            laneEnd.push(p.endH)
+                          } else {
+                            laneEnd[lane] = p.endH
+                          }
+                          p.lane = lane
+                          cluster.push(p)
+                          clusterEnd = Math.max(clusterEnd, p.endH)
+                        }
+                        closeCluster()
+                        return placed.map(({ b, startH, endH, lane, lanes }) => (
                           <div
                             key={b.id}
                             className="absolute"
                             style={{
                               top: (startH - HOUR_START) * HOUR_PX + 1,
+                              // 18px absolute floor (matches the 0.4h clamp) — never taller than real, never invisible
                               height: Math.max((endH - startH) * HOUR_PX - 2, 18),
-                              left: 2 + overlaps * 14,
-                              right: 2,
-                              zIndex: 1 + overlaps,
+                              ...(lanes > 1
+                                ? {
+                                    left: `calc(${(lane / lanes) * 100}% + 2px)`,
+                                    width: `calc(${(1 / lanes) * 100}% - 3px)`,
+                                  }
+                                : { left: 2, right: 2 }),
+                              zIndex: 1 + lane,
                             }}
                           >
                             {blockChip(b)}
                           </div>
-                        )
-                      })}
+                        ))
+                      })()}
                     </div>
                   )
                 })}

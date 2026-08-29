@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { formatDateRange } from '../../utils/dates'
 import { supabase } from '../../utils/supabase'
 import { ConfirmAction } from './confirm'
+import { useStaffName } from '../staff-name'
 import {
   CLASS_WORK_TYPE,
   DEFAULT_TUTORING_WORK_TYPE,
@@ -63,6 +64,7 @@ type VerifyRow = {
 }
 
 export default function TimecardsPanel() {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [rows, setRows] = useState<Row[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -388,7 +390,7 @@ export default function TimecardsPanel() {
                         <span className="text-xs text-gray-400 ml-2">awaiting tutor</span>
                       )}
                       {r.approved_by && (
-                        <span className="text-xs text-gray-400 ml-2">by {r.approved_by}</span>
+                        <span className="text-xs text-gray-400 ml-2">by {staffName(r.approved_by)}</span>
                       )}
                     </td>
                     {/* PL-228: no nowrap — armed confirm banners wrap instead

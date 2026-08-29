@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../utils/supabase'
 import { VARIABLES } from '../../../utils/comms-variables'
 import { TEMPLATE_GROUPS, templateGroupFor } from '../../../utils/comms'
+import { useStaffName } from '../../staff-name'
 
 // Feature A4 template editor (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4).
 // Markdown editor + variable palette + live sample-data preview; saving
@@ -37,6 +38,7 @@ type VersionRow = {
 }
 
 export default function TemplateEditor() {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [templates, setTemplates] = useState<TemplateRow[]>([])
   const [selected, setSelected] = useState<TemplateRow | null>(null)
   const [versions, setVersions] = useState<VersionRow[]>([])
@@ -390,7 +392,7 @@ export default function TemplateEditor() {
                               <strong>v{v.version_number}</strong>
                               {isActive && <span className="ml-2 text-xs text-green-700 font-bold">active</span>}
                               <span className="block text-xs text-gray-400">
-                                {v.created_by ?? '—'} · {new Date(v.created_at).toLocaleString()}
+                                {v.created_by ? staffName(v.created_by) : '—'} · {new Date(v.created_at).toLocaleString()}
                                 {v.notes ? ` · ${v.notes}` : ''}
                               </span>
                             </span>

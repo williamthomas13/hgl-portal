@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../utils/supabase'
-import { formatDateAdmin, formatTimestampAdmin, addDays, bySessionStart, effectiveStartDate } from '../utils/dates'
+import { formatDateAdmin, formatTimestampAdmin, addDays, bySessionStart, effectiveStartDate, publicTimeCityLabel } from '../utils/dates'
 import { cohortWindow } from '../utils/follow-on-shared'
 import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
@@ -22,6 +22,7 @@ import { SystemHealthSettingsPanel } from './system-health-card'
 import PricingPanel from './pricing-panel'
 import ReadOnlyPreview from './view-as/read-only-preview'
 import { classDisplayLabel } from '../utils/class-label'
+import { useStaffName } from './staff-name'
 
 // PL-326: manager-sim placeholders/wrappers.
 function PassThrough({ children }: { children: React.ReactNode }) {
@@ -263,7 +264,7 @@ type ClassRow = {
   /** PL-237: skip-for-now stamp — the Needs Attention reminder shows while
    *  set AND short_link is still empty. */
   collateral_reminder_at: string | null
-  schools: { name: string; nickname: string; timezone: string } | null
+  schools: { name: string; nickname: string; timezone: string; city?: string | null } | null
   instructors: { name: string | null; email: string } | null
   enrollments: Enrollment[] | null
   sessions: Session[] | null
@@ -705,6 +706,9 @@ const NAV_GROUPS: Record<string, { default: string; entries: NavEntry[] }> = {
 }
 
 export default function AdminDashboard() {
+  // PL-395: attributions render the person's NAME (email is the honest
+  // fallback) — ONE resolver behind every "by …" on this page.
+  const staffName = useStaffName()
   const [schools, setSchools] = useState<SchoolBranding[]>([])
   const [rosters, setRosters] = useState<ClassRow[]>([])
   const [fetchingRosters, setFetchingRosters] = useState(true)
@@ -986,7 +990,7 @@ export default function AdminDashboard() {
       .select(
         `
         *,
-        schools ( name, nickname, timezone ),
+        schools ( name, nickname, timezone, city ),
         instructors ( name, email ),
         sessions ( id, session_date, start_time, end_time, location ),
         enrollments (
@@ -1220,7 +1224,7 @@ export default function AdminDashboard() {
     const who =
       en.converted_by === 'family'
         ? `self-serve, ${en.converted_to_tutoring_at ? new Date(en.converted_to_tutoring_at).toLocaleDateString() : ''}`
-        : `by ${en.converted_by ?? 'the Ops Director'}`
+        : `by ${en.converted_by ? staffName(en.converted_by) : 'the Ops Director'}`
     return already
       ? offered > 0
         ? `${studentName} was already converted (${offered}-hour tutoring package — ${who}). Re-send the availability email?`
@@ -1705,7 +1709,12 @@ export default function AdminDashboard() {
                 </p>
               )}
             <p className="text-sm text-gray-600">
-              Timezone: {c.timezone ?? c.schools?.timezone ?? '—'}{' '}
+              Timezone: {c.timezone ?? c.schools?.timezone ?? '—'}
+              {(c.timezone ?? c.schools?.timezone) && (
+                <>
+                  {' '}— {publicTimeCityLabel({ schoolCity: c.schools?.city, displayCities: c.display_cities, location: c.default_location, timezone: c.timezone ?? c.schools?.timezone ?? 'America/Denver', hglInPerson: !c.schools && c.delivery_mode !== 'online' })} time
+                </>
+              )}{' '}
               <span className="text-xs text-gray-400">
                 {c.timezone ? '(class timezone — open enrollment)' : '(from the school record)'}
               </span>
@@ -1726,7 +1735,7 @@ export default function AdminDashboard() {
                 : rr.status === 'pending'
                   ? { text: `room requested from counselor${rr.nudge_count > 0 ? ` · ${rr.nudge_count} nudge${rr.nudge_count > 1 ? 's' : ''}` : ''}`, cls: 'bg-yellow-100 text-yellow-800' }
                   : rr.status === 'answered'
-                    ? { text: `room set by ${rr.answered_by ?? 'counselor'}: ${rr.answer}`, cls: 'bg-green-100 text-green-700' }
+                    ? { text: `room set by ${rr.answered_by ? staffName(rr.answered_by) : 'counselor'}: ${rr.answer}`, cls: 'bg-green-100 text-green-700' }
                     : { text: 'room request cancelled (set directly)', cls: 'bg-gray-100 text-gray-500' }
               return (
                 <p className="text-xs mt-1">
@@ -1949,7 +1958,8 @@ export default function AdminDashboard() {
                 )}
                 {/* PL-384: the Marketing page URL field retired — follow-up emails and
                     the register page now compose the class's OWN page URL (the
-                    permanent code link when it resolves). Column drops next batch. */}
+                    permanent code link when it resolves). Column dropped in batch 41
+                    (20260911000002). */}
                 {/* PL-311: the feeder side. A flagged follow-up (Deep Dive) never
                     shows this — a follow-up has no follow-up (chain one by
                     flagging both and the dropdown returns). */}
@@ -2002,7 +2012,7 @@ export default function AdminDashboard() {
                     {c.min_enrollment_decided_at
                       ? ` — decided ${formatTimestampAdmin(c.min_enrollment_decided_at)}`
                       : ''}
-                    {c.min_enrollment_decided_by ? ` by ${c.min_enrollment_decided_by}` : ''}.{' '}
+                    {c.min_enrollment_decided_by ? ` by ${staffName(c.min_enrollment_decided_by)}` : ''}.{' '}
                     {(!c.enrollment_deadline || c.enrollment_deadline >= todayIsoLocal) && (
                       <ConfirmAction
                         label="undo"
@@ -2470,7 +2480,7 @@ export default function AdminDashboard() {
           <p className="text-xs text-gray-500 mb-3">
             All times in{' '}
             <span className="font-semibold">
-              {c.timezone ?? c.schools?.timezone ?? 'America/Denver'}
+              {publicTimeCityLabel({ schoolCity: c.schools?.city, displayCities: c.display_cities, location: c.default_location, timezone: c.timezone ?? c.schools?.timezone ?? 'America/Denver', hglInPerson: !c.schools && c.delivery_mode !== 'online' })} time
             </span>{' '}
             {c.timezone
               ? '(set on this class, read-only)'
@@ -2838,7 +2848,7 @@ export default function AdminDashboard() {
                         </span>
                         <span className="text-xs text-gray-400">
                           saved {new Date(dr.updated_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                          {dr.created_by ? ` by ${dr.created_by}` : ''}
+                          {dr.created_by ? ` by ${staffName(dr.created_by)}` : ''}
                         </span>
                         <button
                           onClick={async () => {

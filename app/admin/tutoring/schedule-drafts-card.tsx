@@ -7,6 +7,7 @@ import { CollapsibleSection } from '../ui'
 import { ConfirmAction } from './confirm'
 import { WEEKDAYS, type Tutor } from './types'
 import type { ScheduleDraftRow } from './engagement-wizard'
+import { useStaffName } from '../staff-name'
 
 // PL-338 C: "Schedules in progress" — one row per saved draft: student (or
 // "no student yet"), tutor, slot summary, age, Resume / Discard. Names are
@@ -35,6 +36,7 @@ export default function ScheduleDraftsCard({
   tutors: Tutor[]
   onResume: (draft: ScheduleDraftRow) => void
 }) {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [rows, setRows] = useState<ScheduleDraftRow[]>([])
   const [message, setMessage] = useState('')
 
@@ -79,7 +81,7 @@ export default function ScheduleDraftsCard({
                   {tutor?.name ?? tutor?.email ?? 'no tutor yet'} · {slotSummary(d)}
                 </span>
                 <span className="text-xs text-gray-400">
-                  {startedLabel(d.created_at)} · {d.created_by.split('@')[0]}
+                  {startedLabel(d.created_at)} · {staffName(d.created_by)}
                 </span>
                 <span className="ml-auto flex items-center gap-3">
                   <button

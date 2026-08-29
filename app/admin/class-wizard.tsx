@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { classLocationSentence } from '../utils/comms-variables'
 import { supabase } from '../utils/supabase'
 import SessionCalendar from '../components/SessionCalendar'
-import { formatDateAdmin, addDays, monthYear } from '../utils/dates'
+import { formatDateAdmin, addDays, monthYear, publicTimeCityLabel, staffTimeCityLabel } from '../utils/dates'
 import { DateHint, TimeSelect, TimezoneSelect } from './ui'
 import type { Instructor } from './instructors-panel'
 import { escapeLike } from '../utils/like-escape'
@@ -969,8 +969,9 @@ export default function ClassWizard({
             )}
             {school && (
               <p className="text-xs text-gray-500 mt-1">
-                Timezone: <span className="font-semibold">{school.timezone}</span>{' '}(from the
-                school record — class times are school-local)
+                Timezone: <span className="font-semibold">{school.timezone}</span> — times read{' '}
+                &ldquo;{publicTimeCityLabel({ schoolCity: school.city, timezone: school.timezone })} time&rdquo; (from
+                the school record — class times are school-local)
               </p>
             )}
           </div>
@@ -1322,14 +1323,15 @@ export default function ClassWizard({
         <div>
           {school && (
             <p className="text-xs text-gray-500 mb-3">
-              All times in <span className="font-semibold">{school.timezone}</span>{' '}(from the
-              school record, read-only)
+              All times in <span className="font-semibold">
+                {publicTimeCityLabel({ schoolCity: school.city, timezone: school.timezone })} time
+              </span>{' '}(the school&rsquo;s timezone, read-only)
             </p>
           )}
           {isOpen && (
             <p className="text-xs text-gray-500 mb-3">
-              All times in <span className="font-semibold">{classTimezone}</span>{' '}(the class
-              timezone from the Details step)
+              All times in <span className="font-semibold">{staffTimeCityLabel(classTimezone)} time</span>{' '}(the
+              class timezone from the Details step)
             </p>
           )}
           {sorted.length > 0 && !allDated && (
@@ -1913,7 +1915,7 @@ export default function ClassWizard({
             <p><span className="text-gray-500">Mode:</span> {deliveryMode === 'online' ? 'Online' : 'In person'}</p>
             <p>
               <span className="text-gray-500">Timezone:</span>{' '}
-              {school ? `${school.timezone} (from the school record)` : `${classTimezone} (class timezone — open enrollment)`}
+              {school ? `${school.timezone} — ${publicTimeCityLabel({ schoolCity: school.city, timezone: school.timezone })} time (from the school record)` : `${classTimezone} — ${staffTimeCityLabel(classTimezone)} time (open enrollment)`}
             </p>
             <p>
               <span className="text-gray-500">Location:</span>{' '}

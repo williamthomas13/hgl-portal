@@ -6,6 +6,7 @@ import { supabase } from '../../utils/supabase'
 import { templateLabel } from '../../utils/comms'
 import { FamilyCommsList, type FamilyCommsItem } from '../family-comms'
 import { SidebarNav, CONTACTS_SIDEBAR } from '../sidebar'
+import { useStaffName } from '../staff-name'
 
 // Feature A3 — communications dashboard (docs/COMMS_ATTENDANCE_PARENT_SPEC.md).
 // Upcoming = scheduled/held rows (materialized by the sweep's projector);
@@ -100,6 +101,7 @@ function classLabel(r: SendRow) {
 }
 
 export default function CommunicationsDashboard() {
+  const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [tab, setTab] = useState<'upcoming' | 'history'>('upcoming')
   const [rows, setRows] = useState<SendRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -703,7 +705,7 @@ export default function CommunicationsDashboard() {
               {detail.bounced_at && <li className="text-red-600">bounced {fmtInZone(detail.bounced_at, detail.classes?.schools?.timezone)}</li>}
               {detail.cancel_reason && (
                 <li className="text-gray-500">
-                  cancelled{detail.cancelled_by ? ` by ${detail.cancelled_by}` : ''}: {detail.cancel_reason}
+                  cancelled{detail.cancelled_by ? ` by ${staffName(detail.cancelled_by)}` : ''}: {detail.cancel_reason}
                 </li>
               )}
               {detail.hold_reason && <li className="text-amber-700">held: {detail.hold_reason}</li>}
