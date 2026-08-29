@@ -70,7 +70,14 @@ export async function rescheduleSession(opts: {
       updated_at: new Date().toISOString(),
     })
     .eq('id', original.id)
-  if (updateError) return { ok: false, error: updateError.message, status: 500 }
+  if (updateError) {
+    // PL-401: on a free reschedule the replacement row above already carries
+    // the Google event id — if the original keeps it too, two session rows
+    // share one event and every later sync/cleanup misreads identity. Undo
+    // the insert so the failed move leaves NO half-state.
+    await supabase.from('tutoring_sessions').delete().eq('id', replacement.id)
+    return { ok: false, error: updateError.message, status: 500 }
+  }
 
   await enqueueGcalSync(replacement.id, `reschedule (${notice})`)
   if (notice === 'late') await enqueueGcalSync(original.id, 'late reschedule — XCL original')

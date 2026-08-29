@@ -6,6 +6,7 @@ import {
   deleteGcalEvent,
   patchGcalEvent,
   getGcalEvent,
+  findGcalEventBySessionKey,
   listCalendarEvents,
   loadGcalConnection,
   type GcalEventInput,
@@ -162,7 +163,34 @@ function eventInput(d: SessionDetail, xcl: boolean, hold = false): GcalEventInpu
     // (empty attendees also means sendUpdates=none). The family gets the
     // auto-updating ICS feed + the one warm T_SCHEDULE_SET email instead.
     attendees: [],
+    // PL-401: every synced event carries the session's identity marker so
+    // sync is idempotent per session — see createOrAdopt.
+    sessionKey: d.id,
   }
+}
+
+/** PL-401: the ONLY way sync creates a tutoring event. Search-before-create
+ *  on the session's identity marker: if a live event already declares this
+ *  session (a prior create whose portal pointer write was lost, a retry, a
+ *  re-sync), ADOPT it with a patch — never mint a twin. This is what makes
+ *  the 4×-duplicated "Tuto…" blocks on tutors' real calendars impossible
+ *  going forward. */
+async function createOrAdopt(
+  key: ServiceAccountKey,
+  d: SessionDetail,
+  input: GcalEventInput
+): Promise<{ eventId: string; adopted: boolean }> {
+  const existing = await findGcalEventBySessionKey(key, d.tutor.email, d.tutor.google_calendar_id, d.id)
+  if (existing) {
+    try {
+      await patchGcalEvent(key, existing, input)
+      return { eventId: existing, adopted: true }
+    } catch (e) {
+      if (!(e instanceof GcalApiError && (e.status === 404 || e.status === 410))) throw e
+      // Marked event vanished between search and patch — fall through to create.
+    }
+  }
+  return { eventId: await createGcalEvent(key, input), adopted: false }
 }
 
 /**
@@ -203,8 +231,11 @@ async function syncSession(d: SessionDetail, key: ServiceAccountKey): Promise<Sy
         // Hand-deleted in Google: recreate — the portal is the source of truth.
       }
     }
-    const id = await createGcalEvent(key, input)
-    return { eventId: id, note: d.gcal_event_id ? 'hold recreated (event was gone)' : 'hold created' }
+    const { eventId, adopted } = await createOrAdopt(key, d, input)
+    return {
+      eventId,
+      note: adopted ? 'hold adopted (marked event found)' : d.gcal_event_id ? 'hold recreated (event was gone)' : 'hold created',
+    }
   }
 
   if (d.status === 'confirmed' || d.status === 'completed') {
@@ -218,8 +249,11 @@ async function syncSession(d: SessionDetail, key: ServiceAccountKey): Promise<Sy
         // Hand-deleted in Google: recreate (the portal is the source of truth).
       }
     }
-    const id = await createGcalEvent(key, input)
-    return { eventId: id, note: d.gcal_event_id ? 'recreated (event was gone)' : 'created' }
+    const { eventId, adopted } = await createOrAdopt(key, d, input)
+    return {
+      eventId,
+      note: adopted ? 'adopted (marked event found)' : d.gcal_event_id ? 'recreated (event was gone)' : 'created',
+    }
   }
 
   if (d.status === 'forfeited' || d.status === 'no_show') {
@@ -317,10 +351,15 @@ export async function processGcalQueue(): Promise<GcalQueueResult> {
         // Keep the session's event pointer in step with what Google now
         // holds (PL-159: proposed sessions carry hold events, so they stamp
         // their pointer like everything else).
-        await supabase
+        // PL-401: this write is CHECKED — a lost pointer used to orphan the
+        // just-created event, and the retried row then minted a twin (the
+        // 4×-duplicate bug). Failing the row keeps it pending; the retry
+        // ADOPTS the event via its identity marker instead of re-creating.
+        const { error: ptrError } = await supabase
           .from('tutoring_sessions')
           .update({ gcal_event_id: outcome.eventId, gcal_synced_at: new Date().toISOString() })
           .eq('id', detail.id)
+        if (ptrError) throw new Error(`session event-pointer write failed: ${ptrError.message}`)
         await supabase
           .from('gcal_sync_log')
           .update({

@@ -216,7 +216,16 @@ export type GcalEventInput = {
   /** PL-161: date-only span event (start inclusive, end EXCLUSIVE per
    *  Google). When set, startsAt/endsAt are ignored. */
   allDay?: { startDate: string; endDate: string }
+  /** PL-401: the portal record this event mirrors (tutoring session id).
+   *  Stamped as a private extended property so the event carries a
+   *  DETERMINISTIC identity Google can be searched by — retries and
+   *  re-syncs ADOPT the existing event instead of creating a twin, even
+   *  when the portal's own pointer write was lost. */
+  sessionKey?: string
 }
+
+/** PL-401: the extended-property key carrying the portal session id. */
+export const GCAL_SESSION_PROP = 'hglSessionId'
 
 function eventBody(input: GcalEventInput) {
   return {
@@ -229,7 +238,30 @@ function eventBody(input: GcalEventInput) {
     // PL-159: always explicit so a hold→confirmed patch flips it back.
     status: input.tentative ? 'tentative' : 'confirmed',
     colorId: input.colorId,
+    // PL-401: deterministic identity — see GcalEventInput.sessionKey.
+    extendedProperties: input.sessionKey ? { private: { [GCAL_SESSION_PROP]: input.sessionKey } } : undefined,
   }
+}
+
+/** PL-401: find the event already carrying this session's identity marker on
+ *  the tutor's calendar — the search-before-create half of idempotent sync.
+ *  Returns the event id, or null when no live marked event exists. */
+export async function findGcalEventBySessionKey(
+  key: ServiceAccountKey,
+  tutorEmail: string,
+  calendarId: string | null,
+  sessionKey: string
+): Promise<string | null> {
+  const cal = encodeURIComponent(calendarId || 'primary')
+  const params = new URLSearchParams({
+    privateExtendedProperty: `${GCAL_SESSION_PROP}=${sessionKey}`,
+    maxResults: '10',
+    fields: 'items(id,status)',
+  })
+  const res = await gcalFetch(tutorEmail, key, `/calendars/${cal}/events?${params}`)
+  await expectOk(res, 'event search by session key')
+  const json = (await res.json()) as { items?: { id: string; status?: string }[] }
+  return (json.items ?? []).find((e) => e.status !== 'cancelled')?.id ?? null
 }
 
 /** sendUpdates=all so invited families get native Google invites (§10.5). */
@@ -396,6 +428,8 @@ export type ListedEvent = {
   start: string | null // instant, or resolved from a date-only start
   end: string | null
   allDay: boolean
+  /** PL-401: the portal session id the event declares (extended property), or null. */
+  hglSessionId: string | null
 }
 
 export async function listCalendarEvents(
@@ -416,7 +450,7 @@ export async function listCalendarEvents(
       singleEvents: 'true',
       orderBy: 'startTime',
       maxResults: '250',
-      fields: 'nextPageToken,items(id,status,summary,colorId,start,end)',
+      fields: 'nextPageToken,items(id,status,summary,colorId,start,end,extendedProperties)',
       ...(pageToken ? { pageToken } : {}),
     })
     const res = await gcalFetch(ownerEmail, key, `/calendars/${cal}/events?${params}`)
@@ -430,6 +464,7 @@ export async function listCalendarEvents(
         colorId?: string
         start?: { dateTime?: string; date?: string }
         end?: { dateTime?: string; date?: string }
+        extendedProperties?: { private?: Record<string, string> }
       }[]
     }
     for (const item of json.items ?? []) {
@@ -447,6 +482,7 @@ export async function listCalendarEvents(
           item.end?.dateTime ??
           (item.end?.date ? zonedToUtc(item.end.date, '00:00', timezone).toISOString() : null),
         allDay,
+        hglSessionId: item.extendedProperties?.private?.[GCAL_SESSION_PROP] ?? null,
       })
     }
     pageToken = json.nextPageToken

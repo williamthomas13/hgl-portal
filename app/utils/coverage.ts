@@ -13,6 +13,7 @@ import { formatTimeRange } from './dates'
 import { sendAdminAlert, sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { enqueueGcalSync } from './gcal-sync'
+import { deleteGcalEvent, loadGcalConnection } from './gcal'
 import { loadContactInfo } from './tutoring-emails'
 
 // PL-112: substitute coverage. A tutor offers ONE session to ONE
@@ -292,10 +293,34 @@ export async function respondCoverage(opts: {
 
   let handoff: CoverageHandoff | null = null
   if (accepted) {
+    // PL-401: the synced event lives on the ORIGINAL tutor's calendar. After
+    // the tutor flip the worker acts as the substitute, whose patch can't
+    // reach it (404 → recreate) — which stranded a stale copy on the old
+    // calendar forever. Release the old event first, best-effort; the sync
+    // below recreates cleanly on the substitute's calendar (adopting via the
+    // identity marker if a copy already exists there).
+    try {
+      const conn = await loadGcalConnection()
+      const { data: sessRow } = await supabase
+        .from('tutoring_sessions')
+        .select('gcal_event_id')
+        .eq('id', session.id)
+        .maybeSingle()
+      const { data: oldTutor } = await supabase
+        .from('instructors')
+        .select('email, google_calendar_id')
+        .eq('id', req.requesting_tutor_id)
+        .maybeSingle()
+      if (conn?.status === 'connected' && conn.key && sessRow?.gcal_event_id && oldTutor?.email) {
+        await deleteGcalEvent(conn.key, oldTutor.email, oldTutor.google_calendar_id ?? null, sessRow.gcal_event_id)
+      }
+    } catch (e) {
+      console.error('coverage: releasing the old tutor event failed (sync will still recreate):', e)
+    }
     // The single fact everything follows from: the session is now theirs.
     await supabase
       .from('tutoring_sessions')
-      .update({ tutor_id: req.candidate_tutor_id, updated_at: new Date().toISOString() })
+      .update({ tutor_id: req.candidate_tutor_id, gcal_event_id: null, updated_at: new Date().toISOString() })
       .eq('id', session.id)
     await enqueueGcalSync(session.id, 'substitute accepted coverage — session changes tutor')
     const { data: notes } = await supabase
