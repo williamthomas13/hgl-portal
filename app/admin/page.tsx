@@ -1294,7 +1294,9 @@ export default function AdminDashboard() {
       | 'display_cities'
       | 'price'
       | 'capacity'
-      | 'min_enrollment',
+      | 'min_enrollment'
+      // PL-383 sweep carry-over: school-contact assignment, editable post-creation.
+      | 'counselor_id',
     value: string | boolean | number | null
   ) {
     const { error } = await supabase
@@ -1789,6 +1791,30 @@ export default function AdminDashboard() {
                   emptyText="not set"
                   onSave={(v) => handleClassField(c, 'synap_group', v)}
                 />
+                {/* PL-383 carry-over (batch 41): school-contact assignment was
+                    wizard-only — now editable here. Stores the ACTIVE
+                    affiliation id (what counselor_id holds); class-specific
+                    sends (deadline pushes, classroom requests) follow the
+                    save on the next sweep. */}
+                {c.school_id && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-500">School contact:</span>
+                    <select
+                      value={c.counselor_id ?? ''}
+                      onChange={(e) => handleClassField(c, 'counselor_id', e.target.value || null)}
+                      className="border border-gray-300 rounded p-1 text-sm max-w-72"
+                    >
+                      <option value="">All school contacts (default)</option>
+                      {allCounselors
+                        .filter((a) => a.school_id === c.school_id)
+                        .map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.first_name} {a.last_name} ({a.email})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
                 {/* PL-383: "Cities shown with the times" — the wizard field,
                     finally editable post-creation. Open-enrollment ONLINE
                     classes only; every consumer (page + email time labels via
