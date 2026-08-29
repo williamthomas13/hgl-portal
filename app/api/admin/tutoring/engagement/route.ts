@@ -187,8 +187,11 @@ async function materializeSessions(
     // PL-122: same taken-set as the monthly cycle (PL-62) — cancelled and
     // rescheduled rows are TOMBSTONES. A slot the family vacated must never
     // be resurrected by a regenerate (it would re-bill the slot on top of
-    // any late fee already charged on its tombstone).
-    .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled'])
+    // any late fee already charged on its tombstone). PL-405: the ADMIN
+    // cancel writes 'forfeited'/'no_show' — those are tombstones too (they
+    // were absent, so a regenerate/monthly pass re-created every slot staff
+    // had just cancelled).
+    .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled', 'forfeited', 'no_show'])
   const taken = new Set((existing ?? []).map((s) => new Date(s.starts_at).getTime()))
 
   const rows = occurrences
@@ -221,7 +224,17 @@ async function materializeSessions(
 /** Remove future unbilled proposed/confirmed sessions (schedule change or
  *  engagement end). Their Google events are deleted inline (best-effort)
  *  BEFORE the rows go — row deletion cascades the queue away. */
-async function clearFutureSessions(engagementId: string): Promise<{ removed: number }> {
+async function clearFutureSessions(
+  engagementId: string,
+  /** PL-405: true when the engagement is ENDING/PAUSING — reschedule-target
+   *  make-ups are future sessions of a schedule that no longer exists, so
+   *  they go too (Roman's ended engagement kept a confirmed make-up alive,
+   *  which the family then MOVED a week after the end). A plain regenerate
+   *  still preserves them (they're an agreed commitment, PL-122). Deleting a
+   *  target nulls its tombstone's rescheduled_to_id (FK set-null) — fine for
+   *  an ended schedule; the tombstone row itself stays as history. */
+  opts: { includeRescheduleTargets?: boolean } = {}
+): Promise<{ removed: number }> {
   const { data: doomedRaw } = await supabase
     .from('tutoring_sessions')
     .select('id, gcal_event_id, tutor_id, instructors ( email, google_calendar_id )')
@@ -239,7 +252,9 @@ async function clearFutureSessions(engagementId: string): Promise<{ removed: num
     .select('rescheduled_to_id')
     .eq('engagement_id', engagementId)
     .not('rescheduled_to_id', 'is', null)
-  const replacementIds = new Set((links ?? []).map((l) => l.rescheduled_to_id))
+  const replacementIds = new Set(
+    opts.includeRescheduleTargets ? [] : (links ?? []).map((l) => l.rescheduled_to_id)
+  )
   const doomed = (doomedRaw ?? []).filter((s) => !replacementIds.has(s.id))
   if (doomed.length === 0) return { removed: 0 }
 
@@ -680,7 +695,7 @@ export async function POST(req: Request) {
       }
       const before = body.regenerate ? await futureStarts() : null
       if (body.regenerate || ending) {
-        ;({ removed } = await clearFutureSessions(engagement.id))
+        ;({ removed } = await clearFutureSessions(engagement.id, { includeRescheduleTargets: ending }))
       }
       if (body.regenerate && engagement.status === 'active') {
         ;({ created } = await materializeSessions(engagement))

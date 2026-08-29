@@ -17,6 +17,8 @@ export async function GET(req: Request) {
   if (before && Number.isNaN(Date.parse(before))) {
     return NextResponse.json({ error: 'Pass `before` as an ISO timestamp.' }, { status: 400 })
   }
-  const page = await loadActivity({ before, limit, type })
+  // PL-405C: ?family={id} scopes the feed to one family (profile pane).
+  const familyId = url.searchParams.get('family')
+  const page = await loadActivity({ before, limit, type, familyId })
   return NextResponse.json(page)
 }

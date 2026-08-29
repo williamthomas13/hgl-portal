@@ -371,8 +371,10 @@ export async function generateMonthlyCycle(
         .lt('starts_at', toIso)
         // PL-62: cancelled/rescheduled rows are tombstones — a slot a family
         // vacated (moved or dropped pre-confirmation) must never be
-        // re-materialized by a cycle re-run.
-        .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled'])
+        // re-materialized by a cycle re-run. PL-405: admin cancels write
+        // 'forfeited'/'no_show' — tombstones too (they were absent, so the
+        // next cycle resurrected slots staff had cancelled).
+        .in('status', ['proposed', 'confirmed', 'rescheduled', 'cancelled', 'forfeited', 'no_show'])
       const taken = new Set((existing ?? []).map((s) => new Date(s.starts_at).getTime()))
       // PL-200: never materialize before the engagement's start date — a
       // mid-month (or mid-NEXT-month) start must not grow occurrences in the

@@ -574,20 +574,32 @@ export default function EngagementsPanel({
                         />
                         <ConfirmAction
                           label="pause"
-                          message="Pause? Future unbilled sessions are removed (and taken off the Google calendar)."
+                          message="Pause the weekly pattern? EVERY remaining scheduled session — including rescheduled make-ups — comes off the calendar (unbilled ones are removed; invoiced ones stay billed). Nothing regenerates while paused; resume rebuilds sessions from the saved pattern."
                           confirmLabel="Yes, pause"
                           className="text-gray-500 underline"
                           disabled={busyId === e.id}
-                          onConfirm={() => update(e.id, { status: 'paused' }, "Schedule paused — this student's future sessions removed.")}
+                          onConfirm={() =>
+                            update(
+                              e.id,
+                              { status: 'paused' },
+                              (r) =>
+                                `Schedule paused — ${r?.sessionsRemoved ?? 0} remaining session${(r?.sessionsRemoved ?? 0) === 1 ? '' : 's'} removed (rescheduled make-ups included). Resume rebuilds from the saved weekly pattern.`
+                            )
+                          }
                         />
                         <ConfirmAction
                           label="end"
-                          message="End this student's schedule? Future unbilled sessions are removed; history is kept."
+                          message="End this student's schedule? This STOPS the weekly pattern and removes EVERY remaining scheduled session — rescheduled make-ups included (unbilled ones are removed; invoiced ones stay billed). History is kept, nothing regenerates, and the family's self-serve reschedule links stop working for this schedule."
                           confirmLabel="Yes, end"
                           className="text-red-600 underline"
                           disabled={busyId === e.id}
                           onConfirm={() =>
-                            update(e.id, { status: 'ended', end_date: new Date().toISOString().slice(0, 10) }, "Student's schedule ended.")
+                            update(
+                              e.id,
+                              { status: 'ended', end_date: new Date().toISOString().slice(0, 10) },
+                              (r) =>
+                                `Student's schedule ended — ${r?.sessionsRemoved ?? 0} remaining session${(r?.sessionsRemoved ?? 0) === 1 ? '' : 's'} removed (rescheduled make-ups included); the weekly pattern is stopped for good.`
+                            )
                           }
                         />
                       </>

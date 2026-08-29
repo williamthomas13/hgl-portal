@@ -5,9 +5,10 @@ import { useParams } from 'next/navigation'
 import { supabase } from '../../../utils/supabase'
 import { CollapsibleSection } from '../../ui'
 import { SidebarLayout, SidebarPanel, type SidebarEntry } from '../../sidebar'
+import FamilyActivityPane from '../activity-pane'
 import { FamilyCommsTimeline } from '../../family-comms'
 import ScoresEntry from '../../../components/ScoresEntry'
-import { formatDateShort, formatTimeRange } from '../../../utils/dates'
+import { formatDateShort, formatTimeRange, staffTimeCityLabel } from '../../../utils/dates'
 import { pronounsDisplayLabel } from '../../../utils/pronoun-label'
 
 // PL-230: ONE Family profile per household — the canonical person-record hub
@@ -496,6 +497,7 @@ export default function FamilyProfilePage() {
     ...d.students.map((s) => ({ id: `student-${s.id}`, label: `${s.first_name} ${s.last_name}`.trim() })),
     { id: 'billing', label: 'Billing' },
     { id: 'comms', label: 'Communications' },
+    { id: 'activity', label: 'Recent activity' },
     { id: 'prospect', label: 'Prospect & consults' },
   ]
 
@@ -509,7 +511,8 @@ export default function FamilyProfilePage() {
               {parentName}
               {d.students.length > 0 &&
                 ` · ${d.students.map((s) => s.first_name).join(', ')}`}
-              {fam.timezone && ` · ${fam.timezone}`}
+              {/* PL-398: staff read city names; the id stays hoverable */}
+              {fam.timezone && <span title={fam.timezone}> · {staffTimeCityLabel(fam.timezone)} time</span>}
             </p>
           </div>
           <a
@@ -1100,6 +1103,14 @@ export default function FamilyProfilePage() {
             >
               <FamilyCommsTimeline familyId={fam.id} />
             </CollapsibleSection>
+          </SidebarPanel>
+
+          {/* ------------------------------------------------ Recent activity */}
+          {/* PL-405C: the whole story in order — schedule edits, cancels
+              (who/when), payments, emails — read-only, from the ONE
+              dashboard-activity builder scoped to this family. */}
+          <SidebarPanel id="activity" active={active}>
+            <FamilyActivityPane familyId={fam.id} />
           </SidebarPanel>
 
           {/* ------------------------------------------------ Prospect trail */}

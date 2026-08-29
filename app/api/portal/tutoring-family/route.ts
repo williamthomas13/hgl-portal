@@ -34,7 +34,7 @@ async function ownedSession(sessionId: string, familyIds: string[]) {
     .select(
       `id, starts_at, ends_at, status, reschedule_requested_at,
        students!inner ( first_name, last_name, family_id ),
-       tutoring_engagements ( subjects ( name ) ),
+       tutoring_engagements ( status, subjects ( name ) ),
        instructors ( name )`
     )
     .eq('id', sessionId)
@@ -129,6 +129,17 @@ export async function POST(req: Request) {
 
   if (session.status !== 'confirmed') {
     return NextResponse.json({ error: 'Only upcoming confirmed sessions can be rescheduled.' }, { status: 400 })
+  }
+  // PL-405: an ended/paused engagement accepts NO reschedule machinery — the
+  // offer-accept path was creating fresh confirmed sessions inside an ended
+  // engagement (Roman: schedule ended Aug 18, family picked an offered slot
+  // Aug 25 → a new Sep 15 session appeared and synced to Google).
+  const engagementStatus = (one(session.tutoring_engagements) as any)?.status ?? 'active'
+  if (engagementStatus !== 'active') {
+    return NextResponse.json(
+      { error: 'This tutoring schedule has ended — reply to any of our emails and we\'ll help.' },
+      { status: 400 }
+    )
   }
   if (new Date(session.starts_at).getTime() < Date.now()) {
     return NextResponse.json({ error: 'That session has already started — get in touch instead.' }, { status: 400 })
