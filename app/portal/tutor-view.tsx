@@ -394,7 +394,10 @@ export default async function TutorView({
 
       {/* PL-258: the tutor's own student roster — contacts, schedules,
           subjects, recent notes. No finances anywhere. */}
-      <MyStudentsPanel tutorId={tutor.id} timezone={tz} />
+      {/* PL-404: scroll-margin keeps anchored jumps clear of the viewport top. */}
+      <div id="portal-students" style={{ scrollMarginTop: 16 }}>
+        <MyStudentsPanel tutorId={tutor.id} timezone={tz} />
+      </div>
 
       <SessionNotesPanel sessions={noteSessions} timezone={tz} />
 
@@ -410,6 +413,7 @@ export default async function TutorView({
         })()}
       />
 
+      <div id="portal-timecards" style={{ scrollMarginTop: 16 }}>
       <TimecardPanel
         timecards={(timecards ?? []) as TimecardData[]}
         actionableId={actionable?.id ?? null}
@@ -420,8 +424,11 @@ export default async function TutorView({
         timezone={tz}
         salaried={tutor.pay_type === 'salaried'}
       />
+      </div>
       {/* PL-327: informational-email preferences — self-serve. */}
-      <EmailPrefsPanel />
+      <div id="portal-email-prefs" style={{ scrollMarginTop: 16 }}>
+        <EmailPrefsPanel />
+      </div>
     </div>
   )
 }

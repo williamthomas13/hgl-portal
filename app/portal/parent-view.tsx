@@ -15,6 +15,7 @@ import { FamilyMaterialsSection } from './materials-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
 import TutoringSection from './tutoring-section'
+import PortalNav, { type PortalNavItem } from './portal-nav'
 import { escapeLike } from '../utils/like-escape'
 
 // Parent view (PHASE4_SPEC §3): one card per student, their enrollments with
@@ -299,8 +300,39 @@ export default async function ParentView({
     }
   }
 
+  // PL-404: the left menu appears ONLY when the account's content warrants
+  // it — per-student jump links when there's more than one student, plus a
+  // tutoring link when the family actually has tutoring. One student, one
+  // enrollment, no tutoring → fewer than two items → PortalNav renders
+  // nothing and the page stays today's simple single column. The tutoring
+  // probe mirrors TutoringSection's own gate (active/paused engagements or
+  // any invoice) via the privileged client, same as the waitlist read.
+  let hasTutoring = false
+  if (familyIds.length > 0) {
+    const [{ count: engCount }, { count: invCount }] = await Promise.all([
+      supabaseAdmin
+        .from('tutoring_engagements')
+        .select('id, students!inner ( family_id )', { count: 'exact', head: true })
+        .in('students.family_id', familyIds)
+        .in('status', ['active', 'paused']),
+      supabaseAdmin
+        .from('tutoring_invoices')
+        .select('id', { count: 'exact', head: true })
+        .in('family_id', familyIds),
+    ])
+    hasTutoring = (engCount ?? 0) > 0 || (invCount ?? 0) > 0
+  }
+  const navItems: PortalNavItem[] = [
+    ...(studentList.length > 1
+      ? (studentList as any[]).map((st: any) => ({ href: `#student-${st.id}`, label: st.first_name as string }))
+      : []),
+    ...(hasTutoring ? [{ href: '#portal-tutoring', label: '1-on-1 tutoring' }] : []),
+  ]
+
   return (
-    <div className="space-y-6">
+    <div className="md:flex md:gap-6 md:items-start">
+      <PortalNav items={navItems} />
+      <div className="flex-1 min-w-0 space-y-6">
       {callouts}
       {/* PL-203: materials tutors shared — renders only when something was
           shared; RLS + the API keep it to THIS family's students. */}
@@ -324,7 +356,7 @@ export default async function ParentView({
           .filter(Boolean)
           .join(' · ')
         return (
-          <div key={st.id} className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-6">
+          <div key={st.id} id={`student-${st.id}`} style={{ scrollMarginTop: 16 }} className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-6">
             <div className="mb-4">
               <h2 className="text-xl font-bold text-hgl-slate">
                 {st.first_name} {st.last_name}
@@ -666,7 +698,10 @@ export default async function ParentView({
       })}
 
       {/* Phase 7d: 1-on-1 tutoring — schedule, reschedule requests, billing */}
-      <TutoringSection email={email} />
+      <div id="portal-tutoring" style={{ scrollMarginTop: 16 }}>
+        <TutoringSection email={email} />
+      </div>
+      </div>
     </div>
   )
 }

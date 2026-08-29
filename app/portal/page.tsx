@@ -3,8 +3,7 @@ import Link from 'next/link'
 import { createSupabaseServerClient } from '../utils/supabase-server'
 import ParentView from './parent-view'
 import CounselorView from './counselor-view'
-import InstructorView from './instructor-view'
-import TutorView from './tutor-view'
+import TeachingView from './teaching-view'
 import SignOutButton from './signout-button'
 import { escapeLike } from '../utils/like-escape'
 
@@ -144,22 +143,15 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
         )}
         {active === 'counselor' && <CounselorView supabase={supabase} email={email} />}
         {/* PL-259: one Teaching view — classes and 1-on-1 tutoring as
-            sections, whichever apply. */}
+            sections, whichever apply. PL-404: body + left menu live in
+            TeachingView, shared with View-as. */}
         {active === 'instructor' && (
-          <div className="space-y-10">
-            {teachesClasses && (
-              <section>
-                <h2 className="text-xl font-bold text-hgl-slate mb-4">My classes</h2>
-                <InstructorView supabase={supabase} email={email} />
-              </section>
-            )}
-            {doesTutoring && (
-              <section>
-                <h2 className="text-xl font-bold text-hgl-slate mb-4">My tutoring</h2>
-                <TutorView supabase={supabase} email={email} />
-              </section>
-            )}
-          </div>
+          <TeachingView
+            supabase={supabase}
+            email={email}
+            teachesClasses={teachesClasses}
+            doesTutoring={doesTutoring}
+          />
         )}
         {!active && (
           <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-8 text-center">

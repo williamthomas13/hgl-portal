@@ -1,9 +1,9 @@
 import { supabaseAdmin } from '../../utils/supabase-admin'
 import { sessionRole } from '../../utils/staff-gate'
 import ParentView from '../../portal/parent-view'
-import TutoringSection from '../../portal/tutoring-section'
-import TutorView from '../../portal/tutor-view'
+import TeachingView from '../../portal/teaching-view'
 import CounselorView from '../../portal/counselor-view'
+import { escapeLike } from '../../utils/like-escape'
 import ReadOnlyPreview from './read-only-preview'
 import {
   CLASS_WORK_TYPE,
@@ -49,6 +49,30 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
   const requestedRole = typeof sp.role === 'string' ? sp.role : 'parent'
   const role = ROLES.some((r) => r.id === requestedRole) ? requestedRole : 'parent'
   const pickedEmail = typeof sp.email === 'string' ? sp.email : ''
+
+  // PL-404: the tutor preview renders the shared TeachingView body, which
+  // needs the same two facts the portal page derives (PL-213 active gates).
+  let pickedTeachesClasses = false
+  let pickedDoesTutoring = false
+  if (pickedEmail && role === 'tutor') {
+    const [taught, tutoring] = await Promise.all([
+      supabaseAdmin
+        .from('classes')
+        .select('id, instructors!inner(email, active)')
+        .ilike('instructors.email', escapeLike(pickedEmail))
+        .eq('instructors.active', true)
+        .limit(1),
+      supabaseAdmin
+        .from('instructors')
+        .select('id')
+        .ilike('email', escapeLike(pickedEmail))
+        .eq('tutoring_active', true)
+        .eq('active', true)
+        .limit(1),
+    ])
+    pickedTeachesClasses = Boolean(taught.data?.length)
+    pickedDoesTutoring = Boolean(tutoring.data?.length)
+  }
 
   // Picker options per role.
   const [
@@ -306,13 +330,20 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
           <p className="text-sm text-gray-500 italic">Pick a record above to render their portal.</p>
         ) : (
           <ReadOnlyPreview>
-            {role === 'parent' && (
-              <>
-                <ParentView supabase={supabaseAdmin} email={pickedEmail} />
-                <TutoringSection email={pickedEmail} />
-              </>
+            {/* PL-404: EXACTLY what the person sees — ParentView already
+                renders TutoringSection itself (the old extra standalone copy
+                rendered the section twice, which no family ever saw), and
+                the tutor preview is the shared TeachingView body (left menu
+                + My classes + My tutoring), not the tutoring half alone. */}
+            {role === 'parent' && <ParentView supabase={supabaseAdmin} email={pickedEmail} />}
+            {role === 'tutor' && (
+              <TeachingView
+                supabase={supabaseAdmin}
+                email={pickedEmail}
+                teachesClasses={pickedTeachesClasses}
+                doesTutoring={pickedDoesTutoring}
+              />
             )}
-            {role === 'tutor' && <TutorView supabase={supabaseAdmin} email={pickedEmail} />}
             {role === 'school-contact' && <CounselorView supabase={supabaseAdmin} email={pickedEmail} />}
           </ReadOnlyPreview>
         )}
