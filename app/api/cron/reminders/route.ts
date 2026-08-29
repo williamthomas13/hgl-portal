@@ -4,7 +4,7 @@ import { dispatchScheduledCampaigns, resumePausedCampaigns } from '../../../util
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
-import { processGcalQueue, syncTutoringDriftTable } from '../../../utils/gcal-sync'
+import { processGcalQueue, sendGroupedDriftAlert, syncTutoringDriftTable } from '../../../utils/gcal-sync'
 import { auditInternationalCalendar, syncInternationalCalendar } from '../../../utils/intl-calendar'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { sweepSessionNoteReminders, sweepWeeklyNotesDigest } from '../../../utils/session-notes'
@@ -1872,79 +1872,13 @@ export async function GET(req: Request) {
     const drift = await syncTutoringDriftTable()
     if (drift.length > 0) {
       counters.tutoring_calendar_drift = drift.length
-      // PL-402: ONE grouped alert per pass covering every not-yet-alerted
-      // drift — never one email per event. A drift that has been alerted
-      // stays silent (the Needs Attention row + banner are the persistent
-      // reminder, PL-393; the email is the doorbell, rung once) and re-rings
-      // ONLY when its calendar state changes again (alerted_signature: the
-      // moved-to time, or 'deleted'). The Aug 18 burst was 13 separate
-      // one-per-session emails in a single pass.
-      const fmtT = (iso: string) =>
-        new Date(iso).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', hour: 'numeric', minute: '2-digit' })
-      const sig = (d: { calStartsAt: string | null }) => d.calStartsAt ?? 'deleted'
-      const { data: alertedRows } = await supabase
-        .from('calendar_drift')
-        .select('session_id, alerted_signature')
-      const alerted = new Map(
-        ((alertedRows ?? []) as { session_id: string; alerted_signature: string | null }[]).map((r) => [
-          r.session_id,
-          r.alerted_signature,
-        ])
-      )
-      const fresh = drift.filter((d) => alerted.get(d.sessionId) !== sig(d))
-      if (fresh.length > 0) {
-        const byTutor = new Map<string, typeof fresh>()
-        for (const d of fresh) byTutor.set(d.tutorFirst, [...(byTutor.get(d.tutorFirst) ?? []), d])
-        const sections = [...byTutor.entries()]
-          .map(
-            ([tutorFirst, rows]) =>
-              `<p><strong>${tutorFirst}</strong> — ${rows.length} session event${rows.length === 1 ? '' : 's'} changed in their Google Calendar:</p>
-               <ul>${rows
-                 .map(
-                   (d) =>
-                     `<li>${
-                       d.calStartsAt
-                         ? `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session moved — ${fmtT(d.portalStartsAt)} → ${fmtT(d.calStartsAt)}`
-                         : `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session event (${fmtT(d.portalStartsAt)}) deleted`
-                     } · <a href="${emailBaseUrl()}/admin/tutoring?family=${d.familyId ?? ''}" style="color:#00AEEE">open ${d.studentFirst}'s banner</a></li>`
-                 )
-                 .join('')}</ul>`
-          )
-          .join('')
-        const one = fresh.length === 1 ? fresh[0] : null
-        try {
-          await sendAdminAlert({
-            dedupeKey:
-              'cal_drift_batch:' +
-              createHash('md5')
-                .update(fresh.map((d) => `${d.sessionId}@${sig(d)}`).sort().join('|'))
-                .digest('hex'),
-            adminEmail: ADMIN_EMAIL,
-            subject: one
-              ? one.calStartsAt
-                ? `${one.tutorFirst} moved ${one.studentFirst}'s session in their Google Calendar`
-                : `${one.tutorFirst} deleted ${one.studentFirst}'s session event in their Google Calendar`
-              : `Google Calendar drift: ${fresh.length} session events changed (${byTutor.size} tutor${byTutor.size === 1 ? '' : 's'})`,
-            body: `${sections}
-            <p>The families haven't been told and billing hasn't changed — none of the machinery has run.
-            <strong>Adopt</strong> (runs the normal reschedule: parent notice, fee logic, timecards) or
-            <strong> revert</strong> the calendar, from each banner linked above.
-            Each banner stays until you decide — if a session's time passes first, it switches to
-            asking what actually happened (adopt as-happened, no-show, or forfeit). This email won't
-            repeat for these changes; the banners are the reminder.</p>`,
-          })
-          const nowIso = new Date().toISOString()
-          for (const d of fresh) {
-            await supabase
-              .from('calendar_drift')
-              .update({ alerted_at: nowIso, alerted_signature: sig(d) })
-              .eq('session_id', d.sessionId)
-          }
-        } catch (e) {
-          // Marking skipped on failure so the next pass retries the doorbell.
-          console.error('drift alert failed:', e)
-        }
-      }
+      // PL-402: grouped, once-only doorbell — logic lives in gcal-sync so
+      // the harness can prove it; see sendGroupedDriftAlert.
+      const rung = await sendGroupedDriftAlert(drift, ADMIN_EMAIL).catch((e) => {
+        console.error('drift alert failed:', e)
+        return 0
+      })
+      if (rung > 0) counters.tutoring_drift_alerted = rung
     }
   } catch (e) {
     console.error('tutoring drift sweep failed:', e)

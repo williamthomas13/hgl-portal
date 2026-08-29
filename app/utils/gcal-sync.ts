@@ -14,6 +14,7 @@ import {
   type ServiceAccountKey,
 } from './gcal'
 import { sendAdminAlert } from './email'
+import { createHash } from 'crypto'
 import { ADMIN_EMAIL } from './lifecycle'
 
 // Phase 7a Google Calendar push worker (spec §4). Same shape as the Phase 6
@@ -597,6 +598,79 @@ export async function auditTutoringTimeDrift(tutorId?: string): Promise<TimeDrif
 
 /** Refresh calendar_drift to match the audit result — rows for scanned
  *  tutors that are no longer drifted disappear; current drift upserts. */
+/** PL-402: ONE grouped alert per audit pass covering every not-yet-alerted
+ *  drift — never one email per event. A drift already alerted stays silent
+ *  (the Needs Attention row + banner are the persistent reminder, PL-393;
+ *  the email is the doorbell, rung once) and re-rings ONLY when its calendar
+ *  state changes again (alerted_signature: the moved-to time, or 'deleted').
+ *  Returns how many drifts were covered by a fresh doorbell (0 = silent
+ *  pass). Lives here, not in the cron route, so the compile-and-call
+ *  harness can prove the grouping and once-only behavior. */
+export async function sendGroupedDriftAlert(drift: TimeDriftRow[], adminEmail: string): Promise<number> {
+  if (drift.length === 0) return 0
+  const fmtT = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', hour: 'numeric', minute: '2-digit' })
+  const sig = (d: { calStartsAt: string | null }) => d.calStartsAt ?? 'deleted'
+  const { data: alertedRows } = await supabase.from('calendar_drift').select('session_id, alerted_signature')
+  const alerted = new Map(
+    ((alertedRows ?? []) as { session_id: string; alerted_signature: string | null }[]).map((r) => [
+      r.session_id,
+      r.alerted_signature,
+    ])
+  )
+  const fresh = drift.filter((d) => alerted.get(d.sessionId) !== sig(d))
+  if (fresh.length === 0) return 0
+  const byTutor = new Map<string, TimeDriftRow[]>()
+  for (const d of fresh) byTutor.set(d.tutorFirst, [...(byTutor.get(d.tutorFirst) ?? []), d])
+  const sections = [...byTutor.entries()]
+    .map(
+      ([tutorFirst, rows]) =>
+        `<p><strong>${tutorFirst}</strong> — ${rows.length} session event${rows.length === 1 ? '' : 's'} changed in their Google Calendar:</p>
+         <ul>${rows
+           .map(
+             (d) =>
+               `<li>${
+                 d.calStartsAt
+                   ? `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session moved — ${fmtT(d.portalStartsAt)} → ${fmtT(d.calStartsAt)}`
+                   : `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session event (${fmtT(d.portalStartsAt)}) deleted`
+               } · <a href="${emailBaseUrl()}/admin/tutoring?family=${d.familyId ?? ''}" style="color:#00AEEE">open ${d.studentFirst}'s banner</a></li>`
+           )
+           .join('')}</ul>`
+    )
+    .join('')
+  const one_ = fresh.length === 1 ? fresh[0] : null
+  await sendAdminAlert({
+    dedupeKey:
+      'cal_drift_batch:' +
+      createHash('md5')
+        .update(fresh.map((d) => `${d.sessionId}@${sig(d)}`).sort().join('|'))
+        .digest('hex'),
+    adminEmail,
+    subject: one_
+      ? one_.calStartsAt
+        ? `${one_.tutorFirst} moved ${one_.studentFirst}'s session in their Google Calendar`
+        : `${one_.tutorFirst} deleted ${one_.studentFirst}'s session event in their Google Calendar`
+      : `Google Calendar drift: ${fresh.length} session events changed (${byTutor.size} tutor${byTutor.size === 1 ? '' : 's'})`,
+    body: `${sections}
+    <p>The families haven't been told and billing hasn't changed — none of the machinery has run.
+    <strong>Adopt</strong> (runs the normal reschedule: parent notice, fee logic, timecards) or
+    <strong> revert</strong> the calendar, from each banner linked above.
+    Each banner stays until you decide — if a session's time passes first, it switches to
+    asking what actually happened (adopt as-happened, no-show, or forfeit). This email won't
+    repeat for these changes; the banners are the reminder.</p>`,
+  })
+  // Marking runs only after the send resolved — a thrown send skips it so
+  // the next pass retries the doorbell.
+  const nowIso = new Date().toISOString()
+  for (const d of fresh) {
+    await supabase
+      .from('calendar_drift')
+      .update({ alerted_at: nowIso, alerted_signature: sig(d) })
+      .eq('session_id', d.sessionId)
+  }
+  return fresh.length
+}
+
 export async function syncTutoringDriftTable(tutorId?: string): Promise<TimeDriftRow[]> {
   const drift = await auditTutoringTimeDrift(tutorId)
   const driftedIds = drift.map((d) => d.sessionId)
