@@ -14,7 +14,9 @@
     <div id="hgl-upcoming-classes">
       <noscript><a href="https://hgl-portal.vercel.app/classes">See upcoming classes →</a></noscript>
     </div>
-    <script src="http://localhost:3000/embed/upcoming-classes.js" defer></script>
+    <!-- Relative src: resolves against whichever host serves this page (vercel today, hgl.co after cutover).
+         The REAL sqsp snippet (decommission checklist step 9b) stays absolute — sqsp is a different host. -->
+    <script src="/embed/upcoming-classes.js" defer></script>
   </div>
   <div class="sqs-section"><p>Other homepage content continues below…</p></div>
 </body></html>
