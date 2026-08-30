@@ -24,6 +24,24 @@ export const DEFAULT_TUTORING_WORK_TYPE = '1-on-1'
 /** Group-class sessions taught are always attributed here. */
 export const CLASS_WORK_TYPE = 'Class/Workshop'
 
+/** PL-412A: what a test-prep-exam subject's rows default to (at timecard
+ *  stamp time, null rows only — never re-defaulting a touched row). */
+export const TEST_PREP_WORK_TYPE = 'Test Prep'
+
+/** PL-412B: per-session prep minutes ride payroll as their own rows under
+ *  this pay type — summed separately so the bookkeeper sees prep vs session
+ *  hours everywhere hoursByWorkType feeds (panel, admin summary, QBO note,
+ *  reports). */
+export const PREP_WORK_TYPE = 'Prep Time'
+
+/** PL-412B: synthesize the 'Prep Time' rows for a session list — feed the
+ *  result alongside the per-session rows into hoursByWorkType. */
+export function prepRows(rows: { prep_minutes?: number | null }[]): { workType: string; hours: number }[] {
+  return rows
+    .filter((r) => (r.prep_minutes ?? 0) > 0)
+    .map((r) => ({ workType: PREP_WORK_TYPE, hours: (r.prep_minutes as number) / 60 }))
+}
+
 /** The work types one tutor can book hours under: the standard six plus
  *  that tutor's own QBO pay-type titles (deduped, standard order first). */
 export function workTypeOptions(payTypeTitles: string[] | null | undefined): string[] {

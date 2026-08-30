@@ -15,7 +15,7 @@ import {
 import { sendAdminAlert } from './email'
 import { stripeDashboardUrl } from './checkout-paid'
 import { ADMIN_EMAIL, DEFAULT_TIMEZONE, localDate } from './lifecycle'
-import { CLASS_WORK_TYPE, DEFAULT_TUTORING_WORK_TYPE, hoursByWorkType, sessionMinutes } from './work-types'
+import { CLASS_WORK_TYPE, DEFAULT_TUTORING_WORK_TYPE, hoursByWorkType, prepRows, sessionMinutes } from './work-types'
 
 // Phase 6 sync worker (spec §4/§5): drains pending qbo_sync_log rows into QBO
 // Sales/Refund Receipts. Runs from two places — an after() trigger right
@@ -314,7 +314,7 @@ async function syncTimecardRow(row: SyncRow): Promise<{ id: string; docNumber: s
   // By-work-type breakdown from the card's stamped sessions — the same
   // numbers the payroll-summary clipboard shows.
   const [{ data: tSessions }, { data: cSessions }] = await Promise.all([
-    supabase.from('tutoring_sessions').select('duration_minutes, work_type').eq('timecard_id', tc.id),
+    supabase.from('tutoring_sessions').select('duration_minutes, work_type, prep_minutes').eq('timecard_id', tc.id),
     supabase.from('sessions').select('start_time, end_time').eq('timecard_id', tc.id),
   ])
   const breakdown = hoursByWorkType([
@@ -326,6 +326,8 @@ async function syncTimecardRow(row: SyncRow): Promise<{ id: string; docNumber: s
       workType: CLASS_WORK_TYPE,
       hours: sessionMinutes(s.start_time, s.end_time) / 60,
     })),
+    // PL-412B: prep minutes as their own 'Prep Time' line in the QBO note.
+    ...prepRows((tSessions as any[]) ?? []),
   ])
   const breakdownText = breakdown.map((b) => `${b.workType} ${b.hours.toFixed(2)}h`).join(' · ')
 

@@ -11,7 +11,7 @@ import {
 import { DISCOUNT_URL } from '../utils/email'
 import TutoringAddonCard, { type TutoringCardState } from './tutoring-addon-card'
 import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreRow } from './shared'
-import { FamilyMaterialsSection } from './materials-panel'
+import { FamilyMaterialsSection, StudentMaterialsRecord } from './materials-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { bySessionStart, effectiveStartDate } from '../utils/dates'
 import TutoringSection from './tutoring-section'
@@ -693,6 +693,13 @@ export default async function ParentView({
 
             {/* Scores not tied to a class (e.g. standalone diagnostics) */}
             <ScoresTable scores={scores.filter((s) => !s.class_id)} />
+
+            {/* PL-411C: the settled Materials record — everything ever
+                shared, grouped by month; renders nothing when empty. */}
+            <StudentMaterialsRecord
+              studentId={st.id}
+              classIds={enrollments.map((e: any) => e.class_id).filter(Boolean)}
+            />
           </div>
         )
       })}

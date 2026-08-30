@@ -14,7 +14,14 @@ import { examFamilyFor } from './exam-family'
 // current DB state on every run — rescheduling a class automatically
 // recomputes every pending send.
 
-export const DEFAULT_TIMEZONE = process.env.CLASS_TIMEZONE ?? 'America/Mexico_City'
+// PL-407: ops anchors Salt Lake City — the FALLBACK anywhere a timezone is
+// assumed is America/Denver (labeled "Salt Lake City time" per PL-398). The
+// old America/Mexico_City default was a relic of the first school; real
+// classes/schools always carry their own timezone, so this only bites when
+// nothing does (roster-report clock, bundle fallback). CLASS_TIMEZONE still
+// overrides for dev parity — prod's effective value is surfaced on the
+// System health card so dev/prod can't silently diverge.
+export const DEFAULT_TIMEZONE = process.env.CLASS_TIMEZONE ?? 'America/Denver'
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmail.com'
 
 /** Internal ops notifications (instructor scheduling nudge) — info@ to info@,

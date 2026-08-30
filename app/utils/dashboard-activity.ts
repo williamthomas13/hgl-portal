@@ -151,6 +151,15 @@ export async function loadActivity(opts: {
     if (before) q = q.lt('sent_at', before)
     return q.order('sent_at', { ascending: false }).limit(fetchN)
   }
+  // PL-411C: material posts join the family feed (family-only source).
+  const materialsQ = () => {
+    let q = supabase
+      .from('student_materials')
+      .select('id, created_at, title, kind, due_date, instructor_name, instructor_email, students!inner ( first_name, family_id )')
+      .eq('students.family_id', familyId!)
+    if (before) q = q.lt('created_at', before)
+    return q.order('created_at', { ascending: false }).limit(fetchN)
+  }
   const familyEmailsQ = async () => {
     // Tutoring emails carry no enrollment id — match on the parent's address.
     const { data: fam } = await supabase.from('families').select('parent_email').eq('id', familyId!).maybeSingle()
@@ -165,7 +174,7 @@ export async function loadActivity(opts: {
     return q.order('sent_at', { ascending: false }).limit(fetchN)
   }
 
-  const [enrollments, paidInvoices, avail, timecards, newLeads, convertedLeads, schedEngs, schedMoves, engLifecycle, emails, famEmails] =
+  const [enrollments, paidInvoices, avail, timecards, newLeads, convertedLeads, schedEngs, schedMoves, engLifecycle, emails, famEmails, materialPosts] =
     await Promise.all([
       wants('Registrations') ? enrollmentsQ() : none,
       wants('Payments') ? paidQ() : none,
@@ -179,6 +188,7 @@ export async function loadActivity(opts: {
       wants('Schedule') && familyId ? engLifecycleQ() : none,
       wants('Emails') && familyId ? emailsQ() : none,
       wants('Emails') && familyId ? familyEmailsQ() : none,
+      wants('Materials') && familyId ? materialsQ() : none,
     ])
 
   const rows: ActivityRow[] = []
@@ -332,6 +342,17 @@ export async function loadActivity(opts: {
         href,
       })
     }
+  }
+  for (const mp of ((materialPosts as any).data as any[]) ?? []) {
+    const st = one<any>(mp.students)
+    rows.push({
+      id: `mat-${mp.id}`,
+      type: 'Materials',
+      groupKey: 'Materials',
+      when: mp.created_at,
+      text: `${mp.instructor_name ?? mp.instructor_email} shared \u201c${mp.title}\u201d with ${st?.first_name ?? 'a student'}${mp.due_date ? ` (due ${mp.due_date})` : ''}.`,
+      href: `/admin/families/${familyId}`,
+    })
   }
   for (const m of [((emails as any).data as any[]) ?? [], ((famEmails as any).data as any[]) ?? []].flat()) {
     rows.push({

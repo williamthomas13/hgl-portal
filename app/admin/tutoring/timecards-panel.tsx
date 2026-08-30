@@ -10,6 +10,7 @@ import {
   DEFAULT_TUTORING_WORK_TYPE,
   hoursByWorkType,
   sessionMinutes,
+  prepRows,
 } from '../../utils/work-types'
 
 // Staff timecard review (Phase 7b §7.3): per-period list, approve, CSV
@@ -83,7 +84,7 @@ export default function TimecardsPanel() {
     setDetailLoading(true)
     setCopied(false)
     const [{ data: tut }, { data: cls }] = await Promise.all([
-      supabase.from('tutoring_sessions').select('duration_minutes, work_type').eq('timecard_id', r.id),
+      supabase.from('tutoring_sessions').select('duration_minutes, work_type, prep_minutes').eq('timecard_id', r.id),
       supabase.from('sessions').select('start_time, end_time').eq('timecard_id', r.id),
     ])
     setSummary(
@@ -96,6 +97,8 @@ export default function TimecardsPanel() {
           workType: CLASS_WORK_TYPE,
           hours: sessionMinutes(s.start_time, s.end_time) / 60,
         })),
+        // PL-412B: prep minutes sum separately under 'Prep Time'.
+        ...prepRows((tut as any[]) ?? []),
       ])
     )
     setDetailLoading(false)
@@ -232,19 +235,33 @@ export default function TimecardsPanel() {
    *  PL-212: a pay_type column plus salaried rows sorted LAST, so the
    *  bookkeeper can't run down the list paying every row as hourly and
    *  sweep salaried hours in by momentum. */
-  function exportPeriod(periodStart: string) {
+  async function exportPeriod(periodStart: string) {
     const periodRows = rows.filter((r) => r.period_start === periodStart && r.status === 'approved')
     if (periodRows.length === 0) return
     const salaried = (r: Row) => r.instructors?.pay_type === 'salaried'
     const ordered = [...periodRows.filter((r) => !salaried(r)), ...periodRows.filter(salaried)]
+    // PL-412B: the CSV splits prep vs session hours — session_hours +
+    // prep_hours columns (total_hours = their sum, unchanged meaning). The
+    // bookkeeper one-pager (docs/bookkeeper-payroll-csv.md) documents the
+    // shape; keep them in lockstep.
+    const { data: prepData } = await supabase
+      .from('tutoring_sessions')
+      .select('timecard_id, prep_minutes')
+      .in('timecard_id', periodRows.map((r) => r.id))
+      .not('prep_minutes', 'is', null)
+    const prepByCard = new Map<string, number>()
+    for (const s of (prepData as any[]) ?? []) {
+      prepByCard.set(s.timecard_id, (prepByCard.get(s.timecard_id) ?? 0) + Number(s.prep_minutes ?? 0))
+    }
     const csv = [
-      'tutor,period_start,period_end,total_hours,pay_type',
-      ...ordered.map(
-        (r) =>
-          `"${(r.instructors?.name ?? r.instructors?.email ?? '').replace(/"/g, '""')}",${r.period_start},${r.period_end},${r.total_hours},${
-            salaried(r) ? 'SALARIED — do not pay hourly' : 'hourly'
-          }`
-      ),
+      'tutor,period_start,period_end,session_hours,prep_hours,total_hours,pay_type',
+      ...ordered.map((r) => {
+        const prepH = Number(((prepByCard.get(r.id) ?? 0) / 60).toFixed(2))
+        const sessionH = Number((Number(r.total_hours) - prepH).toFixed(2))
+        return `"${(r.instructors?.name ?? r.instructors?.email ?? '').replace(/"/g, '""')}",${r.period_start},${r.period_end},${sessionH},${prepH},${r.total_hours},${
+          salaried(r) ? 'SALARIED — do not pay hourly' : 'hourly'
+        }`
+      }),
     ].join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     const a = document.createElement('a')

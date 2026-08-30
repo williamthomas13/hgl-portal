@@ -9,8 +9,7 @@ import {
   CLASS_WORK_TYPE,
   DEFAULT_TUTORING_WORK_TYPE,
   hoursByWorkType,
-  sessionMinutes,
-} from '../../utils/work-types'
+  sessionMinutes, prepRows } from '../../utils/work-types'
 import { renderVersion } from '../../utils/comms-db-render'
 import { SAMPLE_CONTEXT, sampleExtraFor } from '../../utils/comms-variables'
 
@@ -198,7 +197,7 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
       .limit(3)
     for (const tc of (cards as any[]) ?? []) {
       const [{ data: tut }, { data: cls }] = await Promise.all([
-        supabaseAdmin.from('tutoring_sessions').select('duration_minutes, work_type').eq('timecard_id', tc.id),
+        supabaseAdmin.from('tutoring_sessions').select('duration_minutes, work_type, prep_minutes').eq('timecard_id', tc.id),
         supabaseAdmin.from('sessions').select('start_time, end_time').eq('timecard_id', tc.id),
       ])
       const ins = Array.isArray(tc.instructors) ? tc.instructors[0] : tc.instructors
@@ -214,6 +213,7 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
             workType: CLASS_WORK_TYPE,
             hours: sessionMinutes(s.start_time, s.end_time) / 60,
           })),
+          ...prepRows((tut as any[]) ?? []),
         ]),
       })
     }

@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { CLASS_WORK_TYPE, DEFAULT_TUTORING_WORK_TYPE, sessionMinutes } from './work-types'
+import { CLASS_WORK_TYPE, DEFAULT_TUTORING_WORK_TYPE, sessionMinutes, TEST_PREP_WORK_TYPE, PREP_WORK_TYPE } from './work-types'
 
 // PL-218: the tutor hours breakdown report — the hand-built Google-Calendar
 // spreadsheet (per-tutor tabs, work-category rows × month columns, totals,
@@ -94,7 +94,7 @@ export async function loadTutorHoursReport(opts: {
     supabase
       .from('tutoring_sessions')
       .select(
-        `id, tutor_id, starts_at, duration_minutes, status, reschedule_notice, work_type,
+        `id, tutor_id, starts_at, duration_minutes, status, reschedule_notice, work_type, prep_minutes,
          tutoring_engagements ( location, hourly_rate,
            subjects ( name, category, hourly_rate ),
            instructors ( default_meeting_link ) )`
@@ -170,7 +170,11 @@ export async function loadTutorHoursReport(opts: {
     const subject = one<any>(eng?.subjects)
     const workType = s.work_type ?? DEFAULT_TUTORING_WORK_TYPE
     let r: TutorHoursRow
-    if (workType !== DEFAULT_TUTORING_WORK_TYPE && workType !== CLASS_WORK_TYPE) {
+    // PL-412A: 'Test Prep' is the subject-derived DEFAULT for exam sessions
+    // — those are ordinary 1-on-1 sessions payroll-wise, so they keep the
+    // subject split (and its rate/revenue attribution) instead of collapsing
+    // into a single worktype row the moment the default lands.
+    if (workType !== DEFAULT_TUTORING_WORK_TYPE && workType !== TEST_PREP_WORK_TYPE && workType !== CLASS_WORK_TYPE) {
       // A pay-type title (PL-103) is its own payroll category — QBO treats it
       // separately, so the report does too.
       r = row(`worktype:${workType}`, workType, null)
@@ -185,6 +189,11 @@ export async function loadTutorHoursReport(opts: {
     }
     add(r, month, hours)
     categoryBySession.set(s.id, r.key)
+    // PL-412B: prep minutes are their own payroll category, like any
+    // pay-type title.
+    if ((s.prep_minutes ?? 0) > 0) {
+      add(row(`worktype:${PREP_WORK_TYPE}`, PREP_WORK_TYPE, null), month, Number(s.prep_minutes) / 60)
+    }
     const loc = (eng?.location ?? '').trim() || (one<any>(eng?.instructors)?.default_meeting_link ?? '').trim()
     addSplit(loc ? (isUrl(loc) ? 'on' : 'in') : 'un', hours)
   }

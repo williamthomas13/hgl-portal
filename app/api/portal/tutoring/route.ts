@@ -21,6 +21,7 @@ type Body =
   | { action: 'no_show'; session_id: string; note?: string }
   | { action: 'confirm_timecard'; timecard_id: string }
   | { action: 'set_work_type'; session_id: string; work_type: string }
+  | { action: 'set_prep_minutes'; session_id: string; prep_minutes: number }
   | { action: 'add_note'; session_id: string; note: string; next_time?: string }
   | { action: 'coverage_candidates'; session_id: string }
   | { action: 'request_coverage'; session_id: string; candidate_id: string; note?: string }
@@ -277,6 +278,43 @@ export async function POST(req: Request) {
         .update({ work_type: body.work_type, updated_at: new Date().toISOString() })
         .eq('id', session.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+
+    // PL-412B: per-session prep minutes — recorded with who/when, payable as
+    // its own 'Prep Time' line. The >15-minute case is a soft UI note, never
+    // a blocker; the 480 cap here is a sanity bound matching the DB check.
+    if (body.action === 'set_prep_minutes') {
+      const minutes = Number(body.prep_minutes)
+      if (!Number.isInteger(minutes) || minutes < 0 || minutes > 480) {
+        return NextResponse.json({ error: 'Prep time must be whole minutes (0–480).' }, { status: 400 })
+      }
+      const { data: session } = await supabase
+        .from('tutoring_sessions')
+        .select('id, tutor_id, timecard_id')
+        .eq('id', body.session_id)
+        .maybeSingle()
+      if (!session || !caller.instructorIds.includes(session.tutor_id)) {
+        return NextResponse.json({ error: 'Not your session.' }, { status: 403 })
+      }
+      if (await timecardLocked(session.timecard_id)) {
+        return NextResponse.json(
+          { error: 'This pay period has been approved — ask the Ops Director for a correction.' },
+          { status: 400 }
+        )
+      }
+      const { error } = await supabase
+        .from('tutoring_sessions')
+        .update({
+          prep_minutes: minutes === 0 ? null : minutes,
+          prep_set_by: caller.email ?? null,
+          prep_set_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', session.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      // The card total includes prep — keep it in step immediately.
+      if (session.timecard_id) await recomputeTimecard(session.timecard_id)
       return NextResponse.json({ ok: true })
     }
 

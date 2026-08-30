@@ -7,8 +7,7 @@ import {
   CLASS_WORK_TYPE,
   DEFAULT_TUTORING_WORK_TYPE,
   hoursByWorkType,
-  sessionMinutes,
-} from '../utils/work-types'
+  sessionMinutes, prepRows } from '../utils/work-types'
 
 // Client half of the tutor timecard view (Phase 7b §7.2): review the closed
 // period, correct exceptions (no-show, actual duration), confirm. Payable
@@ -33,6 +32,8 @@ export type TimecardSession = {
   reschedule_notice: 'ok' | 'late' | null
   cancel_note: string | null
   work_type: string | null
+  /** PL-412B: payable prep minutes for this session (null = none). */
+  prep_minutes: number | null
   studentName: string
   subjectName: string
 }
@@ -183,6 +184,27 @@ export default function TimecardPanel({
                       {s.work_type ?? DEFAULT_TUTORING_WORK_TYPE}
                     </span>
                   )}
+                  {/* PL-412B: per-session prep time — its own 'Prep Time' pay
+                      line; deliberately NOT on calendars (tied to the
+                      session, not scheduled time). */}
+                  {actionable.status === 'open' ? (
+                    <PrepControl
+                      prepMinutes={s.prep_minutes}
+                      disabled={busy}
+                      onSave={(m) =>
+                        call(
+                          { action: 'set_prep_minutes', session_id: s.id, prep_minutes: m },
+                          m > 0 ? 'Prep time saved — it counts toward your hours as Prep Time.' : 'Prep time cleared.'
+                        )
+                      }
+                    />
+                  ) : (
+                    (s.prep_minutes ?? 0) > 0 && (
+                      <span className="text-[10px] uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-1">
+                        prep {s.prep_minutes} min
+                      </span>
+                    )
+                  )}
                   {actionable.status === 'open' && s.status === 'completed' && (
                     <span className="ml-auto flex gap-2 text-xs items-center">
                       {noShowArming === s.id ? (
@@ -256,6 +278,8 @@ export default function TimecardPanel({
                 workType: CLASS_WORK_TYPE,
                 hours: sessionMinutes(c.start_time, c.end_time) / 60,
               })),
+              // PL-412B: prep minutes sum separately under 'Prep Time'.
+              ...prepRows(sessions),
             ])
             if (byType.length === 0) return null
             return (
@@ -367,5 +391,65 @@ export default function TimecardPanel({
         </div>
       )}
     </div>
+  )
+}
+
+/** PL-412B: the "Prep time" checkbox that reveals a minutes field. Soft note
+ *  above 15 minutes (never a blocker); unchecking clears the minutes. */
+function PrepControl({
+  prepMinutes,
+  disabled,
+  onSave,
+}: {
+  prepMinutes: number | null
+  disabled: boolean
+  onSave: (minutes: number) => void
+}) {
+  const [open, setOpen] = useState((prepMinutes ?? 0) > 0)
+  const [mins, setMins] = useState(prepMinutes != null ? String(prepMinutes) : '')
+  const n = Number(mins)
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs">
+      <label className="inline-flex items-center gap-1 text-gray-600">
+        <input
+          type="checkbox"
+          checked={open}
+          disabled={disabled}
+          onChange={(e) => {
+            setOpen(e.target.checked)
+            if (!e.target.checked) {
+              setMins('')
+              if ((prepMinutes ?? 0) > 0) onSave(0)
+            }
+          }}
+        />
+        Prep time
+      </label>
+      {open && (
+        <>
+          <input
+            type="number"
+            min={0}
+            max={480}
+            step={5}
+            value={mins}
+            disabled={disabled}
+            onChange={(e) => setMins(e.target.value)}
+            onBlur={() => {
+              if (mins === '') return
+              if (Number.isFinite(n) && n >= 0 && n <= 480 && Math.round(n) !== (prepMinutes ?? 0)) {
+                onSave(Math.round(n))
+              }
+            }}
+            className="w-14 border border-gray-200 rounded p-0.5 bg-white"
+            title="Prep minutes for this session — paid as Prep Time"
+          />
+          <span className="text-gray-500">min</span>
+          {n > 15 && (
+            <span className="text-amber-700">more than 15 minutes per session is uncommon</span>
+          )}
+        </>
+      )}
+    </span>
   )
 }

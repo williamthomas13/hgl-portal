@@ -45,6 +45,17 @@ export function examFamilyFor(classType: string | null | undefined): ExamFamily 
   return null
 }
 
+/** PL-412: is this tutoring SUBJECT a test-prep exam whose timecard rows
+ *  should default to the 'Test Prep' work type? STRICT word boundaries on
+ *  all three — unlike examFamilyFor's historical bare-substring SAT branch
+ *  (kept as-is for class titles): "French" and "Satire" never match;
+ *  "PSAT" and "SAT Subject Tests" do; "SSAT"/"ISEE" deliberately do NOT
+ *  (their own exams — no SAT default, and the dropdown stays editable). */
+export function isTestPrepExamSubject(name: string | null | undefined): boolean {
+  if (!name) return false
+  return /\bpsat\b/i.test(name) || /\bact\b/i.test(name) || /\bsat\b/i.test(name)
+}
+
 /** Mid-sentence registration guidance for schoolBased exams — fits both
  *  "…through the ___." (email FAQ) and "Visit ___ for…" (page fine print). */
 export const SCHOOL_BASED_REG_TEXT =

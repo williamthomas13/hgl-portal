@@ -3,7 +3,8 @@ import { formatDateRange } from './dates'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
-import { sessionMinutes } from './work-types'
+import { sessionMinutes, TEST_PREP_WORK_TYPE } from './work-types'
+import { isTestPrepExamSubject } from './exam-family'
 
 // Phase 7b timecards (docs/PHASE7_SPEC.md §7). Semi-monthly pay periods:
 // 1st–15th (payday the 20th) and 16th–end of month (payday the 5th),
@@ -105,7 +106,9 @@ async function payableSessions(tutorId: string, p: PayPeriod) {
   const { fromIso, toIso } = periodBounds(p)
   const { data, error } = await supabase
     .from('tutoring_sessions')
-    .select('id, starts_at, ends_at, duration_minutes, status, reschedule_notice, timecard_id')
+    .select(
+      'id, starts_at, ends_at, duration_minutes, status, reschedule_notice, timecard_id, work_type, prep_minutes, tutoring_engagements ( subjects ( name ) )'
+    )
     .eq('tutor_id', tutorId)
     .gte('starts_at', fromIso)
     .lt('starts_at', toIso)
@@ -175,6 +178,32 @@ export async function recomputeTimecard(timecardId: string): Promise<number | nu
   if (ids.length > 0) {
     await supabase.from('tutoring_sessions').update({ timecard_id: tc.id }).in('id', ids)
   }
+  // PL-412A: subject-derived work-type DEFAULT, applied here at STAMP time
+  // (never at render): a row whose work_type is NULL and whose subject is a
+  // test-prep exam (strict word-boundary SAT/ACT/PSAT — "French" never
+  // matches) gets 'Test Prep'. Null rows only — a value the tutor picked
+  // (or a prior default) is NEVER overwritten, and only OPEN cards default
+  // (confirmed/approved rows untouched). This doubles as the one-time
+  // backfill: the next sweep defaults every open card's null test-prep rows.
+  if (tc.status === 'open') {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const defaultIds = (sessions as any[])
+      .filter((s) => {
+        if (s.work_type != null) return false
+        const eng = Array.isArray(s.tutoring_engagements) ? s.tutoring_engagements[0] : s.tutoring_engagements
+        const subj = eng && (Array.isArray(eng.subjects) ? eng.subjects[0] : eng.subjects)
+        return isTestPrepExamSubject(subj?.name)
+      })
+      .map((s) => s.id)
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    if (defaultIds.length > 0) {
+      await supabase
+        .from('tutoring_sessions')
+        .update({ work_type: TEST_PREP_WORK_TYPE, updated_at: new Date().toISOString() })
+        .in('id', defaultIds)
+        .is('work_type', null)
+    }
+  }
   // Un-stamp sessions that stopped being payable (e.g. corrected to a free
   // reschedule) so they don't linger on the card.
   await supabase
@@ -200,7 +229,13 @@ export async function recomputeTimecard(timecardId: string): Promise<number | nu
     (sum, s) => sum + sessionMinutes(s.start_time, s.end_time) / 60,
     0
   )
-  const total = Number((tutoringHours + classHours).toFixed(2))
+  // PL-412B: prep minutes are payable — they join the card total (and are
+  // summed separately as 'Prep Time' everywhere hours-by-type renders).
+  const prepHours = (sessions as { prep_minutes?: number | null }[]).reduce(
+    (sum, s) => sum + (s.prep_minutes ?? 0) / 60,
+    0
+  )
+  const total = Number((tutoringHours + classHours + prepHours).toFixed(2))
   await supabase
     .from('timecards')
     .update({ total_hours: total, updated_at: new Date().toISOString() })

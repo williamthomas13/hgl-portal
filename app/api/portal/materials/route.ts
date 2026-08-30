@@ -109,7 +109,7 @@ export async function GET(req: Request) {
 
   let q = supabase
     .from('student_materials')
-    .select('id, student_id, class_id, instructor_email, instructor_name, kind, title, url, storage_path, note, created_at')
+    .select('id, student_id, class_id, instructor_email, instructor_name, kind, title, url, storage_path, note, created_at, session_id, due_date')
     .order('created_at', { ascending: false })
 
   if (caller.kind === 'parent') {
@@ -143,7 +143,25 @@ export async function GET(req: Request) {
 
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ materials: await withSignedUrls(data ?? []) })
+  // PL-411: resolve session anchors app-side (session_id is a PLAIN uuid —
+  // no FK/embed, the batch-40 PostgREST rule) so freshness rules can read
+  // the anchored session's date and completion state.
+  const rows = (data ?? []) as any[]
+  const sessionIds = [...new Set(rows.map((r) => r.session_id).filter(Boolean))]
+  let sessionsById: Record<string, { starts_at: string; status: string }> = {}
+  if (sessionIds.length > 0) {
+    const { data: sess } = await supabase
+      .from('tutoring_sessions')
+      .select('id, starts_at, status')
+      .in('id', sessionIds)
+    sessionsById = Object.fromEntries(((sess as any[]) ?? []).map((s) => [s.id, s]))
+  }
+  const withAnchors = rows.map((r) => ({
+    ...r,
+    session_starts_at: r.session_id ? (sessionsById[r.session_id]?.starts_at ?? null) : null,
+    session_status: r.session_id ? (sessionsById[r.session_id]?.status ?? null) : null,
+  }))
+  return NextResponse.json({ materials: await withSignedUrls(withAnchors) })
 }
 
 export async function POST(req: Request) {
@@ -161,6 +179,24 @@ export async function POST(req: Request) {
   const note = String(form.get('note') ?? '').trim() || null
   const link = String(form.get('link') ?? '').trim()
   const file = form.get('file') as File | null
+  // PL-411: optional anchors — a session and/or a due date; neither required.
+  const sessionId = String(form.get('sessionId') ?? '').trim()
+  const dueDate = String(form.get('dueDate') ?? '').trim()
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+    return NextResponse.json({ error: 'Due date must be a calendar date.' }, { status: 400 })
+  }
+  if (sessionId) {
+    // App-side validation (plain uuid, no FK): the session must exist and
+    // belong to the targeted student.
+    const { data: sess } = await supabase
+      .from('tutoring_sessions')
+      .select('id, student_id')
+      .eq('id', sessionId)
+      .maybeSingle()
+    if (!sess || (studentId && sess.student_id !== studentId)) {
+      return NextResponse.json({ error: 'That session is not on this student\'s schedule.' }, { status: 400 })
+    }
+  }
 
   if (!studentId && !classId) return NextResponse.json({ error: 'Missing student or class.' }, { status: 400 })
   if (studentId && classId) return NextResponse.json({ error: 'Share with a student OR a class, not both.' }, { status: 400 })
@@ -216,6 +252,8 @@ export async function POST(req: Request) {
       url,
       storage_path: storagePath,
       note,
+      session_id: sessionId || null,
+      due_date: dueDate || null,
     })
     .select('id')
     .single()

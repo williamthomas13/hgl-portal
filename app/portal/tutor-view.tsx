@@ -114,7 +114,7 @@ export default async function TutorView({
       supabase
         .from('tutoring_sessions')
         .select(
-          `id, starts_at, ends_at, duration_minutes, status, reschedule_notice, cancel_note, work_type,
+          `id, starts_at, ends_at, duration_minutes, status, reschedule_notice, cancel_note, work_type, prep_minutes,
            students ( first_name, last_name ),
            tutoring_engagements ( subjects ( name ) )`
         )
@@ -139,6 +139,7 @@ export default async function TutorView({
         reschedule_notice: s.reschedule_notice,
         cancel_note: s.cancel_note,
         work_type: s.work_type,
+        prep_minutes: s.prep_minutes ?? null,
         studentName: student ? `${student.first_name} ${student.last_name}` : '—',
         subjectName: one<any>(eng?.subjects)?.name ?? '',
       }
@@ -401,7 +402,9 @@ export default async function TutorView({
 
       <SessionNotesPanel sessions={noteSessions} timezone={tz} />
 
-      {/* PL-203: share materials with the families of students I tutor. */}
+      {/* PL-203: share materials with the families of students I tutor.
+          PL-411: upcoming sessions ride along so a share can anchor to
+          "the {date} session" (defaulting to the student's next one). */}
       <ShareMaterialsPanel
         students={(() => {
           const seen = new Map<string, string>()
@@ -411,6 +414,10 @@ export default async function TutorView({
           }
           return [...seen.entries()].map(([id, name]) => ({ id, name }))
         })()}
+        upcomingSessions={((upcoming ?? []) as any[]).map((s) => {
+          const st = Array.isArray(s.students) ? s.students[0] : s.students
+          return { id: s.id as string, studentId: (st?.id ?? '') as string, startsAt: s.starts_at as string }
+        })}
       />
 
       <div id="portal-timecards" style={{ scrollMarginTop: 16 }}>
