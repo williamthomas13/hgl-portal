@@ -833,7 +833,13 @@ export async function runDebouncedPushAudit(channelRowId: string, myStamp: strin
     .select('id, tutor_id, last_push_at')
     .eq('id', channelRowId)
     .maybeSingle()
-  if (!row || row.last_push_at !== myStamp) return 'superseded'
+  // Epoch comparison, NOT string equality — Postgres echoes '+00:00' where
+  // toISOString writes 'Z', and the string mismatch made every audit
+  // supersede ITSELF (the real bug behind the silent E2E, masquerading as a
+  // platform after() issue).
+  if (!row || !row.last_push_at || new Date(row.last_push_at).getTime() !== new Date(myStamp).getTime()) {
+    return 'superseded'
+  }
   const drift = await syncTutoringDriftTable(row.tutor_id)
   await sendGroupedDriftAlert(drift, ADMIN_EMAIL).catch((e) => console.error('push drift alert failed:', e))
   return 'ran'
