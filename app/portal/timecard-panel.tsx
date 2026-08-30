@@ -143,6 +143,8 @@ export default function TimecardPanel({
             <span className="font-semibold text-hgl-slate">
               {formatDateRange(actionable.period_start, actionable.period_end)}
             </span>
+            {/* PL-409: payroll runs on Salt Lake City time — label, no math. */}
+            <span className="text-xs text-gray-400">Salt Lake City time</span>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${CARD_STATUS_STYLES[actionable.status]}`}>
               {actionable.status.replace('_', ' ')}
             </span>

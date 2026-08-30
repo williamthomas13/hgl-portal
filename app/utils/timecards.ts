@@ -1,5 +1,5 @@
 import { emailBaseUrl } from './base-url'
-import { formatDateRange } from './dates'
+import { formatDateRange, staffTimeCityLabel } from './dates'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
@@ -337,7 +337,11 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
         // PL-380: the pay period renders plainly ("August 1 – 15, 2026") —
         // subject, heading, preheader, and {payPeriodRange} all from THE
         // shared range formatter, never raw ISO dates.
-        const periodLabel = formatDateRange(p.start, p.end)
+        // PL-409: payroll anchors America/Denver — the period reads
+        // "(Salt Lake City time)" everywhere it renders (PL-398 language).
+        // Label only; boundary math unchanged. Rides the payPeriodRange
+        // VARIABLE, so the live T5 template needs no new version.
+        const periodLabel = `${formatDateRange(p.start, p.end)} (${staffTimeCityLabel('America/Denver')} time)`
         // PL-66: registry copy when T5 is flipped live; code twin otherwise.
         const codeTwin = (): Rendered => ({
           subject: `Your timecard for ${periodLabel} is ready to confirm`,

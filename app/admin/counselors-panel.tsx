@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
-import { formatDateAdmin } from '../utils/dates'
+import { formatDateAdmin, staffTimeCityLabel } from '../utils/dates'
 import { SchoolCommsRow } from './school-comms'
 import { escapeLike } from '../utils/like-escape'
 import { EmailLink, TimezoneSelect, useDeepLinkFocus } from './ui'
@@ -488,7 +488,13 @@ export default function CounselorsPanel({
                     <span className="font-bold text-hgl-slate">{school.nickname}</span>
                     <span className="block text-xs text-gray-500">
                       {school.name}
-                      {school.timezone ? ` · ${school.timezone}` : ''}
+                      {/* PL-398 sweep leftover (caught in batch 42): the
+                          card subtitle is a DISPLAY — city time, id hoverable. */}
+                      {school.timezone ? (
+                        <span title={school.timezone}> · {staffTimeCityLabel(school.timezone)} time</span>
+                      ) : (
+                        ''
+                      )}
                     </span>
                   </div>
                 </div>

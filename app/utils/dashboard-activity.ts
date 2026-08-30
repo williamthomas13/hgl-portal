@@ -350,7 +350,7 @@ export async function loadActivity(opts: {
       type: 'Materials',
       groupKey: 'Materials',
       when: mp.created_at,
-      text: `${mp.instructor_name ?? mp.instructor_email} shared \u201c${mp.title}\u201d with ${st?.first_name ?? 'a student'}${mp.due_date ? ` (due ${mp.due_date})` : ''}.`,
+      text: `${mp.instructor_name ?? mp.instructor_email} shared \u201c${mp.title}\u201d with ${st?.first_name ?? 'a student'}${mp.due_date ? ` (due ${new Date(mp.due_date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric' })})` : ''}.`,
       href: `/admin/families/${familyId}`,
     })
   }
