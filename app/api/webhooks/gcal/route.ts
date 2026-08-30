@@ -1,4 +1,4 @@
-import { NextResponse, after } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { runDebouncedPushAudit } from '../../../utils/gcal-sync'
 
@@ -46,12 +46,15 @@ export async function POST(req: Request) {
     .from('gcal_watch_channels')
     .update({ last_push_at: stamp, updated_at: stamp })
     .eq('id', row.id)
-  after(async () => {
-    try {
-      await runDebouncedPushAudit(row.id, stamp)
-    } catch (e) {
-      console.error('gcal push audit failed (hourly poll backstops):', e)
-    }
-  })
-  return NextResponse.json({ ok: true })
+  // INLINE (see runDebouncedPushAudit's comment): the E2E proved after()
+  // callbacks die silently on this platform, so the ~5s coalesce + audit run
+  // before the response. Google tolerates the slower 200 (and its retries
+  // are dropped harmlessly by the ownership check).
+  let audit: string = 'skipped'
+  try {
+    audit = await runDebouncedPushAudit(row.id, stamp)
+  } catch (e) {
+    console.error('gcal push audit failed (hourly poll backstops):', e)
+  }
+  return NextResponse.json({ ok: true, audit })
 }

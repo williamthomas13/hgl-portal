@@ -819,11 +819,15 @@ export async function sweepGcalWatchChannels(): Promise<{
 
 /** PL-410: handle one validated push — debounced per calendar so a burst
  *  (Billy's Aug-18 mass-delete) coalesces into ONE audit pass and, via
- *  PL-402's once-only grouping, at most ONE email. The caller has already
- *  responded 200; this runs in after(). */
+ *  PL-402's once-only grouping, at most ONE email. Runs INLINE in the
+ *  webhook handler (a ~5s coalesce + the audit fits comfortably in the
+ *  route's 60s window) — the E2E proved Vercel kills after() callbacks
+ *  silently, so nothing rides post-response execution. Ownership: every
+ *  push stamps last_push_at; after the sleep only the LATEST stamp's
+ *  request proceeds, so a rapid burst = one audit = one grouped email. */
 export async function runDebouncedPushAudit(channelRowId: string, myStamp: string): Promise<'ran' | 'superseded' | 'skipped'> {
   // Coalesce: wait out the burst, then only the LAST push's stamp survives.
-  await new Promise((r) => setTimeout(r, 15_000))
+  await new Promise((r) => setTimeout(r, 5_000))
   const { data: row } = await supabase
     .from('gcal_watch_channels')
     .select('id, tutor_id, last_push_at')
