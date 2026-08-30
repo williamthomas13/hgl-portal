@@ -136,6 +136,14 @@ export default function LoginForm({
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
       <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/collateral/hgl-logo-color.png"
+          alt="Higher Ground Learning"
+          width={71}
+          height={40}
+          className="h-10 w-auto mb-4"
+        />
         <h1 className="text-2xl font-bold text-hgl-slate mb-1">Sign in</h1>
         <p className="text-sm text-gray-500 mb-6">Higher Ground Learning portal</p>
 

@@ -20,7 +20,7 @@ import { examFamilyFor, SCHOOL_BASED_REG_TEXT } from '../../utils/exam-family'
 import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
 import ClassPageAnalytics from './analytics'
 import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
-import { pontano, PAGE_HERO } from '../../components/public-skin'
+import { publicSkin, PAGE_HERO } from '../../components/public-skin'
 
 // PL-348: the public class page — the portal-hosted replacement for the
 // per-class Squarespace pages (Option A). Top half is CLASS-SPECIFIC and
@@ -612,7 +612,7 @@ export async function ClassPageView({
     <a
       href={registerHref}
       data-track="register"
-      className={`inline-block text-white text-center font-bold py-3 px-8 rounded-md hover:opacity-90 transition ${extra}`}
+      className={`public-cta inline-block text-white text-center font-bold py-3 px-8 rounded-md hover:opacity-90 transition ${extra}`}
       style={{ background: accent }}
     >
       {isFull ? 'Join the waitlist' : 'Register'}
@@ -698,7 +698,7 @@ export async function ClassPageView({
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       {!isSample && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       )}
@@ -781,7 +781,7 @@ export async function ClassPageView({
             <a
               href={registerHref}
               data-track="register"
-              className="inline-block bg-white text-center font-bold py-3 px-8 rounded-md hover:opacity-90 transition"
+              className="public-cta inline-block bg-white text-center font-bold py-3 px-8 rounded-md hover:opacity-90 transition"
               style={{ color: accent }}
             >
               {isFull ? 'Join the waitlist' : 'Register'}

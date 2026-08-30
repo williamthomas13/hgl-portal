@@ -2730,24 +2730,14 @@ export default function AdminDashboard() {
       )}
       {/* PL-326: the manager simulation announces itself and is read-only. */}
       {simManager && (
-        <div className="bg-purple-700 text-white px-6 py-2 text-sm font-semibold sticky top-0 z-40">
+        <div className="bg-purple-700 text-white px-6 py-2 text-sm font-semibold sticky top-10 z-40">
           Manager view simulation — read-only. Ownership panels are hidden exactly as the manager
           role hides them.
         </div>
       )}
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-start justify-between">
-          <h1 className="text-2xl font-bold text-hgl-slate">HGL Admin</h1>
-          <button
-            onClick={async () => {
-              await supabase.auth.signOut()
-              window.location.assign('/login')
-            }}
-            className="text-sm text-gray-500 hover:text-hgl-slate underline"
-          >
-            Sign out
-          </button>
-        </div>
+        {/* PL-414: Sign out lives in the gray bar now — the title row slims. */}
+        <h1 className="text-2xl font-bold text-hgl-slate">HGL Admin</h1>
 
         {/* PL-190 (was PL-101): the sidebar now shows only the ACTIVE topline
             tab's filed pages — the topline bar (layout) switches groups, this

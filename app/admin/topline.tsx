@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { supabase } from '../utils/supabase'
 
 // PL-190: Scarlett's IA (Jul 28) — six topline tabs, always clickable, every
 // page filed under one. This bar renders from the admin layout so it's on
@@ -81,13 +82,55 @@ export default function AdminTopline() {
     return () => io.disconnect()
   }, [])
 
+  // PL-414: hide on scroll-down, return the moment scrolling UP begins.
+  // A small accumulated threshold keeps tiny jitters from flickering it;
+  // near the page top it's ALWAYS shown instantly. Anchor jumps behave like
+  // any scroll (a downward jump tucks it away; the first upward nudge — or
+  // being at the top — brings it back), so no state can trap it.
+  const [hidden, setHidden] = useState(false)
+  useEffect(() => {
+    let lastY = window.scrollY
+    let acc = 0
+    const THRESHOLD = 12 // px of same-direction scroll before the bar reacts
+    const onScroll = () => {
+      const y = window.scrollY
+      const dy = y - lastY
+      lastY = y
+      if (y < 48) {
+        setHidden(false)
+        acc = 0
+        return
+      }
+      if (dy !== 0 && dy > 0 !== acc > 0) acc = 0
+      acc += dy
+      if (acc > THRESHOLD) setHidden(true)
+      else if (acc < -THRESHOLD) setHidden(false)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   return (
-    <div className="bg-hgl-slate relative">
+    // PL-414: sticky, z-50 (the manager-sim and view-as banners sit at
+    // top-10 z-40 below it); motion-safe = prefers-reduced-motion gets a
+    // plain show/hide with no slide.
+    <div
+      className={`bg-hgl-slate relative sticky top-0 z-50 motion-safe:transition-transform motion-safe:duration-200 ${
+        hidden ? '-translate-y-full' : ''
+      }`}
+    >
       <nav
         ref={scroller}
         aria-label="Admin"
-        className="max-w-6xl mx-auto px-4 sm:px-10 flex items-center gap-1 overflow-x-auto"
+        className="max-w-6xl mx-auto px-4 sm:px-10 flex items-center gap-1 overflow-x-auto h-10"
       >
+        {/* PL-415: the real logo in the chrome — white on the slate bar,
+            height-capped to the PL-414 height budget, explicit dimensions
+            (no layout shift), home = the dashboard. */}
+        <a href="/admin" className="shrink-0 mr-2" title="Dashboard">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/collateral/hgl-logo-white.png" alt="Higher Ground Learning" width={43} height={24} className="h-6 w-auto" />
+        </a>
         {TABS.map((t) => (
           <a
             key={t.id}
@@ -101,6 +144,18 @@ export default function AdminTopline() {
             {t.label}
           </a>
         ))}
+        <span className="flex-1 shrink-0 min-w-2" aria-hidden />
+        {/* PL-414: Sign out joins the bar (right-aligned, after the tabs) —
+            the floating link stops living alone on the page body. */}
+        <button
+          onClick={async () => {
+            await supabase.auth.signOut()
+            window.location.assign('/login')
+          }}
+          className="text-sm text-white/70 hover:text-white px-3 py-2.5 whitespace-nowrap"
+        >
+          Sign out
+        </button>
         <span ref={endMark} aria-hidden className="w-px shrink-0 self-stretch" />
       </nav>
       {moreRight && (

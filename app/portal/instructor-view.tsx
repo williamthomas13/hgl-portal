@@ -12,6 +12,8 @@ import { bySessionStart, effectiveStartDate } from '../utils/dates'
 import CommsTimeline, { type TimelineItem } from './comms-timeline'
 import { TEMPLATE_LABELS } from '../utils/comms'
 import { escapeLike } from '../utils/like-escape'
+import ClassTabs from './class-tabs'
+import { classDisplayLabel } from '../utils/class-label'
 
 // Instructor view (PHASE4_SPEC §5): own classes with the session calendar,
 // enrollment count vs min/capacity, Synap group link, and full-intake rosters
@@ -34,7 +36,7 @@ export default async function InstructorView({
       .from('classes')
       .select(
         `
-        id, status, class_type, delivery_mode, capacity, min_enrollment,
+        id, status, class_type, delivery_mode, fo_short_name, capacity, min_enrollment,
         start_date, default_location, synap_group, registration_close_date,
         schools ( name, nickname ),
         instructors!inner ( email ),
@@ -164,7 +166,8 @@ export default async function InstructorView({
             name: `${one<any>(c.schools)?.nickname ?? 'HGL'} ${c.class_type}`,
           }))}
       />
-      {(classes as any[]).map((c) => {
+      {(() => {
+      const renderCard = (c: any) => {
         const school = one<any>(c.schools)
         const label = `${school?.nickname ?? 'HGL'} ${c.class_type}`
         const sessions = [...(c.sessions ?? [])].sort(bySessionStart)
@@ -439,7 +442,38 @@ export default async function InstructorView({
             )}
           </div>
         )
-      })}
+      }
+      // PL-413: 3+ LIVE classes → tabs like the admin's Live class rosters
+      // (short marketing names via classDisplayLabel; ended/cancelled under
+      // "Past (N)"). 1–2 classes keep today's stacked layout exactly as-is.
+      const withMeta = (classes as any[]).map((c) => {
+        const sessions = [...(c.sessions ?? [])].sort(bySessionStart)
+        const lastSession = sessions[sessions.length - 1]?.session_date ?? c.start_date
+        return { c, isPast: c.status === 'cancelled' || today > lastSession }
+      })
+      const liveClasses = withMeta.filter((x) => !x.isPast).map((x) => x.c)
+      const pastClasses = withMeta.filter((x) => x.isPast).map((x) => x.c)
+      if (liveClasses.length < 3) {
+        return <>{(classes as any[]).map((c) => <div key={c.id}>{renderCard(c)}</div>)}</>
+      }
+      return (
+        <ClassTabs
+          live={liveClasses.map((c) => ({
+            id: c.id,
+            label: classDisplayLabel({
+              schoolNickname: one<any>(c.schools)?.nickname ?? null,
+              deliveryMode: c.delivery_mode,
+              shortName: c.fo_short_name,
+              classType: c.class_type,
+            }),
+          }))}
+          pastCount={pastClasses.length}
+          liveCards={liveClasses.map((c) => <div key={c.id}>{renderCard(c)}</div>)}
+          pastCards={pastClasses.map((c) => <div key={c.id}>{renderCard(c)}</div>)}
+          storageKey={`hgl-class-tab:${email}`}
+        />
+      )
+      })()}
     </div>
   )
 }

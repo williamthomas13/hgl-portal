@@ -1,3 +1,15 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* PL-408: the public pages' heading + button faces (see public-skin.ts —
+   weights 600/700 match the sqsp hierarchy). Scoped to .public-skin so the
+   admin/portal chrome is untouched. */
+.public-skin h1,
+.public-skin h2,
+.public-skin h3 {
+  font-family: var(--font-heading-serif), Georgia, 'Times New Roman', serif;
+}
+.public-skin .public-cta {
+  font-family: var(--font-button-sans), Arial, sans-serif;
+  letter-spacing: 0.01em;
+}

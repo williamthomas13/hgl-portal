@@ -78,7 +78,7 @@ export default function InterestCapture({
         <button
           type="submit"
           disabled={busy}
-          className="bg-hgl-blue text-white font-bold px-4 py-2 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50 text-sm whitespace-nowrap"
+          className="public-cta bg-hgl-blue text-white font-bold px-4 py-2 rounded-md hover:bg-hgl-blue-hover transition disabled:opacity-50 text-sm whitespace-nowrap"
         >
           {busy ? 'Saving…' : 'Tell me first'}
         </button>

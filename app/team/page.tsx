@@ -4,7 +4,7 @@ import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { plainTextFromMarkdown, renderSiteMarkdown } from '../utils/site-md'
 import { CONSULT_HREF } from '../components/ClassStateCard'
 import { emailBaseUrl } from '../utils/base-url'
-import { pontano } from '../components/public-skin'
+import { publicSkin } from '../components/public-skin'
 
 // PL-358: the public team page — GENERATED from instructor profiles (the
 // one instructors table; show_on_team + team_order decide who and in what
@@ -77,7 +77,7 @@ export default async function TeamPage() {
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <section className="bg-hgl-slate">
         <div className="max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white">

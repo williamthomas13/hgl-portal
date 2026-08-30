@@ -3,7 +3,7 @@ import { permanentRedirect } from 'next/navigation'
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { ClassStateCard } from '../components/ClassStateCard'
 import EvergreenCapture from '../components/EvergreenCapture'
-import { pontano } from '../components/public-skin'
+import { publicSkin } from '../components/public-skin'
 import { classPageMetadata, ClassPageView } from '../c/[slug]/view'
 import { bumpCodeVisit, resolveEvergreen } from '../utils/evergreen'
 
@@ -89,7 +89,7 @@ export default async function EvergreenCodePage({
     // Between classes: the SAME URL serves the interest capture — a printed
     // or bookmarked code never strands.
     return (
-      <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+      <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
         <EvergreenCapture
           schoolId={res.kind === 'school' ? res.schoolId : null}
           classType={res.classType}

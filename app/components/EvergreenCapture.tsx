@@ -48,6 +48,9 @@ export default function EvergreenCapture({
 
   return (
     <div className="max-w-md mx-auto bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-8 my-12">
+      {/* PL-415: logo on the capture card — explicit dims, no layout shift. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/collateral/hgl-logo-color.png" alt="Higher Ground Learning" width={71} height={40} className="h-10 w-auto mb-4" />
       <h1 className="text-2xl font-bold text-hgl-slate mb-2">{heading}</h1>
       <p className="text-gray-600 mb-5">{sub}</p>
       {state === 'done' ? (
@@ -81,7 +84,7 @@ export default function EvergreenCapture({
           <button
             onClick={submit}
             disabled={state === 'busy' || !email.trim()}
-            className="w-full bg-hgl-blue text-white font-bold py-3 rounded-md hover:opacity-90 transition disabled:opacity-50"
+            className="public-cta w-full bg-hgl-blue text-white font-bold py-3 rounded-md hover:opacity-90 transition disabled:opacity-50"
           >
             {state === 'busy' ? 'Adding you…' : 'Email me when it opens'}
           </button>

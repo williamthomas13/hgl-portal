@@ -4,7 +4,7 @@ import { publicTimeCityLabel, formatDateFull, bySessionStart, effectiveStartDate
 import { preferredClassPath } from '../utils/evergreen'
 import { DEFAULT_TIMEZONE } from '../utils/lifecycle'
 import { imageAttrs } from '../utils/class-page-images'
-import { pontano, PAGE_HERO } from '../components/public-skin'
+import { publicSkin, PAGE_HERO } from '../components/public-skin'
 import { CONSULT_HREF } from '../components/ClassStateCard'
 
 // PL-378 A: the public /classes browse page — the portal-rendered
@@ -124,7 +124,7 @@ export default async function ClassesBrowsePage({
   const visible = cityFilter ? upcoming.filter((c) => c.city === cityFilter) : upcoming
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       {/* the PL-374 skin: brand hero + scrim */}
       <section className="relative overflow-hidden bg-hgl-slate">
         {/* eslint-disable-next-line @next/next/no-img-element */}

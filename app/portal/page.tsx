@@ -105,9 +105,18 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-xl font-bold text-hgl-slate">Higher Ground Learning</h1>
-            <p className="text-xs text-gray-500">{email}</p>
+          {/* PL-415: the real logo in the chrome — color on the light
+              header, explicit dimensions (no layout shift), home = this
+              audience's portal. At 375px the wordmark yields to logo-only. */}
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/portal" className="shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/collateral/hgl-logo-color.png" alt="Higher Ground Learning" width={57} height={32} className="h-8 w-auto" />
+            </Link>
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-hgl-slate hidden sm:block">Higher Ground Learning</h1>
+              <p className="text-xs text-gray-500 truncate">{email}</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {views.length > 1 && (

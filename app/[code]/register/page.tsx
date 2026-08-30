@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { permanentRedirect } from 'next/navigation'
 import EvergreenCapture from '../../components/EvergreenCapture'
-import { pontano } from '../../components/public-skin'
+import { publicSkin } from '../../components/public-skin'
 import { RegistrationForm } from '../../register/[id]/registration-form'
 import { bumpCodeVisit, resolveEvergreen } from '../../utils/evergreen'
 
@@ -25,7 +25,7 @@ export default async function EvergreenRegisterPage({
 }) {
   const code = decodeURIComponent((await params).code).toLowerCase().trim()
   const fallbackCapture = (heading: string, classType: string, schoolId: string | null) => (
-    <div className={`min-h-screen bg-gray-50 ${pontano.className}`}>
+    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       <EvergreenCapture
         schoolId={schoolId}
         classType={classType}
@@ -41,7 +41,12 @@ export default async function EvergreenRegisterPage({
   if (res.kind === 'legacy') permanentRedirect(res.destination)
   if (res.kind === 'school' || res.kind === 'course') {
     await bumpCodeVisit(code)
-    if (res.classSlug) return <RegistrationForm idOrSlug={res.classSlug} />
+    if (res.classSlug)
+      return (
+        <div className={publicSkin}>
+          <RegistrationForm idOrSlug={res.classSlug} />
+        </div>
+      )
     return fallbackCapture(
       res.kind === 'school'
         ? `No upcoming class at ${res.label} right now`

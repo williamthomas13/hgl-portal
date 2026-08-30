@@ -3,6 +3,8 @@
 // these cards — never a blank page, spinner, or bare error string — and every
 // card offers the main site as the way out.
 
+import { publicSkin } from './public-skin'
+
 export const MAIN_SITE = 'https://www.highergroundlearning.com'
 
 export function PublicNoticeCard({
@@ -13,13 +15,16 @@ export function PublicNoticeCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10">
+    <div className={`min-h-screen bg-gray-50 flex items-center justify-center p-10 ${publicSkin}`}>
       <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
+        {/* PL-415: logo on the notice card — explicit dims, no layout shift. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/collateral/hgl-logo-color.png" alt="Higher Ground Learning" width={71} height={40} className="h-10 w-auto mx-auto mb-4" />
         <h1 className="text-2xl font-bold text-hgl-slate mb-4">{title}</h1>
         <p className="text-gray-600 mb-6">{children}</p>
         <a
           href={MAIN_SITE}
-          className="inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
+          className="public-cta inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:bg-hgl-blue-hover transition"
         >
           Back to Higher Ground Learning
         </a>

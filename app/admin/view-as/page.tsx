@@ -222,7 +222,7 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
   return (
     <div className="min-h-screen bg-gray-50">
       {/* The banner — never mistakable for the real thing. */}
-      <div className="bg-purple-700 text-white px-6 py-3 flex flex-wrap items-center gap-3 text-sm sticky top-0 z-40">
+      <div className="bg-purple-700 text-white px-6 py-3 flex flex-wrap items-center gap-3 text-sm sticky top-10 z-40">
         <span className="font-bold">Viewing as {ROLES.find((r) => r.id === role)?.label ?? role}</span>
         {pickedLabel && role !== 'manager' && <span className="opacity-90">— {pickedLabel}</span>}
         <span className="opacity-75">· read-only preview</span>
