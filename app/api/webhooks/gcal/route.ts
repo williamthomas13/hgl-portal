@@ -15,6 +15,11 @@ import { runDebouncedPushAudit } from '../../../utils/gcal-sync'
 // remains the backstop; this route only accelerates it.
 
 export const runtime = 'nodejs'
+// The debounced audit sleeps 15s inside after() — the default 10s function
+// window would kill it before the audit ran (found live in the E2E: the
+// push stamped last_push_at and then died silently). 60s covers the sleep +
+// the per-calendar Google list comfortably.
+export const maxDuration = 60
 
 export async function POST(req: Request) {
   const channelId = req.headers.get('x-goog-channel-id')
