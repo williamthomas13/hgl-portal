@@ -1,4 +1,5 @@
 import type { EnrollmentEmailContext, Audience } from './email'
+import { hglMapsQuery } from './hgl-address'
 import { autopayNudgeCopyHtml } from './autopay-nudge-copy'
 import { SCHOOL_BASED_REG_TEXT } from './exam-family'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
@@ -649,9 +650,20 @@ export const VARIABLES: Record<string, VariableDef> = {
   // "online — here's the meeting link: <link>".
   classLocationLine: {
     description:
-      "Mode-aware, follows \"take place\": in-person → \"in Room 204\" · online → \"online — here's the meeting link: <link>\"",
-    block: true, // may contain the meeting-link anchor
-    resolve: (c) => classLocationTailHtml(c.defaultLocation, c.deliveryMode),
+      "Mode-aware, follows \"take place\": in-person → \"in Room 204 (map)\" · online → \"online — here's the meeting link: <link>\"",
+    block: true, // may contain the meeting-link / maps anchor
+    resolve: (c) => {
+      const base = classLocationTailHtml(c.defaultLocation, c.deliveryMode)
+      // PL-406: in-person classes append a maps link when a REAL address
+      // resolves — the school's street address (schools.address), or for
+      // at-HGL classes the PL-399 resolver (address-shaped location
+      // verbatim, else HQ). No address on record → no link (honest
+      // absence); the visible location text never changes.
+      if (c.deliveryMode === 'online' || !c.defaultLocation) return base
+      const address = c.schoolAddress ?? (c.isOpenEnrollment ? hglMapsQuery(c.defaultLocation) : null)
+      if (!address) return base
+      return `${base} (<a href="https://maps.google.com/?q=${encodeURIComponent(address)}">map</a>)`
+    },
   },
   // PL-65: subject-safe (title-case, no article) sibling of the above —
   // "Classroom location for {className}" / "Meeting link for {className}".

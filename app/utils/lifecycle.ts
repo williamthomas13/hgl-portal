@@ -103,6 +103,8 @@ export type ClassBundle = {
   timezone: string
   /** PL-382: school's city + the class's display_cities — publicTimeCityLabel inputs. */
   schoolCity: string | null
+  /** PL-406: schools.address — feeds the maps links. */
+  schoolAddress: string | null
   displayCities: string | null
   /** PL-274 amendment B: per-class switches — emails/nags condition on these. */
   hasDiagnostics: boolean
@@ -240,7 +242,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     delivery_mode, enrollment_deadline, registration_close_date, start_date,
     collateral_changed_at, timezone, has_diagnostics, display_cities,
     follow_on_class_id, fo_extended_until, fo_exclude, fo_announce_date, fo_discount_end,
-    schools ( name, nickname, timezone, city ),
+    schools ( name, nickname, timezone, city, address ),
     instructors ( name, email, bio ),
     sessions ( id, session_date, start_time, end_time, location ),
     enrollments (
@@ -336,6 +338,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       // PL-382: the public city label's inputs ride the bundle so email time
       // labels resolve exactly like the /c pages.
       schoolCity: school?.city ?? null,
+      schoolAddress: school?.address ?? null,
       displayCities: c.display_cities ?? null,
       instructorBio: instructor?.bio || null,
       instructorId: c.instructor_id ?? null,
@@ -436,6 +439,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     isOpenEnrollment: bundle.isOpenEnrollment,
     hasDiagnostics: bundle.hasDiagnostics,
     schoolCity: bundle.schoolCity,
+    schoolAddress: bundle.schoolAddress,
     displayCities: bundle.displayCities,
     defaultLocation: bundle.defaultLocation,
     deliveryMode: bundle.deliveryMode,

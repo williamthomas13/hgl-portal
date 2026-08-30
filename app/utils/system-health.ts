@@ -1,4 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { DEFAULT_TIMEZONE } from './lifecycle'
 import type { SystemHealth } from '../admin/system-health-card'
 
 // PL-136 (extracted for PL-331): the three numbers that fail quietly when
@@ -86,6 +87,10 @@ export async function computeSystemHealth(
           now.getTime() - new Date(startedAt).getTime() > 20 * 60_000
       ),
     },
+    // PL-407: surface the effective fallback timezone so this environment's
+    // value is READABLE (the prod CLASS_TIMEZONE env can't be inspected any
+    // other way) and dev/prod can't silently diverge.
+    timezone: { effective: DEFAULT_TIMEZONE, envSet: Boolean(process.env.CLASS_TIMEZONE) },
   }
   return { health, recovery }
 }

@@ -69,43 +69,7 @@ import {
 import { renderEmail, type RenderedWithVersion } from '../../../utils/comms-db-render'
 import { studentSurveyUrl } from '../../../utils/survey'
 import { renderRegistered } from '../../../utils/comms-registered'
-import {
-  ADMIN_EMAIL,
-  DEFAULT_TIMEZONE,
-  INTERNAL_EMAIL,
-  PAYMENT_EXPIRY_HOURS,
-  PAYMENT_REMINDERS,
-  SEQUENCE,
-  WAITLIST_CLAIM_HOURS,
-  packageSavings,
-  addDaysISO,
-  addonPageUrlFor,
-  claimUrlFor,
-  classDetailsSnapshot,
-  sessionListChanges,
-  classroomRequestUrlFor,
-  digestFrequencyUrlFor,
-  emailContext,
-  hoursSince,
-  isDue,
-  loadClassBundles,
-  loadTutoringPackages,
-  localDate,
-  localHour,
-  counselorRosterUrlFor,
-  effectiveDeadline,
-  registrationCloseFor,
-  registrationUrlFor,
-  spotsTaken,
-  stepTargetDate,
-  type ClassBundle,
-  type EnrollmentRow,
-  type TutoringPackage,
-  classDetailsSendDate,
-  missingDetailsAlertStart,
-  stepDisabledForClass,
-  isReturningFamily,
-} from '../../../utils/lifecycle'
+import { ADMIN_EMAIL, INTERNAL_EMAIL, PAYMENT_EXPIRY_HOURS, PAYMENT_REMINDERS, SEQUENCE, WAITLIST_CLAIM_HOURS, packageSavings, addDaysISO, addonPageUrlFor, claimUrlFor, classDetailsSnapshot, sessionListChanges, classroomRequestUrlFor, digestFrequencyUrlFor, emailContext, hoursSince, isDue, loadClassBundles, loadTutoringPackages, localDate, localHour, counselorRosterUrlFor, effectiveDeadline, registrationCloseFor, registrationUrlFor, spotsTaken, stepTargetDate, type ClassBundle, type EnrollmentRow, type TutoringPackage, classDetailsSendDate, missingDetailsAlertStart, stepDisabledForClass, isReturningFamily } from '../../../utils/lifecycle'
 import { classTutoringTier } from '../../../utils/tutoring-tier'
 
 // The lifecycle sweep. Runs hourly (Supabase pg_cron; Vercel daily cron as

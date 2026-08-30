@@ -165,7 +165,7 @@ const loadPage = cache(async (slug: string) => {
   // selling_bullets migration lands (the column just won't be there).
   const { data: cls } = await supabase
     .from('classes')
-    .select('*, schools ( name, nickname, timezone, city, logo_url, accent_color, evergreen_code ), sessions ( id, session_date, start_time, end_time, location )')
+    .select('*, schools ( name, nickname, timezone, city, address, logo_url, accent_color, evergreen_code ), sessions ( id, session_date, start_time, end_time, location )')
     .eq('slug', slug)
     .maybeSingle()
 
@@ -671,9 +671,11 @@ export async function ClassPageView({
                     '@type': 'Place',
                     name: cls.default_location,
                     ...(school
-                      ? isAddressShaped(cls.default_location)
-                        ? { address: cls.default_location }
-                        : {}
+                      ? school.address
+                        ? { address: school.address }
+                        : isAddressShaped(cls.default_location)
+                          ? { address: cls.default_location }
+                          : {}
                       : { address: hglMapsQuery(cls.default_location) }),
                   },
                 }
@@ -922,13 +924,13 @@ export async function ClassPageView({
             {/* PL-355 E: the at-HGL location block — frame copy from the
                 block ({address} substituted), the address itself and the
                 map link always from the record. */}
-            {locationBlock && !online && !school && cls.default_location && (
+            {locationBlock && !online && (school ? school.address : cls.default_location) && (
               <div id="location" data-section="location">
                 <h2 className="text-2xl font-bold text-hgl-slate mb-3">{locationBlock.heading || 'Where we meet'}</h2>
                 <div className="space-y-3" dangerouslySetInnerHTML={{ __html: md(locationBlock.body_markdown) }} />
                 <p className="mt-2 text-sm">
                   <a
-                    href={`https://maps.google.com/?q=${encodeURIComponent(hglMapsQuery(cls.default_location))}`}
+                    href={`https://maps.google.com/?q=${encodeURIComponent(school?.address ? school.address : hglMapsQuery(cls.default_location))}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-hgl-blue underline"

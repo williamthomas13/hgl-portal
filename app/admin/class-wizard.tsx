@@ -32,6 +32,8 @@ export type School = {
   collateral_language?: string | null
   /** PL-353: the city families associate with the school — public time labels. */
   city?: string | null
+  /** PL-406: street address — the school classes' maps-link target. */
+  address?: string | null
 }
 
 export type ContactAtSchool = {

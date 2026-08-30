@@ -142,6 +142,8 @@ export type EnrollmentEmailContext = {
   hasDiagnostics: boolean
   /** PL-382: the public city label's inputs (school city / display_cities) —
    *  every email time label resolves through contextTimeCityLabel. */
+  /** PL-406: the school's street address — the email maps link. */
+  schoolAddress?: string | null
   schoolCity: string | null
   displayCities: string | null
   defaultLocation: string | null

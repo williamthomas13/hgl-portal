@@ -13,6 +13,10 @@ export type SystemHealth = {
   sends: { today: number; campaignToday: number; cap: number; state: 'ok' | 'warn' | 'full' }
   qbo: { pending: number; failed: number }
   sweep: { lastFinishedAt: string | null; stale: boolean; hanging: boolean }
+  /** PL-407: the effective DEFAULT_TIMEZONE and whether CLASS_TIMEZONE is
+   *  set in this environment — surfaced so dev and prod can't silently
+   *  diverge (the Mexico-City relic hid here for months). */
+  timezone: { effective: string; envSet: boolean }
 }
 
 const fmtWhen = (iso: string) =>
@@ -21,6 +25,15 @@ const fmtWhen = (iso: string) =>
 export function SystemHealthBody({ health }: { health: SystemHealth }) {
   return (
     <ul className="space-y-2 text-sm">
+      {/* PL-407: the fallback clock — real classes/schools carry their own
+          timezone; this is what everything else assumes. */}
+      <li className="flex items-baseline justify-between gap-3">
+        <span className="text-gray-600">Default timezone (fallback only)</span>
+        <span className="font-semibold text-hgl-slate">
+          {health.timezone?.effective ?? 'America/Denver'}
+          {health.timezone?.envSet && <span className="text-xs font-normal text-gray-400"> · from CLASS_TIMEZONE</span>}
+        </span>
+      </li>
       <li className="flex items-baseline justify-between gap-3">
         <span className="text-gray-600">
           Emails sent today

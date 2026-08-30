@@ -66,6 +66,8 @@ function SchoolEditor({
   const [timezone, setTimezone] = useState(school.timezone ?? '')
   // PL-353: the city families see on public time labels ("Düsseldorf time").
   const [city, setCity] = useState(school.city ?? '')
+  // PL-406: the maps-link target for this school's in-person classes.
+  const [address, setAddress] = useState(school.address ?? '')
   const [accent, setAccent] = useState(school.accent_color ?? '')
   const [language, setLanguage] = useState(school.collateral_language ?? 'en')
   const [busy, setBusy] = useState(false)
@@ -106,6 +108,7 @@ function SchoolEditor({
         nickname: nickname.trim(),
         timezone: timezone || null,
         city: city.trim() || null,
+        address: address.trim() || null,
         accent_color: accent || null,
         collateral_language: language,
       })
@@ -159,6 +162,24 @@ function SchoolEditor({
             families know, not the timezone&apos;s.
           </p>
         </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-600 font-semibold mb-1">
+          Street address — used for the map link
+        </label>
+        <input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="e.g. Niederrheinstraße 336, 40489 Düsseldorf"
+          className="w-full border rounded p-2"
+        />
+        {/* PL-406: room-only class locations ("Room 204") get a useful pin —
+            the class page's maps link searches THIS. Blank = no maps link
+            (honest absence), exactly as before. */}
+        <p className="text-xs text-gray-500 mt-1">
+          In-person classes at this school link &ldquo;Open in Google Maps&rdquo; here; leave blank
+          and the map link simply doesn&apos;t appear.
+        </p>
       </div>
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">

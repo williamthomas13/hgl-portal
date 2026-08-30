@@ -56,6 +56,7 @@ type EnrollmentDetail = {
   classes: {
     class_type: string
     price: number
+    timezone: string | null
     schools: { name: string; nickname: string; timezone: string | null } | null
   } | null
   students: {
@@ -101,7 +102,7 @@ async function loadEnrollmentDetail(enrollmentId: string): Promise<EnrollmentDet
     .select(
       `
       id, amount_paid, class_price_paid, paid_at, stripe_session_id,
-      classes ( class_type, price, schools ( name, nickname, timezone ) ),
+      classes ( class_type, price, timezone, schools ( name, nickname, timezone ) ),
       students ( first_name, last_name,
         families ( id, parent_first_name, parent_last_name, parent_email, qbo_customer_id ) ),
       enrollment_addons ( id, hours, price_paid, stripe_session_id, stripe_payment_intent_id, tutoring_packages ( name ) )
@@ -360,7 +361,9 @@ async function syncRow(row: SyncRow, items: ItemMap): Promise<{ id: string; docN
   if (!classItem || !depositAccount) throw new Error('item mapping incomplete')
 
   const school = detail.classes.schools
-  const tz = school?.timezone ?? DEFAULT_TIMEZONE
+  // PL-407: same precedence as everywhere else — the class's own timezone
+  // outranks the school's (this site alone used to skip classes.timezone).
+  const tz = detail.classes.timezone ?? school?.timezone ?? DEFAULT_TIMEZONE
   const student = `${detail.students?.first_name ?? ''} ${detail.students?.last_name ?? ''}`.trim()
   const classLabel = `${school?.nickname ?? 'HGL'} ${detail.classes.class_type}`
   if (!row.stripe_payment_intent_id) throw new Error('payment row has no payment intent')
