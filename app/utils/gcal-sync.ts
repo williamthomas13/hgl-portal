@@ -9,10 +9,14 @@ import {
   findGcalEventBySessionKey,
   listCalendarEvents,
   loadGcalConnection,
+  stopWatchChannel,
+  watchCalendarEvents,
   type GcalEventInput,
   type ListedEvent,
   type ServiceAccountKey,
 } from './gcal'
+import { randomBytes, randomUUID } from 'crypto'
+import { PRODUCTION_ORIGIN } from './base-url'
 import { sendAdminAlert } from './email'
 import { createHash } from 'crypto'
 import { ADMIN_EMAIL } from './lifecycle'
@@ -696,3 +700,137 @@ export async function syncTutoringDriftTable(tutorId?: string): Promise<TimeDrif
   return drift
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+// ---------------------------------------------------------------------------
+// PL-410: Google push channels — the doorbell layer over the SAME audit.
+// A push carries no event details; on notification we re-run the drift audit
+// for that one calendar (PL-393/401/402 machinery unchanged). The hourly
+// poll STAYS as the backstop for missed pushes, downtime, and channels
+// Google silently drops — push is an accelerator, not a replacement.
+// ---------------------------------------------------------------------------
+
+/** The public webhook address — pinned to the production origin
+ *  (emailBaseUrl-style), NEVER a request host: Google stores this URL inside
+ *  the channel, and a stored URL must survive dev renders. After the DNS
+ *  cutover (PRODUCTION_BASE_URL flips) stored channels go stale — the sweep
+ *  compares webhook_url and re-registers within the hour. */
+export function gcalWebhookUrl(): string {
+  return `${PRODUCTION_ORIGIN}/api/webhooks/gcal`
+}
+
+/** Re-arm expiring channels, arm missing ones, stop orphans. Runs on the
+ *  hourly sweep; also the whole story for "disconnect": an org-level
+ *  disconnect (gcal_connection) or a tutor going inactive makes the next
+ *  pass stop their channels. */
+export async function sweepGcalWatchChannels(): Promise<{
+  armed: number
+  renewed: number
+  stopped: number
+}> {
+  const out = { armed: 0, renewed: 0, stopped: 0 }
+  const conn = await loadGcalConnection()
+  const { data: channels } = await supabase.from('gcal_watch_channels').select('*')
+  const rows = (channels ?? []) as {
+    id: string
+    tutor_id: string
+    calendar_id: string
+    channel_id: string
+    channel_token: string
+    resource_id: string | null
+    expiration: string | null
+    webhook_url: string | null
+  }[]
+
+  const stopRow = async (row: (typeof rows)[number], tutorEmail: string | null) => {
+    if (conn?.key && conn.status === 'connected' && tutorEmail && row.resource_id) {
+      try {
+        await stopWatchChannel(conn.key, tutorEmail, row.channel_id, row.resource_id)
+      } catch (e) {
+        console.error(`gcal channel stop failed (${row.channel_id}) — deleting the row anyway:`, e)
+      }
+    }
+    await supabase.from('gcal_watch_channels').delete().eq('id', row.id)
+    out.stopped++
+  }
+
+  const { data: tutors } = await supabase
+    .from('instructors')
+    .select('id, email, google_calendar_id, active, tutoring_active')
+  const tutorById = new Map(((tutors ?? []) as any[]).map((t) => [t.id, t]))
+
+  if (!conn || conn.status !== 'connected' || !conn.key) {
+    // Disconnected org: channels can't be renewed (or even stopped via the
+    // API) — drop the rows so pushes become unverifiable noise the webhook
+    // 200-and-drops.
+    for (const row of rows) await stopRow(row, null)
+    return out
+  }
+
+  const watched = ((tutors ?? []) as any[]).filter((t) => t.active && t.tutoring_active && t.email)
+  const wantedByTutor = new Map(watched.map((t) => [t.id, t]))
+
+  // Stop channels for tutors no longer watched.
+  for (const row of rows) {
+    if (!wantedByTutor.has(row.tutor_id)) {
+      await stopRow(row, (tutorById.get(row.tutor_id) as any)?.email ?? null)
+    }
+  }
+
+  const url = gcalWebhookUrl()
+  for (const t of watched) {
+    const existing = rows.find((r) => r.tutor_id === t.id)
+    const expiringSoon =
+      !existing?.expiration || new Date(existing.expiration).getTime() < Date.now() + 24 * 3600_000
+    const urlStale = existing != null && existing.webhook_url !== url
+    if (existing && !expiringSoon && !urlStale) continue
+
+    const channelId = randomUUID()
+    const token = randomBytes(24).toString('base64url')
+    try {
+      const res = await watchCalendarEvents(conn.key, t.email, t.google_calendar_id ?? null, {
+        id: channelId,
+        token,
+        address: url,
+      })
+      await supabase.from('gcal_watch_channels').insert({
+        tutor_id: t.id,
+        calendar_id: t.google_calendar_id ?? 'primary',
+        channel_id: channelId,
+        channel_token: token,
+        resource_id: res.resourceId,
+        expiration: res.expiration,
+        webhook_url: url,
+        updated_at: new Date().toISOString(),
+      })
+      if (existing) {
+        await stopRow(existing, t.email)
+        out.renewed++
+      } else {
+        out.armed++
+      }
+    } catch (e) {
+      // A calendar that can't be watched (e.g. non-Workspace address) just
+      // stays on the polling backstop.
+      console.error(`gcal watch failed for ${t.email} (polling backstop covers them):`, e)
+    }
+  }
+  return out
+}
+
+/** PL-410: handle one validated push — debounced per calendar so a burst
+ *  (Billy's Aug-18 mass-delete) coalesces into ONE audit pass and, via
+ *  PL-402's once-only grouping, at most ONE email. The caller has already
+ *  responded 200; this runs in after(). */
+export async function runDebouncedPushAudit(channelRowId: string, myStamp: string): Promise<'ran' | 'superseded' | 'skipped'> {
+  // Coalesce: wait out the burst, then only the LAST push's stamp survives.
+  await new Promise((r) => setTimeout(r, 15_000))
+  const { data: row } = await supabase
+    .from('gcal_watch_channels')
+    .select('id, tutor_id, last_push_at')
+    .eq('id', channelRowId)
+    .maybeSingle()
+  if (!row || row.last_push_at !== myStamp) return 'superseded'
+  const drift = await syncTutoringDriftTable(row.tutor_id)
+  await sendGroupedDriftAlert(drift, ADMIN_EMAIL).catch((e) => console.error('push drift alert failed:', e))
+  return 'ran'
+}

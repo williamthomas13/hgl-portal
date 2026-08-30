@@ -19,6 +19,13 @@ email first (classes).
    code's newest open class right at hgl.co/{code} (interest page between classes), with
    registration at hgl.co/{code}/register. Click history carried over unchanged.
 3. **DNS cutover** (the batch-36 7-step runbook) after Scarlett's walkthrough clears.
+   - **PL-410 post-DNS: re-verify Google Calendar push channels.** Google stores the
+     webhook URL *inside* each channel, so channels registered pre-cutover keep
+     pointing at the old host. Once `PRODUCTION_BASE_URL` flips, the hourly sweep
+     re-registers every channel against the new domain automatically (it compares
+     each row's stored `webhook_url`); within the hour, spot-check
+     `gcal_watch_channels` rows show the new domain AND hand-move one QA event —
+     the drift banner should appear within ~1 minute.
 4. **Mid-flight class imports** — per class, in any order (idempotent):
    ```
    node scripts/import-class-registrations.mjs --class <slug> --csv <export.csv> \

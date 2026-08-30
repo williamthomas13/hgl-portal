@@ -4,7 +4,7 @@ import { dispatchScheduledCampaigns, resumePausedCampaigns } from '../../../util
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { processQboQueue, sweepQboHealth, sweepUnsyncedPayments } from '../../../utils/qbo-sync'
-import { processGcalQueue, sendGroupedDriftAlert, syncTutoringDriftTable } from '../../../utils/gcal-sync'
+import { processGcalQueue, sendGroupedDriftAlert, sweepGcalWatchChannels, syncTutoringDriftTable } from '../../../utils/gcal-sync'
 import { auditInternationalCalendar, syncInternationalCalendar } from '../../../utils/intl-calendar'
 import { autoCompleteSessions, sweepTimecards } from '../../../utils/timecards'
 import { sweepSessionNoteReminders, sweepWeeklyNotesDigest } from '../../../utils/session-notes'
@@ -1833,6 +1833,16 @@ export async function GET(req: Request) {
   // adopt deliberately. The alert is ATTRIBUTIONAL: on the tutor's own
   // calendar, a differing event means the tutor moved it.
   try {
+    // PL-410: re-arm expiring/missing push channels first, so renewal runs
+    // before the poll that backstops it.
+    try {
+      const ch = await sweepGcalWatchChannels()
+      if (ch.armed > 0) counters.gcal_channels_armed = ch.armed
+      if (ch.renewed > 0) counters.gcal_channels_renewed = ch.renewed
+      if (ch.stopped > 0) counters.gcal_channels_stopped = ch.stopped
+    } catch (e) {
+      console.error('gcal watch renewal failed (push degrades to the hourly poll):', e)
+    }
     const drift = await syncTutoringDriftTable()
     if (drift.length > 0) {
       counters.tutoring_calendar_drift = drift.length

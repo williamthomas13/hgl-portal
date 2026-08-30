@@ -313,6 +313,46 @@ export async function deleteGcalEvent(
   await expectOk(res, 'event delete')
 }
 
+/** PL-410: register a push channel on a calendar's events (events.watch).
+ *  The push is a DOORBELL — Google sends no event details; on notification
+ *  the caller re-runs the drift audit for that calendar. Channels expire
+ *  (~a week); the hourly sweep re-arms them. Covered by the existing
+ *  calendar.events scope — no re-consent needed. */
+export async function watchCalendarEvents(
+  key: ServiceAccountKey,
+  tutorEmail: string,
+  calendarId: string | null,
+  channel: { id: string; token: string; address: string }
+): Promise<{ resourceId: string | null; expiration: string | null }> {
+  const cal = encodeURIComponent(calendarId || 'primary')
+  const res = await gcalFetch(tutorEmail, key, `/calendars/${cal}/events/watch`, {
+    method: 'POST',
+    body: JSON.stringify({ id: channel.id, type: 'web_hook', address: channel.address, token: channel.token }),
+  })
+  await expectOk(res, 'events watch')
+  const json = (await res.json()) as { resourceId?: string; expiration?: string }
+  return {
+    resourceId: json.resourceId ?? null,
+    // Google returns ms-since-epoch as a string.
+    expiration: json.expiration ? new Date(Number(json.expiration)).toISOString() : null,
+  }
+}
+
+/** PL-410: stop a push channel. 404 = already gone — fine. */
+export async function stopWatchChannel(
+  key: ServiceAccountKey,
+  tutorEmail: string,
+  channelId: string,
+  resourceId: string
+): Promise<void> {
+  const res = await gcalFetch(tutorEmail, key, `/channels/stop`, {
+    method: 'POST',
+    body: JSON.stringify({ id: channelId, resourceId }),
+  })
+  if (res.status === 404 || res.status === 410) return
+  await expectOk(res, 'channel stop')
+}
+
 export async function getGcalEvent(
   key: ServiceAccountKey,
   tutorEmail: string,
