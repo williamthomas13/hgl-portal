@@ -1064,7 +1064,7 @@ export default function AdminDashboard() {
   const [classDrafts, setClassDrafts] = useState<
     { id: string; name: string; created_by: string | null; updated_at: string }[]
   >([])
-  const [resumeDraft, setResumeDraft] = useState<{ id: string; state: Record<string, unknown> } | null>(null)
+  const [resumeDraft, setResumeDraft] = useState<{ id: string; state: Record<string, unknown>; name?: string; updatedAt?: string } | null>(null)
   const [draftListError, setDraftListError] = useState('')
 
   function registrationUrl(c: ClassRow) {
@@ -1602,6 +1602,14 @@ export default function AdminDashboard() {
       c.enrollments?.filter((en) => en.payment_status === 'Waitlisted').length ?? 0
     // PL-328: one label source — 'ISD SAT Prep' / 'HGL PSAT Prep' / 'Online SAT Math Deep Dive'.
     const schoolLabel = c.schools?.nickname ?? (c.school_id ? '—' : c.delivery_mode === 'online' ? 'Online' : 'HGL')
+    // PL-430 sweep: confirmation surfaces name the FULL class via the ONE
+    // composed helper (short marketing name included) — never a bare type.
+    const composedLabel = classDisplayLabel({
+      schoolNickname: c.schools?.nickname ?? null,
+      deliveryMode: c.delivery_mode,
+      shortName: c.fo_short_name,
+      classType: c.class_type,
+    })
     const sortedSessions = [...(c.sessions ?? [])].sort(bySessionStart)
     const lastSession = sortedSessions[sortedSessions.length - 1] ?? null
     const isCancelled = c.status === 'cancelled'
@@ -2063,7 +2071,7 @@ export default function AdminDashboard() {
                     <p>
                       <ConfirmAction
                         label="Run this class anyway"
-                        message={`Run ${schoolLabel} ${c.class_type} regardless of the paid count? The dashboard reminder clears for good (undo-able until the deadline passes) and the instructor gets a short note.`}
+                        message={`Run ${composedLabel} regardless of the paid count? The dashboard reminder clears for good (undo-able until the deadline passes) and the instructor gets a short note.`}
                         confirmLabel="Yes, run it"
                         className="px-3 py-1.5 rounded bg-hgl-slate text-white text-xs font-semibold hover:opacity-90"
                         onConfirm={() => minEnrollmentAction(c, { action: 'run_anyway' })}
@@ -2087,7 +2095,7 @@ export default function AdminDashboard() {
               <div className="mt-2">
                 <CancelClassPanel
                   classId={c.id}
-                  classLabel={`${schoolLabel} ${c.class_type}`}
+                  classLabel={composedLabel}
                   classPrice={Number(c.price)}
                   paid={(c.enrollments ?? [])
                     .filter((en) => en.payment_status === 'Paid')
@@ -2147,7 +2155,7 @@ export default function AdminDashboard() {
         {staffEnrollClassId === c.id && (
           <StaffEnrollPanel
             classId={c.id}
-            classLabel={`${schoolLabel} — ${c.class_type}`}
+            classLabel={composedLabel}
             price={Number(c.price)}
             onChanged={fetchRosters}
             onClose={() => setStaffEnrollClassId(null)}
@@ -2851,7 +2859,10 @@ export default function AdminDashboard() {
               {/* PL-370: come-back-later drafts — server rows, never
                   browser storage; a draft is invisible everywhere until the
                   wizard finishes through the normal create path. */}
-              {classDrafts.length > 0 && (
+              {/* PL-426A: while a draft is being edited, the list gives way
+                  to the wizard's editing banner — no ambiguity about which
+                  draft the wizard owns. */}
+              {classDrafts.length > 0 && !resumeDraft && (
                 <div className="mb-5 border border-gray-200 rounded-lg p-4">
                   <p className="text-sm font-bold text-hgl-slate mb-2">Draft classes</p>
                   {draftListError && <p className="text-xs text-red-600 mb-2">{draftListError}</p>}
@@ -2881,7 +2892,7 @@ export default function AdminDashboard() {
                             }
                             setWizardPrefill(null)
                             setWizardSourceLabel('')
-                            setResumeDraft({ id: dr.id, state: json.draft.state })
+                            setResumeDraft({ id: dr.id, state: json.draft.state, name: dr.name, updatedAt: dr.updated_at })
                             setWizardKey((k) => k + 1)
                           }}
                           className="text-xs text-hgl-blue underline"
@@ -2904,10 +2915,8 @@ export default function AdminDashboard() {
                               const j = await res.json().catch(() => ({}))
                               setDraftListError(j.error ?? 'Deleting failed.')
                             }
-                            if (resumeDraft?.id === dr.id) {
-                              setResumeDraft(null)
-                              setWizardKey((k) => k + 1)
-                            }
+                            // PL-426: the list only renders when no draft is
+                            // being edited, so no resume state to clear here.
                             fetchClassDrafts()
                           }}
                         />
@@ -2916,21 +2925,8 @@ export default function AdminDashboard() {
                   </ul>
                 </div>
               )}
-              {resumeDraft && (
-                <p className="mb-4 text-sm bg-blue-50 text-hgl-slate border border-blue-200 rounded p-3">
-                  Resumed from a saved draft — finish the steps and Create, or keep saving the
-                  draft as you go.{' '}
-                  <button
-                    onClick={() => {
-                      setResumeDraft(null)
-                      setWizardKey((k) => k + 1)
-                    }}
-                    className="underline text-hgl-blue"
-                  >
-                    Start blank instead
-                  </button>
-                </p>
-              )}
+              {/* PL-426A: the wizard's own editing banner replaced the old
+                  generic "Resumed from a saved draft" note. */}
               {wizardPrefill && (
                 <p className="mb-4 text-sm bg-blue-50 text-hgl-slate border border-blue-200 rounded p-3">
                   Pre-filled from <strong>{wizardSourceLabel}</strong>{' '}— everything below is
@@ -2947,6 +2943,10 @@ export default function AdminDashboard() {
                 instructors={instructors}
                 initial={wizardPrefill ?? undefined}
                 resumeDraft={resumeDraft ?? undefined}
+                onStartBlank={() => {
+                  setResumeDraft(null)
+                  setWizardKey((k) => k + 1)
+                }}
                 onSchoolsChange={fetchSchools}
                 onContactsChange={fetchAllCounselors}
                 onInstructorsChange={fetchInstructors}

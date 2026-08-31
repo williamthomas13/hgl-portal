@@ -159,6 +159,22 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
     if (idOrSlug) fetchClass()
   }, [idOrSlug])
 
+  // PL-427 (amendment): advancing to the add-on page is a sibling return,
+  // not a route change — the browser keeps the page-1 scroll offset and the
+  // family lands below the "Add 1-on-1 tutoring?" title. Land at the top,
+  // heading focused, instant under prefers-reduced-motion. (Highest-traffic
+  // multi-step flow — explicitly in scope.)
+  useEffect(() => {
+    if (!pendingCheckout) return
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
+    const h1 = document.querySelector('h1')
+    if (h1) {
+      h1.setAttribute('tabindex', '-1')
+      ;(h1 as HTMLElement).focus({ preventScroll: true })
+    }
+  }, [pendingCheckout])
+
   // -------------------------------------------------------------------------
   // Normal registration → Stripe checkout
   // -------------------------------------------------------------------------

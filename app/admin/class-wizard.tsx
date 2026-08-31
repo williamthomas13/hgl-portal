@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { classLocationSentence } from '../utils/comms-variables'
+import { classDisplayLabel } from '../utils/class-label'
 import { supabase } from '../utils/supabase'
 import SessionCalendar from '../components/SessionCalendar'
 import { formatDateAdmin, addDays, monthYear, publicTimeCityLabel, staffTimeCityLabel } from '../utils/dates'
 import { HGL_HQ_ADDRESS } from '../utils/hgl-address'
 import { DateHint, TimeSelect, TimezoneSelect } from './ui'
+import { ConfirmAction } from './tutoring/confirm'
 import type { Instructor } from './instructors-panel'
 import { escapeLike } from '../utils/like-escape'
 
@@ -120,6 +122,7 @@ export default function ClassWizard({
   onInstructorsChange,
   onCreated,
   onDraftSaved,
+  onStartBlank,
 }: {
   schools: School[]
   contacts: ContactAtSchool[]
@@ -127,8 +130,11 @@ export default function ClassWizard({
   /** Copy-a-previous-class prefill — pass a fresh `key` with it to remount. */
   initial?: WizardPrefill
   /** PL-370: resuming a saved draft — full wizard state + the row to
-   *  update on later saves (and delete when the class is created). */
-  resumeDraft?: { id: string; state: Record<string, unknown> }
+   *  update on later saves (and delete when the class is created).
+   *  PL-426: name + updatedAt feed the editing banner. */
+  resumeDraft?: { id: string; state: Record<string, unknown>; name?: string; updatedAt?: string }
+  /** PL-426: explicitly exits draft-editing (page remounts a blank wizard). */
+  onStartBlank?: () => void
   onSchoolsChange: () => void
   onContactsChange: () => void
   onInstructorsChange: () => void
@@ -142,6 +148,12 @@ export default function ClassWizard({
   const [draftId, setDraftId] = useState<string | null>(resumeDraft?.id ?? null)
   const [draftMsg, setDraftMsg] = useState('')
   const [savingDraft, setSavingDraft] = useState(false)
+  // PL-426: the editing banner's facts + the amendment's quiet save state.
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(resumeDraft?.updatedAt ?? null)
+  const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const draftSaveInFlight = useRef(false)
+  const lastSavedBlob = useRef<string | null>(resumeDraft ? JSON.stringify(resumeDraft.state) : null)
+  const [autoRetryTick, setAutoRetryTick] = useState(0)
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(dv('step', 1) as 1 | 2 | 3 | 4 | 5)
   const [saving, setSaving] = useState(false)
@@ -292,7 +304,6 @@ export default function ClassWizard({
     accentColor: '',
     collateralLanguage: 'en',
   })
-  const [newSchoolLogo, setNewSchoolLogo] = useState<File | null>(null)
   const [addingContact, setAddingContact] = useState(false)
   const [newContact, setNewContact] = useState({ first_name: '', last_name: '', email: '' })
   const [addingInstructor, setAddingInstructor] = useState(false)
@@ -378,27 +389,16 @@ export default function ClassWizard({
       )
       return
     }
-    // Logo goes through the processing route (white background removed,
-    // borders trimmed) — a failure leaves the school usable, the flyer just
-    // omits the crest until a retry from the School branding panel.
-    if (newSchoolLogo) {
-      const body = new FormData()
-      body.set('schoolId', data.id)
-      body.set('file', newSchoolLogo)
-      const res = await fetch('/api/admin/school-logo', { method: 'POST', body })
-      if (!res.ok) {
-        setMessage(
-          `School saved, but the logo upload failed (${await res.text()}) — retry from the School branding panel.`
-        )
-      }
-    }
+    // PL-428 sweep: the step-1 logo picker retired with PL-237 (branding
+    // lives on step 4, where the thumbnail now shows what's on record) —
+    // the unreachable upload branch went with it.
     const affiliationId = await ensureContactAffiliation(data.id, {
       first: newSchool.contactFirst,
       last: newSchool.contactLast,
       email: newSchool.contactEmail,
     })
     if (!affiliationId) return // school saved; contact error message already set
-    if (!newSchoolLogo) setMessage('')
+    setMessage('')
     onSchoolsChange()
     onContactsChange()
     setSchoolId(data.id)
@@ -408,7 +408,6 @@ export default function ClassWizard({
       nickname: '', name: '', timezone: '', contactFirst: '', contactLast: '',
       contactEmail: '', accentColor: '', collateralLanguage: 'en',
     })
-    setNewSchoolLogo(null)
   }
 
   async function saveNewContact() {
@@ -564,8 +563,44 @@ export default function ClassWizard({
   // create path when the wizard finishes. Server-side rows, never browser
   // storage.
   function draftName(): string {
-    const schoolLabel = school?.nickname ?? school?.name ?? (isOpen ? 'HGL' : '')
-    return [schoolLabel, classType.trim()].filter(Boolean).join(' — ')
+    // PL-430/426: drafts carry the SAME composed display name the rest of
+    // the portal uses — two drafts for different schools stop reading alike.
+    const t = classType.trim()
+    if (t) {
+      return classDisplayLabel({
+        schoolNickname: school?.nickname ?? null,
+        deliveryMode,
+        shortName: null,
+        classType: t,
+      })
+    }
+    return school?.nickname ?? school?.name ?? (isOpen ? 'HGL' : '')
+  }
+  function buildDraftState() {
+    return {
+      step, schoolId, openKind, openTimezone, displayCities, counselorId, classType,
+      instructorId, price, capacity, deliveryMode, minEnrollment, enrollmentDeadline,
+      deadlineEdited, registrationClose, synapGroup, hasDiagnostics, isFollowOn,
+      shortLink, collateralLang, practiceTestCount, flyerBlurb, letterBlurb,
+      letterBlurbEs, promoCode, promoAmount, promoDeadline, sellingBullets,
+      prerequisiteNote, defaultLocation, sessions,
+    }
+  }
+  /** ONE row-writer for the explicit button and the PL-426 auto-save —
+   *  saves always UPDATE the current draft row, never mint a sibling. */
+  async function saveDraftRow(): Promise<{ ok: boolean; id?: string; error?: string }> {
+    const state = buildDraftState()
+    const res = await fetch('/api/admin/class-drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: draftId ?? undefined, name: draftName(), state }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: json.error ?? 'Saving the draft failed.' }
+    lastSavedBlob.current = JSON.stringify(state)
+    setDraftSavedAt(new Date().toISOString())
+    onDraftSaved?.()
+    return { ok: true, id: json.id }
   }
   async function handleSaveDraft() {
     const name = draftName()
@@ -576,31 +611,45 @@ export default function ClassWizard({
     setSavingDraft(true)
     setDraftMsg('')
     try {
-      const state = {
-        step, schoolId, openKind, openTimezone, displayCities, counselorId, classType,
-        instructorId, price, capacity, deliveryMode, minEnrollment, enrollmentDeadline,
-        deadlineEdited, registrationClose, synapGroup, hasDiagnostics, isFollowOn,
-        shortLink, collateralLang, practiceTestCount, flyerBlurb, letterBlurb,
-        letterBlurbEs, promoCode, promoAmount, promoDeadline, sellingBullets,
-        prerequisiteNote, defaultLocation, sessions,
-      }
-      const res = await fetch('/api/admin/class-drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draftId ?? undefined, name, state }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setDraftMsg(json.error ?? 'Saving the draft failed.')
+      const result = await saveDraftRow()
+      if (!result.ok) {
+        setDraftMsg(result.error ?? 'Saving the draft failed.')
         return
       }
-      setDraftId(json.id)
+      if (result.id) setDraftId(result.id)
       setDraftMsg('Draft saved — find it under "Draft classes" on the Classes tab whenever you come back.')
-      onDraftSaved?.()
     } finally {
       setSavingDraft(false)
     }
   }
+
+  // PL-426 amendment: once a draft row exists, the wizard auto-saves — on
+  // step transitions and debounced after idle edits — always into the SAME
+  // row. The FIRST save stays the explicit button (the deliberate "keep
+  // this" moment; an abandoned peek never auto-mints a draft). Failures
+  // surface honestly and retry; the wizard keeps its state either way.
+  const draftBlob = JSON.stringify(buildDraftState())
+  useEffect(() => {
+    if (!draftId) return
+    if (draftBlob === lastSavedBlob.current) return
+    const t = setTimeout(async () => {
+      if (draftSaveInFlight.current) return
+      draftSaveInFlight.current = true
+      setAutoSaveState('saving')
+      try {
+        const result = await saveDraftRow()
+        setAutoSaveState(result.ok ? 'saved' : 'error')
+        if (!result.ok) setTimeout(() => setAutoRetryTick((n) => n + 1), 5000)
+      } catch {
+        setAutoSaveState('error')
+        setTimeout(() => setAutoRetryTick((n) => n + 1), 5000)
+      } finally {
+        draftSaveInFlight.current = false
+      }
+    }, 1500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftBlob, draftId, autoRetryTick])
 
   async function handleCreate() {
     if ((!school && !isOpen) || sessions.length === 0 || !allDated) return
@@ -736,7 +785,20 @@ export default function ClassWizard({
 
     // PL-288: a dedicated closure screen replaces the old inline banner that
     // sat confusingly on top of an already-reset wizard.
-    setCreatedSummary({ classId: created.id, label: classType.trim() || 'The class', sessionCount: sorted.length })
+    // PL-430: the banner names the FULL class via the ONE composed label —
+    // "MIS SAT Prep", "Online SAT Math Deep Dive" — never a bare type.
+    setCreatedSummary({
+      classId: created.id,
+      label: classType.trim()
+        ? classDisplayLabel({
+            schoolNickname: school?.nickname ?? null,
+            deliveryMode,
+            shortName: null,
+            classType: classType.trim(),
+          })
+        : 'The class',
+      sessionCount: sorted.length,
+    })
     // PL-370: the draft became a real class — the saved state is done.
     if (draftId) {
       fetch('/api/admin/class-drafts', {
@@ -793,6 +855,25 @@ export default function ClassWizard({
 
   const steps = ['School', 'Details', 'Sessions', 'Branding & Collateral', 'Review'] as const
 
+  // PL-427: Next/Back (and resuming a draft into a mid-flow step) land at the
+  // TOP of the step — heading focused for keyboard/screen-reader users,
+  // instant under prefers-reduced-motion. The first render of a fresh wizard
+  // (step 1) never scrolls: opening the Classes tab must not yank the page.
+  const wizardTopRef = useRef<HTMLDivElement | null>(null)
+  const stepScrolledOnce = useRef(false)
+  useEffect(() => {
+    if (!stepScrolledOnce.current) {
+      stepScrolledOnce.current = true
+      if (step === 1) return // fresh wizard — leave the page alone
+    }
+    const el = wizardTopRef.current
+    if (!el) return
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    el.focus({ preventScroll: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
   // PL-288: clear closure after a create — the wizard is already reset
   // behind this screen, so "Add another class" just returns to it.
   if (createdSummary) {
@@ -833,7 +914,54 @@ export default function ClassWizard({
   }
 
   return (
-    <div>
+    <div ref={wizardTopRef} tabIndex={-1} className="outline-none">
+      {/* PL-426A: which draft am I editing? — the banner answers, carries
+          the amendment's quiet save state (never a blocking spinner), and
+          offers the explicit exits. */}
+      {draftId && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm bg-blue-50 border border-blue-200 rounded p-3">
+          <span className="text-hgl-slate">
+            Editing draft: <strong>{draftName() || 'unnamed draft'}</strong>
+            {draftSavedAt && (
+              <span className="text-gray-500">
+                {' '}— saved{' '}
+                {new Date(draftSavedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+              </span>
+            )}
+          </span>
+          {autoSaveState === 'saving' && <span className="text-xs text-gray-500">saving…</span>}
+          {autoSaveState === 'saved' && <span className="text-xs text-green-700">saved just now</span>}
+          {autoSaveState === 'error' && (
+            <span className="text-xs text-red-600 font-semibold">couldn&apos;t save — retrying</span>
+          )}
+          <span className="ml-auto flex items-center gap-3">
+            <ConfirmAction
+              label="discard this draft"
+              message={`Discard the saved draft "${draftName() || 'unnamed draft'}"? What's on screen stays — only the saved copy is removed.`}
+              confirmLabel="Yes, discard it"
+              className="text-xs text-red-600 underline"
+              confirmClassName="text-xs text-red-700 font-semibold underline"
+              onConfirm={async () => {
+                await fetch('/api/admin/class-drafts', {
+                  method: 'DELETE',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: draftId }),
+                }).catch(() => {})
+                setDraftId(null)
+                setDraftSavedAt(null)
+                setAutoSaveState('idle')
+                setDraftMsg('')
+                onDraftSaved?.()
+              }}
+            />
+            {onStartBlank && (
+              <button onClick={onStartBlank} className="text-xs text-hgl-blue underline">
+                start blank
+              </button>
+            )}
+          </span>
+        </div>
+      )}
       <div className="flex items-center gap-2 mb-6">
         {steps.map((label, i) => {
           const n = (i + 1) as 1 | 2 | 3 | 4
@@ -1787,8 +1915,23 @@ export default function ClassWizard({
                 Saved separately from the class.
               </p>
               <div className="flex flex-wrap items-center gap-4">
+                {/* PL-428: SHOW the logo the school has — impossible to know
+                    whether replacing is needed otherwise. Light logos read on
+                    the white chip; no logo = an honest empty state, and the
+                    link text matches the state (the accent swatch's rule,
+                    applied to the logo). */}
+                {school.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={school.logo_url}
+                    alt={`${school.nickname} logo`}
+                    className="h-9 max-w-24 object-contain border border-gray-200 rounded bg-white"
+                  />
+                ) : (
+                  <span className="text-xs text-gray-400 italic">no logo yet — upload one</span>
+                )}
                 <label className="text-xs text-hgl-blue underline cursor-pointer">
-                  upload / replace logo
+                  {school.logo_url ? 'replace logo' : 'upload logo'}
                   <input
                     type="file"
                     accept="image/*"

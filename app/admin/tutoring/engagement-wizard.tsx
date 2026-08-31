@@ -1081,6 +1081,21 @@ export default function EngagementWizard({
       </p>
       {/* PL-171: resume offer — a half-built schedule survives phone calls
           and navigation; resuming is one click, discarding explicit. */}
+      {/* PL-426C sweep: the class wizard's editing-state rule, applied
+          here — while a SAVED schedule draft is being edited, say so
+          (Save-as-draft updates that row; Create retires it). */}
+      {serverDraftId && (
+        <div className="p-3 rounded bg-blue-50 border border-blue-200 text-hgl-slate">
+          Editing{' '}
+          <strong>
+            {(() => {
+              const st = students.find((x) => x.id === studentId)
+              return st ? `${st.first_name} ${st.last_name}'s` : 'a'
+            })()}
+          </strong>{' '}
+          saved schedule draft — &quot;Save as draft&quot; updates it, and Create retires it.
+        </div>
+      )}
       {draftOffer && (
         <div className="p-3 rounded bg-blue-50 border border-blue-200 flex flex-wrap items-center gap-3">
           <span className="text-hgl-slate">
