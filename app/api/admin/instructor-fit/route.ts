@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
-import { freeBusy, loadGcalConnection } from '../../../utils/gcal'
+import {
+  isPortalSyncedClassTitle,
+  isPortalSyncedTutoringTitle,
+  listBusyEvents,
+  loadGcalConnection,
+  type TitledBusyBlock,
+} from '../../../utils/gcal'
 import { holdActive } from '../../../utils/gcal-sync'
 import { isOnlineLocation } from '../../../utils/calendar-colors'
 import { zonedToUtc } from '../../../utils/tutoring'
@@ -140,27 +146,43 @@ export async function GET(req: Request) {
         travel.push(`${p.iv.label} at ${fmt(p.iv.start)} — inside the travel window`)
       }
     }
-    // Google busy, chunked ≤42 days (freebusy range limit discipline).
+    // PL-433: TITLED busy (the PL-388 pattern — the one surface it missed).
+    // The portal's own synced events (tutoring + class sessions) are counted
+    // precisely by the portal-side checks above; their Google echoes were
+    // the double-count (Scarlett's 8-conflicts screenshot = 4 real). Only
+    // genuine external Google busy survives, NAMED when the calendar shares
+    // the title with our connection, generic when private. On a titles-read
+    // failure the ranking stays honestly portal-only (googleChecked=false —
+    // the existing flag) rather than falling back to unfilterable raw
+    // freebusy and resurrecting the double-count.
     let googleChecked = false
     if (googleUp) {
       try {
-        const busy: { start: string; end: string }[] = []
+        const busy: TitledBusyBlock[] = []
         for (let t = spanStart; t < spanEnd; t += 42 * 86_400_000) {
           busy.push(
-            ...(await freeBusy(
+            ...(await listBusyEvents(
               conn!.key!,
               inst.email,
               inst.google_calendar_id,
               new Date(t).toISOString(),
-              new Date(Math.min(t + 42 * 86_400_000, spanEnd)).toISOString()
+              new Date(Math.min(t + 42 * 86_400_000, spanEnd)).toISOString(),
+              inst.timezone ?? 'America/Denver'
             ))
           )
         }
         googleChecked = true
         for (const b of busy) {
+          if (isPortalSyncedTutoringTitle(b.title) || isPortalSyncedClassTitle(b.title)) continue
           const iv = { start: new Date(b.start).getTime(), end: new Date(b.end).getTime() }
           const clash = sessions.find((s) => overlaps(s, iv))
-          if (clash) hard.push(`busy per Google Calendar at ${fmt(iv.start)}`)
+          if (clash) {
+            hard.push(
+              b.title && !b.private
+                ? `busy per Google Calendar: "${b.title}" at ${fmt(iv.start)}`
+                : `busy per Google Calendar at ${fmt(iv.start)}`
+            )
+          }
         }
       } catch {
         googleChecked = false

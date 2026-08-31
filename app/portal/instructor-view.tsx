@@ -37,7 +37,7 @@ export default async function InstructorView({
       .select(
         `
         id, status, class_type, delivery_mode, fo_short_name, capacity, min_enrollment,
-        start_date, default_location, synap_group, registration_close_date,
+        start_date, default_location, default_location_source, synap_group, registration_close_date,
         timezone, display_cities,
         schools ( name, nickname, timezone, city ),
         instructors!inner ( email ),
@@ -252,7 +252,10 @@ export default async function InstructorView({
                   ) : (
                     <span className="text-amber-700">not set</span>
                   )}
-                  {!c.default_location && location ? (
+                  {/* PL-435: default-provenance links keep the badge even
+                      once written to the class record (the assignment paths
+                      stamp default_location_source). */}
+                  {location && (!c.default_location || c.default_location_source === 'instructor_default') ? (
                     <span className="text-gray-500"> (your default link)</span>
                   ) : null}
                 </p>

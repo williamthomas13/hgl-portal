@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../utils/dates'
+import { assignmentConflictCounts, classSessionIntervals } from '../../../utils/instructor-conflicts'
 import { computeSystemHealth } from '../../../utils/system-health'
 import { loadActivity } from '../../../utils/dashboard-activity'
 
@@ -108,8 +109,9 @@ export async function GET() {
       .from('classes')
       .select(
         `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, min_enrollment_decision, default_location, delivery_mode, start_date, created_at,
-         collateral_reminder_at, short_link, school_id,
-         schools ( nickname ), sessions ( session_date ), enrollments ( payment_status )`
+         collateral_reminder_at, short_link, school_id, timezone, fo_short_name,
+         schools ( nickname, timezone ), instructors ( name, email ),
+         sessions ( session_date, start_time, end_time ), enrollments ( payment_status )`
       )
       .neq('status', 'cancelled'),
     supabase
@@ -628,6 +630,18 @@ export async function GET() {
   const blockContinueIds = pkgRowsAll
     .filter((e) => e.block_confirmation === 'confirmed' && e.block_continue_staff_at)
     .map((e) => e.id)
+  // PL-434B: class↔instructor conflict counts, recomputed from reality —
+  // one batched tutoring read for every staffed live class.
+  const staffedClasses = liveClasses
+    .filter((c: any) => c.instructor_id && c.status !== 'cancelled')
+    .map((c: any) => ({
+      classId: c.id as string,
+      instructorId: c.instructor_id as string,
+      intervals: classSessionIntervals(
+        c.sessions ?? [],
+        c.timezone ?? one<any>(c.schools)?.timezone ?? 'America/Denver'
+      ),
+    }))
   const none = Promise.resolve({ data: [] as any[] })
   const [
     { data: engs },
@@ -679,6 +693,24 @@ export async function GET() {
           .gt('starts_at', now.toISOString())
       : none,
   ])
+  const assignConflictCounts = await assignmentConflictCounts(staffedClasses)
+
+  // PL-434B: assigning over conflicts was deliberate — but the conflicts
+  // must not just… exist. State-driven: recomputed from the live schedules
+  // every load, so resolving via ANY path (session moved/cancelled, class
+  // schedule changed, instructor changed) clears it; zero → no row.
+  for (const c of liveClasses) {
+    const n = assignConflictCounts.get(c.id)
+    if (!n) continue
+    const inst = one<any>(c.instructors)
+    const instFirst = (inst?.name ?? inst?.email ?? 'The instructor').split(' ')[0]
+    attention.push({
+      id: `assign-conflicts-${c.id}`,
+      kind: 'Class assignment conflicts with tutoring',
+      text: `${instFirst}'s ${label(c)} assignment conflicts with ${n} tutoring session${n === 1 ? '' : 's'} — each needs a reschedule or a deliberate keep.`,
+      href: `/admin/tutoring?assignment=${c.id}`,
+    })
+  }
 
   if (availIds.length) {
     const hasEng = new Set((engs ?? []).map((e: any) => e.student_id))

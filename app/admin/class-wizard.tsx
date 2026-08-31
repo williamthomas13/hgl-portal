@@ -672,8 +672,13 @@ export default function ClassWizard({
 
     // the classroom-request loop at 14 days out.
     let location = defaultLocation.trim() || null
+    // PL-435: when the location comes from the instructor's default link, say
+    // so in the record — the assignment paths re-apply on instructor change
+    // ONLY for default-provenance links; a typed one is sacred.
+    let locationFromDefault = false
     if (!location && deliveryMode === 'online' && instructor) {
       location = instructor.default_meeting_link ?? null
+      locationFromDefault = Boolean(location)
     }
 
     const newClass = {
@@ -692,6 +697,7 @@ export default function ClassWizard({
       capacity: Number(capacity),
       start_date: startDate,
       default_location: location,
+      default_location_source: locationFromDefault ? 'instructor_default' : null,
       synap_group: synapGroup.trim() || null,
       delivery_mode: deliveryMode,
       min_enrollment: minSanitized,

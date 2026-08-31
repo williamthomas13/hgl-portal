@@ -8,6 +8,8 @@ import SessionCalendar from '../components/SessionCalendar'
 import CounselorsPanel from './counselors-panel'
 import InstructorsPanel, { type Instructor } from './instructors-panel'
 import CancelClassPanel from './cancel-class-panel'
+import AssignmentConflicts from './assignment-conflicts'
+import type { AssignmentConflict } from '../utils/instructor-conflicts'
 import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-wizard'
 import CollateralCard, { type CollateralFields } from './collateral-card'
 import SiteContentPanel from './site-content-panel'
@@ -1268,6 +1270,16 @@ export default function AdminDashboard() {
       : `Clear the instructor for ${label}? It goes back to "not yet assigned".`
     setPendingAssign({ classId: c.id, instructorId, msg })
   }
+  // PL-434A: after an over-conflicts assignment, the confirmation offers the
+  // next step right on the class card (per-conflict reschedule + family
+  // links); PL-435: a default-link auto-apply is named so nobody wonders
+  // where the meeting link came from.
+  const [assignResult, setAssignResult] = useState<{
+    classId: string
+    instructorName: string
+    conflicts: AssignmentConflict[]
+    appliedDefaultLink: string | null
+  } | null>(null)
   async function confirmAssignInstructor() {
     if (!pendingAssign) return
     const res = await fetch('/api/admin/assign-instructor', {
@@ -1277,6 +1289,16 @@ export default function AdminDashboard() {
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) setActionNotice(json.error ?? 'Assignment failed — try again.')
+    else if (pendingAssign.instructorId) {
+      setAssignResult({
+        classId: pendingAssign.classId,
+        instructorName: json.instructorName ?? 'The instructor',
+        conflicts: json.conflicts ?? [],
+        appliedDefaultLink: json.appliedDefaultLink ?? null,
+      })
+    } else {
+      setAssignResult(null)
+    }
     setPendingAssign(null)
     fetchRosters()
   }
@@ -1299,9 +1321,13 @@ export default function AdminDashboard() {
       | 'counselor_id',
     value: string | boolean | number | null
   ) {
+    // PL-435: a hand-edited location is EXPLICIT — provenance clears so no
+    // later instructor change can auto-touch it (sacred admin links).
+    const patch: Record<string, unknown> =
+      field === 'default_location' ? { [field]: value, default_location_source: null } : { [field]: value }
     const { error } = await supabase
       .from('classes')
-      .update({ [field]: value })
+      .update(patch)
       .eq('id', c.id)
     if (error) setActionNotice('Error saving: ' + error.message)
     else fetchRosters()
@@ -1684,6 +1710,28 @@ export default function AdminDashboard() {
               </a>
               <span>· Starts: {formatDateAdmin(effectiveStartDate(c.start_date, sortedSessions))}</span>
             </p>
+            {/* PL-434A: the roster path's assignment confirmation — same
+                shared prompt the calendar suggester renders. */}
+            {assignResult?.classId === c.id && (
+              <div className="text-sm mt-1">
+                <p className="text-green-700 font-semibold">
+                  {assignResult.instructorName} is assigned.
+                  {assignResult.appliedDefaultLink && (
+                    <span className="text-gray-600 font-normal">
+                      {' '}
+                      Meeting link set to their default ({assignResult.appliedDefaultLink}).
+                    </span>
+                  )}
+                  {assignResult.conflicts.length === 0 && (
+                    <span className="text-gray-600 font-normal"> No conflicts with their tutoring schedule.</span>
+                  )}
+                </p>
+                <AssignmentConflicts
+                  instructorName={assignResult.instructorName}
+                  conflicts={assignResult.conflicts}
+                />
+              </div>
+            )}
             {sortedSessions.length > 0 && sortedSessions[0].session_date !== c.start_date && (
               <p className="text-xs mt-0.5">
                 <span className="inline-block px-2 py-0.5 rounded font-semibold bg-amber-100 text-amber-800">

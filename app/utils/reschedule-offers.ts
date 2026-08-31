@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { freeBusy, loadGcalConnection } from './gcal'
+import { listBusyEvents, isPortalSyncedTutoringTitle, isPortalSyncedClassTitle, loadGcalConnection } from './gcal'
 import {
   addDaysIso,
   classifyNotice,
@@ -165,21 +165,35 @@ export async function computeRescheduleOffers(
   // Google freebusy — busy blocks veto candidates. No connection / API error
   // means we cannot guarantee conflict-free offers, so fall back (§8: the
   // request path always exists).
+  // PL-433 sweep: TITLED busy minus the portal's own echoes (tutoring +
+  // class-session events) — a forfeited session's XCL- event used to shade a
+  // slot that is genuinely free, and every live portal session vetoed twice.
+  // Portal truth vetoes below; only genuine external Google busy stays here.
   let busy: Interval[]
   try {
     const conn = await loadGcalConnection()
     if (!conn?.key || conn.status !== 'connected') return none(session, 'Google Calendar not connected')
     busy = (
-      await freeBusy(conn.key, tutor.email, tutor.google_calendar_id, earliest.toISOString(), rangeEnd.toISOString())
-    ).map((b) => ({ start: new Date(b.start).getTime(), end: new Date(b.end).getTime() }))
+      await listBusyEvents(
+        conn.key,
+        tutor.email,
+        tutor.google_calendar_id,
+        earliest.toISOString(),
+        rangeEnd.toISOString(),
+        tutorTz
+      )
+    )
+      .filter((b) => !isPortalSyncedTutoringTitle(b.title) && !isPortalSyncedClassTitle(b.title))
+      .map((b) => ({ start: new Date(b.start).getTime(), end: new Date(b.end).getTime() }))
   } catch (e) {
-    console.error(`offer computation: freebusy failed for session ${sessionId}:`, e)
-    return none(session, 'freebusy query failed')
+    console.error(`offer computation: busy read failed for session ${sessionId}:`, e)
+    return none(session, 'busy query failed')
   }
 
   // Portal sessions the candidate must not displace: anything live for this
-  // tutor OR this student (the original itself is being moved, so it's
-  // excluded — its Google event still shades its old slot via freebusy).
+  // tutor OR this student — INCLUDING the original being moved (its old slot
+  // must not be re-offered; pre-PL-433 its Google echo shaded it, now the
+  // portal row does the same job explicitly).
   const { data: liveRows } = await supabase
     .from('tutoring_sessions')
     .select('id, starts_at, ends_at')
@@ -188,7 +202,6 @@ export async function computeRescheduleOffers(
     .gte('ends_at', earliest.toISOString())
     .lte('starts_at', rangeEnd.toISOString())
   const portalBusy: Interval[] = (liveRows ?? [])
-    .filter((r) => r.id !== raw.id)
     .map((r) => ({ start: new Date(r.starts_at).getTime(), end: new Date(r.ends_at).getTime() }))
 
   // Generate: every STEP_MINUTES start inside a window, on each calendar day

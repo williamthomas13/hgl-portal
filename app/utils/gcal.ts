@@ -405,6 +405,14 @@ export type BusyBlock = { start: string; end: string }
  *  deliberately STAY busy — they are real teaching time with no
  *  tutoring_sessions row behind them. Private events (title withheld) are
  *  never treated as portal-synced. */
+/** PL-433: the portal's own class-session events ("ISD SAT Prep — class
+ *  session", PL-79's convention) — like tutoring echoes, the portal counts
+ *  these precisely on its own side, so busy surfaces that already do a
+ *  portal-side class check must skip the Google copy. */
+export function isPortalSyncedClassTitle(title: string | null | undefined): boolean {
+  return /\s— class session$/.test(title ?? '')
+}
+
 export function isPortalSyncedTutoringTitle(title: string | null | undefined): boolean {
   if (!title) return false
   return /^(HOLD:\s*)?(XCL-\s*)?Tutoring:\s/.test(title)
@@ -551,6 +559,13 @@ export async function listCalendarEvents(
   return out
 }
 
+/** PL-433 FINAL SWEEP VERDICT: raw title-less freebusy CANNOT filter the
+ *  portal's own synced events, so no ranking/veto surface may use it —
+ *  instructor-fit and reschedule-offers converged on listBusyEvents + the
+ *  isPortalSynced* predicates. The helper survives for exactly TWO
+ *  legitimate callers: the connect route's DWD probe (result discarded) and
+ *  /api/gcal/freebusy's degraded fallback when a titles read fails (visual
+ *  shading only). Adding a third caller needs a written reason here. */
 export async function freeBusy(
   key: ServiceAccountKey,
   tutorEmail: string,

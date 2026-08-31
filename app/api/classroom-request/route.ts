@@ -42,7 +42,8 @@ export async function POST(request: Request) {
 
   const { error: updateError } = await supabase
     .from('classes')
-    .update({ default_location: answer })
+    // PL-435: a counselor-answered room is EXPLICIT — provenance clears.
+    .update({ default_location: answer, default_location_source: null })
     .eq('id', classId)
   if (updateError) {
     return NextResponse.json({ error: 'Could not save the location.' }, { status: 500 })

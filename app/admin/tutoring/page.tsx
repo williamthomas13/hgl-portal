@@ -14,6 +14,7 @@ import ScheduleView from './schedule-view'
 import ActivityFeed from './activity-feed'
 import DriftBanner from './drift-banner'
 import AvailabilityReviewCard from './availability-review-card'
+import AssignmentConflictsCard from './assignment-conflicts-card'
 import type { Engagement, StudentOption, Subject, Tutor } from './types'
 
 // Ops Director scheduling surface (Phase 7a, docs/PHASE7_SPEC.md §5). Reads run on the
@@ -73,6 +74,8 @@ export default function TutoringAdmin() {
   const [availabilityReviewFor, setAvailabilityReviewFor] = useState<string | null>(null)
   // PL-438B: ?drift={sessionId} lands ON that drift in the banner.
   const [focusDriftId, setFocusDriftId] = useState<string | null>(null)
+  // PL-434B: ?assignment={classId} opens the conflict-resolution card.
+  const [assignmentReviewFor, setAssignmentReviewFor] = useState<string | null>(null)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
@@ -87,6 +90,12 @@ export default function TutoringAdmin() {
       setContinuationBanner(
         `Scheduling the continuation the family confirmed${hours ? ` (${hours === 'monthly' ? 'monthly, until they cancel' : `${hours} more hours`})` : ''} — the current weekly pattern is pre-filled below; adjust if the old times no longer work, then Save.`
       )
+      return
+    }
+    const assignmentReview = q.get('assignment')
+    if (assignmentReview) {
+      setActiveSection('schedule')
+      setAssignmentReviewFor(assignmentReview)
       return
     }
     const driftFocus = q.get('drift')
@@ -272,6 +281,13 @@ export default function TutoringAdmin() {
               <AvailabilityReviewCard
                 studentId={availabilityReviewFor}
                 onClose={() => setAvailabilityReviewFor(null)}
+              />
+            )}
+            {/* PL-434B: the assignment-conflict NA row's resolution surface. */}
+            {assignmentReviewFor && (
+              <AssignmentConflictsCard
+                classId={assignmentReviewFor}
+                onClose={() => setAssignmentReviewFor(null)}
               />
             )}
             {/* PL-227/PL-254: every section, scheduling included, lives in

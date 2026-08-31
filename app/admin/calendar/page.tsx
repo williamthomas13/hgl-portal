@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CALENDAR_COLORS, textOnColor, type CalendarStatus } from '../../utils/calendar-colors'
 import { formatDateOnly, staffTimeCityLabel } from '../../utils/dates'
 import { ConfirmAction } from '../tutoring/confirm'
+import AssignmentConflicts from '../assignment-conflicts'
+import type { AssignmentConflict } from '../../utils/instructor-conflicts'
 import { SidebarNav, CLASSES_SIDEBAR } from '../sidebar'
 
 // PL-160: a REAL calendar — GCal-style week/month, one combined view of
@@ -102,6 +104,7 @@ export default function AdminCalendarPage() {
   const [assignBusyId, setAssignBusyId] = useState('')
   const [assignError, setAssignError] = useState('')
   const [assignedName, setAssignedName] = useState('')
+  const [assignedConflicts, setAssignedConflicts] = useState<AssignmentConflict[]>([])
   // PL-248: jump the view to the class's first session once per class.
   const jumpedForRef = useRef('')
   useEffect(() => {
@@ -173,6 +176,7 @@ export default function AdminCalendarPage() {
     setAssignBusyId(candidateId)
     setAssignError('')
     setAssignedName('')
+    setAssignedConflicts([])
     try {
       const res = await fetch('/api/admin/assign-instructor', {
         method: 'POST',
@@ -183,6 +187,9 @@ export default function AdminCalendarPage() {
       if (!res.ok) setAssignError(json.error ?? `The server returned ${res.status}.`)
       else {
         setAssignedName(json.instructorName ?? name)
+        // PL-434A: the assignment's conflicts come back with the response —
+        // the confirmation immediately offers the next step.
+        setAssignedConflicts(json.conflicts ?? [])
         setFitNonce((n) => n + 1) // re-rank so the "currently assigned" badge moves
         load() // class blocks carry the instructor name in their tooltips
       }
@@ -520,6 +527,9 @@ export default function AdminCalendarPage() {
                   Back to the class roster
                 </a>
               </p>
+            )}
+            {assignedName && (
+              <AssignmentConflicts instructorName={assignedName} conflicts={assignedConflicts} />
             )}
             {fit && (
               <ul className="divide-y divide-gray-100">
