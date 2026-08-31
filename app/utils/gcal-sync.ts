@@ -20,6 +20,7 @@ import { PRODUCTION_ORIGIN } from './base-url'
 import { sendAdminAlert } from './email'
 import { createHash } from 'crypto'
 import { ADMIN_EMAIL } from './lifecycle'
+import { formatTimeRange } from './dates'
 
 // Phase 7a Google Calendar push worker (spec §4). Same shape as the Phase 6
 // QBO worker: enqueue rows ride an after() trigger behind every scheduling
@@ -594,7 +595,45 @@ export async function auditTutoringTimeDrift(tutorId?: string): Promise<TimeDrif
         gcalEventId: s.gcal_event_id as string,
       }
       if (!live || !live.start || !live.end) {
-        drift.push({ ...base, calStartsAt: null, calEndsAt: null, kind: 'time', eventTitle: null })
+        // PL-437: a list that momentarily omits an event must never become a
+        // "deleted" alert — the Aug 31 false pair rang while the events stood
+        // (revived seconds earlier; events.list lags a direct GET). Confirm
+        // with a per-event GET before declaring deletion: only a true 404 or
+        // status 'cancelled' counts. A live GET result feeds the normal
+        // moved/XCL checks with ITS times instead.
+        let confirmedGone = true
+        let got: Awaited<ReturnType<typeof getGcalEvent>> = null
+        try {
+          got = await getGcalEvent(conn.key, tutor.email, tutor.google_calendar_id, s.gcal_event_id)
+          confirmedGone = !got || got.status === 'cancelled' || !got.start || !got.end
+        } catch (e) {
+          // A read failure is not drift — skip rather than cry wolf.
+          console.error(`drift audit: deletion double-check failed for session ${s.id} (skipping):`, e)
+          continue
+        }
+        if (confirmedGone) {
+          drift.push({ ...base, calStartsAt: null, calEndsAt: null, kind: 'time', eventTitle: null })
+          continue
+        }
+        if (
+          ['confirmed', 'completed'].includes(s.status) &&
+          /^\s*XCL-/i.test(got!.summary ?? '')
+        ) {
+          drift.push({
+            ...base,
+            calStartsAt: got!.start,
+            calEndsAt: got!.end,
+            kind: 'xcl',
+            eventTitle: (got!.summary ?? '').trim() || '(no title)',
+          })
+          continue
+        }
+        const movedPerGet =
+          Math.abs(new Date(got!.start!).getTime() - new Date(s.starts_at).getTime()) > 60_000 ||
+          Math.abs(new Date(got!.end!).getTime() - new Date(s.ends_at).getTime()) > 60_000
+        if (movedPerGet) {
+          drift.push({ ...base, calStartsAt: got!.start, calEndsAt: got!.end, kind: 'time', eventTitle: null })
+        }
         continue
       }
       // PL-425 (absorbing PL-154): a hand-retitled XCL- event on a session
@@ -632,17 +671,34 @@ export async function auditTutoringTimeDrift(tutorId?: string): Promise<TimeDrif
  *  harness can prove the grouping and once-only behavior. */
 export async function sendGroupedDriftAlert(drift: TimeDriftRow[], adminEmail: string): Promise<number> {
   if (drift.length === 0) return 0
-  const fmtT = (iso: string) =>
-    new Date(iso).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', hour: 'numeric', minute: '2-digit' })
+  // PL-438: full dates + ranges — "Monday, September 7, 1:00–2:00 PM"
+  // never reads as today (the standing plain-English-dates rule).
+  const fmtT = (startIso: string, endIso?: string | null) => {
+    const day = new Date(startIso).toLocaleDateString('en-US', {
+      timeZone: 'America/Denver',
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    })
+    return `${day}, ${formatTimeRange(startIso, endIso, 'America/Denver')}`
+  }
   const sig = (d: { calStartsAt: string | null }) => d.calStartsAt ?? 'deleted'
-  const { data: alertedRows } = await supabase.from('calendar_drift').select('session_id, alerted_signature')
-  const alerted = new Map(
-    ((alertedRows ?? []) as { session_id: string; alerted_signature: string | null }[]).map((r) => [
-      r.session_id,
-      r.alerted_signature,
-    ])
+  // PL-437: the once-only memory is DURABLE now — the old alerted_signature
+  // lived on the calendar_drift row, and every resolution path deletes that
+  // row, so a re-detection moments later re-rang with no memory (the Aug 31
+  // pair). The ledger survives row churn: a (session, signature) that rang
+  // within 24h stays silent; the same shape a day later may honestly re-ring.
+  const { data: ledgerRows } = await supabase
+    .from('calendar_drift_alert_ledger')
+    .select('session_id, signature, alerted_at')
+    .in('session_id', drift.map((d) => d.sessionId))
+  const cutoff = Date.now() - 24 * 3600_000
+  const recentlyRung = new Set(
+    ((ledgerRows ?? []) as { session_id: string; signature: string; alerted_at: string }[])
+      .filter((r) => new Date(r.alerted_at).getTime() > cutoff)
+      .map((r) => `${r.session_id}|${r.signature}`)
   )
-  const fresh = drift.filter((d) => alerted.get(d.sessionId) !== sig(d))
+  const fresh = drift.filter((d) => !recentlyRung.has(`${d.sessionId}|${sig(d)}`))
   if (fresh.length === 0) return 0
   const byTutor = new Map<string, TimeDriftRow[]>()
   for (const d of fresh) byTutor.set(d.tutorFirst, [...(byTutor.get(d.tutorFirst) ?? []), d])
@@ -655,9 +711,9 @@ export async function sendGroupedDriftAlert(drift: TimeDriftRow[], adminEmail: s
              (d) =>
                `<li>${
                  d.calStartsAt
-                   ? `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session moved — ${fmtT(d.portalStartsAt)} → ${fmtT(d.calStartsAt)}`
-                   : `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session event (${fmtT(d.portalStartsAt)}) deleted`
-               } · <a href="${emailBaseUrl()}/admin/tutoring?family=${d.familyId ?? ''}" style="color:#00AEEE">open ${d.studentFirst}'s banner</a></li>`
+                   ? `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session moved — ${fmtT(d.portalStartsAt, d.portalEndsAt)} → ${fmtT(d.calStartsAt, d.calEndsAt)}`
+                   : `<strong>${d.studentFirst}</strong>'s ${d.subjectName} session event (${fmtT(d.portalStartsAt, d.portalEndsAt)}) deleted`
+               } · <a href="${emailBaseUrl()}/admin/tutoring?drift=${d.sessionId}" style="color:#00AEEE">open the decision banner</a></li>`
            )
            .join('')}</ul>`
     )
@@ -685,14 +741,13 @@ export async function sendGroupedDriftAlert(drift: TimeDriftRow[], adminEmail: s
     repeat for these changes; the banners are the reminder.</p>`,
   })
   // Marking runs only after the send resolved — a thrown send skips it so
-  // the next pass retries the doorbell.
+  // the next pass retries the doorbell. The ledger, not the churn-prone
+  // drift row, holds the memory (PL-437).
   const nowIso = new Date().toISOString()
-  for (const d of fresh) {
-    await supabase
-      .from('calendar_drift')
-      .update({ alerted_at: nowIso, alerted_signature: sig(d) })
-      .eq('session_id', d.sessionId)
-  }
+  await supabase.from('calendar_drift_alert_ledger').upsert(
+    fresh.map((d) => ({ session_id: d.sessionId, signature: sig(d), alerted_at: nowIso })),
+    { onConflict: 'session_id,signature' }
+  )
   return fresh.length
 }
 

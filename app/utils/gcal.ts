@@ -358,13 +358,34 @@ export async function getGcalEvent(
   tutorEmail: string,
   calendarId: string | null,
   eventId: string
-): Promise<{ id: string; summary: string | null; status: string } | null> {
+): Promise<{
+  id: string
+  summary: string | null
+  status: string
+  /** PL-437: the event's live instants — the drift audit's deletion
+   *  double-check reads them (a list that momentarily omits an event must
+   *  never become a "deleted" alert when a direct GET says it stands). */
+  start: string | null
+  end: string | null
+} | null> {
   const cal = encodeURIComponent(calendarId || 'primary')
   const res = await gcalFetch(tutorEmail, key, `/calendars/${cal}/events/${encodeURIComponent(eventId)}`)
   if (res.status === 404 || res.status === 410) return null
   await expectOk(res, 'event get')
-  const json = (await res.json()) as { id: string; summary?: string; status: string }
-  return { id: json.id, summary: json.summary ?? null, status: json.status }
+  const json = (await res.json()) as {
+    id: string
+    summary?: string
+    status: string
+    start?: { dateTime?: string; date?: string }
+    end?: { dateTime?: string; date?: string }
+  }
+  return {
+    id: json.id,
+    summary: json.summary ?? null,
+    status: json.status,
+    start: json.start?.dateTime ?? null,
+    end: json.end?.dateTime ?? null,
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { formatTimeRange } from '../../utils/dates'
 
 // PL-180: calendar edits flow BACK — with a human gate. This banner scans on
 // page load (so detection isn't a day behind the sweep), says WHO moved
@@ -21,18 +22,20 @@ type DriftRow = {
   calEndsAt: string | null
 }
 
-const fmtT = (iso: string) =>
-  new Date(iso).toLocaleString('en-US', {
+// PL-438: full date + range — "Monday, September 7, 1:00–2:00 PM".
+const fmtT = (startIso: string, endIso?: string | null) => {
+  const day = new Date(startIso).toLocaleDateString('en-US', {
     timeZone: 'America/Denver',
     weekday: 'long',
-    month: 'short',
+    month: 'long',
     day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
   })
+  return `${day}, ${formatTimeRange(startIso, endIso, 'America/Denver')}`
+}
 
-export default function DriftBanner() {
+export default function DriftBanner({ focusDriftId }: { focusDriftId?: string | null }) {
   const [rows, setRows] = useState<DriftRow[]>([])
+  const [scanned, setScanned] = useState(false)
   const [busy, setBusy] = useState('')
   const [result, setResult] = useState<Record<string, string>>({})
   // PL-420: adopting a DELETION is a cancellation with money consequences —
@@ -52,11 +55,24 @@ export default function DriftBanner() {
     } catch {
       /* the daily sweep is the backstop */
     }
+    setScanned(true)
   }, [])
 
   useEffect(() => {
     scan()
   }, [scan])
+
+  // PL-438B: the alert's link lands ON the drift — scroll + highlight the
+  // row it names once the scan resolves.
+  useEffect(() => {
+    if (!focusDriftId || !scanned) return
+    const el = document.getElementById(`drift-${focusDriftId}`)
+    if (!el) return
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.add('ring-2', 'ring-hgl-blue')
+    const t = setTimeout(() => el.classList.remove('ring-2', 'ring-hgl-blue'), 4000)
+    return () => clearTimeout(t)
+  }, [focusDriftId, scanned])
 
   async function resolve(sessionId: string, action: 'adopt' | 'revert' | 'record_no_show' | 'record_forfeited') {
     setBusy(sessionId)
@@ -95,13 +111,24 @@ export default function DriftBanner() {
     setBusy('')
   }
 
-  if (rows.length === 0 && Object.values(result).every((v) => !v)) return null
+  // PL-438B: an alert's link never dead-ends into ambiguity — if the drift
+  // it names is gone by click time (resolved, superseded, or a withdrawn
+  // false positive), say so plainly where the banner would have been.
+  const focusResolved = Boolean(focusDriftId && scanned && !rows.some((r) => r.sessionId === focusDriftId))
+  if (rows.length === 0 && Object.values(result).every((v) => !v) && !focusResolved) return null
 
   return (
     <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm space-y-3">
+      {focusResolved && (
+        <p className="bg-white border border-amber-200 rounded p-3 text-gray-700">
+          The calendar change that alert pointed at has since been <strong>resolved or
+          withdrawn</strong> — nothing here needs a decision. (A fresh scan just confirmed it;
+          anything still pending is listed below.)
+        </p>
+      )}
       <p className="font-bold text-amber-900">
         Calendar edited outside the portal — {rows.length} session
-        {rows.length === 1 ? '' : 's'} need a decision
+        {rows.length === 1 ? ' needs' : 's need'} a decision
       </p>
       {rows.map((d) => {
         // PL-393: once the session's time has PASSED, the questions change —
@@ -112,8 +139,8 @@ export default function DriftBanner() {
           <p className="text-amber-900">
             <strong>
               {d.calStartsAt
-                ? `${d.tutorFirst} moved ${d.studentFirst}'s ${d.subjectName} session in their Google Calendar — ${fmtT(d.portalStartsAt)} → ${fmtT(d.calStartsAt)}${past ? ', and its time has now passed' : ''}.`
-                : `${d.tutorFirst} deleted ${d.studentFirst}'s ${d.subjectName} session event (${fmtT(d.portalStartsAt)}) from their Google Calendar${past ? ', and its time has now passed' : ''}.`}
+                ? `${d.tutorFirst} moved ${d.studentFirst}'s ${d.subjectName} session in their Google Calendar — ${fmtT(d.portalStartsAt, d.portalEndsAt)} → ${fmtT(d.calStartsAt, d.calEndsAt)}${past ? ', and its time has now passed' : ''}.`
+                : `${d.tutorFirst} deleted ${d.studentFirst}'s ${d.subjectName} session event (${fmtT(d.portalStartsAt, d.portalEndsAt)}) from their Google Calendar${past ? ', and its time has now passed' : ''}.`}
             </strong>{' '}
             {past
               ? 'Record what actually happened — the choice sets the timecard and billing record.'

@@ -1,7 +1,10 @@
-// PL-402 E2E: grouped, once-only drift alerts. Fake Google (in-memory event
-// list built from REAL session rows), fake sendAdminAlert (captured), REAL
-// calendar_drift table. Steps: 3 perturbed events → ONE email listing 3;
-// second pass → zero; move one AGAIN → one new email; restore + cleanup.
+// PL-402 (+PL-437) E2E: grouped, once-only drift alerts with DURABLE memory.
+// Fake Google (in-memory event list built from REAL session rows), fake
+// sendAdminAlert (captured), REAL calendar_drift + alert-ledger tables.
+// Steps: 3 perturbed events → ONE email listing 3; second pass → zero;
+// PL-437: drift-row churn (rows deleted, re-detected) must NOT re-ring;
+// a list that omits an event while a GET says it stands must NOT read as
+// deleted; move one AGAIN → one new email; restore + cleanup.
 import { readFileSync, rmSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import path from 'node:path'
@@ -48,8 +51,14 @@ for (const s of sessions) eventState.set(s.gcal_event_id, { start: s.starts_at, 
 
 gcal.listCalendarEvents = async () =>
   [...eventState.entries()]
-    .filter(([, e]) => !e.deleted)
+    .filter(([, e]) => !e.deleted && !e.listHidden)
     .map(([id, e]) => ({ id, summary: 'Tutoring: X — Y', status: 'confirmed', colorId: null, start: e.start, end: e.end, allDay: false, hglSessionId: null }))
+// PL-437: the audit's deletion double-check GETs the event directly.
+gcal.getGcalEvent = async (_k, _t, _c, id) => {
+  const e = eventState.get(id)
+  if (!e || e.deleted) return null
+  return { id, summary: 'Tutoring: X — Y', status: 'confirmed', start: e.start, end: e.end }
+}
 
 const sync = require(path.join(out, 'gcal-sync.js'))
 
@@ -62,6 +71,9 @@ const fakeyFirst = [...future.filter((s) => s.students?.first_name === 'Fakey'),
 const targets = fakeyFirst.slice(0, 3)
 if (targets.length < 3) { console.error('need 3 future synced sessions, found', targets.length); process.exit(1) }
 console.log('targets:', targets.map((t) => `${t.students?.first_name} ${t.starts_at}`))
+
+// PL-437: start from a clean once-only memory for the targets.
+await db.from('calendar_drift_alert_ledger').delete().in('session_id', targets.map((t) => t.id))
 
 const shift = (iso, mins) => new Date(new Date(iso).getTime() + mins * 60e3).toISOString()
 // perturb: move #1 +30min, move #2 +60min, delete #3
@@ -90,6 +102,21 @@ check(/3 session events changed/.test(captured[0]?.subject ?? ''), `subject grou
 const p2 = await pass('pass 2 (no new changes)')
 check(p2.drift.length === 3 && p2.rung === 0 && captured.length === 1, 'second pass rings NOTHING')
 
+// PL-437 scenario A: drift-row churn — a resolution path (or the audit's own
+// refresh) deletes the rows; re-detection must NOT re-ring (this is the
+// exact Aug 31 double-alert: the old signature memory died with the row).
+await db.from('calendar_drift').delete().in('session_id', targets.map((t) => t.id))
+const p2b = await pass('pass 2b (rows churned, same calendar state)')
+check(p2b.drift.length === 3 && p2b.rung === 0 && captured.length === 1, 'row churn re-detects but does NOT re-ring (durable ledger)')
+
+// PL-437 scenario B: events.list momentarily omits a live event (eventual
+// consistency) — the GET double-check must stop the false "deleted".
+eventState.get(targets[1].gcal_event_id).listHidden = true
+const p2c = await pass('pass 2c (list omits a live event)')
+check(!p2c.drift.some((d) => d.sessionId === targets[1].id && d.calStartsAt === null), 'list-omitted live event does NOT read as deleted')
+check(p2c.rung === 0 && captured.length === 1, 'no alert from the false-deletion probe')
+eventState.get(targets[1].gcal_event_id).listHidden = false
+
 // move #1 AGAIN
 eventState.get(targets[0].gcal_event_id).start = shift(targets[0].starts_at, 90)
 eventState.get(targets[0].gcal_event_id).end = shift(targets[0].ends_at, 90)
@@ -107,6 +134,7 @@ const p4 = await pass('pass 4 (restored)')
 check(p4.drift.length === 0 && p4.rung === 0, 'restore clears all drift, no email')
 const { data: leftover } = await db.from('calendar_drift').select('session_id')
 check((leftover ?? []).length === 0, 'calendar_drift table empty after restore')
+await db.from('calendar_drift_alert_ledger').delete().in('session_id', targets.map((t) => t.id))
 
 rmSync(out, { recursive: true, force: true })
 console.log(ok ? '\nPL-402 E2E: ALL PASS' : '\nPL-402 E2E: FAILURES')

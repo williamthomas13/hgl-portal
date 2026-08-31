@@ -71,6 +71,8 @@ export default function TutoringAdmin() {
   const [continuationBanner, setContinuationBanner] = useState<string | null>(null)
   // PL-424D: ?availability={studentId} opens the shared-windows review card.
   const [availabilityReviewFor, setAvailabilityReviewFor] = useState<string | null>(null)
+  // PL-438B: ?drift={sessionId} lands ON that drift in the banner.
+  const [focusDriftId, setFocusDriftId] = useState<string | null>(null)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
@@ -85,6 +87,12 @@ export default function TutoringAdmin() {
       setContinuationBanner(
         `Scheduling the continuation the family confirmed${hours ? ` (${hours === 'monthly' ? 'monthly, until they cancel' : `${hours} more hours`})` : ''} — the current weekly pattern is pre-filled below; adjust if the old times no longer work, then Save.`
       )
+      return
+    }
+    const driftFocus = q.get('drift')
+    if (driftFocus) {
+      setActiveSection('schedule')
+      setFocusDriftId(driftFocus)
       return
     }
     const availabilityReview = q.get('availability')
@@ -257,7 +265,7 @@ export default function TutoringAdmin() {
           <>
             {/* PL-180: calendar-side edits surface FIRST — a decision is
                 pending and everything below may be affected by it. */}
-            <DriftBanner />
+            <DriftBanner focusDriftId={focusDriftId} />
             {/* PL-424D: the availability-alert click-through's resolution
                 surface — the same diff the email carried + what's downstream. */}
             {availabilityReviewFor && (
