@@ -85,6 +85,24 @@ export function usableAccent(hex: string | null | undefined): string {
   return luminance > 200 ? HGL_BLUE : `#${m[1]}`
 }
 
+/** PL-429: what still blocks this class's collateral being USED — the SAME
+ *  facts the CS-welcome gate refuses on (sessions on the calendar, a
+ *  printable sales-page link [the school's evergreen code first — PL-384 —
+ *  else the legacy class short link], the enrollment deadline the letter
+ *  quotes). ONE source: the welcome gate, the artifact endpoint, the
+ *  counselor materials block, and the nudge sweep all read this. */
+export function collateralMissing(model: {
+  sessions: unknown[]
+  shortLink: string | null
+  enrollmentDeadline: string | null
+}): string[] {
+  const missing: string[] = []
+  if (model.sessions.length === 0) missing.push('the session calendar (add sessions first)')
+  if (!model.shortLink) missing.push("the school sales-page short link (set it on the class — it's what the email links)")
+  if (!model.enrollmentDeadline) missing.push('the enrollment deadline')
+  return missing
+}
+
 export async function loadCollateralModel(classId: string): Promise<CollateralModel | null> {
   const { data: c, error } = await supabaseAdmin
     .from('classes')

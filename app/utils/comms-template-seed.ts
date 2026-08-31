@@ -2046,6 +2046,20 @@ Your Google Calendar is already updated — below is the full upcoming schedule 
     body_markdown: `{alertDetailsBlock}`,
   },
   {
+    // PL-429: the skipped-collateral doorbell — rings once per class at the
+    // first moment collateral would actually be used.
+    template_key: 'AL_COLLATERAL_NUDGE',
+    display_name: 'AL — Collateral not set up (nudge)',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{alertClassName}'s collateral isn't set up — the counselor welcome goes out plain without it",
+    preheader: 'One-time reminder; the dashboard row stays until it is done.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
     // PL-424: the UPDATE twin — an update against already-shared windows
     // says so, carries the composed old→new diff, and never repeats the
     // first share's 3-business-day promise.

@@ -8,6 +8,7 @@ import {
   collateralFilename,
   languagesFor,
   loadCollateralModel,
+  collateralMissing,
 } from '../../../utils/collateral'
 import { flyerHtml, letterHtml } from '../../../utils/collateral-templates'
 import {
@@ -247,14 +248,16 @@ export async function POST(request: Request) {
 
   // The email promises a live sales page, a deadline, and a set calendar —
   // refuse plainly (never send a half-true welcome) until each exists.
-  const missing: string[] = []
-  if (model.sessions.length === 0) missing.push('the session calendar (add sessions first)')
+  // PL-429: ONE readiness source (collateralMissing) — the artifact endpoint
+  // and counselor materials block refuse on the same facts now.
   // PL-237: the collateral-only follow-up doesn't link the sales page, so it
   // only needs the sessions the attachments print.
-  if (mode === 'welcome') {
-    if (!model.shortLink) missing.push("the school sales-page short link (set it on the class — it's what the email links)")
-    if (!model.enrollmentDeadline) missing.push('the enrollment deadline')
-  }
+  const missing =
+    mode === 'welcome'
+      ? collateralMissing(model)
+      : model.sessions.length === 0
+        ? ['the session calendar (add sessions first)']
+        : []
   if (missing.length > 0) {
     return NextResponse.json(
       { error: `Not ready to send — still missing: ${missing.join(' · ')}.` },

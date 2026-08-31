@@ -238,6 +238,11 @@ export default function CollateralCard({
         promo_code: form.promo_code.trim() || null,
         promo_amount: form.promo_amount.trim() ? Number(form.promo_amount) : null,
         promo_deadline: form.promo_deadline || null,
+        // PL-429: saving collateral IS completing it — the wizard's
+        // skip-for-now stamp clears, which retires the dashboard reminder
+        // and cancels the email nudge (post-PL-384 the evergreen link made
+        // "short_link set" a stale completion proxy; this is the real one).
+        collateral_reminder_at: null,
         // PL-348 ship-dark guard: only write the column once the migration
         // has landed (the loaded row carries the key) — otherwise EVERY
         // collateral save would break on the unknown column.

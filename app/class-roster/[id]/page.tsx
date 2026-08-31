@@ -90,8 +90,8 @@ export default async function ClassRosterPage({
       `
       id, slug, status, class_type, delivery_mode, price, capacity,
       start_date, registration_close_date, enrollment_deadline,
-      default_location, school_id, collateral_language, timezone, display_cities,
-      schools ( name, nickname, collateral_language, timezone, city ),
+      default_location, school_id, collateral_language, timezone, display_cities, short_link,
+      schools ( name, nickname, collateral_language, timezone, city, evergreen_code ),
       instructors ( name, email ),
       sessions ( id, session_date, start_time, end_time, location ),
       enrollments (

@@ -6,6 +6,7 @@ import {
   languagesFor,
   loadCollateralModel,
   type CollateralLanguage,
+  collateralMissing,
 } from '../../../../../utils/collateral'
 import { flyerHtml, letterHtml } from '../../../../../utils/collateral-templates'
 import { escapeLike } from '../../../../../utils/like-escape'
@@ -68,6 +69,17 @@ export async function GET(
 
   const model = await loadCollateralModel(id)
   if (!model) return new Response('Class not found', { status: 404 })
+
+  // PL-429B: the same fail-closed gate the CS welcome has — a flyer with a
+  // missing sales link or no calendar must never reach a counselor's
+  // bulletin board looking finished.
+  const notReady = collateralMissing(model)
+  if (notReady.length > 0) {
+    return new Response(
+      `These materials aren't ready yet — still missing: ${notReady.join(' · ')}. They generate automatically once the class record is complete.`,
+      { status: 400 }
+    )
+  }
 
   // schoolId comes off the class row via a service-role query
   const { data: cls } = await supabaseAdmin.from('classes').select('school_id').eq('id', id).single()

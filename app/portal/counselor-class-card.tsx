@@ -1,5 +1,6 @@
 import SessionCalendar from '../components/SessionCalendar'
 import CopyButton from './copy-button'
+import { collateralMissing } from '../utils/collateral'
 import { publicTimeCityLabel } from '../utils/dates'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
@@ -89,8 +90,32 @@ base: string
       )}
 
       {/* Phase 4.5: flyer + parent letter downloads (spec §8). Rendered live
-          from class data, so they can never be stale. */}
-      {withRegLink && (
+          from class data, so they can never be stale.
+          PL-429B: fail-closed — the SAME readiness facts the CS welcome
+          refuses on. A counselor must never be handed buttons that produce a
+          half-finished flyer; the honest wait note renders instead. */}
+      {withRegLink &&
+        collateralMissing({
+          sessions: c.sessions ?? [],
+          shortLink: one<any>(c.schools)?.evergreen_code
+            ? `hgl.co/${one<any>(c.schools).evergreen_code}`
+            : (c.short_link ?? '').trim() || null,
+          enrollmentDeadline: c.enrollment_deadline ?? null,
+        }).length > 0 && (
+          <div className="mb-4 border border-gray-200 rounded p-3 text-sm text-gray-600">
+            <h4 className="text-sm font-bold text-hgl-slate mb-1">Class materials</h4>
+            The flyer and parent letter for this class are still being finished — they&apos;ll
+            appear here automatically once the class details are complete.
+          </div>
+        )}
+      {withRegLink &&
+        collateralMissing({
+          sessions: c.sessions ?? [],
+          shortLink: one<any>(c.schools)?.evergreen_code
+            ? `hgl.co/${one<any>(c.schools).evergreen_code}`
+            : (c.short_link ?? '').trim() || null,
+          enrollmentDeadline: c.enrollment_deadline ?? null,
+        }).length === 0 && (
         <div className="mb-4 border border-gray-200 rounded p-3">
           <h4 className="text-sm font-bold text-hgl-slate mb-2">Class materials</h4>
           <div className="flex flex-wrap gap-2 mb-2">

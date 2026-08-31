@@ -20,6 +20,7 @@ import { runAgreementNudges } from '../../../utils/agreement-nudges'
 import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/waitlist-offers'
 import { sweepFollowOnForBundle } from '../../../utils/follow-on'
 import { sweepBlockConfirmations } from '../../../utils/block-confirm'
+import { sweepCollateralNudges } from '../../../utils/collateral-nudge'
 import {
   maybeSendInstructorFyi,
   sweepInstructorComms,
@@ -1902,6 +1903,15 @@ export async function GET(req: Request) {
     if (bc.dropped > 0) counters.block_sessions_dropped = bc.dropped
   } catch (e) {
     console.error('block-confirmation sweep failed:', e)
+  }
+
+  // PL-429: skipped-collateral classes whose welcome is otherwise sendable
+  // get their once-ever email nudge (the dashboard row stays the reminder).
+  try {
+    const nudged = await sweepCollateralNudges()
+    if (nudged > 0) counters.collateral_nudges = nudged
+  } catch (e) {
+    console.error('collateral-nudge sweep failed:', e)
   }
 
   // PL-201: campaigns the daily cap paused resume when quota allows —

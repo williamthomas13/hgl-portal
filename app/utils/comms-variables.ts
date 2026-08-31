@@ -247,6 +247,8 @@ export type ExtraVars = {
   /** Internal alerts: who/what the alert is about. */
   alertStudentName?: string
   alertParentName?: string
+  /** PL-429: the composed class the alert is about ("MIS SAT Prep"). */
+  alertClassName?: string
   alertParentEmail?: string
   /** e.g. "3 enrolled / 8 min / 15 cap" or "4 paid / 8 minimum". */
   alertCounts?: string
@@ -1106,6 +1108,7 @@ export const VARIABLES: Record<string, VariableDef> = {
   },
   alertStudentName: { description: 'Alerts: student the alert is about', resolve: (_c, _a, e) => e.alertStudentName ?? '—' },
   alertParentName: { description: 'Alerts: parent the alert is about', resolve: (_c, _a, e) => e.alertParentName ?? '—' },
+  alertClassName: { description: 'Alerts: the composed class the alert is about', resolve: (_c, _a, e) => e.alertClassName ?? '—' },
   alertParentEmail: { description: "Alerts: that parent's email", resolve: (_c, _a, e) => e.alertParentEmail ?? '—' },
   alertCounts: { description: 'Alerts: the count string, e.g. "3 enrolled / 8 min / 15 cap"', resolve: (_c, _a, e) => e.alertCounts ?? '—' },
   alertDetailsBlock: {
@@ -1742,6 +1745,12 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   AL_AVAILABILITY_SHARED: {
     alertDetailsBlock:
       '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
+  },
+  // PL-429: the skipped-collateral nudge — the sweep's composed body.
+  AL_COLLATERAL_NUDGE: {
+    alertClassName: 'MIS SAT Prep',
+    alertDetailsBlock:
+      '<p><strong>MIS SAT Prep</strong> was created with its flyer &amp; letter setup skipped, and the class record is now otherwise ready — the counselor welcome could go out today, but its default is the PLAIN version (no flyer or parent letter attached) until the collateral fields are finished.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?collateral=00000000-0000-4000-8000-000000000007" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Finish the collateral</a></p><p>Set it up under Classes → Branding &amp; collateral. The dashboard reminder stays until it\'s done; this email won\'t repeat for this class.</p>',
   },
   // PL-424: the availability UPDATE alert — diff lines composed by the
   // availability-diff leaf, exactly as the route composes them.
