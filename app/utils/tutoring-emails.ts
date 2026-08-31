@@ -415,7 +415,10 @@ export async function sendRescheduleAck(sessionId: string): Promise<'sent' | 'al
 
 export async function sendScheduleChangeNotices(opts: {
   sessionId: string
-  kind: 'reschedule' | 'forfeited' | 'no_show'
+  /** PL-420: 'cancelled' = a FREE cancellation (≥24h — the PL-62 tombstone,
+   *  never billed); the family hears it, the tutor-side notice is skipped
+   *  (adopt-a-deletion: the change came FROM the tutor's own calendar). */
+  kind: 'reschedule' | 'forfeited' | 'no_show' | 'cancelled'
   notice?: 'ok' | 'late'
   replacementId?: string
 }): Promise<void> {
@@ -470,6 +473,9 @@ export async function sendScheduleChangeNotices(opts: {
     } else if (opts.kind === 'no_show') {
       changeLines.push(`${subject} on ${fmt(s.starts_at, s.ends_at)} was marked a no-show.`)
       changeLines.push(`Per the prepaid-month policy the session isn't refunded, but do get in touch — emergencies are always our call to make together.`)
+    } else if (opts.kind === 'cancelled') {
+      changeLines.push(`${subject} on ${fmt(s.starts_at, s.ends_at)} was cancelled.`)
+      changeLines.push(`With more than 24 hours' notice there's no charge for it. Want to rebook the time? Just reply and we'll set it up.`)
     } else {
       changeLines.push(`${subject} on ${fmt(s.starts_at, s.ends_at)} was cancelled without a replacement, so the prepaid session is forfeited.`)
       changeLines.push(`If you'd rather reschedule it after all, just say the word.`)
@@ -499,7 +505,7 @@ export async function sendScheduleChangeNotices(opts: {
     // tutor's coalesced pending notice (45-min sliding window, 3-h cap,
     // immediate when a touched session starts within 24 h). The parent T3
     // above and the calendar patch stay instant.
-    if (tutor?.id && tutor?.email && student.id) {
+    if (tutor?.id && tutor?.email && student.id && opts.kind !== 'cancelled') {
       await recordTutorScheduleChange({
         tutorId: tutor.id,
         change: {

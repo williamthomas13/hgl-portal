@@ -677,7 +677,8 @@ export async function sendGroupedDriftAlert(drift: TimeDriftRow[], adminEmail: s
       : `Google Calendar drift: ${fresh.length} session events changed (${byTutor.size} tutor${byTutor.size === 1 ? '' : 's'})`,
     body: `${sections}
     <p>The families haven't been told and billing hasn't changed — none of the machinery has run.
-    <strong>Adopt</strong> (runs the normal reschedule: parent notice, fee logic, timecards) or
+    <strong>Adopt</strong> (a moved event runs the normal reschedule; a deleted event cancels the
+    session under the 24-hour rules — parent notice, fee logic, timecards either way) or
     <strong> revert</strong> the calendar, from each banner linked above.
     Each banner stays until you decide — if a session's time passes first, it switches to
     asking what actually happened (adopt as-happened, no-show, or forfeit). This email won't

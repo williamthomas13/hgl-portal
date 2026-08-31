@@ -35,6 +35,10 @@ export default function DriftBanner() {
   const [rows, setRows] = useState<DriftRow[]>([])
   const [busy, setBusy] = useState('')
   const [result, setResult] = useState<Record<string, string>>({})
+  // PL-420: adopting a DELETION is a cancellation with money consequences —
+  // the consequence is stated inline before the click that commits (standing
+  // rule: inline confirms, never native dialogs).
+  const [confirmCancel, setConfirmCancel] = useState('')
 
   const scan = useCallback(async () => {
     try {
@@ -67,7 +71,11 @@ export default function DriftBanner() {
       if (json.ok) {
         setResult((m) => ({
           ...m,
-          [sessionId]: json.adopted
+          [sessionId]: json.adoptedDeletion
+            ? json.outcome === 'forfeited'
+              ? 'Adopted — the session is cancelled inside 24 hours: reserved time (the family is still billed, the tutor is still paid). The family gets their notice.'
+              : "Adopted — the session is cancelled free (more than 24 hours' notice, nothing bills). The family gets their notice."
+            : json.adopted
             ? json.asHappened
               ? 'Recorded as happened at the moved time — timecards and billing read from the corrected session.'
               : `Adopted — the normal reschedule ran (${json.notice === 'late' ? 'LATE notice: the $40/h fee logic applies' : 'free reschedule'}), the family gets their notice, and the calendars converge.`
@@ -111,7 +119,44 @@ export default function DriftBanner() {
               ? 'Record what actually happened — the choice sets the timecard and billing record.'
               : "The family hasn't been told and billing hasn't changed."}
           </p>
+          {/* PL-420: the email promises adopt-or-revert for deletions too —
+              adopt = cancel via the normal machinery, consequence first. */}
+          {!d.calStartsAt && !past && confirmCancel === d.sessionId && (
+            <div className="mt-2 text-xs bg-amber-100 border border-amber-300 rounded p-2 space-y-2">
+              <p className="text-amber-900 font-semibold">
+                {new Date(d.portalStartsAt).getTime() - Date.now() < 24 * 3600_000
+                  ? `Cancelling inside 24 hours: reserved time — the family is still billed for this session and ${d.tutorFirst} is still paid.`
+                  : "More than 24 hours out: this cancels free — nothing bills, and the time can be rebooked."}{' '}
+                The family gets a notice either way.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  disabled={busy === d.sessionId}
+                  onClick={() => {
+                    setConfirmCancel('')
+                    resolve(d.sessionId, 'adopt')
+                  }}
+                  className="bg-red-700 text-white font-bold px-3 py-1.5 rounded disabled:opacity-50"
+                >
+                  Yes, cancel the session
+                </button>
+                <button onClick={() => setConfirmCancel('')} className="border border-gray-400 text-gray-700 px-3 py-1.5 rounded">
+                  Back
+                </button>
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3 mt-2 text-xs">
+            {!d.calStartsAt && !past && confirmCancel !== d.sessionId && (
+              <button
+                disabled={busy === d.sessionId}
+                onClick={() => setConfirmCancel(d.sessionId)}
+                className="bg-hgl-slate text-white font-bold px-3 py-1.5 rounded disabled:opacity-50"
+                title="The tutor deleted the event because the session isn't happening — cancel it through the normal machinery (family notice, the 24-hour fee rules, timecards)"
+              >
+                Adopt — cancel this session
+              </button>
+            )}
             {d.calStartsAt && (
               <button
                 disabled={busy === d.sessionId}

@@ -3,6 +3,8 @@ import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue, syncTutoringDriftTable } from '../../../../utils/gcal-sync'
 import { rescheduleSession } from '../../../../utils/reschedule'
+import { classifyNotice } from '../../../../utils/tutoring'
+import { sendScheduleChangeNotices } from '../../../../utils/tutoring-emails'
 
 // PL-180: two-way calendar sync with a HUMAN GATE. Scan compares portal
 // sessions against live calendar events (also run by the daily sweep);
@@ -43,10 +45,54 @@ export async function POST(req: Request) {
 
     if (body.action === 'adopt') {
       if (!row.cal_starts_at || !row.cal_ends_at) {
-        return NextResponse.json(
-          { error: 'The calendar event was DELETED, so there is no time to adopt — use Revert to restore the event, or record what happened with the no-show/forfeit buttons if the deletion was the intent.' },
-          { status: 400 }
+        // PL-420: adopt-a-DELETION — the tutor deleted the event because the
+        // session isn't happening. Cancel through the NORMAL machinery:
+        // inside 24h = forfeited (reserved time — family billed, tutor
+        // paid); ≥24h out = a free cancellation (status 'cancelled', the
+        // PL-62 tombstone — never billed). Family notice either way; the
+        // tutor-side notice is skipped for the free case (the change came
+        // FROM their own calendar). Past sessions never adopt a deletion —
+        // the PL-393 what-actually-happened buttons own that.
+        const { data: before } = await supabase
+          .from('tutoring_sessions')
+          .select('status, starts_at')
+          .eq('id', body.sessionId)
+          .maybeSingle()
+        if (!before || !['proposed', 'confirmed'].includes(before.status)) {
+          return NextResponse.json(
+            { error: 'This session is no longer in an adoptable state — re-scan and use the current options.' },
+            { status: 400 }
+          )
+        }
+        if (new Date(before.starts_at).getTime() < Date.now()) {
+          return NextResponse.json(
+            { error: "This session's time has passed — record what actually happened instead (no-show, forfeit, or keep the portal time)." },
+            { status: 400 }
+          )
+        }
+        const notice = classifyNotice(new Date(before.starts_at))
+        const outcome = notice === 'late' ? 'forfeited' : 'cancelled'
+        const wasLive = before.status === 'confirmed'
+        const { error: cancelError } = await supabase
+          .from('tutoring_sessions')
+          .update({
+            status: outcome,
+            cancelled_at: new Date().toISOString(),
+            cancelled_by: 'tutor',
+            cancel_note: `calendar-drift banner (PL-420): adopted deletion — ${
+              notice === 'late' ? 'inside 24 hours, reserved time (forfeited)' : 'free cancellation (≥24h notice)'
+            }`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', body.sessionId)
+          .in('status', ['proposed', 'confirmed'])
+        if (cancelError) return NextResponse.json({ error: cancelError.message }, { status: 500 })
+        await supabase.from('calendar_drift').delete().eq('session_id', body.sessionId)
+        const sid = body.sessionId
+        after(() =>
+          Promise.allSettled(wasLive ? [sendScheduleChangeNotices({ sessionId: sid, kind: outcome })] : [])
         )
+        return NextResponse.json({ ok: true, adoptedDeletion: true, outcome, notice })
       }
       // PL-393: a session whose time already passed (auto-completed) can't
       // run the reschedule machinery (nothing future to re-notice) — adopt
