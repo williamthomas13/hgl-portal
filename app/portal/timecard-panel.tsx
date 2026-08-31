@@ -177,6 +177,13 @@ export default function TimecardPanel({
                       className="border border-gray-200 rounded p-0.5 text-xs bg-white text-gray-600"
                       title="Which pay type these hours count under (rates live in payroll, not here)"
                     >
+                      {/* PL-421: a legacy stored value that left the list
+                          ("Prep Time") stays VISIBLE on its own row so the
+                          select tells the truth and can be corrected — it
+                          just can't be picked anywhere else. */}
+                      {s.work_type && !workTypes.includes(s.work_type) && (
+                        <option value={s.work_type}>{s.work_type} (legacy)</option>
+                      )}
                       {workTypes.map((w) => (
                         <option key={w} value={w}>{w}</option>
                       ))}

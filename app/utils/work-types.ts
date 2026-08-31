@@ -8,14 +8,22 @@
 // and fold into that tutor's own option list. TITLES ONLY — no rates or
 // dollar amounts anywhere in the portal.
 
+// PL-421: 'Prep Time' left the SESSION work-type list — the PL-412 prep
+// checkbox is the one way to record prep (typing a session row as prep
+// misclassified the session itself). The PAY TYPE survives as
+// PREP_WORK_TYPE below: checkbox minutes still ride payroll under it.
 export const STANDARD_WORK_TYPES = [
   'Test Prep',
   '1-on-1',
   '2-on-1',
-  'Prep Time',
   'Class/Workshop',
   'Other',
 ] as const
+
+/** PL-421: display order for hoursByWorkType — the session types in their
+ *  fixed order with the Prep Time pay rows kept in their old column
+ *  position (after 2-on-1), so payroll surfaces read exactly as before. */
+const DISPLAY_ORDER = ['Test Prep', '1-on-1', '2-on-1', 'Prep Time', 'Class/Workshop', 'Other']
 
 /** Base pay in QBO covers the 1-on-1/Test Prep default; a null work_type
  *  on a tutoring session means this. */
@@ -42,12 +50,19 @@ export function prepRows(rows: { prep_minutes?: number | null }[]): { workType: 
     .map((r) => ({ workType: PREP_WORK_TYPE, hours: (r.prep_minutes as number) / 60 }))
 }
 
-/** The work types one tutor can book hours under: the standard six plus
- *  that tutor's own QBO pay-type titles (deduped, standard order first). */
+/** The work types one tutor can book hours under: the standard five plus
+ *  that tutor's own QBO pay-type titles (deduped, standard order first).
+ *  PL-421: a literal "Prep Time" pay-type title can never re-open the
+ *  session-row path — prep is the checkbox, full stop. */
 export function workTypeOptions(payTypeTitles: string[] | null | undefined): string[] {
   const extras = (payTypeTitles ?? [])
     .map((t) => t.trim())
-    .filter((t) => t !== '' && !STANDARD_WORK_TYPES.includes(t as (typeof STANDARD_WORK_TYPES)[number]))
+    .filter(
+      (t) =>
+        t !== '' &&
+        t !== PREP_WORK_TYPE &&
+        !STANDARD_WORK_TYPES.includes(t as (typeof STANDARD_WORK_TYPES)[number])
+    )
   return [...STANDARD_WORK_TYPES, ...[...new Set(extras)]]
 }
 
@@ -61,8 +76,8 @@ export function hoursByWorkType(
     totals.set(r.workType, (totals.get(r.workType) ?? 0) + r.hours)
   }
   const order = (t: string) => {
-    const i = (STANDARD_WORK_TYPES as readonly string[]).indexOf(t)
-    return i === -1 ? STANDARD_WORK_TYPES.length : i
+    const i = DISPLAY_ORDER.indexOf(t)
+    return i === -1 ? DISPLAY_ORDER.length : i
   }
   return [...totals.entries()]
     .map(([workType, hours]) => ({ workType, hours: Number(hours.toFixed(2)) }))

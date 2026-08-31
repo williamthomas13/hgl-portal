@@ -1,0 +1,28 @@
+{
+  "what": "PL-421: session rows carrying the retired work_type='Prep Time' — flagged for staff review, NOT auto-converted (converting a session row typed 'Prep Time' either loses the prep classification or double-pays the hour; intent is ambiguous by construction, so per the ship rule they are listed, never silently rewritten). Both sit on an OPEN timecard, so they can be retyped in the tutor timecard panel — the dropdown shows the stored value as '(legacy)' until corrected.",
+  "flagged": [
+    {
+      "session_id": "ae7e20eb-5e1c-4fbd-9e02-03b1ed9b91f1",
+      "starts_at": "2026-08-03T22:00:00+00:00",
+      "duration_minutes": 60,
+      "tutor": "Billy Thomas",
+      "student": "Fakey McFakerson (QA fixture)",
+      "subject": "ASVAB",
+      "session_status": "completed",
+      "timecard_status": "open",
+      "note": "same instant as its sibling row below — looks like dropdown testing; candidates: retype to 1-on-1, or delete the duplicate"
+    },
+    {
+      "session_id": "2649b24d-bdd5-4502-80a8-cc424a00b0b4",
+      "starts_at": "2026-08-03T22:00:00+00:00",
+      "duration_minutes": 60,
+      "tutor": "Billy Thomas",
+      "student": "Fakey McFakerson (QA fixture)",
+      "subject": "ASVAB",
+      "session_status": "completed",
+      "timecard_status": "open",
+      "note": "duplicate of the row above (same start, same student)"
+    }
+  ],
+  "confirmed_rows_touched": 0
+}
