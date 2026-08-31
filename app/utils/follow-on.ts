@@ -222,7 +222,14 @@ export async function validateFollowOnDiscount(opts: {
 }): Promise<FoDiscount | FoDiscountRefusal> {
   const target = await loadFollowOnTarget(opts.classId)
   if (!foTargetReady(target)) {
-    return { ok: false, reason: 'This class has no discount offer right now.' }
+    // PL-431B: a TYPED code on a class with no live offer usually means the
+    // code belongs to a different class — say that, not a dead generic.
+    return {
+      ok: false,
+      reason: opts.code
+        ? "That code isn't for this class — check the class name in the email it came from, or clear it to register at full price."
+        : 'This class has no discount offer right now.',
+    }
   }
 
   const accept = (feeder: FeederRow): FoDiscount | FoDiscountRefusal => {

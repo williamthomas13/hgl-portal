@@ -255,6 +255,7 @@ type ClassRow = {
   is_follow_on: boolean
   /** PL-279: short marketing name for an open class ("Deep Dive"). */
   fo_short_name: string | null
+  course_key?: string | null
   /** PL-279: this FEEDER cohort's extended follow-up discount deadline. */
   fo_extended_until: string | null
   /** PL-294: open classes — auto-extend under-minimum cohorts (default off). */
@@ -1055,7 +1056,21 @@ export default function AdminDashboard() {
   // ---------------------------------------------------------------------------
   // Registration links (pasted into Squarespace "Register" buttons)
   // ---------------------------------------------------------------------------
+  // PL-436: copies are keyed `${classId}:reg` / `${classId}:page` — two copy
+  // buttons per card must not flash together.
   const [copiedClassId, setCopiedClassId] = useState<string | null>(null)
+  // PL-436: the code→serving map (the shortlinks panel's own facts) — the
+  // card shows the code URL ONLY when this class IS what the code serves.
+  const [evergreenMap, setEvergreenMap] = useState<{
+    schools: { id: string; evergreen_code: string | null; serving: { classId: string; label: string; pinned: boolean } | null }[]
+    courses: { course_key: string; evergreen_code: string | null; serving: { classId: string; label: string; pinned: boolean } | null }[]
+  } | null>(null)
+  useEffect(() => {
+    fetch('/api/admin/evergreen')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setEvergreenMap({ schools: j.schools ?? [], courses: j.courses ?? [] }))
+      .catch(() => {})
+  }, [])
   // PL-383: the class card's setup fields live in ONE expandable section.
   const [detailsOpenFor, setDetailsOpenFor] = useState<Record<string, boolean>>({})
   // PL-361: which class card has the "Register a family" panel open, and
@@ -1075,7 +1090,40 @@ export default function AdminDashboard() {
 
   async function handleCopyLink(c: ClassRow) {
     await navigator.clipboard.writeText(registrationUrl(c))
-    setCopiedClassId(c.id)
+    setCopiedClassId(`${c.id}:reg`)
+    setTimeout(() => setCopiedClassId(null), 2000)
+  }
+
+  // PL-436: the class-page facts for a card — the school's (or, school-less,
+  // the course's) evergreen code and what it currently serves. ONE resolution
+  // source: the /api/admin/evergreen route (the shortlinks panel's own).
+  function classPageFacts(c: ClassRow): {
+    code: string | null
+    servesThisClass: boolean
+    servingLabel: string | null
+    slugPath: string
+  } {
+    const slugPath = `/c/${c.slug ?? c.id}`
+    if (!evergreenMap) return { code: null, servesThisClass: false, servingLabel: null, slugPath }
+    const entry = c.school_id
+      ? evergreenMap.schools.find((sc) => sc.id === c.school_id)
+      : c.course_key
+        ? evergreenMap.courses.find((cm) => cm.course_key === c.course_key)
+        : null
+    const code = entry?.evergreen_code ?? null
+    return {
+      code,
+      servesThisClass: Boolean(code && entry?.serving?.classId === c.id),
+      servingLabel: entry?.serving?.label ?? null,
+      slugPath,
+    }
+  }
+
+  async function handleCopyPageLink(c: ClassRow, path: string) {
+    // The vercel-host absolute URL is what actually works pre-DNS (the
+    // display shows the hgl.co form it will become — shortlinks-panel style).
+    await navigator.clipboard.writeText(`${window.location.origin}${path}`)
+    setCopiedClassId(`${c.id}:page`)
     setTimeout(() => setCopiedClassId(null), 2000)
   }
 
@@ -1807,8 +1855,54 @@ export default function AdminDashboard() {
                 </p>
               )
             })()}
-            <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
-              <span className="font-semibold">Registration link:</span>
+            {/* PL-436: the class PAGE first (the link you share — PL-384's
+                rule), the direct form link beside it, so the creator keeps
+                the distinction. Resolution honesty: the code URL shows only
+                when THIS class is what the code serves right now. */}
+            {(() => {
+              const facts = classPageFacts(c)
+              return (
+                <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold">Class page:</span>
+                  {facts.code && facts.servesThisClass ? (
+                    <>
+                      <a href={`/${facts.code}`} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
+                        <span className="text-gray-400">hgl.co/</span>
+                        {facts.code}
+                      </a>
+                      <button
+                        onClick={() => handleCopyPageLink(c, `/${facts.code}`)}
+                        className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
+                      >
+                        {copiedClassId === `${c.id}:page` ? 'Copied!' : 'Copy'}
+                      </button>
+                      <span className="text-xs text-gray-400">set in Classes → Short links</span>
+                    </>
+                  ) : (
+                    <>
+                      <a href={facts.slugPath} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
+                        <code className="bg-gray-100 rounded px-1.5 py-0.5 text-xs">{facts.slugPath}</code>
+                      </a>
+                      <button
+                        onClick={() => handleCopyPageLink(c, facts.slugPath)}
+                        className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
+                      >
+                        {copiedClassId === `${c.id}:page` ? 'Copied!' : 'Copy'}
+                      </button>
+                      {facts.code && (
+                        <span className="text-xs text-amber-700">
+                          <span className="text-gray-400">hgl.co/</span>
+                          {facts.code} currently points at {facts.servingLabel ?? 'the interest page'} — this
+                          is the direct page link
+                        </span>
+                      )}
+                    </>
+                  )}
+                </p>
+              )
+            })()}
+            <p className="text-sm text-gray-600 mt-1 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">Direct registration link:</span>
               <code className="bg-gray-100 rounded px-2 py-0.5 text-xs">
                 {registrationUrl(c)}
               </code>
@@ -1816,7 +1910,7 @@ export default function AdminDashboard() {
                 onClick={() => handleCopyLink(c)}
                 className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
               >
-                {copiedClassId === c.id ? 'Copied!' : 'Copy'}
+                {copiedClassId === `${c.id}:reg` ? 'Copied!' : 'Copy'}
               </button>
             </p>
             {/* PL-383: ONE expandable section for the class-SETUP fields —

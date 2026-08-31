@@ -151,7 +151,8 @@ export async function GET(request: Request) {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
     customer_email: enrollment.parentEmail,
-    allow_promotion_codes: true,
+    // PL-431C: portal codes aren't Stripe codes — the box misled.
+    allow_promotion_codes: false,
     line_items: lineItems,
     mode: 'payment',
     success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,

@@ -81,7 +81,13 @@ export async function GET() {
     const auto = open.filter(filter)[0] ?? null
     const serving = pinned ?? auto
     return serving
-      ? { classId: serving.id, label: serving.class_type, pinned: Boolean(pinned) }
+      ? {
+          classId: serving.id,
+          // PL-436: two cohorts of the same type must read apart — the label
+          // carries the start date ("SAT Prep (starts Oct 13)").
+          label: `${serving.class_type} (starts ${new Date(serving.start_date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })})`,
+          pinned: Boolean(pinned),
+        }
       : null
   }
   return NextResponse.json({

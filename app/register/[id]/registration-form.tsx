@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import SessionCalendar from '../../components/SessionCalendar'
 import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
 import InterestCapture from '../../components/InterestCapture'
@@ -128,6 +128,20 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
   const [pendingCheckout, setPendingCheckout] = useState<{
     enrollments: { enrollmentId: string; studentFirst: string }[]
   } | null>(null)
+  // PL-432: which page of the flow is showing — pendingCheckout alone used to
+  // gate it, which made Back impossible without losing everything. State is
+  // held in-memory for the flow's life ONLY (names/emails are PII — neither
+  // localStorage nor sessionStorage; a full refresh starts the journey over,
+  // stated honestly in the ship note).
+  const [viewPage, setViewPage] = useState<'form' | 'addons'>('form')
+  // PL-432: the page-1 answers, snapshotted at submit and restored via
+  // defaultValue when Back remounts the form (inputs are uncontrolled).
+  const [page1Snapshot, setPage1Snapshot] = useState<Record<string, string> | null>(null)
+  const [restoreNonce, setRestoreNonce] = useState(0)
+  // PL-431B: a refused discount is an inline, continuable state — never a
+  // dead end. skipDiscount = "continue at full price" was chosen.
+  const [discountError, setDiscountError] = useState<string | null>(null)
+  const [skipDiscount, setSkipDiscount] = useState(false)
   // PL-125: per-student add-on picks for sibling carts.
   const [addonPicks, setAddonPicks] = useState<Record<string, string | null>>({})
   // PL-364: physical add-on quantities + the shipping address they require.
@@ -164,8 +178,12 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
   // family lands below the "Add 1-on-1 tutoring?" title. Land at the top,
   // heading focused, instant under prefers-reduced-motion. (Highest-traffic
   // multi-step flow — explicitly in scope.)
+  const firstViewRender = useRef(true)
   useEffect(() => {
-    if (!pendingCheckout) return
+    if (firstViewRender.current) {
+      firstViewRender.current = false
+      return
+    }
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
     const h1 = document.querySelector('h1')
@@ -173,7 +191,19 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
       h1.setAttribute('tabindex', '-1')
       ;(h1 as HTMLElement).focus({ preventScroll: true })
     }
-  }, [pendingCheckout])
+  }, [viewPage])
+
+  // PL-432: browser back/forward mirror the in-flow Back (history state) —
+  // Back from the add-on page returns to a filled page 1 instead of leaving
+  // the site with everything lost.
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      setViewPage(e.state?.regPage === 'addons' ? 'addons' : 'form')
+      setRestoreNonce((n) => n + 1)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   // -------------------------------------------------------------------------
   // Normal registration → Stripe checkout
@@ -183,6 +213,14 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
     setLoading(true)
     setMessage('Saving family details...')
     const formData = new FormData(e.currentTarget)
+    // PL-432: snapshot every answer so Back can restore the form verbatim.
+    // Re-submitting after a Back is safe: /api/register matches the family/
+    // students and REUSES live enrollments (its own two-visits rule).
+    const snap: Record<string, string> = {}
+    formData.forEach((v, k) => {
+      if (typeof v === 'string') snap[k] = v
+    })
+    setPage1Snapshot(snap)
 
     // Family + students + Pending enrollments are created server-side —
     // the browser has no database access (Phase 3 RLS). PL-125: one POST
@@ -241,7 +279,11 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
           studentFirst: String(studentsPayload[i]?.studentFirst ?? '').trim() || `Student ${i + 1}`,
         })),
       })
-      setAddonPicks({})
+      // PL-432: forward again re-arrives with the page-2 picks intact —
+      // addonPicks/quantities only reset on a FRESH journey (no prior visit).
+      if (!pendingCheckout) setAddonPicks({})
+      setViewPage('addons')
+      window.history.pushState({ regPage: 'addons' }, '')
       setMessage('')
       setLoading(false)
     } else {
@@ -278,11 +320,15 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
           ...(productPicks.length > 0 ? { products: productPicks, shipping: ship } : {}),
           // PL-279: the discount rides to checkout and is re-validated
           // server-side (token path preferred; typed code as fallback).
-          ...(classDetails?.followOnDiscount && foParams
-            ? { foToken: foParams.fo, foEnrollmentId: foParams.fe }
-            : typedCode.trim()
-              ? { discountCode: typedCode.trim() }
-              : {}),
+          // PL-431B: skipDiscount = the family chose full price after a
+          // refusal — nothing rides.
+          ...(skipDiscount
+            ? {}
+            : classDetails?.followOnDiscount && foParams
+              ? { foToken: foParams.fo, foEnrollmentId: foParams.fe }
+              : typedCode.trim()
+                ? { discountCode: typedCode.trim() }
+                : {}),
         }),
       })
 
@@ -290,8 +336,14 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
 
       if (data.url) {
         window.location.assign(data.url)
+      } else if (data.discountError) {
+        // PL-431B: the refusal lands AT the discount field, plainly worded,
+        // and the flow stays continuable — fix the code or clear it.
+        setDiscountError(data.error ?? "That code didn't apply.")
+        setMessage('')
+        setLoading(false)
       } else {
-        setMessage('Checkout error: ' + data.error)
+        setMessage('Error: checkout failed — ' + (data.error ?? 'please try again.'))
         setLoading(false)
       }
     } catch {
@@ -447,10 +499,19 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
   )
 
   // Add-on step between the registration form and Stripe checkout.
-  if (pendingCheckout) {
+  if (pendingCheckout && viewPage === 'addons') {
     return (
       <div className="min-h-screen bg-gray-50 p-10">
         <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
+          {/* PL-432: a real Back — everything on page 1 comes back verbatim
+              (and forward again keeps this page's picks). */}
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="text-sm text-gray-500 underline hover:text-hgl-slate mb-3"
+          >
+            ← Back to your details
+          </button>
           <h1 className="text-2xl font-bold text-hgl-slate mb-4">Add 1-on-1 tutoring?</h1>
           {/* PL-357: the upsell copy renders FROM the flow-only content
               block (ONE source — Settings → Class pages edits reach here).
@@ -518,6 +579,54 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
                   </p>
                 </div>
               )}
+            </div>
+          )}
+          {/* PL-431A/B: the plain discount field, on the page whose action
+              prices the class component — validated server-side at checkout
+              exactly as before, with any refusal shown HERE, continuable. */}
+          {!skipDiscount && classDetails.promoAvailable && !classDetails.followOnDiscount && (
+            <div className="mb-6">
+              <label className="block text-sm text-gray-600">Discount code</label>
+              <input
+                type="text"
+                value={typedCode}
+                onChange={(e) => {
+                  setTypedCode(e.target.value)
+                  setDiscountError(null)
+                }}
+                className={`mt-1 w-full border rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition uppercase ${discountError ? 'border-red-400' : 'border-gray-300'}`}
+              />
+              {discountError && (
+                <div className="mt-1.5 text-sm text-red-700">
+                  {discountError}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTypedCode('')
+                      setDiscountError(null)
+                      setSkipDiscount(true)
+                    }}
+                    className="ml-2 underline font-semibold"
+                  >
+                    remove the code and continue at full price
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {discountError && (skipDiscount || !(classDetails.promoAvailable && !classDetails.followOnDiscount)) && (
+            <div className="mb-6 text-sm text-red-700">
+              {discountError}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setDiscountError(null)
+                  setSkipDiscount(true)
+                }}
+                className="underline font-semibold"
+              >
+                continue at full price
+              </button>
             </div>
           )}
           {pendingCheckout.enrollments.length === 1 ? (
@@ -598,7 +707,11 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
             </>
           )}
           {message && (
-            <div className="mt-6 p-4 rounded-md text-center font-bold bg-blue-50 text-hgl-blue">
+            <div
+              className={`mt-6 p-4 rounded-md text-center font-bold ${
+                /error/i.test(message) ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-hgl-blue'
+              }`}
+            >
               {message}
             </div>
           )}
@@ -657,22 +770,22 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
           </>
         )}
 
-        <form onSubmit={isFull ? handleWaitlist : handleRegister} className="space-y-6">
+        <form key={restoreNonce} onSubmit={isFull ? handleWaitlist : handleRegister} className="space-y-6">
           {/* Parent / Guardian */}
           <div className="bg-gray-50 p-4 rounded-md border">
             <h3 className="font-semibold text-hgl-slate mb-3">Parent / Guardian Information</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-gray-600">First Name</label>
-                <input type="text" name="parentFirst" required className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                <input type="text" name="parentFirst" required defaultValue={page1Snapshot?.parentFirst ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
               </div>
               <div>
                 <label className="block text-sm text-gray-600">Last Name</label>
-                <input type="text" name="parentLast" required className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                <input type="text" name="parentLast" required defaultValue={page1Snapshot?.parentLast ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
               </div>
               <div className="col-span-2">
                 <label className="block text-sm text-gray-600">Email Address (for billing & parent communications)</label>
-                <input type="email" name="parentEmail" required className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                <input type="email" name="parentEmail" required defaultValue={page1Snapshot?.parentEmail ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
               </div>
             </div>
           </div>
@@ -701,17 +814,17 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-600">First Name</label>
-                  <input type="text" name={`studentFirst_${i}`} required onChange={(e) => setStudentFirstTyped((prev) => { const next = [...prev]; next[i] = e.target.value; return next })} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                  <input type="text" name={`studentFirst_${i}`} required defaultValue={page1Snapshot?.[`studentFirst_${i}`] ?? undefined} onChange={(e) => setStudentFirstTyped((prev) => { const next = [...prev]; next[i] = e.target.value; return next })} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600">Last Name</label>
-                  <input type="text" name={`studentLast_${i}`} required className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                  <input type="text" name={`studentLast_${i}`} required defaultValue={page1Snapshot?.[`studentLast_${i}`] ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
                     Student Email <span className="text-gray-500">(for class reminders & Synap access)</span>
                   </label>
-                  <input type="email" name={`studentEmail_${i}`} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                  <input type="email" name={`studentEmail_${i}`} defaultValue={page1Snapshot?.[`studentEmail_${i}`] ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   {/* PL-69: optional, no explanatory text — unset simply keeps
@@ -722,7 +835,7 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
                   </label>
                   <select
                     name={`pronouns_${i}`}
-                    defaultValue=""
+                    defaultValue={page1Snapshot?.[`pronouns_${i}`] ?? ''}
                     className="mt-1 w-full border border-gray-300 rounded p-2 bg-white focus:border-hgl-blue focus:ring-hgl-blue outline-none transition"
                   >
                     <option value=""></option>
@@ -738,25 +851,25 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
                   <label className="block text-sm text-gray-600">
                     Graduating Year <span className="text-gray-500">(optional)</span>
                   </label>
-                  <input type="text" name={`graduatingYear_${i}`} placeholder="e.g. 2027" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                  <input type="text" name={`graduatingYear_${i}`} defaultValue={page1Snapshot?.[`graduatingYear_${i}`] ?? undefined} placeholder="e.g. 2027" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
                     Testing accommodations <span className="text-gray-500">(optional)</span>
                   </label>
-                  <input type="text" name={`accommodations_${i}`} placeholder="e.g. extended time" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                  <input type="text" name={`accommodations_${i}`} defaultValue={page1Snapshot?.[`accommodations_${i}`] ?? undefined} placeholder="e.g. extended time" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
                     Previous test scores <span className="text-gray-500">(optional)</span>
                   </label>
-                  <input type="text" name={`previousScores_${i}`} placeholder="e.g. PSAT 1150" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                  <input type="text" name={`previousScores_${i}`} defaultValue={page1Snapshot?.[`previousScores_${i}`] ?? undefined} placeholder="e.g. PSAT 1150" className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm text-gray-600">
                     Anything else we should know? <span className="text-gray-500">(optional)</span>
                   </label>
-                  <textarea name={`notes_${i}`} rows={2} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
+                  <textarea name={`notes_${i}`} rows={2} defaultValue={page1Snapshot?.[`notes_${i}`] ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
               </div>
             </div>
@@ -776,27 +889,10 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
             </button>
           )}
 
-          {/* PL-279: typed-code fallback — checked server-side at checkout
-              (the emailed link applies it automatically instead). */}
-          {!isFull && classDetails.promoAvailable && !classDetails.followOnDiscount && (
-            <div>
-              <label className="block text-sm text-gray-600">
-                Discount code <span className="text-gray-500">(optional — from our email)</span>
-              </label>
-              <input
-                type="text"
-                value={typedCode}
-                onChange={(e) => setTypedCode(e.target.value)}
-                placeholder="e.g. DEEPDIVE50"
-                className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition uppercase"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                We&apos;ll check it when you continue to payment — if it doesn&apos;t apply,
-                you&apos;ll see why before anything is charged.
-              </p>
-            </div>
-          )}
-
+          {/* PL-431A: the discount field moved to the add-on/confirm page —
+              where the class component's price is acted on and where a
+              refusal can be fixed inline (still validated BEFORE session
+              creation, exactly as before). */}
           <button
             type="submit"
             disabled={loading}

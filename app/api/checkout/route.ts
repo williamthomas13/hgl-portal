@@ -120,7 +120,9 @@ export async function POST(request: Request) {
         parentEmail: customerEmail,
       });
       if (!verdict.ok) {
-        return NextResponse.json({ error: verdict.reason }, { status: 400 });
+        // PL-431B: the client renders this INLINE at the discount field and
+        // keeps the flow continuable — never a full-stop checkout error.
+        return NextResponse.json({ error: verdict.reason, discountError: true }, { status: 400 });
       }
       const discounted = Math.max(0, price - verdict.amount);
       className = `${className} (${verdict.code} — $${verdict.amount.toFixed(0)} off)`;
@@ -299,7 +301,10 @@ export async function POST(request: Request) {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       customer_email: customerEmail,
-      allow_promotion_codes: true,
+      // PL-431C: Stripe's own promo box is OFF — portal codes aren't Stripe
+      // codes (it rendered but accepted nothing, which misled). One discount
+      // entry, ours, validated against the class + the family's own cohort.
+      allow_promotion_codes: false,
       line_items: lineItems,
       mode: 'payment',
       success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,

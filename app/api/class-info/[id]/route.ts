@@ -35,7 +35,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     .select(
       `id, slug, status, class_type, price, capacity,
        start_date, default_location, registration_close_date, school_id, delivery_mode,
-       timezone, display_cities, promo_code, course_key, schools ( name, nickname, timezone, city ),
+       timezone, display_cities, promo_code, promo_amount, course_key, schools ( name, nickname, timezone, city ),
        sessions ( id, session_date, start_time, end_time, location ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )
@@ -61,11 +61,12 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
   // PL-328: delivery_mode stays in the public payload (families see
   // online/in-person anyway; the calendar page's label needs it). school_id
   // stays internal.
-  const { enrollments, capacity, promo_code, school_id, course_key, ...publicClass } =
+  const { enrollments, capacity, promo_code, promo_amount, school_id, course_key, ...publicClass } =
     cls as typeof cls & {
       enrollments: Slot[]
       capacity: number
       promo_code: string | null
+      promo_amount: number | null
       school_id: string | null
       course_key: string | null
     }
@@ -147,7 +148,11 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     cancelled,
     isFull: cancelled || spotsTakenRaw(enrollments ?? []) >= capacity,
     packages: pkgs ?? [],
-    promoAvailable: Boolean(promo_code?.trim()),
+    // PL-431: the field renders only where a typed code can EVER validate —
+    // redeemability mirrors foTargetReady (open-enrollment target + complete
+    // promo). A school class's promo fields feed flyer copy, not this seam;
+    // showing the field there guaranteed the dead-end refusal.
+    promoAvailable: Boolean(promo_code?.trim() && promo_amount != null && Number(promo_amount) > 0 && !school_id),
     followOnDiscount,
     followOnDiscountNote,
     upsellPitchMarkdown,
