@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { emailBaseUrl } from './base-url'
 import { sendAdminAlert } from './email'
+import { closeMatchAlertDetails } from './close-match-copy'
 
 // PL-313: close-match detection on incoming records. The Bunji case:
 // pipeline lead "Bunji" (parent "BunjiPapa Kokobunji") + a later class
@@ -126,13 +127,13 @@ async function recordMatch(
     adminEmail: process.env.ADMIN_EMAIL ?? 'williamraymondthomas@gmail.com',
     templateKey: 'AL_CLOSE_MATCH',
     subject: `Possible duplicate person — “${leadName}” and ${studentFull}`,
-    body: `
-      <p>The pipeline lead <strong>${leadName}</strong> looks like the same person as the
-      registered student <strong>${studentFull}</strong>:</p>
-      <ul>${reasons.map((r) => `<li>${r}</li>`).join('')}</ul>
-      <p>Nothing was merged — take a look side by side and either link them or mark them as
-      different people (that answer is remembered).</p>
-      <p><a href="${emailBaseUrl()}/admin/leads?lead=${lead.id}&match=${inserted.id}">Review the pair →</a></p>`,
+    // PL-417: composed through the ONE leaf builder the sample pin shares.
+    body: closeMatchAlertDetails({
+      leadName,
+      studentFull,
+      reasons,
+      reviewUrl: `${emailBaseUrl()}/admin/leads?lead=${lead.id}&match=${inserted.id}`,
+    }),
     vars: { alertStudentName: studentFull },
   }).catch((e) => console.error('close-match alert failed (to-do still stands):', e))
 }

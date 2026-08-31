@@ -1,6 +1,7 @@
 import type { EnrollmentEmailContext, Audience } from './email'
 import { hglMapsQuery } from './hgl-address'
 import { autopayNudgeCopyHtml } from './autopay-nudge-copy'
+import { closeMatchAlertDetails } from './close-match-copy'
 import { SCHOOL_BASED_REG_TEXT } from './exam-family'
 import { cancellationOptionsHtml, type CancellationOffer } from './cancellation-copy'
 import {
@@ -1585,7 +1586,26 @@ const sampleCoverage = (event: CoverageEvent) => ({
   alertDetailsBlock: coverageAlertDetails({ ...SAMPLE_COVERAGE_FACTS, event }),
 })
 
+// PL-417: close-match facts — a plausible NEAR-DUPLICATE pair (the whole
+// point of the alert), composed through the real builder below.
+export const SAMPLE_CLOSE_MATCH_FACTS = {
+  leadName: 'Ana Garcia',
+  studentFull: 'Ana García',
+  reasons: ['same parent email — maria@example.com', 'student first name matches (Ana)'],
+  reviewUrl:
+    'https://hgl-portal.vercel.app/admin/leads?lead=00000000-0000-4000-8000-000000000031&match=00000000-0000-4000-8000-000000000032',
+}
+
 export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
+  // PL-417: close-match.ts recordMatch — COMPUTED from the real composer
+  // (close-match-copy leaf, the PL-96 drift guard), never hand-typed. The
+  // one {alertDetailsBlock} template that previewed the shared registration
+  // story (batch-42 finding).
+  AL_CLOSE_MATCH: {
+    alertStudentName: SAMPLE_CLOSE_MATCH_FACTS.studentFull,
+    alertDetailsBlock: closeMatchAlertDetails(SAMPLE_CLOSE_MATCH_FACTS),
+  },
+
   // PL-335 D: instructor-comms.ts sendMinEnrollmentDecisionNote — sample the
   // run-anyway variant, with counts that AGREE with a below-minimum story
   // (the shared pool's 8/8 min-met line would read like a bug here).
