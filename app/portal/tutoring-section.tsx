@@ -405,9 +405,11 @@ export default async function TutoringSection({ email }: { email: string }) {
         </div>
       )}
 
-      {/* Billing (spec §8: invoice history + autopay management) */}
+      {/* Billing (spec §8: invoice history + autopay management) —
+          PL-422A: the menu's Billing item lands here (the existing view/pay
+          surface; billing-fact editing stays staff-side, standing rule). */}
       {((invoices as any[]) ?? []).length > 0 && (
-        <div className="mb-6">
+        <div id="portal-billing" style={{ scrollMarginTop: 16 }} className="mb-6">
           <h3 className="font-semibold text-hgl-slate text-sm mb-1">Billing</h3>
           <ul className="divide-y divide-gray-100 text-sm">
             {((invoices as any[]) ?? []).map((i) => {

@@ -25,13 +25,17 @@ type FeedItem = SessionRefs & {
   key: string
   /** Sort/display timestamp — when the family acted. */
   at: string
-  kind: 'moved' | 'requested'
+  kind: 'moved' | 'requested' | 'facts'
   sessionId: string
   starts_at: string
   ends_at: string | null
   status: string
   note: string | null
   replacement: { starts_at: string; ends_at: string | null } | null
+  /** kind='facts' (PL-422): the self-service edit's own fields. */
+  factSummary?: string
+  factFamilyId?: string
+  factParentName?: string
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -60,7 +64,7 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
            tutoring_engagements ( subjects ( name ) ),
            instructors ( name ),
            replacement:rescheduled_to_id ( starts_at, ends_at )`
-      const [picks, requests] = await Promise.all([
+      const [picks, requests, factEdits] = await Promise.all([
         supabase
           .from('tutoring_sessions')
           .select(sel)
@@ -72,6 +76,13 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
           .select(sel)
           .not('reschedule_requested_at', 'is', null)
           .order('reschedule_requested_at', { ascending: false })
+          .limit(15),
+        // PL-422C: parent self-service edits join the "families did this
+        // from the portal" feed (staff-read policy on the log table).
+        supabase
+          .from('family_fact_edits')
+          .select('id, family_id, summary, created_at, families ( parent_first_name, parent_last_name )')
+          .order('created_at', { ascending: false })
           .limit(15),
       ])
       if (cancelled) return
@@ -106,6 +117,27 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
           replacement: one(r.replacement),
         })
       }
+      for (const r of (factEdits.data as any[]) ?? []) {
+        const fam = one<any>(r.families)
+        items.push({
+          students: null,
+          tutoring_engagements: null,
+          instructors: null,
+          key: `fact-${r.id}`,
+          at: r.created_at,
+          kind: 'facts',
+          sessionId: '',
+          starts_at: r.created_at,
+          ends_at: null,
+          status: '',
+          note: null,
+          replacement: null,
+          factSummary: r.summary,
+          factFamilyId: r.family_id,
+          factParentName:
+            `${fam?.parent_first_name ?? ''} ${fam?.parent_last_name ?? ''}`.trim() || 'A parent',
+        })
+      }
       items.sort((a, b) => (a.at < b.at ? 1 : -1))
       setRows(items.slice(0, 20))
       setLoaded(true)
@@ -128,6 +160,20 @@ export default function ActivityFeed({ refreshSignal }: { refreshSignal: number 
   return (
     <ul className="divide-y divide-gray-100 text-sm">
       {rows.map((r) => {
+        if (r.kind === 'facts') {
+          return (
+            <li key={r.key} className="py-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-xs text-gray-400 w-24 shrink-0">{fmtDay(r.at, ORG_TZ)}</span>
+              <span>
+                <strong className="text-hgl-slate">{r.factParentName}</strong>{' '}
+                <span className="text-gray-600">{r.factSummary} from the family portal.</span>{' '}
+                <a href={`/admin/families/${r.factFamilyId}`} className="text-hgl-blue underline">
+                  the family&apos;s record →
+                </a>
+              </span>
+            </li>
+          )
+        }
         const student = r.students
         const subj = r.tutoring_engagements?.subjects?.name ?? 'tutoring'
         const who = student ? `${student.first_name} ${student.last_name}` : 'Unknown student'

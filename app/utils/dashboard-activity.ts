@@ -160,6 +160,17 @@ export async function loadActivity(opts: {
     if (before) q = q.lt('created_at', before)
     return q.order('created_at', { ascending: false }).limit(fetchN)
   }
+  // PL-422C: parent self-service edits — the append-only trail the portal
+  // writes; visible here and in the family hub pane (never Needs Attention:
+  // a plain edit is news, not a to-do).
+  const factEditsQ = () => {
+    let q = supabase
+      .from('family_fact_edits')
+      .select('id, family_id, actor, summary, created_at, families ( parent_first_name, parent_last_name ), students ( first_name )')
+    if (familyId) q = q.eq('family_id', familyId)
+    if (before) q = q.lt('created_at', before)
+    return q.order('created_at', { ascending: false }).limit(fetchN)
+  }
   const familyEmailsQ = async () => {
     // Tutoring emails carry no enrollment id — match on the parent's address.
     const { data: fam } = await supabase.from('families').select('parent_email').eq('id', familyId!).maybeSingle()
@@ -174,7 +185,7 @@ export async function loadActivity(opts: {
     return q.order('sent_at', { ascending: false }).limit(fetchN)
   }
 
-  const [enrollments, paidInvoices, avail, timecards, newLeads, convertedLeads, schedEngs, schedMoves, engLifecycle, emails, famEmails, materialPosts] =
+  const [enrollments, paidInvoices, avail, timecards, newLeads, convertedLeads, schedEngs, schedMoves, engLifecycle, emails, famEmails, materialPosts, factEdits] =
     await Promise.all([
       wants('Registrations') ? enrollmentsQ() : none,
       wants('Payments') ? paidQ() : none,
@@ -189,9 +200,22 @@ export async function loadActivity(opts: {
       wants('Emails') && familyId ? emailsQ() : none,
       wants('Emails') && familyId ? familyEmailsQ() : none,
       wants('Materials') && familyId ? materialsQ() : none,
+      wants('Family edits') ? factEditsQ() : none,
     ])
 
   const rows: ActivityRow[] = []
+  for (const f of ((factEdits as any).data as any[]) ?? []) {
+    const fam = one<any>(f.families)
+    const parentName = `${fam?.parent_first_name ?? ''} ${fam?.parent_last_name ?? ''}`.trim() || 'A parent'
+    rows.push({
+      id: `fact-${f.id}`,
+      type: 'Family edits',
+      groupKey: `Family edits|${f.family_id}`,
+      when: f.created_at,
+      text: `${parentName} ${f.summary} from the family portal.`,
+      href: `/admin/families/${f.family_id}`,
+    })
+  }
   for (const e of ((enrollments as any).data as any[]) ?? []) {
     const st = one<any>(e.students)
     const cls = one<any>(e.classes)

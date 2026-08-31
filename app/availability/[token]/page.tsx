@@ -18,13 +18,16 @@ export default async function AvailabilityPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>
-  searchParams: Promise<{ src?: string }>
+  searchParams: Promise<{ src?: string; return?: string }>
 }) {
   const { token } = await params
   // PL-207: src=card marks a submission that came from the portal tutoring
   // card — completing the in-portal kickoff flow (suppresses the post-class
   // scheduling emails for the family's add-ons).
-  const { src } = await searchParams
+  // PL-424B: return= carries where the family came from — an UPDATE save
+  // sends them back there (same-origin paths only; anything else drops).
+  const { src, return: returnRaw } = await searchParams
+  const returnTo = returnRaw && /^\/(?!\/)/.test(returnRaw) ? returnRaw : null
   const familyId = verifyAvailabilityToken(token)
   const contact = await loadContactInfo()
 
@@ -39,7 +42,7 @@ export default async function AvailabilityPage({
 
   const { data: students } = await supabase
     .from('students')
-    .select('id, first_name, last_name, student_availability ( weekday, start_time, end_time, timezone )')
+    .select('id, first_name, last_name, student_availability ( weekday, start_time, end_time, timezone, source )')
     .eq('family_id', familyId)
     .order('first_name')
   if (!students || students.length === 0) return invalid
@@ -53,6 +56,9 @@ export default async function AvailabilityPage({
       end_time: String(r.end_time).slice(0, 5),
     })),
     timezone: s.student_availability?.[0]?.timezone ?? null,
+    // PL-424A: a prior PARENT share makes the next save an UPDATE — the
+    // confirmation speaks update copy, never the first-share walkthrough.
+    sharedBefore: (s.student_availability ?? []).some((r: any) => r.source === 'parent'),
   }))
   const anyOnFile = initial.some((s) => s.ranges.length > 0)
 
@@ -68,7 +74,7 @@ export default async function AvailabilityPage({
               ? 'We already have your availability — thank you! Feel free to adjust it below and re-save; we always use the latest version.'
               : 'Rough is fine — tell us the windows that usually work and we’ll propose exact times. Takes about a minute.'}
           </p>
-          <AvailabilityShareForm token={token} students={initial} src={src === 'card' ? 'card' : undefined} />
+          <AvailabilityShareForm token={token} students={initial} src={src === 'card' ? 'card' : undefined} returnTo={returnTo} />
         </div>
         <div className="bg-white rounded-lg shadow-sm p-5 text-sm text-gray-600">
           Rather just tell a person? Email{' '}

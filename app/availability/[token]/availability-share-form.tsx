@@ -13,17 +13,24 @@ type StudentInit = {
   firstName: string
   ranges: AvailabilityRange[]
   timezone: string | null
+  /** PL-424A: a prior parent share exists — the next save is an UPDATE. */
+  sharedBefore?: boolean
 }
 
 export default function AvailabilityShareForm({
   token,
   students,
   src,
+  returnTo,
 }: {
   token: string
   students: StudentInit[]
   /** PL-207: 'card' when opened from the portal tutoring card. */
   src?: string
+  /** PL-424B: where an UPDATE save sends the family back (already
+   *  same-origin-validated by the page). First shares keep this landing —
+   *  the 3-business-day promise message reads right here. */
+  returnTo?: string | null
 }) {
   const [state, setState] = useState(() =>
     students.map((s) => ({ ...s, timezone: s.timezone ?? '', saving: false, message: '' }))
@@ -51,12 +58,27 @@ export default function AvailabilityShareForm({
         body: JSON.stringify({ token, studentId: s.id, availability: s.ranges, timezone: s.timezone, src }),
       })
       const json = await res.json().catch(() => ({}))
-      patch(s.id, {
-        saving: false,
-        message: res.ok
-          ? `Saved — we'll review your availability and propose specific times within ${AVAILABILITY_PROPOSAL_BUSINESS_DAYS} business days. Watch your inbox.`
-          : 'Error: ' + (json.error ?? 'something went wrong — please try again.'),
-      })
+      if (res.ok && (json.updated || s.sharedBefore)) {
+        // PL-424A: an update says update — never the first-share
+        // propose→confirm walkthrough (that promise was already made).
+        patch(s.id, {
+          saving: false,
+          message: `Thanks — ${s.firstName}'s availability is updated. If this changes the schedule we're building, we'll be in touch.`,
+        })
+        // PL-424B: back to where they came from, with a settled note there.
+        if (returnTo) {
+          setTimeout(() => {
+            window.location.href = `${returnTo}${returnTo.includes('?') ? '&' : '?'}availability=updated`
+          }, 1200)
+        }
+      } else {
+        patch(s.id, {
+          saving: false,
+          message: res.ok
+            ? `Saved — we'll review your availability and propose specific times within ${AVAILABILITY_PROPOSAL_BUSINESS_DAYS} business days. Watch your inbox.`
+            : 'Error: ' + (json.error ?? 'something went wrong — please try again.'),
+        })
+      }
     } catch {
       patch(s.id, { saving: false, message: 'Error: something went wrong — please try again.' })
     }

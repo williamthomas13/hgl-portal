@@ -147,6 +147,14 @@ export default async function PortalPage({ searchParams }: { searchParams: Searc
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8">
+        {/* PL-424B: an availability UPDATE lands the family back here with a
+            settled note — no stranding on the availability form. */}
+        {active === 'parent' && first(sp.availability) === 'updated' && (
+          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+            Availability updated — thanks! If it changes a schedule we&apos;re building, we&apos;ll
+            be in touch.
+          </div>
+        )}
         {active === 'parent' && (
           <ParentView supabase={supabase} email={email} highlightEnrollment={highlightEnrollment} />
         )}

@@ -14,6 +14,7 @@ import {
 } from './coverage-copy'
 import { leadAssignedDetails } from './lead-assign-copy'
 import { formatDateFull, contextZonedDeadline, contextTimeCityLabel, staffTimeCityLabel, bySessionStart, formatTimeRange } from './dates'
+import { availabilityDiff } from './availability-diff'
 import { zonedToUtc } from './tutoring'
 import type { ResolvedVars } from './comms-md'
 
@@ -1741,6 +1742,25 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   AL_AVAILABILITY_SHARED: {
     alertDetailsBlock:
       '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
+  },
+  // PL-424: the availability UPDATE alert — diff lines composed by the
+  // availability-diff leaf, exactly as the route composes them.
+  AL_AVAILABILITY_UPDATED: {
+    alertParentName: 'Alex',
+    alertStudentName: 'Ana García',
+    alertDetailsBlock:
+      '<p><strong>Alex</strong> (sample-parent@example.com) updated Ana\'s shared availability. What changed:</p><ul>' +
+      availabilityDiff(
+        [
+          { weekday: 1, start_time: '16:00', end_time: '18:00' },
+          { weekday: 7, start_time: '14:00', end_time: '16:00' },
+        ],
+        [
+          { weekday: 1, start_time: '16:00', end_time: '18:00' },
+          { weekday: 2, start_time: '16:00', end_time: '18:00' },
+        ]
+      ).lines.map((l) => `<li style="margin:2px 0">${l}</li>`).join('') +
+      '</ul><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?availability=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Review the change</a></p><p>The review shows this diff against Ana\'s schedule and flags any scheduled sessions or proposals now OUTSIDE the new windows — nothing changes until you decide.</p>',
   },
   // PL-174: leads route assignment notify — COMPUTED from the real composer
   // (lead-assign-copy.ts), per the PL-137 rule. PL-196: the actor samples as

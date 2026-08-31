@@ -13,6 +13,7 @@ import EngagementsPanel from './engagements-panel'
 import ScheduleView from './schedule-view'
 import ActivityFeed from './activity-feed'
 import DriftBanner from './drift-banner'
+import AvailabilityReviewCard from './availability-review-card'
 import type { Engagement, StudentOption, Subject, Tutor } from './types'
 
 // Ops Director scheduling surface (Phase 7a, docs/PHASE7_SPEC.md §5). Reads run on the
@@ -68,6 +69,8 @@ export default function TutoringAdmin() {
   // pre-filled and the continuation context bannered.
   const [scheduleContinuationFor, setScheduleContinuationFor] = useState<string | null>(null)
   const [continuationBanner, setContinuationBanner] = useState<string | null>(null)
+  // PL-424D: ?availability={studentId} opens the shared-windows review card.
+  const [availabilityReviewFor, setAvailabilityReviewFor] = useState<string | null>(null)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
@@ -82,6 +85,12 @@ export default function TutoringAdmin() {
       setContinuationBanner(
         `Scheduling the continuation the family confirmed${hours ? ` (${hours === 'monthly' ? 'monthly, until they cancel' : `${hours} more hours`})` : ''} — the current weekly pattern is pre-filled below; adjust if the old times no longer work, then Save.`
       )
+      return
+    }
+    const availabilityReview = q.get('availability')
+    if (availabilityReview) {
+      setActiveSection('schedule')
+      setAvailabilityReviewFor(availabilityReview)
       return
     }
     if (session) {
@@ -249,6 +258,14 @@ export default function TutoringAdmin() {
             {/* PL-180: calendar-side edits surface FIRST — a decision is
                 pending and everything below may be affected by it. */}
             <DriftBanner />
+            {/* PL-424D: the availability-alert click-through's resolution
+                surface — the same diff the email carried + what's downstream. */}
+            {availabilityReviewFor && (
+              <AvailabilityReviewCard
+                studentId={availabilityReviewFor}
+                onClose={() => setAvailabilityReviewFor(null)}
+              />
+            )}
             {/* PL-227/PL-254: every section, scheduling included, lives in
                 ONE page-level sidebar layout (one visible at a time,
                 Contacts-style) — the menu is a real sidebar again instead of

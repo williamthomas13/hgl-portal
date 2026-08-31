@@ -44,6 +44,7 @@ export const TEMPLATE_ALERT_CATEGORY: Record<string, AlertCategory> = {
   AL_LEAD_ASSIGNED: 'pipeline',
   AL_INTAKE_COMPLETE: 'pipeline',
   AL_AVAILABILITY_SHARED: 'pipeline',
+  AL_AVAILABILITY_UPDATED: 'pipeline',
   AL_CLOSE_MATCH: 'close_match',
   AL_UNAGREED: 'agreements',
   AL_WAITLIST_ROLLOVER: 'waitlist',

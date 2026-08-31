@@ -2046,6 +2046,21 @@ Your Google Calendar is already updated — below is the full upcoming schedule 
     body_markdown: `{alertDetailsBlock}`,
   },
   {
+    // PL-424: the UPDATE twin — an update against already-shared windows
+    // says so, carries the composed old→new diff, and never repeats the
+    // first share's 3-business-day promise.
+    template_key: 'AL_AVAILABILITY_UPDATED',
+    display_name: 'AL — Family updated availability',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: '{alertParentName} updated {alertStudentName}\'s availability',
+    preheader: 'What changed, and what it may affect.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
     template_key: 'AL_AVAILABILITY_SHARED',
     display_name: 'AL — Family shared availability',
     sequence_number: 'AL',

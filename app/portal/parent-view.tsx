@@ -15,6 +15,9 @@ import { FamilyMaterialsSection, StudentMaterialsRecord } from './materials-pane
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { bySessionStart, effectiveStartDate, publicTimeCityLabel } from '../utils/dates'
 import TutoringSection from './tutoring-section'
+import TutoringPitchSection from './tutoring-pitch-section'
+import FamilyInfoPanel from './family-info-panel'
+import EmailPrefsFamily from './email-prefs-family'
 import PortalNav, { type PortalNavItem } from './portal-nav'
 import { escapeLike } from '../utils/like-escape'
 
@@ -58,7 +61,8 @@ export default async function ParentView({
     .from('students')
     .select(
       `
-      id, first_name, last_name, student_email, grade_level, graduating_year, school_id, family_id,
+      id, first_name, last_name, student_email, student_phone, pronouns, special_needs,
+      grade_level, graduating_year, school_id, family_id,
       schools ( name, nickname, timezone ),
       student_scores ( id, test_label, section_scores, total, taken_at, class_id ),
       enrollments (
@@ -300,14 +304,16 @@ export default async function ParentView({
     }
   }
 
-  // PL-404: the left menu appears ONLY when the account's content warrants
-  // it — per-student jump links when there's more than one student, plus a
-  // tutoring link when the family actually has tutoring. One student, one
-  // enrollment, no tutoring → fewer than two items → PortalNav renders
-  // nothing and the page stays today's simple single column. The tutoring
-  // probe mirrors TutoringSection's own gate (active/paused engagements or
-  // any invoice) via the privileged client, same as the waitlist read.
+  // PL-422A: the family portal gets the tutor treatment — a section menu
+  // (Classes · Tutoring · Billing · Email preferences · Your information),
+  // content-gated per section. The per-student jump links retired: students
+  // live under Classes now (one nav shape portal-wide, PL-404/413's rule).
+  // THRESHOLD NOTE: "Email preferences" and "Your information" are
+  // account-level destinations every family has, so the menu always carries
+  // ≥2 items and PortalNav's <2 zero-chrome rule stops biting for families —
+  // deliberate: those destinations must be findable.
   let hasTutoring = false
+  let hasInvoices = false
   if (familyIds.length > 0) {
     const [{ count: engCount }, { count: invCount }] = await Promise.all([
       supabaseAdmin
@@ -321,18 +327,60 @@ export default async function ParentView({
         .in('family_id', familyIds),
     ])
     hasTutoring = (engCount ?? 0) > 0 || (invCount ?? 0) > 0
+    hasInvoices = (invCount ?? 0) > 0
   }
+  // PL-423: class-only families keep the Tutoring item — it becomes the
+  // gentle pitch (families with purchased add-on hours have their card
+  // working the redemption instead; neither class nor tutoring → no item).
+  const hasPaidClassEnrollment = (studentList as any[]).some((st: any) =>
+    (st.enrollments ?? []).some(
+      (e: any) =>
+        ['Paid', 'Completed'].includes(e.payment_status) &&
+        one<any>(e.classes) &&
+        one<any>(e.classes).status !== 'cancelled'
+    )
+  )
+  const anyAddonHours = (studentList as any[]).some((st: any) =>
+    (st.enrollments ?? []).some(
+      (e: any) =>
+        ['Paid', 'Completed'].includes(e.payment_status) &&
+        (e.enrollment_addons ?? []).some((a: any) => Number(a.hours) > 0)
+    )
+  )
+  const showTutoringItem = hasTutoring || (hasPaidClassEnrollment && !anyAddonHours)
   const navItems: PortalNavItem[] = [
-    ...(studentList.length > 1
-      ? (studentList as any[]).map((st: any) => ({ href: `#student-${st.id}`, label: st.first_name as string }))
-      : []),
-    ...(hasTutoring ? [{ href: '#portal-tutoring', label: '1-on-1 tutoring' }] : []),
+    ...(studentList.length > 0 ? [{ href: '#portal-classes', label: 'Classes' }] : []),
+    ...(showTutoringItem ? [{ href: '#portal-tutoring', label: 'Tutoring' }] : []),
+    ...(hasInvoices ? [{ href: '#portal-billing', label: 'Billing' }] : []),
+    { href: '#portal-email-prefs', label: 'Email preferences' },
+    { href: '#portal-info', label: 'Your information' },
   ]
+
+  // PL-422B: the "Your information" panel's facts — the family row, the
+  // freshest intake on file (contact preference / emergency / arrival), and
+  // the students' self-service fields (already on studentList).
+  const [{ data: famRow }, { data: intakeLeadRow }] = await Promise.all([
+    supabaseAdmin
+      .from('families')
+      .select('id, parent_first_name, parent_last_name, parent_email, parent_phone')
+      .in('id', familyIds)
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('leads')
+      .select('id, intake, family_id, updated_at')
+      .in('family_id', familyIds)
+      .not('intake', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
 
   return (
     <div className="md:flex md:gap-6 md:items-start">
       <PortalNav items={navItems} />
       <div className="flex-1 min-w-0 space-y-6">
+      <div id="portal-classes" style={{ scrollMarginTop: 16 }} className="space-y-6">
       {callouts}
       {/* PL-203: materials tutors shared — renders only when something was
           shared; RLS + the API keep it to THIS family's students. */}
@@ -661,7 +709,9 @@ export default async function ParentView({
                   hasSchedule: scheduledStudentIds.has(st.id),
                   hasAvailability: availStudentIds.has(st.id),
                   classRunning: paidEnrs.some((e: any) => phaseOf(one<any>(e.classes)) !== 'finished'),
-                  availabilityUrl: `${availabilityUrlFor(st.family_id)}?src=card`,
+                  // PL-424B: return= brings an UPDATE save back here with a
+                  // settled note; a first share keeps the availability page.
+                  availabilityUrl: `${availabilityUrlFor(st.family_id)}?src=card&return=${encodeURIComponent('/portal')}`,
                   timing: (addons.find((a: any) => a.tutoring_timing)?.tutoring_timing ?? null) as
                     | 'immediate'
                     | 'after_class'
@@ -725,10 +775,37 @@ export default async function ParentView({
         )
       })}
 
-      {/* Phase 7d: 1-on-1 tutoring — schedule, reschedule requests, billing */}
+      </div>
+
+      {/* Phase 7d: 1-on-1 tutoring — schedule, reschedule requests, billing.
+          PL-423: class-only families see the gentle pitch instead (each
+          component self-gates; at most one renders). */}
       <div id="portal-tutoring" style={{ scrollMarginTop: 16 }}>
         <TutoringSection email={email} />
+        <TutoringPitchSection email={email} />
       </div>
+
+      {/* PL-422A/B: account-level sections — every family has these. */}
+      <div id="portal-email-prefs" style={{ scrollMarginTop: 16 }}>
+        <EmailPrefsFamily />
+      </div>
+      {famRow && (
+        <div id="portal-info" style={{ scrollMarginTop: 16 }}>
+          <FamilyInfoPanel
+            family={famRow as any}
+            intakeLead={(intakeLeadRow as any) ?? null}
+            students={(studentList as any[]).map((st: any) => ({
+              id: st.id,
+              first_name: st.first_name,
+              last_name: st.last_name,
+              student_phone: st.student_phone ?? null,
+              pronouns: st.pronouns ?? null,
+              grade_level: st.grade_level ?? null,
+              special_needs: st.special_needs ?? null,
+            }))}
+          />
+        </div>
+      )}
       </div>
     </div>
   )
