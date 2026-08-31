@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
-import { auditXclDrift } from '../../../utils/gcal-sync'
 import { sessionRole } from '../../../utils/staff-gate'
 import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../utils/dates'
 import { computeSystemHealth } from '../../../utils/system-health'
@@ -165,19 +164,134 @@ export async function GET() {
       .limit(50),
   ])
 
+  // PL-425: the dashboard took 6-10s — an inline Google audit (auditXclDrift:
+  // up to 400 serial calendar reads) plus ~19 serial awaits. The request path
+  // now makes ZERO third-party calls: XCL drift persists in calendar_drift
+  // (the PL-410 push + hourly poll keep it current — the audit folded into
+  // the tutor-event listing it already did), and every independent read
+  // batches here. The few reads that need these results batch once more
+  // below. Same data, same rows, same order.
+  const weekEnd = new Date(now.getTime() + 7 * 86400000).toISOString()
+  const invoiceFamIds = [...new Set((((invoices as any[]) ?? []).map((i) => i.family_id)))]
+  const [
+    { data: staleStaffPending },
+    { data: failedPf },
+    { data: accepted },
+    { data: pendingMatches },
+    { data: timingAddonRows },
+    { data: paidAddonRows },
+    { data: pkgEngs },
+    { data: locEngs },
+    { data: missedCalls },
+    { data: calDrift },
+    { data: genFailures },
+    { data: manualNotes },
+    { data: scheduleDrafts },
+    { health, recovery },
+    firstPage,
+    { count: weekSessions },
+    { count: weekProposed },
+  ] = await Promise.all([
+    supabase
+      .from('enrollments')
+      .select(
+        'id, class_id, enrolled_at, source, source_recorded_by, students ( first_name, last_name ), classes ( class_type, status, schools ( nickname ) )'
+      )
+      .in('source', ['staff', 'import'])
+      .eq('payment_status', 'Pending')
+      .lt('enrolled_at', new Date(now.getTime() - 3 * 86400000).toISOString()),
+    supabase
+      .from('product_orders')
+      .select('id, enrollment_id, last_error, updated_at, products ( name ), enrollments!inner ( class_id, students ( first_name, last_name ) )')
+      .eq('status', 'failed'),
+    invoiceFamIds.length
+      ? supabase.from('agreement_acceptances').select('family_id').in('family_id', invoiceFamIds)
+      : Promise.resolve({ data: [] as any[] }),
+    supabase
+      .from('record_matches')
+      .select(
+        `id, created_at, lead_id,
+         leads ( student_name, contact_name ),
+         students ( first_name, last_name )`
+      )
+      .eq('status', 'pending'),
+    supabase
+      .from('enrollment_addons')
+      .select(
+        `tutoring_timing, hours,
+         enrollments!inner ( payment_status, student_id,
+           students!inner ( id, first_name, last_name, family_id ),
+           classes ( sessions ( session_date ) ) )`
+      )
+      .not('tutoring_timing', 'is', null),
+    supabase
+      .from('enrollment_addons')
+      .select('enrollments!inner ( payment_status, student_id )')
+      .gt('hours', 0),
+    supabase
+      .from('tutoring_engagements')
+      .select(
+        `id, addon_id, status, student_id, hourly_rate, overdraw_ack_hours, block_confirmation,
+         block_continue_hours, block_continue_staff_at,
+         students ( first_name, last_name, family_id ),
+         enrollment_addons ( id, hours )`
+      )
+      .eq('funding', 'package')
+      .not('addon_id', 'is', null),
+    supabase
+      .from('tutoring_engagements')
+      .select(
+        `id, location, created_at, status,
+         students ( first_name, last_name, family_id ),
+         instructors ( name, default_meeting_link ),
+         subjects ( name )`
+      )
+      .in('status', ['active', 'pending_parent_confirmation']),
+    supabase
+      .from('call_events')
+      .select('id, family_id, phone_e164, occurred_at, families ( parent_first_name, parent_last_name )')
+      .eq('event_type', 'missed')
+      .not('family_id', 'is', null)
+      .is('dismissed_at', null)
+      .order('occurred_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('calendar_drift')
+      .select(
+        `session_id, kind, cal_title, cal_starts_at, portal_starts_at, detected_at,
+         instructors ( name ),
+         tutoring_sessions ( students ( first_name, last_name, family_id ) )`
+      ),
+    supabase
+      .from('generation_failures')
+      .select('family_id, period, error, first_failed_at, families ( parent_first_name, parent_last_name )'),
+    supabase
+      .from('dashboard_notes')
+      .select('id, body, created_by, created_at')
+      .is('cleared_at', null)
+      .order('created_at', { ascending: false })
+      .limit(50),
+    supabase.from('tutoring_schedule_drafts').select('id, created_at').order('created_at'),
+    computeSystemHealth(now),
+    loadActivity({ limit: 20 }),
+    supabase
+      .from('tutoring_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'confirmed')
+      .gte('starts_at', now.toISOString())
+      .lt('starts_at', weekEnd),
+    supabase
+      .from('tutoring_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'proposed')
+      .gte('starts_at', now.toISOString())
+      .lt('starts_at', weekEnd),
+  ])
+
   // PL-361 D: a staff-created registration that never got paid must not sit
   // in silent limbo — after 3 days it surfaces here (deep link to the class
   // roster, where resend-the-link and cancel live). Clears when it's paid,
   // cancelled, or expires.
-  const { data: staleStaffPending } = await supabase
-    .from('enrollments')
-    .select(
-      'id, class_id, enrolled_at, source, source_recorded_by, students ( first_name, last_name ), classes ( class_type, status, schools ( nickname ) )'
-    )
-    .in('source', ['staff', 'import'])
-    .eq('payment_status', 'Pending')
-    .lt('enrolled_at', new Date(now.getTime() - 3 * 86400000).toISOString())
-
   // --- Needs Attention (state-driven) ---------------------------------------
   const liveClasses = ((classes as any[]) ?? []).filter((c) => {
     const days = (c.sessions ?? []).map((s: any) => s.session_date)
@@ -202,10 +316,6 @@ export async function GET() {
   // PL-364 C: a paid notebook order that can't reach Printful is never a
   // lost order — it surfaces here until the push succeeds (retry lives on
   // the roster row) or the order is cancelled/refunded.
-  const { data: failedPf } = await supabase
-    .from('product_orders')
-    .select('id, enrollment_id, last_error, updated_at, products ( name ), enrollments!inner ( class_id, students ( first_name, last_name ) )')
-    .eq('status', 'failed')
   for (const po of (failedPf as any[]) ?? []) {
     const enr = one<any>(po.enrollments)
     const student = one<any>(enr?.students)
@@ -307,12 +417,7 @@ export async function GET() {
   }
 
   // Billed without a signed agreement (state: outstanding invoice + no acceptance).
-  const famIds = [...new Set((((invoices as any[]) ?? []).map((i) => i.family_id)))]
-  if (famIds.length) {
-    const { data: accepted } = await supabase
-      .from('agreement_acceptances')
-      .select('family_id')
-      .in('family_id', famIds)
+  if (invoiceFamIds.length) {
     const okFams = new Set((accepted ?? []).map((a: any) => a.family_id))
     for (const inv of (invoices as any[]) ?? []) {
       if (okFams.has(inv.family_id)) continue
@@ -353,26 +458,8 @@ export async function GET() {
     })
   }
 
-  // PL-154: sessions the portal still believes in whose Google event was
-  // hand-marked XCL-. Read-only and state-driven: fix it in the portal (or
-  // restore the calendar event) and the row disappears on its own. A
-  // calendar read failure yields nothing, so this never cries wolf.
-  try {
-    for (const d of await auditXclDrift()) {
-      attention.push({
-        id: `xcl-${d.sessionId}`,
-        kind: 'Cancelled on the calendar, not in the portal',
-        text: `${d.tutorName} marked ${d.studentName}'s ${new Date(d.startsAt).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })} session "${d.eventTitle}" in Google, but it's still scheduled here — it will bill and count on the timecard as-is.`,
-        // PL-298 audit: ?schedule= expects a STUDENT and opens the
-        // new-schedule wizard — a session id there was a dead end. The
-        // session dialog is the resolution surface.
-        href: `/admin/tutoring?session=${d.sessionId}`,
-        urgent: new Date(d.startsAt).getTime() < now.getTime(),
-      })
-    }
-  } catch (e) {
-    console.error('[PL-154] XCL audit failed (dashboard continues):', e)
-  }
+  // PL-154 (via PL-425): XCL-retitle drift now comes from the calendar_drift
+  // table like every other drift — rows render in the drift section below.
 
   // PL-155a: one row per broken TEMPLATE (not per send) — the fix is in the
   // template, and a bad one can hit dozens of families in a single sweep.
@@ -453,14 +540,6 @@ export async function GET() {
   // (the whole dashboard is staff-gated). The link lands on the lead card's
   // side-by-side panel; nothing merges without the click there.
   {
-    const { data: pendingMatches } = await supabase
-      .from('record_matches')
-      .select(
-        `id, created_at, lead_id,
-         leads ( student_name, contact_name ),
-         students ( first_name, last_name )`
-      )
-      .eq('status', 'pending')
     for (const m of (pendingMatches as any[]) ?? []) {
       const lead = one<any>(m.leads)
       const st = one<any>(m.students)
@@ -509,15 +588,6 @@ export async function GET() {
   }
   // PL-207: the card's timing choices, plus paid add-on holders — the card
   // flow must surface here even before any engagement exists.
-  const { data: timingAddonRows } = await supabase
-    .from('enrollment_addons')
-    .select(
-      `tutoring_timing, hours,
-       enrollments!inner ( payment_status, student_id,
-         students!inner ( id, first_name, last_name, family_id ),
-         classes ( sessions ( session_date ) ) )`
-    )
-    .not('tutoring_timing', 'is', null)
   const timingByStudent = new Map<
     string,
     { timing: string; name: string; familyId: string; lastClassDay: string | null }
@@ -539,10 +609,6 @@ export async function GET() {
   }
   // Paid add-on holders (any student with purchased hours) — availability
   // shared by one of these deserves a row even with no engagement yet.
-  const { data: paidAddonRows } = await supabase
-    .from('enrollment_addons')
-    .select('enrollments!inner ( payment_status, student_id )')
-    .gt('hours', 0)
   const paidAddonStudents = new Set(
     ((paidAddonRows as any[]) ?? [])
       .map((a) => one<any>(a.enrollments))
@@ -551,17 +617,70 @@ export async function GET() {
   )
 
   const availIds = [...new Set([...sharedAt.keys(), ...timingByStudent.keys()])]
+
+  // PL-425 Phase C: every read that needed the first batch's results, fetched
+  // together (availability trio · package drawdown + family renewals ·
+  // missed-call callbacks · block-continue scheduling checks). Empty inputs
+  // resolve inline — no query fires for nothing.
+  const pkgRowsAll = (pkgEngs as any[]) ?? []
+  const missedFamIds = [...new Set(((missedCalls as any[]) ?? []).map((c) => c.family_id))]
+  const pkgFamIds = [...new Set(pkgRowsAll.map((e) => one<any>(e.students)?.family_id).filter(Boolean))]
+  const blockContinueIds = pkgRowsAll
+    .filter((e) => e.block_confirmation === 'confirmed' && e.block_continue_staff_at)
+    .map((e) => e.id)
+  const none = Promise.resolve({ data: [] as any[] })
+  const [
+    { data: engs },
+    { data: upcomingSes },
+    { data: studs },
+    { data: consuming },
+    { data: famAddons },
+    { data: outbound },
+    { data: blockContinueRows },
+  ] = await Promise.all([
+    availIds.length
+      ? supabase.from('tutoring_engagements').select('student_id').in('student_id', availIds).eq('status', 'active')
+      : none,
+    availIds.length
+      ? supabase
+          .from('tutoring_sessions')
+          .select('student_id')
+          .in('student_id', availIds)
+          .in('status', ['proposed', 'confirmed'])
+          .gte('starts_at', now.toISOString())
+      : none,
+    availIds.length ? supabase.from('students').select('id, first_name, last_name').in('id', availIds) : none,
+    pkgRowsAll.length
+      ? supabase
+          .from('tutoring_sessions')
+          .select('engagement_id, duration_minutes, status, reschedule_notice, starts_at')
+          .in('engagement_id', pkgRowsAll.map((e) => e.id))
+          .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
+      : none,
+    pkgFamIds.length
+      ? supabase
+          .from('enrollment_addons')
+          .select('id, hours, enrollments!inner ( students!inner ( family_id ) )')
+          .in('enrollments.students.family_id', pkgFamIds)
+      : none,
+    missedFamIds.length
+      ? supabase
+          .from('call_events')
+          .select('family_id, occurred_at')
+          .eq('direction', 'outgoing')
+          .in('family_id', missedFamIds)
+      : none,
+    blockContinueIds.length
+      ? supabase
+          .from('tutoring_sessions')
+          .select('engagement_id, created_at')
+          .in('engagement_id', blockContinueIds)
+          .in('status', ['proposed', 'confirmed'])
+          .gt('starts_at', now.toISOString())
+      : none,
+  ])
+
   if (availIds.length) {
-    const [{ data: engs }, { data: upcomingSes }, { data: studs }] = await Promise.all([
-      supabase.from('tutoring_engagements').select('student_id').in('student_id', availIds).eq('status', 'active'),
-      supabase
-        .from('tutoring_sessions')
-        .select('student_id')
-        .in('student_id', availIds)
-        .in('status', ['proposed', 'confirmed'])
-        .gte('starts_at', now.toISOString()),
-      supabase.from('students').select('id, first_name, last_name').in('id', availIds),
-    ])
     const hasEng = new Set((engs ?? []).map((e: any) => e.student_id))
     const hasUpcoming = new Set((upcomingSes ?? []).map((s: any) => s.student_id))
     const nameOf = new Map((studs ?? []).map((s: any) => [s.id, `${s.first_name} ${s.last_name}`]))
@@ -617,25 +736,10 @@ export async function GET() {
   // the family) or ending the engagement clears the row on its own.
   // Threshold ≤1h (Scarlett to confirm) — the conversation is better had
   // BEFORE the last session.
-  const { data: pkgEngs } = await supabase
-    .from('tutoring_engagements')
-    .select(
-      `id, addon_id, status, student_id, hourly_rate, overdraw_ack_hours, block_confirmation,
-       block_continue_hours, block_continue_staff_at,
-       students ( first_name, last_name, family_id ),
-       enrollment_addons ( id, hours )`
-    )
-    .eq('funding', 'package')
-    .not('addon_id', 'is', null)
   const pkgRows = (pkgEngs as any[]) ?? []
   if (pkgRows.length > 0) {
     // Drawdown per addon across EVERY engagement drawing on it — the same
     // status set as packageHoursUsedBefore, the function that actually bills.
-    const { data: consuming } = await supabase
-      .from('tutoring_sessions')
-      .select('engagement_id, duration_minutes, status, reschedule_notice, starts_at')
-      .in('engagement_id', pkgRows.map((e) => e.id))
-      .in('status', ['completed', 'no_show', 'forfeited', 'confirmed', 'proposed', 'rescheduled'])
     const addonOf = new Map(pkgRows.map((e) => [e.id, e.addon_id]))
     const usedByAddon = new Map<string, number>()
     const lastSpendByAddon = new Map<string, string>()
@@ -650,11 +754,6 @@ export async function GET() {
     }
     // A family's OTHER packages with hours still on them = the renewal
     // already happened; the row would nag a solved problem.
-    const pkgFamIds = [...new Set(pkgRows.map((e) => one<any>(e.students)?.family_id).filter(Boolean))]
-    const { data: famAddons } = await supabase
-      .from('enrollment_addons')
-      .select('id, hours, enrollments!inner ( students!inner ( family_id ) )')
-      .in('enrollments.students.family_id', pkgFamIds)
     const addonFamily = new Map(
       ((famAddons as any[]) ?? []).map((a) => [
         a.id,
@@ -710,14 +809,12 @@ export async function GET() {
         // reserve the times — a human schedules them. Self-resolves once a
         // future session created AFTER the routing stamp exists.
         if (e.block_continue_staff_at) {
-          const { count } = await supabase
-            .from('tutoring_sessions')
-            .select('id', { count: 'exact', head: true })
-            .eq('engagement_id', e.id)
-            .in('status', ['proposed', 'confirmed'])
-            .gt('created_at', e.block_continue_staff_at)
-            .gt('starts_at', new Date().toISOString())
-          if ((count ?? 0) === 0) {
+          // PL-425: one batched read (Phase C) replaced the per-engagement
+          // count query — same predicate, filtered here.
+          const count = (blockContinueRows ?? []).filter(
+            (r: any) => r.engagement_id === e.id && r.created_at > e.block_continue_staff_at
+          ).length
+          if (count === 0) {
             attention.push({
               id: `block-continue-staff-${e.id}`,
               since: e.block_continue_staff_at,
@@ -762,15 +859,6 @@ export async function GET() {
   // State-driven: setting the engagement location, giving the tutor a
   // default, or ending/pausing the schedule clears the row on its own.
   try {
-    const { data: locEngs } = await supabase
-      .from('tutoring_engagements')
-      .select(
-        `id, location, created_at, status,
-         students ( first_name, last_name, family_id ),
-         instructors ( name, default_meeting_link ),
-         subjects ( name )`
-      )
-      .in('status', ['active', 'pending_parent_confirmation'])
     for (const e of (locEngs as any[]) ?? []) {
       if ((e.location ?? '').trim()) continue
       const tut = one<any>(e.instructors)
@@ -795,21 +883,7 @@ export async function GET() {
   // dashboard exists to surface. State-driven: clears on a later outbound
   // call to the family or a manual dismiss.
   try {
-    const { data: missedCalls } = await supabase
-      .from('call_events')
-      .select('id, family_id, phone_e164, occurred_at, families ( parent_first_name, parent_last_name )')
-      .eq('event_type', 'missed')
-      .not('family_id', 'is', null)
-      .is('dismissed_at', null)
-      .order('occurred_at', { ascending: false })
-      .limit(20)
     if ((missedCalls ?? []).length > 0) {
-      const famIds = [...new Set((missedCalls as any[]).map((c) => c.family_id))]
-      const { data: outbound } = await supabase
-        .from('call_events')
-        .select('family_id, occurred_at')
-        .eq('direction', 'outgoing')
-        .in('family_id', famIds)
       const lastOut = new Map<string, string>()
       for (const o of (outbound as any[]) ?? []) {
         if ((lastOut.get(o.family_id) ?? '') < o.occurred_at) lastOut.set(o.family_id, o.occurred_at)
@@ -832,18 +906,27 @@ export async function GET() {
 
   // PL-180: calendar-side session edits awaiting a human decision —
   // attributional (on the tutor's own calendar, the tutor moved it).
-  const { data: calDrift } = await supabase
-    .from('calendar_drift')
-    .select(
-      `session_id, cal_starts_at, portal_starts_at, detected_at,
-       instructors ( name ),
-       tutoring_sessions ( students ( first_name, family_id ) )`
-    )
+  // PL-425: read from the table (push + hourly poll keep it current); the
+  // PL-154 XCL-retitle rows ride the same table with kind='xcl' and keep
+  // their original wording and resolution surface (the session dialog).
   for (const d of (calDrift as any[]) ?? []) {
-    const tutorFirst = (one<any>(d.instructors)?.name ?? 'The tutor').split(' ')[0]
+    const tutorName = one<any>(d.instructors)?.name ?? 'The tutor'
+    const tutorFirst = tutorName.split(' ')[0]
     const stu = one<any>(one<any>(d.tutoring_sessions)?.students)
     const fmtDrift = (iso: string) =>
       new Date(iso).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    if (d.kind === 'xcl') {
+      attention.push({
+        id: `xcl-${d.session_id}`,
+        kind: 'Cancelled on the calendar, not in the portal',
+        text: `${tutorName} marked ${stu ? `${stu.first_name} ${stu.last_name ?? ''}`.trim() : 'a student'}'s ${new Date(d.portal_starts_at).toLocaleDateString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' })} session "${d.cal_title ?? '(no title)'}" in Google, but it's still scheduled here — it will bill and count on the timecard as-is.`,
+        // PL-298 audit: the session dialog is the resolution surface.
+        href: `/admin/tutoring?session=${d.session_id}`,
+        urgent: new Date(d.portal_starts_at).getTime() < now.getTime(),
+        since: d.detected_at,
+      })
+      continue
+    }
     attention.push({
       id: `cal-drift-${d.session_id}`,
       kind: 'Calendar edited outside the portal',
@@ -861,9 +944,6 @@ export async function GET() {
   // PL-195: families whose generation is FAILING — discovery must not
   // depend on the alert email. State-driven: the row exists exactly while a
   // generation_failures record does (cleared by any later successful run).
-  const { data: genFailures } = await supabase
-    .from('generation_failures')
-    .select('family_id, period, error, first_failed_at, families ( parent_first_name, parent_last_name )')
   for (const g of (genFailures as any[]) ?? []) {
     const fam = one<any>(g.families)
     const monthLabel = new Date(String(g.period) + 'T12:00:00Z').toLocaleDateString('en-US', {
@@ -883,12 +963,6 @@ export async function GET() {
   // PL-133: the sticky-note layer — human-pinned, human-cleared, and the ONE
   // exception to the state-driven rule. Tagged in the UI so nobody mistakes
   // a note for a system condition.
-  const { data: manualNotes } = await supabase
-    .from('dashboard_notes')
-    .select('id, body, created_by, created_at')
-    .is('cleared_at', null)
-    .order('created_at', { ascending: false })
-    .limit(50)
   for (const n of (manualNotes as any[]) ?? []) {
     attention.push({
       id: `note-${n.id}`,
@@ -902,10 +976,6 @@ export async function GET() {
   // PL-338 D: ONE generic row for saved schedule drafts — "{X} student
   // schedules in progress", never one row per student (Scarlett explicit).
   // State-driven: count hits 0 → row gone.
-  const { data: scheduleDrafts } = await supabase
-    .from('tutoring_schedule_drafts')
-    .select('id, created_at')
-    .order('created_at')
   if ((scheduleDrafts ?? []).length > 0) {
     const n = scheduleDrafts!.length
     attention.push({
@@ -927,8 +997,8 @@ export async function GET() {
       (rowClock(a) && rowClock(b) ? rowClock(a).localeCompare(rowClock(b)) : 0)
   )
 
-  // --- PL-136: system health (PL-331: shared computation) ---------------------
-  const { health, recovery } = await computeSystemHealth(now)
+  // --- PL-136: system health (PL-331: shared computation; PL-425: fetched
+  // in the batch above — it probes nothing remote, six DB reads) -------------
   // PL-273: the sweep's own recovery note lands in the activity feed —
   // "down for N hours, recovered at X" — for a week, then ages out of the
   // 40-row window naturally.
@@ -950,7 +1020,6 @@ export async function GET() {
   // recent 20, this calendar month) — except a near-empty month (< 5 rows)
   // extends into the previous month so a quiet month never reads as a dead
   // feed. Display window only: nothing is deleted, history pages on demand.
-  const firstPage = await loadActivity({ limit: 20 })
   activity.push(...firstPage.rows)
   activity.sort((a, b) => String(b.when).localeCompare(String(a.when)))
   const denverMonthOf = (iso: string | Date) =>
@@ -995,22 +1064,6 @@ export async function GET() {
       cap: null as number | null,
       href: `/admin?class=${c.id}`,
     }))
-  const weekEnd = new Date(now.getTime() + 7 * 86400000).toISOString()
-  const { count: weekSessions } = await supabase
-    .from('tutoring_sessions')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'confirmed')
-    .gte('starts_at', now.toISOString())
-    .lt('starts_at', weekEnd)
-  // PL-173: the same window's PROPOSED count — a card reading "0" while nine
-  // sessions sat one auto-confirm sweep away told half the state (Jul 25).
-  const { count: weekProposed } = await supabase
-    .from('tutoring_sessions')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'proposed')
-    .gte('starts_at', now.toISOString())
-    .lt('starts_at', weekEnd)
-
   return NextResponse.json({
     attention,
     activity: windowedActivity, // PL-344: min(20, this month), quiet-month extend

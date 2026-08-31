@@ -511,6 +511,12 @@ export type TimeDriftRow = {
   calStartsAt: string | null
   calEndsAt: string | null
   gcalEventId: string
+  /** PL-425: 'time' = moved/deleted (the banner's adopt/revert rows);
+   *  'xcl' = the event stands at its time but was hand-retitled XCL- while
+   *  the portal session is still live (the PL-154 dashboard row). */
+  kind: 'time' | 'xcl'
+  /** kind='xcl' only: the event's current title, quoted in the dashboard. */
+  eventTitle: string | null
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -588,13 +594,27 @@ export async function auditTutoringTimeDrift(tutorId?: string): Promise<TimeDrif
         gcalEventId: s.gcal_event_id as string,
       }
       if (!live || !live.start || !live.end) {
-        drift.push({ ...base, calStartsAt: null, calEndsAt: null })
+        drift.push({ ...base, calStartsAt: null, calEndsAt: null, kind: 'time', eventTitle: null })
+        continue
+      }
+      // PL-425 (absorbing PL-154): a hand-retitled XCL- event on a session
+      // the portal still believes in — detected from the SAME event list,
+      // zero extra API calls. XCL outranks a move (the cancel signal is the
+      // story); proposed sessions don't bill, so they stay out (PL-154 parity).
+      if (['confirmed', 'completed'].includes(s.status) && /^\s*XCL-/i.test(live.summary ?? '')) {
+        drift.push({
+          ...base,
+          calStartsAt: live.start,
+          calEndsAt: live.end,
+          kind: 'xcl',
+          eventTitle: (live.summary ?? '').trim() || '(no title)',
+        })
         continue
       }
       const moved =
         Math.abs(new Date(live.start).getTime() - new Date(s.starts_at).getTime()) > 60_000 ||
         Math.abs(new Date(live.end).getTime() - new Date(s.ends_at).getTime()) > 60_000
-      if (moved) drift.push({ ...base, calStartsAt: live.start, calEndsAt: live.end })
+      if (moved) drift.push({ ...base, calStartsAt: live.start, calEndsAt: live.end, kind: 'time', eventTitle: null })
     }
   }
   return drift
@@ -691,13 +711,19 @@ export async function syncTutoringDriftTable(tutorId?: string): Promise<TimeDrif
         portal_ends_at: d.portalEndsAt,
         cal_starts_at: d.calStartsAt,
         cal_ends_at: d.calEndsAt,
+        kind: d.kind,
+        cal_title: d.eventTitle,
       })),
       { onConflict: 'session_id' }
     )
   } else {
     await del.gte('detected_at', '1970-01-01') // delete all (scoped) rows
   }
-  return drift
+  // PL-425: callers (the banner's scan, the grouped drift alert) only ever
+  // handled moved/deleted rows — XCL rows persist for the dashboard but were
+  // never a banner row and never rang the drift doorbell (PL-154 parity:
+  // that audit was dashboard-only). The table holds both kinds.
+  return drift.filter((d) => d.kind === 'time')
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

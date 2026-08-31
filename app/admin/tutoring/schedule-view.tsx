@@ -229,7 +229,9 @@ export default function ScheduleView({
       q = q.in('tutor_id', selectedTutors.map((t) => t.id))
     const { data, error } = await q
     if (!error) setSessions(normalize(data ?? []))
-    const { data: drift } = await supabase.from('calendar_drift').select('session_id')
+    // PL-425: kind='xcl' rows are the dashboard's (PL-154) — the ⚠ chip and
+    // the banner stay exactly the moved/deleted set they always showed.
+    const { data: drift } = await supabase.from('calendar_drift').select('session_id').eq('kind', 'time')
     setDriftIds(new Set(((drift ?? []) as { session_id: string }[]).map((d) => d.session_id)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, selectedKey, selectedTutors.length, rangeStart, rangeEnd])
