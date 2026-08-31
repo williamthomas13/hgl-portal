@@ -110,6 +110,9 @@ export type IntakeSubmission = {
   availability: AvailabilityRange[]
   /** Family's IANA timezone for the availability ranges. */
   availabilityTimezone: string
+  /** PL-419: the device's validated zone, or null when none was sent —
+   *  derives families.timezone (fill-only-when-null, never a guess). */
+  deviceTimezone: string | null
 }
 
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
@@ -250,6 +253,18 @@ export async function applyIntakeSubmission(
       const { error: famError } = await supabase.from('families').update(patch).eq('id', familyId)
       if (famError) console.error('intake family detail update failed (submission stands):', famError.message)
     }
+  }
+
+  // PL-419: derive the family's timezone from the intake device — silently,
+  // and only into a NULL column (a staff-set or earlier-derived zone always
+  // stands; failure never sinks the submission).
+  if (sub.deviceTimezone) {
+    const { error: tzError } = await supabase
+      .from('families')
+      .update({ timezone: sub.deviceTimezone })
+      .eq('id', familyId)
+      .is('timezone', null)
+    if (tzError) console.error('intake family timezone derive failed (submission stands):', tzError.message)
   }
 
   // 2b. Availability grid (PL-19): replace this student's intake-sourced rows

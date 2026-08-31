@@ -77,6 +77,9 @@ export type EnrollmentRow = {
   /** PL-94: rescue rounds — each re-offer mints a fresh W2 dedupe key. */
   waitlist_offer_round: number
   familyId: string
+  /** PL-419: the family's stored IANA zone (derived at registration/intake or
+   *  staff-set) — null = unknown, emails keep the labeled class-zone render. */
+  familyTimezone: string | null
   pronouns: string | null
   marketingOptOut: boolean
   parentFirstName: string
@@ -253,7 +256,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       product_orders ( quantity, price_paid, status, tracking_url, products ( name ) ),
       students (
         first_name, last_name, student_email, graduating_year, pronouns,
-        families ( id, parent_first_name, parent_email, marketing_opt_out )
+        families ( id, parent_first_name, parent_email, marketing_opt_out, timezone )
       )
     )
   `
@@ -307,6 +310,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           waitlist_offer_expires_at: e.waitlist_offer_expires_at,
           waitlist_offer_round: e.waitlist_offer_round ?? 0,
           familyId: family.id,
+          familyTimezone: family.timezone ?? null,
           pronouns: student.pronouns ?? null,
           marketingOptOut: family.marketing_opt_out ?? false,
           parentFirstName: family.parent_first_name,
@@ -402,6 +406,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     enrollmentId: e.id,
     classId: bundle.id,
     timezone: bundle.timezone,
+    familyTimezone: e.familyTimezone,
     calendarPageUrl: calendarPageUrlFor(bundle.id),
     resumePaymentUrl: resumePaymentUrlFor(e.id),
     portalUrl: portalDeepLinkFor(e.id, e.parentEmail),

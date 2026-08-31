@@ -21,6 +21,10 @@ export type RegistrantInput = {
   graduatingYear: string | null
   /** PL-69/80: 'she_her' | 'he_him' | 'they_them' | 'name_only' | null — always optional. */
   pronouns?: string | null
+  /** PL-419: the family's derived IANA zone (school's zone for school
+   *  classes, the registering device's for open classes) — written only when
+   *  the family has none stored; null = unknown, never guessed. */
+  timezone?: string | null
 }
 
 export async function upsertFamilyAndStudent(
@@ -43,6 +47,7 @@ export async function upsertFamilyAndStudent(
           parent_first_name: input.parentFirst,
           parent_last_name: input.parentLast,
           parent_email: input.parentEmail,
+          timezone: input.timezone ?? null,
         },
       ])
       .select('id')
@@ -62,6 +67,12 @@ export async function upsertFamilyAndStudent(
     }
   }
   if (!familyId) return { error: 'Could not resolve family record.' }
+
+  // PL-419: an existing family with no stored timezone picks up the derived
+  // one — fill-only-when-null, a staff-set or earlier zone always stands.
+  if (existingFamily?.id && input.timezone) {
+    await supabase.from('families').update({ timezone: input.timezone }).eq('id', familyId).is('timezone', null)
+  }
 
   // 2. Student: reuse the family's existing row for the same kid (matched by
   // student email, else by name); otherwise create a sibling.

@@ -13,7 +13,9 @@ import { sessionRole } from '../../../utils/staff-gate'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const PARENT_FIELDS = ['parent_first_name', 'parent_last_name', 'parent_email', 'parent_phone'] as const
+// PL-419: `timezone` rides the parent action — the family's clock for every
+// portal/email time render (derived at registration/intake, corrected here).
+const PARENT_FIELDS = ['parent_first_name', 'parent_last_name', 'parent_email', 'parent_phone', 'timezone'] as const
 const STUDENT_FIELDS = ['student_email', 'student_phone', 'pronouns', 'grade_level', 'special_needs'] as const
 const INTAKE_FIELDS = [
   'preferredContactMethod',
@@ -40,6 +42,13 @@ export async function POST(req: Request) {
       }
     }
     if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Nothing to save.' }, { status: 400 })
+    if (patch.timezone !== undefined && patch.timezone != null) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: String(patch.timezone) })
+      } catch {
+        return NextResponse.json({ error: 'That is not a recognized timezone — pick one from the list.' }, { status: 400 })
+      }
+    }
     if (patch.parent_email !== undefined) {
       const email = String(patch.parent_email ?? '')
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {

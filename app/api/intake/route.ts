@@ -61,6 +61,17 @@ export async function POST(req: Request) {
   } catch {
     availabilityTimezone = 'America/Denver'
   }
+  // PL-419: the zone the DEVICE actually sent, validated — the Denver
+  // fallback above serves availability math only and is never stored as a
+  // "derived" family timezone (that would be a guess).
+  const deviceTzRaw = str(body.availabilityTimezone, 60)
+  let deviceTimezone: string | null = null
+  if (deviceTzRaw) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: deviceTzRaw })
+      deviceTimezone = deviceTzRaw
+    } catch {}
+  }
 
   const submission: IntakeSubmission = {
     studentFirst,
@@ -101,6 +112,7 @@ export async function POST(req: Request) {
     onlinePreference,
     availability,
     availabilityTimezone,
+    deviceTimezone,
   }
 
   // PL-183: you can't promise to contact someone you have no number for —

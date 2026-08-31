@@ -13,7 +13,7 @@ import TutoringAddonCard, { type TutoringCardState } from './tutoring-addon-card
 import { StatusBadge, ScoresTable, formatDate, formatDateShort, one, type ScoreRow } from './shared'
 import { FamilyMaterialsSection, StudentMaterialsRecord } from './materials-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
-import { bySessionStart, effectiveStartDate } from '../utils/dates'
+import { bySessionStart, effectiveStartDate, publicTimeCityLabel } from '../utils/dates'
 import TutoringSection from './tutoring-section'
 import PortalNav, { type PortalNavItem } from './portal-nav'
 import { escapeLike } from '../utils/like-escape'
@@ -68,8 +68,8 @@ export default async function ParentView({
         attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early ),
         classes (
           id, slug, status, class_type, default_location, delivery_mode,
-          price, start_date, synap_group, timezone,
-          schools ( name, nickname, timezone ),
+          price, start_date, synap_group, timezone, display_cities,
+          schools ( name, nickname, timezone, city ),
           instructors ( name, email ),
           sessions ( id, session_date, start_time, end_time, location )
         )
@@ -486,12 +486,33 @@ export default async function ParentView({
 
                     {sessions.length > 0 && (
                       <div className="mt-3">
-                        <SessionCalendar
-                          sessions={sessions}
-                          defaultLocation={cls.default_location}
-                          calendarHref={`/classes/${cls.id}/calendar`}
-                          timezone={cls.timezone ?? one<any>(cls.schools)?.timezone ?? null}
-                        />
+                        {(() => {
+                          // PL-418: the ONE public label resolver, fed the
+                          // class's full facts — a "Room 204" HGL class says
+                          // "Salt Lake City", never the zone city "Denver".
+                          const clsSchool = one<any>(cls.schools)
+                          const tz = cls.timezone ?? clsSchool?.timezone ?? null
+                          return (
+                            <SessionCalendar
+                              sessions={sessions}
+                              defaultLocation={cls.default_location}
+                              calendarHref={`/classes/${cls.id}/calendar`}
+                              localTimes
+                              timezone={tz}
+                              cityLabel={
+                                tz
+                                  ? publicTimeCityLabel({
+                                      schoolCity: clsSchool?.city,
+                                      displayCities: cls.display_cities,
+                                      location: cls.default_location,
+                                      timezone: tz,
+                                      hglInPerson: !clsSchool && cls.delivery_mode !== 'online',
+                                    })
+                                  : null
+                              }
+                            />
+                          )
+                        })()}
                       </div>
                     )}
 

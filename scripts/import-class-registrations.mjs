@@ -268,6 +268,10 @@ for (const row of dataRows) {
     schoolId: cls.school_id ?? null,
     graduatingYear: col(row, 'graduatingYear') || null,
     pronouns: null,
+    // PL-419: a school-class import maps the school's timezone onto the
+    // family (fill-only-when-null inside the upsert); an open class has no
+    // derivable zone at import — stays unknown, never guessed.
+    timezone: cls.school_id ? (school?.timezone ?? null) : null,
   })
   if ('error' in result) {
     console.error(`  FAIL ${parentEmail}: ${result.error}`)

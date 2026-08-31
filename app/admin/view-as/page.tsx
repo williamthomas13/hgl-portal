@@ -226,6 +226,14 @@ export default async function ViewAsPage({ searchParams }: { searchParams: Searc
         <span className="font-bold">Viewing as {ROLES.find((r) => r.id === role)?.label ?? role}</span>
         {pickedLabel && role !== 'manager' && <span className="opacity-90">— {pickedLabel}</span>}
         <span className="opacity-75">· read-only preview</span>
+        {/* PL-419: family times render in the VIEWER's device zone, so a
+            staff preview shows staff-local times — named here so nobody
+            files "the portal shows the wrong time" from a view-as. */}
+        {role === 'parent' && (
+          <span className="opacity-75">
+            · times render in YOUR device&apos;s timezone, not the family&apos;s
+          </span>
+        )}
         <a href="/admin" className="ml-auto underline font-semibold">
           Back to admin →
         </a>

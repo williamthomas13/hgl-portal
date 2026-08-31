@@ -1,5 +1,6 @@
 import SessionCalendar from '../components/SessionCalendar'
 import CopyButton from './copy-button'
+import { publicTimeCityLabel } from '../utils/dates'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 
@@ -131,7 +132,30 @@ base: string
             Session calendar ({c.sessions.length} sessions)
           </summary>
           <div className="mt-2">
-            <SessionCalendar sessions={c.sessions} defaultLocation={c.default_location} />
+            {(() => {
+              // PL-418: the ONE public label resolver with the class's full
+              // facts — the counselor reads the same city label families do.
+              const school = one<any>(c.schools)
+              const tz = c.timezone ?? school?.timezone ?? null
+              return (
+                <SessionCalendar
+                  sessions={c.sessions}
+                  defaultLocation={c.default_location}
+                  timezone={tz}
+                  cityLabel={
+                    tz
+                      ? publicTimeCityLabel({
+                          schoolCity: school?.city,
+                          displayCities: c.display_cities,
+                          location: c.default_location,
+                          timezone: tz,
+                          hglInPerson: !c.school_id && c.delivery_mode !== 'online',
+                        })
+                      : null
+                  }
+                />
+              )
+            })()}
           </div>
         </details>
       )}

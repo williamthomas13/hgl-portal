@@ -146,6 +146,19 @@ export async function POST(request: Request) {
   // overwrite the parent's name). One upsert per student: different names
   // create siblings; the same student typed twice dedupes to one row.
   const PRONOUNS = ['she_her', 'he_him', 'they_them', 'name_only']
+  // PL-419: the family's derived timezone — a school family lives on the
+  // school's clock; an open-class family's zone comes from the registering
+  // device (validated IANA, or nothing — never a guess).
+  let deviceTimezone: string | null = null
+  if (typeof body.deviceTimezone === 'string' && body.deviceTimezone.length <= 60) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: body.deviceTimezone })
+      deviceTimezone = body.deviceTimezone
+    } catch {}
+  }
+  const familyTimezone = cls.school_id
+    ? ((school as { timezone?: string } | null)?.timezone ?? null)
+    : deviceTimezone
   const resolved: { studentId: string; input: StudentInput }[] = []
   for (const s of students) {
     const result = await upsertFamilyAndStudent({
@@ -159,6 +172,7 @@ export async function POST(request: Request) {
       graduatingYear: s.graduatingYear,
       // PL-69: optional; anything unrecognized is treated as unset.
       pronouns: PRONOUNS.includes(s.pronouns as string) ? s.pronouns : null,
+      timezone: familyTimezone,
     })
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: 500 })

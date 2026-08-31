@@ -1,10 +1,19 @@
+'use client'
+
 // Visual session calendar — one row per session with a date chip, weekday,
 // time, and location. Extracted from the registration page (SPEC v2.3 §12) so
-// the Phase 4 portal views can reuse it read-only. Pure presentational: no
-// hooks, renders in server and client components alike.
+// the Phase 4 portal views can reuse it read-only.
+//
+// PL-419: with `localTimes`, the FAMILY view converts each session to the
+// browser's own timezone after mount ("your local time"), with the class-city
+// time labeled alongside — never two unlabeled times. Server render and the
+// first client paint keep the class-zone output exactly, so nothing flashes
+// wrong and zones that match change nothing. Tutor/admin/counselor callers
+// never pass `localTimes` (their working zone is the class's).
 
-import type { ReactNode } from 'react'
-import { bySessionStart, dateParts, friendlyZoneCity } from '../utils/dates'
+import { useEffect, useState, type ReactNode } from 'react'
+import { bySessionStart, dateParts, formatTimeRange, publicTimeCityLabel } from '../utils/dates'
+import { zonedToUtc } from '../utils/tutoring'
 
 export type CalendarSession = {
   /** PL-277: present on admin surfaces so per-session actions can target rows. */
@@ -31,6 +40,7 @@ export default function SessionCalendar({
   hour24 = false,
   timezone = null,
   cityLabel = null,
+  localTimes = false,
   renderActions,
 }: {
   sessions: CalendarSession[]
@@ -39,26 +49,57 @@ export default function SessionCalendar({
   calendarHref?: string
   /** 24-hour times (admin renders 24h; public keeps AM/PM). */
   hour24?: boolean
-  /** PL-126: the school's IANA timezone — when set, a "(times shown in
+  /** PL-126: the class's IANA timezone — when set, a "(times shown in
    *  {city} time)" line renders so an international family never guesses. */
   timezone?: string | null
   /** PL-353: the resolved public city label ("Düsseldorf"). When set it wins
    *  over the location/zone fallback — callers with school-city data resolve
    *  via publicTimeCityLabel and pass the result. */
   cityLabel?: string | null
+  /** PL-419: family view only — convert to the browser's zone post-mount
+   *  when it differs from the class's, class-city time labeled alongside. */
+  localTimes?: boolean
   /** PL-277: admin-only per-session actions (Edit/Remove) rendered at the
    *  row's right edge. Public and portal callers never pass this. */
   renderActions?: (s: CalendarSession) => ReactNode
 }) {
+  // The device zone resolves in useEffect so SSR and the hydration paint are
+  // identical (class-zone render); the local swap happens only after mount.
+  const [deviceTz, setDeviceTz] = useState<string | null>(null)
+  useEffect(() => {
+    if (!localTimes) return
+    try {
+      setDeviceTz(Intl.DateTimeFormat().resolvedOptions().timeZone ?? null)
+    } catch {}
+  }, [localTimes])
+
   const sorted = [...sessions].sort(bySessionStart)
   if (sorted.length === 0) return null
+
+  const resolvedCity =
+    timezone ? cityLabel || publicTimeCityLabel({ location: defaultLocation, timezone }) : null
+  const localized = Boolean(localTimes && timezone && deviceTz && deviceTz !== timezone)
 
   return (
     <div className="mb-4">
       <div className="grid grid-cols-1 gap-1.5">
         {sorted.map((s, i) => {
-          const d = dateParts(s.session_date)
+          // PL-419: in localized mode the date chip and weekday follow the
+          // instant into the browser's zone too — a Rome evening class can be
+          // the next calendar day for a family ahead of it.
+          const instant =
+            localized && s.start_time ? zonedToUtc(s.session_date, s.start_time.slice(0, 5), timezone!) : null
+          const endInstant =
+            instant && s.end_time ? zonedToUtc(s.session_date, s.end_time.slice(0, 5), timezone!) : null
+          const d = instant
+            ? dateParts(instant.toLocaleDateString('en-CA', { timeZone: deviceTz! }))
+            : dateParts(s.session_date)
           const loc = s.location ?? defaultLocation
+          const timeText = instant
+            ? `${formatTimeRange(instant, endInstant, deviceTz!)} your time · ${formatTimeRange(instant, endInstant, timezone!)} in ${resolvedCity}`
+            : fmtTime(s.start_time, hour24)
+              ? `${fmtTime(s.start_time, hour24)}${s.end_time ? ` – ${fmtTime(s.end_time, hour24)}` : ''}`
+              : 'Time TBD'
           return (
             <div
               key={s.session_date + i}
@@ -80,9 +121,7 @@ export default function SessionCalendar({
                   <span className="text-gray-500 font-normal"> · Session {i + 1}</span>
                 </div>
                 <div className="text-gray-600 break-words [overflow-wrap:anywhere]">
-                  {fmtTime(s.start_time, hour24)
-                    ? `${fmtTime(s.start_time, hour24)}${s.end_time ? ` – ${fmtTime(s.end_time, hour24)}` : ''}`
-                    : 'Time TBD'}
+                  {timeText}
                   {loc ? ` · ${loc}` : ''}
                 </div>
               </div>
@@ -91,14 +130,18 @@ export default function SessionCalendar({
           )
         })}
       </div>
-      {timezone && (
-        /* PL-305/353: the class's own city — a caller-resolved label first
-           (school city), then the location's city ("Salt Lake City" for
-           at-HGL), the zone city only as last resort. */
-        <p className="text-xs text-gray-500 mt-1.5">
-          (times shown in {cityLabel || friendlyZoneCity(timezone, defaultLocation)} time)
-        </p>
-      )}
+      {timezone &&
+        (localized ? (
+          <p className="text-xs text-gray-500 mt-1.5">
+            (times in your local time — the class itself runs on {resolvedCity} time)
+          </p>
+        ) : (
+          /* PL-305/353/418: the class's own city — a caller-resolved label
+             first (school city + display_cities via publicTimeCityLabel with
+             the full class facts), then the ONE resolver over what this
+             component holds (the location's city, the zone city last). */
+          <p className="text-xs text-gray-500 mt-1.5">(times shown in {resolvedCity} time)</p>
+        ))}
       {calendarHref && (
         /* PL-306: a new tab — mid-registration, following this link must
            never cost the parent their place or filled-in state. */

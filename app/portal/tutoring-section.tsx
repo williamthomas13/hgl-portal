@@ -11,7 +11,8 @@ import BlockConfirmControl from './block-confirm-control'
 import { continueRatesForStudent } from '../utils/block-confirm'
 import RescheduleRequest from './reschedule-request'
 import { escapeLike } from '../utils/like-escape'
-import { formatTimeRange, hhmmRange } from '../utils/dates'
+import { hhmmRange } from '../utils/dates'
+import { LocalDay, LocalTimeRange, LocalZoneNote } from './local-time'
 
 // Parent tutoring surface (Phase 7d, spec §8) — un-stubs the comms spec's C3
 // widget. Reads run as service role scoped to the signed-in parent's own
@@ -108,8 +109,6 @@ export default async function TutoringSection({ email }: { email: string }) {
   const contact = await loadContactInfo()
   const fmtDay = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric' })
-  const fmtTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' })
 
   // Package draw-down (C3 contract: purchased / remaining / next session).
   // PL-130: remaining comes from the SAME function the billing cycle uses
@@ -203,8 +202,11 @@ export default async function TutoringSection({ email }: { email: string }) {
   return (
     <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-6 mt-8">
       <h2 className="text-lg font-bold text-hgl-slate mb-1">1-on-1 tutoring</h2>
+      {/* PL-419: session instants convert to the device's zone client-side;
+          the note says which clock each part speaks (and the raw-IANA label
+          hack is retired — PL-398 rule). */}
       <p className="text-xs text-gray-500 mb-4">
-        Times shown in {tz.split('/').pop()?.replace('_', ' ')}.
+        <LocalZoneNote tz={tz} />
       </p>
 
       {proposedInvoice && (
@@ -249,7 +251,8 @@ export default async function TutoringSection({ email }: { email: string }) {
               )}
               {next && (
                 <div className="text-xs text-green-700 mt-1">
-                  Next: {fmtDay(next.starts_at)} {formatTimeRange(next.starts_at, next.ends_at, tz)}
+                  Next: <LocalDay iso={next.starts_at} tz={tz} />{' '}
+                  <LocalTimeRange startIso={next.starts_at} endIso={next.ends_at} tz={tz} />
                 </div>
               )}
               {/* PL-275: truncate needs a bounded box — min-w-0 keeps the
@@ -306,9 +309,11 @@ export default async function TutoringSection({ email }: { email: string }) {
           <ul className="divide-y divide-gray-100 text-sm">
             {((upcoming as any[]) ?? []).map((s) => (
               <li key={s.id} className="py-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-semibold text-hgl-slate">{fmtDay(s.starts_at)}</span>
+                <span className="font-semibold text-hgl-slate">
+                  <LocalDay iso={s.starts_at} tz={tz} />
+                </span>
                 <span>
-                  {fmtTime(s.starts_at)}–{fmtTime(s.ends_at)}
+                  <LocalTimeRange startIso={s.starts_at} endIso={s.ends_at} tz={tz} />
                 </span>
                 <span className="text-gray-600">
                   {one<any>(s.students)?.first_name} · {one<any>(one<any>(s.tutoring_engagements)?.subjects)?.name}

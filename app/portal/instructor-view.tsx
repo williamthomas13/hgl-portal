@@ -8,7 +8,7 @@ import HandoffNotes from '../components/HandoffNotes'
 import { supabaseAdmin } from '../utils/supabase-admin'
 import MessageClass from './message-class'
 import { StatusBadge, ScoresTable, formatDate, one, type ScoreRow } from './shared'
-import { bySessionStart, effectiveStartDate } from '../utils/dates'
+import { bySessionStart, effectiveStartDate, publicTimeCityLabel } from '../utils/dates'
 import CommsTimeline, { type TimelineItem } from './comms-timeline'
 import { TEMPLATE_LABELS } from '../utils/comms'
 import { escapeLike } from '../utils/like-escape'
@@ -38,7 +38,8 @@ export default async function InstructorView({
         `
         id, status, class_type, delivery_mode, fo_short_name, capacity, min_enrollment,
         start_date, default_location, synap_group, registration_close_date,
-        schools ( name, nickname ),
+        timezone, display_cities,
+        schools ( name, nickname, timezone, city ),
         instructors!inner ( email ),
         sessions ( id, session_date, start_time, end_time, location ),
         enrollments (
@@ -288,11 +289,30 @@ export default async function InstructorView({
                   Session calendar ({sessions.length} sessions)
                 </summary>
                 <div className="mt-2">
-                  <SessionCalendar
-                    sessions={sessions}
-                    defaultLocation={location}
-                    calendarHref={`/classes/${c.id}/calendar`}
-                  />
+                  {(() => {
+                    // PL-418: the ONE public label resolver with the class's
+                    // full facts — same label the family and every email sees.
+                    const tz = c.timezone ?? school?.timezone ?? null
+                    return (
+                      <SessionCalendar
+                        sessions={sessions}
+                        defaultLocation={location}
+                        calendarHref={`/classes/${c.id}/calendar`}
+                        timezone={tz}
+                        cityLabel={
+                          tz
+                            ? publicTimeCityLabel({
+                                schoolCity: school?.city,
+                                displayCities: c.display_cities,
+                                location: c.default_location,
+                                timezone: tz,
+                                hglInPerson: !school && c.delivery_mode !== 'online',
+                              })
+                            : null
+                        }
+                      />
+                    )
+                  })()}
                 </div>
               </details>
             )}

@@ -192,6 +192,9 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
           parentLast: formData.get('parentLast'),
           parentEmail: formData.get('parentEmail'),
           students: studentsPayload,
+          // PL-419: the registering device's zone — derives the family's
+          // stored timezone for open-enrollment classes (server-validated).
+          deviceTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
         }),
       })
       const data = await response.json().catch(() => ({}))

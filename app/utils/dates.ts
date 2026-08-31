@@ -256,6 +256,62 @@ export function contextTimeCityLabel(c: {
   })
 }
 
+/** PL-419: a deadline quoted to a FAMILY — their own stored zone when it's
+ *  known (never guessed), today's labeled class-zone render otherwise. The
+ *  stated instant always matches the enforced one; only the clock it's read
+ *  on changes. ONE rule for every deadline/expiry composer. */
+export function contextZonedDeadline(
+  iso: string | Date,
+  c: {
+    schoolCity?: string | null
+    displayCities?: string | null
+    defaultLocation?: string | null
+    timezone: string
+    isOpenEnrollment?: boolean
+    deliveryMode?: string | null
+    familyTimezone?: string | null
+  }
+): string {
+  if (c.familyTimezone && c.familyTimezone !== c.timezone) {
+    return zonedDeadline(iso, c.familyTimezone, null, staffTimeCityLabel(c.familyTimezone))
+  }
+  return zonedDeadline(iso, c.timezone, c.defaultLocation, contextTimeCityLabel(c))
+}
+
+/** PL-419: a session instant quoted to a FAMILY — "Wed, Sep 2, 4:00–5:30 PM"
+ *  in the base (tutor/class) zone when the family's zone is unknown or the
+ *  same (today's behavior exactly); when the family's stored zone differs,
+ *  their own clock leads and the base-city time rides secondary so a
+ *  schedule change can never be misread:
+ *  "Wed, Sep 2, 8:00–9:30 PM in Rome (12:00–1:30 PM in Salt Lake City)". */
+export function familyWhenPhrase(opts: {
+  startIso: string | Date
+  endIso?: string | Date | null
+  familyTimezone?: string | null
+  baseTimezone: string
+  baseCityLabel?: string | null
+}): string {
+  const day = (tz: string) =>
+    new Date(opts.startIso).toLocaleDateString('en-US', {
+      timeZone: tz,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })
+  const famTz = opts.familyTimezone
+  if (!famTz || famTz === opts.baseTimezone) {
+    return `${day(opts.baseTimezone)}, ${formatTimeRange(opts.startIso, opts.endIso, opts.baseTimezone)}`
+  }
+  const baseDay = day(opts.baseTimezone)
+  const famDay = day(famTz)
+  const secondary = `${famDay === baseDay ? '' : `${baseDay}, `}${formatTimeRange(
+    opts.startIso,
+    opts.endIso,
+    opts.baseTimezone
+  )} in ${opts.baseCityLabel ?? staffTimeCityLabel(opts.baseTimezone)}`
+  return `${famDay}, ${formatTimeRange(opts.startIso, opts.endIso, famTz)} in ${staffTimeCityLabel(famTz)} (${secondary})`
+}
+
 // ---------------------------------------------------------------------------
 // PL-339: time RANGES everywhere — "4:00–5:30 PM", never a bare start time.
 // Tight en dash; the leading meridiem drops when both ends share it

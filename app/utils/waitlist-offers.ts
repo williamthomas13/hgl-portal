@@ -1,8 +1,8 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
-import { sendOnce, waitlistOfferEmail, zonedDeadline } from './email'
+import { sendOnce, waitlistOfferEmail } from './email'
 import { renderEmail } from './comms-db-render'
 import { emailBaseUrl } from './base-url'
-import { contextTimeCityLabel } from './dates'
+import { contextZonedDeadline } from './dates'
 import type { EnrollmentRow } from './lifecycle'
 import {
   ADMIN_EMAIL,
@@ -42,7 +42,7 @@ export async function extendWaitlistOffers(bundle: ClassBundle): Promise<number>
     const declineLink = declineUrlFor(e.id)
     // PL-118: the stated deadline must match the enforced instant, in the
     // class's own zone with a label.
-    const claimDeadline = zonedDeadline(expiresAt, ctx.timezone, ctx.defaultLocation, contextTimeCityLabel(ctx))
+    const claimDeadline = contextZonedDeadline(expiresAt, ctx)
     const { subject, html, versionId } = await renderEmail(
       'W2_SPOT_OPEN',
       ctx,

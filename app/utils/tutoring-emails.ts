@@ -1,7 +1,7 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { renderRegistered } from './comms-registered'
 import { sendOnce, wrap, footerStaff, footerT } from './email'
-import { formatTimeRange } from './dates'
+import { familyWhenPhrase, formatTimeRange } from './dates'
 import { recordTutorScheduleChange } from './tutor-notices'
 import { scheduleSummaryText } from './schedule-approval'
 import { autopayNudgeHtml } from './autopay-nudge'
@@ -366,14 +366,14 @@ export async function sendRescheduleAck(sessionId: string): Promise<'sent' | 'al
   const family = one7c<any>(student?.families)
   if (!student || !family?.parent_email) return 'no_request'
   const subject = one7c<any>(one7c<any>(s.tutoring_engagements)?.subjects)?.name ?? 'tutoring'
-  const tz = family.timezone ?? one7c<any>(s.instructors)?.timezone ?? 'America/Denver'
-  // PL-339: the quoted session speaks its full range.
-  const when = `${new Date(s.starts_at).toLocaleDateString('en-US', {
-    timeZone: tz,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })}, ${formatTimeRange(s.starts_at, s.ends_at, tz)}`
+  // PL-339/419: the quoted session speaks its full range, on the family's
+  // own clock when their zone is stored (tutor-city time secondary).
+  const when = familyWhenPhrase({
+    startIso: s.starts_at,
+    endIso: s.ends_at,
+    familyTimezone: family.timezone ?? null,
+    baseTimezone: one7c<any>(s.instructors)?.timezone ?? 'America/Denver',
+  })
   const notice: 'ok' | 'late' =
     new Date(s.starts_at).getTime() - new Date(s.reschedule_requested_at).getTime() >= 24 * 3600_000
       ? 'ok'
@@ -436,15 +436,17 @@ export async function sendScheduleChangeNotices(opts: {
     const tutor = one7c<any>(s.instructors)
     const subject = one7c<any>(one7c<any>(s.tutoring_engagements)?.subjects)?.name ?? 'tutoring'
     if (!student || !family) return
-    const tz = family.timezone ?? tutor?.timezone ?? 'America/Denver'
-    // PL-339: every quoted session time is the full range.
+    // PL-339/419: every quoted session time is the full range — on the
+    // family's own clock when their zone is stored, with the tutor-city time
+    // secondary so a schedule change can never be misread. Unknown zone →
+    // the tutor-zone render, exactly as before.
     const fmt = (startIso: string, endIso?: string | null) =>
-      `${new Date(startIso).toLocaleDateString('en-US', {
-        timeZone: tz,
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      })}, ${formatTimeRange(startIso, endIso, tz)}`
+      familyWhenPhrase({
+        startIso,
+        endIso,
+        familyTimezone: family.timezone ?? null,
+        baseTimezone: tutor?.timezone ?? 'America/Denver',
+      })
 
     const changeLines: string[] = []
     let replacementStartsAt: string | null = null

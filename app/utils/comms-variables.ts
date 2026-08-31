@@ -13,7 +13,8 @@ import {
   type CoverageEvent,
 } from './coverage-copy'
 import { leadAssignedDetails } from './lead-assign-copy'
-import { formatDateFull, zonedDeadline, contextTimeCityLabel, bySessionStart } from './dates'
+import { formatDateFull, contextZonedDeadline, contextTimeCityLabel, staffTimeCityLabel, bySessionStart, formatTimeRange } from './dates'
+import { zonedToUtc } from './tutoring'
 import type { ResolvedVars } from './comms-md'
 
 // Feature A4 variable registry (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4):
@@ -43,18 +44,34 @@ const fmt12h = (t: string | null): string | null => {
 export function sessionScheduleMarkdown(c: EnrollmentEmailContext): string {
   const sessions = [...(c.sessions ?? [])].sort(bySessionStart)
   if (sessions.length === 0) return ''
+  // PL-419: a family whose stored zone differs from the class's reads the
+  // schedule on THEIR OWN clock (dates converted too — a Rome evening can be
+  // the next morning in Salt Lake City). Unknown zone → today's labeled
+  // class-zone render exactly, never a guess.
+  const famTz = c.familyTimezone ?? null
+  const localize = Boolean(famTz && c.timezone && famTz !== c.timezone)
   const lines = sessions.map((s) => {
-    const start = fmt12h(s.start_time)
-    const end = fmt12h(s.end_time)
-    const parts = [formatDateFull(s.session_date)]
-    if (start) parts.push(end ? `${start}–${end}` : start)
+    let parts: string[]
+    if (localize && s.start_time) {
+      const start = zonedToUtc(s.session_date, s.start_time.slice(0, 5), c.timezone)
+      const end = s.end_time ? zonedToUtc(s.session_date, s.end_time.slice(0, 5), c.timezone) : null
+      const localDateIso = start.toLocaleDateString('en-CA', { timeZone: famTz! })
+      parts = [formatDateFull(localDateIso), formatTimeRange(start, end, famTz!)]
+    } else {
+      const start = fmt12h(s.start_time)
+      const end = fmt12h(s.end_time)
+      parts = [formatDateFull(s.session_date)]
+      if (start) parts.push(end ? `${start}–${end}` : start)
+    }
     const loc = s.location ?? c.defaultLocation
     if (loc) parts.push(loc)
     return `- ${parts.join(' · ')}`
   })
-  const zoneLine = c.timezone
-    ? `\n\n(times shown in ${contextTimeCityLabel(c)} time)`
-    : ''
+  const zoneLine = localize
+    ? `\n\n(times shown in your local ${staffTimeCityLabel(famTz!)} time — the class itself runs on ${contextTimeCityLabel(c)} time)`
+    : c.timezone
+      ? `\n\n(times shown in ${contextTimeCityLabel(c)} time)`
+      : ''
   return `Here's the full session schedule:\n\n${lines.join('\n')}${zoneLine}\n\n[Add the class calendar to your own — subscribe here.](${c.calendarPageUrl})`
 }
 
@@ -698,8 +715,8 @@ export const VARIABLES: Record<string, VariableDef> = {
   expiryDate: {
     description: 'When a pending registration expires (7 days after signup) — zoned datetime (PL-118)',
     resolve: (c) =>
-      // PL-305: the class's own city when the location names one.
-      zonedDeadline(new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000), c.timezone, c.defaultLocation, contextTimeCityLabel(c)),
+      // PL-305/419: the family's own zone when known; else the class's city.
+      contextZonedDeadline(new Date(new Date(c.enrolledAt).getTime() + 168 * 3_600_000), c),
   },
 
   // --- links ------------------------------------------------------------------

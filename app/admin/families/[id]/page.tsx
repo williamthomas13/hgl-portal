@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '../../../utils/supabase'
-import { CollapsibleSection } from '../../ui'
+import { CollapsibleSection, TimezoneSelect } from '../../ui'
 import { SidebarLayout, SidebarPanel, type SidebarEntry } from '../../sidebar'
 import FamilyActivityPane from '../activity-pane'
 import { FamilyCommsTimeline } from '../../family-comms'
@@ -183,6 +183,63 @@ function FactEdit({
         </button>
       </span>
       {err && <span className="text-[11px] text-red-600 font-semibold max-w-72">{err}</span>}
+    </span>
+  )
+}
+
+// PL-419: the family's timezone, editable where it shows (the searchable
+// TimezoneSelect — country/city findable, never a raw-IANA text field).
+// Derived silently at registration/intake where possible; this is the
+// staff correction path.
+function TimezoneEdit({
+  value,
+  onSave,
+}: {
+  value: string | null
+  onSave: (next: string) => Promise<string | null>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  if (!editing) {
+    return (
+      <button
+        onClick={() => {
+          setDraft(value ?? '')
+          setErr('')
+          setEditing(true)
+        }}
+        className="text-[11px] text-gray-400 underline hover:text-hgl-blue align-baseline ml-1"
+        title="Edit family timezone"
+      >
+        edit
+      </button>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 flex-wrap ml-1 align-baseline">
+      <span className="inline-block w-72 max-w-full text-left">
+        <TimezoneSelect value={draft} onChange={setDraft} />
+      </span>
+      <button
+        disabled={saving || !draft}
+        onClick={async () => {
+          setSaving(true)
+          setErr('')
+          const e = await onSave(draft)
+          setSaving(false)
+          if (e) setErr(e)
+          else setEditing(false)
+        }}
+        className="text-[11px] font-bold text-white bg-hgl-blue rounded px-2 py-0.5 disabled:opacity-40"
+      >
+        save
+      </button>
+      <button onClick={() => setEditing(false)} className="text-[11px] text-gray-500 underline">
+        cancel
+      </button>
+      {err && <span className="text-[11px] text-red-600 font-semibold">{err}</span>}
     </span>
   )
 }
@@ -511,8 +568,20 @@ export default function FamilyProfilePage() {
               {parentName}
               {d.students.length > 0 &&
                 ` · ${d.students.map((s) => s.first_name).join(', ')}`}
-              {/* PL-398: staff read city names; the id stays hoverable */}
-              {fam.timezone && <span title={fam.timezone}> · {staffTimeCityLabel(fam.timezone)} time</span>}
+              {/* PL-398: staff read city names; the id stays hoverable.
+                  PL-419: editable in place — this zone drives every family-
+                  facing time render (portal + emails). */}
+              {fam.timezone ? (
+                <span title={fam.timezone}> · {staffTimeCityLabel(fam.timezone)} time</span>
+              ) : (
+                <span className="text-gray-400"> · timezone not known</span>
+              )}
+              <TimezoneEdit
+                value={fam.timezone ?? null}
+                onSave={(next) =>
+                  saveFact({ action: 'update_parent', familyId: fam.id, fields: { timezone: next } })
+                }
+              />
             </p>
           </div>
           <a

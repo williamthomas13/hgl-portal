@@ -5,7 +5,7 @@ import { renderMarkdownBody } from './comms-md'
 import { supabaseAdmin as supabase } from "./supabase-admin"
 import { convertUrlFor, refundRequestUrlFor, packageSavings, type AddonRow, type TutoringPackage } from './lifecycle'
 import { templateMetaFor, type RecipientRole } from './comms'
-import { contextTimeCityLabel, formatDateFull } from './dates'
+import { contextTimeCityLabel, contextZonedDeadline, formatDateFull } from './dates'
 import { SCHOOL_BASED_REG_TEXT } from './exam-family'
 import { HGL_HQ_ADDRESS } from './hgl-address'
 
@@ -96,6 +96,10 @@ export type EnrollmentEmailContext = {
   /** PL-118: the class/school IANA timezone — every deadline a family reads
    *  must render in THEIR class's zone, matching the enforced instant. */
   timezone: string
+  /** PL-419: the family's stored IANA zone — when known and different from
+   *  the class zone, schedule/deadline renders speak the family's own clock.
+   *  Absent/null = unknown → the labeled class-zone render, never a guess. */
+  familyTimezone?: string | null
   calendarPageUrl: string
   resumePaymentUrl: string
   /** /portal deep link with signed login prefill (#0 button, PHASE4_SPEC §9). */
@@ -521,7 +525,7 @@ export function paymentReminderEmail(ctx: EnrollmentEmailContext, n: number): Re
   // datetime in the class's zone with a label — the sweep enforces the exact
   // instant, so a bare weekday could read a day off for the family.
   const expiry = new Date(new Date(ctx.enrolledAt).getTime() + 168 * 3_600_000)
-  const expiryDate = zonedDeadline(expiry, ctx.timezone, ctx.defaultLocation, contextTimeCityLabel(ctx))
+  const expiryDate = contextZonedDeadline(expiry, ctx)
   const preheader =
     n === 4
       ? `After ${expiryDate}, the spot returns to the pool.`
@@ -1312,7 +1316,7 @@ export function waitlistOfferEmail(
   declineUrl: string
 ): Rendered {
   const s = ctx.studentFirstName
-  const deadline = zonedDeadline(expiresAt, ctx.timezone, ctx.defaultLocation, contextTimeCityLabel(ctx))
+  const deadline = contextZonedDeadline(expiresAt, ctx)
   return {
     subject: `A spot just opened in ${ctx.className} 🎉`,
     html: wrap(

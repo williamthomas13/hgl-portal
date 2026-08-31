@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatTimeRange } from '../utils/dates'
+import { useDeviceTimezone } from './local-time'
 
 // Parent reschedule (Phase 7d §8, incl. the July 15 pick-from-offered-slots
 // addition). ≥24h: the portal offers 2–3 pre-approved replacement times to
@@ -18,7 +19,7 @@ export default function RescheduleRequest({
   sessionId,
   startsAt,
   alreadyRequested,
-  timezone,
+  timezone: fallbackTimezone,
   contactEmail,
   contactPhone,
 }: {
@@ -42,6 +43,11 @@ export default function RescheduleRequest({
 
   const hoursAway = (new Date(startsAt).getTime() - Date.now()) / 3600_000
   const late = hoursAway < 24
+
+  // PL-419: the drawer speaks the device's own clock once known (it opens on
+  // a click, well past mount) — matching the session list beside it.
+  const deviceTz = useDeviceTimezone()
+  const timezone = deviceTz ?? fallbackTimezone
 
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString('en-US', {
