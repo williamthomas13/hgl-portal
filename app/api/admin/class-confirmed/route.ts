@@ -119,7 +119,7 @@ export async function GET(request: Request) {
   if (!model) return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
   const { data: cls } = await supabase
     .from('classes')
-    .select('school_id, capacity, status, collateral_reminder_at, short_link')
+    .select('school_id, capacity, status, collateral_reminder_at')
     .eq('id', classId)
     .single()
   if (!cls) return NextResponse.json({ error: 'Class not found.' }, { status: 404 })
@@ -235,7 +235,8 @@ export async function GET(request: Request) {
     logoNote: model.hasSchool && !model.schoolLogoUrl
       ? 'School logo missing — the flyer shows the school name in its place. Upload the logo under Classes → Schools.'
       : null,
-    defaultIncludeCollateral: !(cls.collateral_reminder_at && !cls.short_link),
+    // PL-450: the deferred-collateral default keys on the stamp alone.
+    defaultIncludeCollateral: !cls.collateral_reminder_at,
     ncSendOnRecord: (ncSends?.length ?? 0) > 0,
   })
 }

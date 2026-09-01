@@ -99,7 +99,7 @@ base: string
           sessions: c.sessions ?? [],
           shortLink: one<any>(c.schools)?.evergreen_code
             ? `hgl.co/${one<any>(c.schools).evergreen_code}`
-            : (c.short_link ?? '').trim() || null,
+            : null, // PL-450: per-class short_link is gone — codes only
           enrollmentDeadline: c.enrollment_deadline ?? null,
         }).length > 0 && (
           <div className="mb-4 border border-gray-200 rounded p-3 text-sm text-gray-600">
@@ -113,7 +113,7 @@ base: string
           sessions: c.sessions ?? [],
           shortLink: one<any>(c.schools)?.evergreen_code
             ? `hgl.co/${one<any>(c.schools).evergreen_code}`
-            : (c.short_link ?? '').trim() || null,
+            : null, // PL-450: per-class short_link is gone — codes only
           enrollmentDeadline: c.enrollment_deadline ?? null,
         }).length === 0 && (
         <div className="mb-4 border border-gray-200 rounded p-3">

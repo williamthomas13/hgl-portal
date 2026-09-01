@@ -79,7 +79,6 @@ export type WizardPrefill = {
    *  same offer; the admin edits the deadline on the Collateral card).
    *  Absent for Phase 5 copy. */
   collateral?: {
-    short_link: string | null
     collateral_language: string | null
     flyer_blurb: string | null
     letter_blurb: string | null
@@ -222,7 +221,6 @@ export default function ClassWizard({
   const [bulkShiftDays, setBulkShiftDays] = useState('')
   // PL-106: collateral basics are part of creating the class, not an
   // afterthought on the card — the card keeps full editing + regeneration.
-  const [shortLink, setShortLink] = useState(dv('shortLink', initial?.collateral?.short_link ?? ''))
   const [collateralLang, setCollateralLang] = useState(dv('collateralLang', initial?.collateral?.collateral_language ?? ''))
   // PL-239 (Scarlett, Jul 30): practice tests DEFAULT to 2, editable — the
   // create can never hit the DB's not-null constraint from an untouched field.
@@ -612,7 +610,7 @@ export default function ClassWizard({
       step, schoolId, openKind, openTimezone, displayCities, counselorId, classType,
       instructorId, price, capacity, deliveryMode, minEnrollment, enrollmentDeadline,
       deadlineEdited, registrationClose, synapGroup, synapSkip, hasDiagnostics, isFollowOn,
-      shortLink, collateralLang, practiceTestCount, flyerBlurb, letterBlurb,
+      collateralLang, practiceTestCount, flyerBlurb, letterBlurb,
       letterBlurbEs, promoCode, promoAmount, promoDeadline, sellingBullets,
       prerequisiteNote, defaultLocation, sessions,
     }
@@ -771,7 +769,6 @@ export default function ClassWizard({
       // Duplicate-class prefill carries the collateral fields onto the new
       // row; the four visible wizard fields (PL-106) win over the prefill.
       ...(initial?.collateral ?? {}),
-      short_link: shortLink.trim() || null,
       collateral_language: collateralLang || null,
       letter_blurb: letterBlurb.trim() || null,
       letter_blurb_es: letterBlurbEs.trim() || null,
@@ -892,7 +889,6 @@ export default function ClassWizard({
     setRegistrationClose('')
     setSynapGroup('')
     setSynapSkip(false)
-    setShortLink('')
     setCollateralLang('')
     setPracticeTestCount('2')
     setFlyerBlurb('')
@@ -1852,14 +1848,14 @@ export default function ClassWizard({
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">hgl.co short link</label>
-              <input
-                type="text"
-                value={shortLink}
-                onChange={(e) => setShortLink(e.target.value)}
-                placeholder="hgl.link/…"
-                className={inputCls}
-              />
+              <label className="block text-sm font-medium text-gray-700">Printed hgl.co link</label>
+              {/* PL-450: composes from the school/course evergreen code —
+                  nothing to type per class; edits live in Classes → Short
+                  links. Codeless prints the honest full registration URL. */}
+              <p className="mt-1 text-xs text-gray-500">
+                Composed from the school&rsquo;s (or course&rsquo;s) evergreen code — set it in
+                Classes → Short links. No code = the flyer prints the full registration URL.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Language of generated files</label>

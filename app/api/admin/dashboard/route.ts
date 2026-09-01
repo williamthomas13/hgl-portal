@@ -109,7 +109,7 @@ export async function GET() {
       .from('classes')
       .select(
         `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, min_enrollment_decision, default_location, delivery_mode, start_date, created_at,
-         collateral_reminder_at, short_link, school_id, timezone, fo_short_name,
+         collateral_reminder_at, school_id, timezone, fo_short_name,
          has_diagnostics, synap_group, synap_reminder_at,
          schools ( nickname, timezone ), instructors ( name, email ),
          sessions ( session_date, start_time, end_time ), enrollments ( payment_status )`
@@ -353,7 +353,9 @@ export async function GET() {
   // has no short link, and clears itself the moment the collateral is
   // completed (from the deep-linked panel or anywhere else).
   // PL-274: open-enrollment classes have no collateral at all — never nag.
-  for (const c of liveClasses.filter((c) => c.school_id && c.collateral_reminder_at && !c.short_link)) {
+  // PL-450: the stamp alone is the condition — completion clears it (PL-429);
+  // the legacy !short_link proxy died with the column.
+  for (const c of liveClasses.filter((c) => c.school_id && c.collateral_reminder_at)) {
     attention.push({
       id: `collateral-${c.id}`,
       kind: 'Collateral not set up',

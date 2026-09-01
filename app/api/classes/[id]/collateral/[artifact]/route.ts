@@ -53,36 +53,6 @@ async function canDownload(email: string, schoolId: string | null): Promise<bool
   return (affiliation.data?.length ?? 0) > 0
 }
 
-// PL-449 (TEMPORARY diagnostic, remove after the prod read): reports from
-// INSIDE this exact function whether its native deps load and its traced
-// asset dirs exist — the Sep-1 incident (sharp's module-scope import failing
-// in prod, killing the whole module graph before any handler ran) was only
-// diagnosable by bisection because the real load error never surfaced.
-async function diagReport(): Promise<Response> {
-  const { readdir } = await import('fs/promises')
-  const path = await import('path')
-  const out: Record<string, unknown> = {
-    node: process.version,
-    platform: `${process.platform}-${process.arch}`,
-    vercel: Boolean(process.env.VERCEL),
-  }
-  try {
-    const { sharpAvailable } = await import('../../../../../utils/logo-process')
-    out.sharp = (await sharpAvailable()) ? 'ok' : 'LOAD FAILED (see function logs)'
-  } catch (e) {
-    out.sharp = `LOAD FAILED: ${e instanceof Error ? e.message : String(e)}`
-  }
-  out.chromiumBin = await readdir(
-    path.join(process.cwd(), 'node_modules', '@sparticuz', 'chromium', 'bin')
-  ).then((f) => f.slice(0, 5)).catch((e) => `MISSING: ${(e as Error).message}`)
-  out.publicCollateral = await readdir(path.join(process.cwd(), 'public', 'collateral'))
-    .then((f) => f.slice(0, 10))
-    .catch((e) => `MISSING: ${(e as Error).message}`)
-  out.imgPackages = await readdir(path.join(process.cwd(), 'node_modules', '@img'))
-    .catch((e) => `MISSING: ${(e as Error).message}`)
-  return Response.json(out)
-}
-
 export async function GET(
   request: Request,
   ctx: RouteContext<'/api/classes/[id]/collateral/[artifact]'>
@@ -94,12 +64,6 @@ export async function GET(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user?.email) return new Response('Sign in to download class materials', { status: 401 })
-
-  if (new URL(request.url).searchParams.get('diag') === '1') {
-    // Staff only (null schoolId = the admin/manager branch of canDownload).
-    if (!(await canDownload(user.email, null))) return new Response('Staff only', { status: 403 })
-    return diagReport()
-  }
 
   const spec = ARTIFACTS[artifact]
   if (!spec) return new Response('Not found', { status: 404 })

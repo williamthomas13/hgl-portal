@@ -14,7 +14,6 @@ import type { School } from './class-wizard'
 // the very next download — nothing is stored.
 
 export type CollateralFields = {
-  short_link: string | null
   collateral_language: string | null
   flyer_blurb: string | null
   letter_blurb: string | null
@@ -209,6 +208,7 @@ export default function CollateralCard({
   school,
   onSaved,
   slug = null,
+  pageFacts = null,
 }: {
   classId: string
   classType: string
@@ -219,9 +219,11 @@ export default function CollateralCard({
   onSaved: () => void
   /** PL-348: the class slug — shown as the public page link when present. */
   slug?: string | null
+  /** PL-450: the class's resolved code facts (the admin page's evergreen
+   *  map) — drives the read-only printed-link display and the nudge. */
+  pageFacts?: { code: string | null; servesThisClass: boolean } | null
 }) {
   const [form, setForm] = useState({
-    short_link: fields.short_link ?? '',
     collateral_language: fields.collateral_language ?? '',
     flyer_blurb: fields.flyer_blurb ?? '',
     letter_blurb: fields.letter_blurb ?? '',
@@ -285,7 +287,6 @@ export default function CollateralCard({
     const { error } = await supabase
       .from('classes')
       .update({
-        short_link: form.short_link.trim() || null,
         collateral_language: form.collateral_language || null,
         flyer_blurb: form.flyer_blurb.trim() || null,
         letter_blurb: form.letter_blurb.trim() || null,
@@ -331,9 +332,14 @@ export default function CollateralCard({
         {form.collateral_language ? ' (class override)' : ` (school default)`}
       </p>
 
-      {!form.short_link.trim() && (
+      {/* PL-450: the printed link composes from the school/course evergreen
+          code (Classes → Short links) — read-only here, one place to edit.
+          Codeless → the honest full URL prints, with the nudge below. */}
+      {!(pageFacts?.code && pageFacts.servesThisClass) && (
         <p className="mb-3 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-          Flyer will print the full registration URL — add the hgl.co link.
+          No short code is serving this class — the flyer prints the full registration URL.
+          Add {pageFacts?.code ? 'or repoint' : ''} the school&rsquo;s code in Classes → Short
+          links for a printable hgl.co link.
         </p>
       )}
 
@@ -697,16 +703,21 @@ export default function CollateralCard({
       <div className="grid grid-cols-3 gap-3 text-sm items-end">
         <div>
           <label className="block text-xs text-gray-600">
-            hgl.co short link — the &ldquo;more info &amp; registration&rdquo; destination printed
-            on both pieces
+            Printed &ldquo;more info &amp; registration&rdquo; link
           </label>
-          <input
-            type="text"
-            value={form.short_link}
-            onChange={(e) => set('short_link', e.target.value)}
-            placeholder="hgl.co/asf"
-            className="mt-1 w-full border rounded p-1.5"
-          />
+          {/* PL-450 (PL-436's read-only pattern): the value composes from the
+              evergreen code when it currently serves this class — edits live
+              in ONE place, Classes → Short links. */}
+          {pageFacts?.code && pageFacts.servesThisClass ? (
+            <p className="mt-1 text-sm py-1.5">
+              <span className="font-mono"><span className="text-gray-400">hgl.co/</span>{pageFacts.code}</span>{' '}
+              <span className="text-xs text-gray-400">— set in Classes → Short links</span>
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-500 py-1.5 italic">
+              full registration URL (no short code serving this class)
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-xs text-gray-600">

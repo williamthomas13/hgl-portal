@@ -265,8 +265,8 @@ type ClassRow = {
   fo_exclude: boolean
   fo_announce_date: string | null
   fo_discount_end: string | null
-  /** PL-237: skip-for-now stamp — the Needs Attention reminder shows while
-   *  set AND short_link is still empty. */
+  /** PL-237/450: skip-for-now stamp — the Needs Attention reminder shows
+   *  while set; completing collateral clears it (PL-429). */
   collateral_reminder_at: string | null
   /** PL-442B: the Synap deliberate-skip stamp — reminder shows while set AND
    *  diagnostics are on AND synap_group is still blank; filling clears it. */
@@ -892,10 +892,14 @@ export default function AdminDashboard() {
   // registration page — warn so the Ops Director fills it in first or
   // knowingly accepts the direct link. PL-268: the warning lives in the
   // button's inline ConfirmAction message, not a native confirm().
-  function notifyInterestMsg(count: number, shortLink: string | null): string {
-    const linkNote = (shortLink ?? '').trim()
-      ? `The button points at ${shortLink!.trim()}.`
-      : `⚠ No hgl.co link on this class — the button will point at the portal registration page. Add the short link on the collateral card first if families should see the sales page.`
+  // PL-450: the note reads the class's RESOLVED code facts (the same
+  // evergreen map every link surface uses) — per-class short_link is gone.
+  function notifyInterestMsg(count: number, c: ClassRow): string {
+    const facts = classPageFacts(c)
+    const linkNote =
+      facts.code && facts.servesThisClass
+        ? `The button points at hgl.co/${facts.code}.`
+        : `⚠ No short code serves this class — the button will point at the portal registration page. Set the school's code in Classes → Short links first if families should see the sales page.`
     return `Email ${count} waiting famil${count === 1 ? 'y' : 'ies'} that this class is open? Each gets the "next class open" note. ${linkNote}`
   }
   async function notifyInterest(classId: string) {
@@ -1538,7 +1542,6 @@ export default function AdminDashboard() {
       defaultLocation: c.default_location ?? '',
       sessions: [],
       collateral: {
-        short_link: c.short_link ?? null,
         collateral_language: c.collateral_language ?? null,
         flyer_blurb: c.flyer_blurb ?? null,
         letter_blurb: c.letter_blurb ?? null,
@@ -1852,7 +1855,7 @@ export default function AdminDashboard() {
                     ) : (
                       <ConfirmAction
                         label="notify them?"
-                        message={notifyInterestMsg(interestCounts[`${c.school_id}|${c.class_type}`] ?? 0, c.short_link)}
+                        message={notifyInterestMsg(interestCounts[`${c.school_id}|${c.class_type}`] ?? 0, c)}
                         confirmLabel="Yes, email them"
                         className="text-hgl-blue underline font-semibold"
                         confirmClassName="text-hgl-blue font-semibold underline"
@@ -3302,7 +3305,7 @@ export default function AdminDashboard() {
               .map((c) => (
                 <option key={c.id} value={c.id}>
                   {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })} · starts {formatDateAdmin(c.start_date)}
-                  {c.collateral_reminder_at && !c.short_link ? ' — collateral not set up' : ''}
+                  {c.collateral_reminder_at ? ' — collateral not set up' : ''}
                 </option>
               ))}
           </select>
@@ -3322,6 +3325,7 @@ export default function AdminDashboard() {
                 school={schools.find((s) => s.id === c.school_id) ?? null}
                 onSaved={fetchRosters}
                 slug={c.slug ?? null}
+                pageFacts={classPageFacts(c)}
               />
             )
           })()}

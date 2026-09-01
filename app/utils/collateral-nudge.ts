@@ -27,7 +27,7 @@ export async function sweepCollateralNudges(): Promise<number> {
     .from('classes')
     .select(
       `id, class_type, status, start_date, delivery_mode, enrollment_deadline,
-       collateral_reminder_at, short_link, school_id, fo_short_name, created_by,
+       collateral_reminder_at, school_id, fo_short_name, created_by,
        schools ( nickname ), sessions ( session_date )`
     )
     .not('collateral_reminder_at', 'is', null)
@@ -37,9 +37,9 @@ export async function sweepCollateralNudges(): Promise<number> {
   const todayIso = new Date().toLocaleDateString('en-CA')
   let rang = 0
   for (const c of (classes as any[]) ?? []) {
-    // Legacy completion (short_link set pre-PL-384) = done; a class whose
-    // run is over needs no nudge.
-    if ((c.short_link ?? '').trim()) continue
+    // PL-450: completion = the stamp cleared (PL-429's real signal); the
+    // legacy short_link proxy died with the column. A class whose run is
+    // over needs no nudge.
     const dates = ((c.sessions ?? []) as any[]).map((s) => s.session_date).sort()
     const lastDay = dates[dates.length - 1] ?? c.start_date
     if (lastDay < todayIso) continue
