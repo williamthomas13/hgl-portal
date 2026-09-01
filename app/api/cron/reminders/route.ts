@@ -21,6 +21,7 @@ import { extendWaitlistOffers, waitlistRolloverAlertBody } from '../../../utils/
 import { sweepFollowOnForBundle } from '../../../utils/follow-on'
 import { sweepBlockConfirmations } from '../../../utils/block-confirm'
 import { sweepCollateralNudges } from '../../../utils/collateral-nudge'
+import { sweepSynapNudges } from '../../../utils/synap-nudge'
 import {
   maybeSendInstructorFyi,
   sweepInstructorComms,
@@ -1912,6 +1913,16 @@ export async function GET(req: Request) {
     if (nudged > 0) counters.collateral_nudges = nudged
   } catch (e) {
     console.error('collateral-nudge sweep failed:', e)
+  }
+
+  // PL-442B: diagnostics-on classes whose Synap group was deliberately
+  // skipped get their once-ever creator nudge when the first diagnostic
+  // email is 3 days out (the dashboard row stays the reminder).
+  try {
+    const nudged = await sweepSynapNudges()
+    if (nudged > 0) counters.synap_nudges = nudged
+  } catch (e) {
+    console.error('synap-nudge sweep failed:', e)
   }
 
   // PL-201: campaigns the daily cap paused resume when quota allows —

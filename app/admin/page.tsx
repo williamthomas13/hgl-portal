@@ -24,6 +24,7 @@ import { SystemHealthSettingsPanel } from './system-health-card'
 import PricingPanel from './pricing-panel'
 import ReadOnlyPreview from './view-as/read-only-preview'
 import { classDisplayLabel } from '../utils/class-label'
+import { cutoffDeadlineError } from '../utils/class-guards'
 import { useStaffName } from './staff-name'
 
 // PL-326: manager-sim placeholders/wrappers.
@@ -267,6 +268,9 @@ type ClassRow = {
   /** PL-237: skip-for-now stamp — the Needs Attention reminder shows while
    *  set AND short_link is still empty. */
   collateral_reminder_at: string | null
+  /** PL-442B: the Synap deliberate-skip stamp — reminder shows while set AND
+   *  diagnostics are on AND synap_group is still blank; filling clears it. */
+  synap_reminder_at: string | null
   schools: { name: string; nickname: string; timezone: string; city?: string | null } | null
   instructors: { name: string | null; email: string } | null
   enrollments: Enrollment[] | null
@@ -792,6 +796,16 @@ export default function AdminDashboard() {
       setQboOpenSignal((n) => n + 1)
       setDeepFocus(`qbo-${qboRow}`)
     }
+    // PL-442B: the synap reminder deep-links ?synap={classId} — land on the
+    // class's card with Edit-details open and the Synap row highlighted.
+    const synapClass = q.get('synap')
+    if (synapClass) {
+      setActiveTab(synapClass)
+      setActiveGroup('classes')
+      setActiveSection('rosters')
+      setDetailsOpenFor((prev) => ({ ...prev, [synapClass]: true }))
+      setDeepFocus(`synap-${synapClass}`)
+    }
     // PL-94: the rollover alert lands with the family's row in view.
     const enrollmentRow = q.get('enrollment')
     if (enrollmentRow) {
@@ -1137,6 +1151,19 @@ export default function AdminDashboard() {
     field: 'enrollment_deadline' | 'registration_close_date',
     value: string | null
   ) {
+    // PL-442A: same ordering rule as the wizard, ONE source (class-guards) —
+    // the deadline path re-checks server-side in the min-enrollment route.
+    const firstSession =
+      [...(c.sessions ?? [])].map((s) => s.session_date).sort()[0] ?? c.start_date ?? null
+    const orderError = cutoffDeadlineError({
+      enrollmentDeadline: field === 'enrollment_deadline' ? value : c.enrollment_deadline,
+      registrationClose: field === 'registration_close_date' ? value : c.registration_close_date,
+      firstSession,
+    })
+    if (orderError) {
+      setActionNotice(`Error: ${orderError}.`)
+      return
+    }
     if (field === 'enrollment_deadline') {
       await minEnrollmentAction(c, { action: 'set_deadline', deadline: value })
       return
@@ -1371,8 +1398,29 @@ export default function AdminDashboard() {
   ) {
     // PL-435: a hand-edited location is EXPLICIT — provenance clears so no
     // later instructor change can auto-touch it (sacred admin links).
-    const patch: Record<string, unknown> =
+    let patch: Record<string, unknown> =
       field === 'default_location' ? { [field]: value, default_location_source: null } : { [field]: value }
+    // PL-442B: the synap reminder is self-clearing — filling the group clears
+    // the skip stamp; turning diagnostics OFF makes the field irrelevant (the
+    // stamp goes too); turning diagnostics ON over a blank group stamps the
+    // deferral so the reminder machinery covers the late-flip hole as well.
+    if (field === 'synap_group' && typeof value === 'string' && value.trim()) {
+      patch = { ...patch, synap_reminder_at: null, synap_reminder_by: null }
+    }
+    if (field === 'has_diagnostics') {
+      if (value === false) {
+        patch = { ...patch, synap_reminder_at: null, synap_reminder_by: null }
+      } else if (value === true && !(c.synap_group ?? '').trim() && !c.synap_reminder_at) {
+        let who: string | null = null
+        try {
+          const { data: auth } = await supabase.auth.getUser()
+          who = auth.user?.email?.toLowerCase() ?? null
+        } catch {
+          who = null
+        }
+        patch = { ...patch, synap_reminder_at: new Date().toISOString(), synap_reminder_by: who }
+      }
+    }
     const { error } = await supabase
       .from('classes')
       .update(patch)
@@ -1935,12 +1983,25 @@ export default function AdminDashboard() {
                   title="The class's default location — sessions without their own location fall back to this"
                   onSave={(v) => handleClassField(c, 'default_location', v)}
                 />
-                <InlineEditableText
-                  label="Synap group"
-                  value={c.synap_group}
-                  emptyText="not set"
-                  onSave={(v) => handleClassField(c, 'synap_group', v)}
-                />
+                {/* PL-442B: diagnostics OFF makes the field inert (labeled,
+                    not editable); ON keeps it editable — filling it clears
+                    the skip reminder (handleClassField). The id is the
+                    ?synap= deep link's landing spot. */}
+                <div id={`synap-${c.id}`}>
+                  {c.has_diagnostics !== false ? (
+                    <InlineEditableText
+                      label="Synap group"
+                      value={c.synap_group}
+                      emptyText={c.synap_reminder_at ? 'not set — skipped at creation, reminder active' : 'not set'}
+                      onSave={(v) => handleClassField(c, 'synap_group', v)}
+                    />
+                  ) : (
+                    <p className="text-sm text-gray-400">
+                      <span className="font-semibold">Synap group:</span>{' '}
+                      <span className="italic">no diagnostics — not used</span>
+                    </p>
+                  )}
+                </div>
                 {/* PL-383 carry-over (batch 41): school-contact assignment was
                     wizard-only — now editable here. Stores the ACTIVE
                     affiliation id (what counselor_id holds); class-specific

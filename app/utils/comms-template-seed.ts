@@ -2060,6 +2060,21 @@ Your Google Calendar is already updated — below is the full upcoming schedule 
     body_markdown: `{alertDetailsBlock}`,
   },
   {
+    // PL-442B: the Synap-group doorbell — the collateral nudge's twin, rings
+    // once when the first diagnostic email is 3 days out and the group is
+    // still blank after a deliberate wizard skip.
+    template_key: 'AL_SYNAP_NUDGE',
+    display_name: 'AL — Synap group not set (nudge)',
+    sequence_number: 'AL',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "{alertClassName}'s Synap group still isn't set — the first diagnostic email is coming up",
+    preheader: 'One-time reminder; the dashboard row stays until it is done.',
+    footer_note: null,
+    body_markdown: `{alertDetailsBlock}`,
+  },
+  {
     // PL-424: the UPDATE twin — an update against already-shared windows
     // says so, carries the composed old→new diff, and never repeats the
     // first share's 3-business-day promise.

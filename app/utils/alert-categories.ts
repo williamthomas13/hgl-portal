@@ -46,6 +46,7 @@ export const TEMPLATE_ALERT_CATEGORY: Record<string, AlertCategory> = {
   AL_AVAILABILITY_SHARED: 'pipeline',
   AL_AVAILABILITY_UPDATED: 'pipeline',
   AL_COLLATERAL_NUDGE: 'class_ops',
+  AL_SYNAP_NUDGE: 'class_ops',
   AL_CLOSE_MATCH: 'close_match',
   AL_UNAGREED: 'agreements',
   AL_WAITLIST_ROLLOVER: 'waitlist',

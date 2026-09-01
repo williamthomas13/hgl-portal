@@ -1769,6 +1769,13 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     alertDetailsBlock:
       '<p><strong>MIS SAT Prep</strong> was created with its flyer &amp; letter setup skipped, and the class record is now otherwise ready — the counselor welcome could go out today, but its default is the PLAIN version (no flyer or parent letter attached) until the collateral fields are finished.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?collateral=00000000-0000-4000-8000-000000000007" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Finish the collateral</a></p><p>Set it up under Classes → Branding &amp; collateral. The dashboard reminder stays until it\'s done; this email won\'t repeat for this class.</p>',
   },
+  // PL-442B: the Synap-group nudge — the sweep's composed body (mirrors
+  // sweepSynapNudges in synap-nudge.ts).
+  AL_SYNAP_NUDGE: {
+    alertClassName: 'MIS SAT Prep',
+    alertDetailsBlock:
+      '<p><strong>MIS SAT Prep</strong> was created with &ldquo;no Synap group yet&rdquo; checked, and the first diagnostic email is due <strong>August 29, 2026</strong> (10 days before the first session). Until the group is filled in, that email\'s access button lands on the parent portal instead of the diagnostic tests.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?synap=00000000-0000-4000-8000-000000000007" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Add the Synap group</a></p><p>Fill it in under the class card&rsquo;s Edit class details. The dashboard reminder stays until it\'s done; this email won\'t repeat for this class.</p>',
+  },
   // PL-424: the availability UPDATE alert — diff lines composed by the
   // availability-diff leaf, exactly as the route composes them.
   AL_AVAILABILITY_UPDATED: {

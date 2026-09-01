@@ -261,6 +261,7 @@ export const TEMPLATE_LABELS: Record<string, string> = {
   AL_AVAILABILITY_SHARED: 'AL — Family shared availability',
   AL_AVAILABILITY_UPDATED: 'AL — Family updated availability',
   AL_COLLATERAL_NUDGE: 'AL — Collateral not set up (nudge)',
+  AL_SYNAP_NUDGE: 'AL — Synap group not set (nudge)',
   AL_INTAKE_COMPLETE: 'AL — Intake complete',
   AL_CLOSE_MATCH: 'AL — Possible duplicate person (link prompt)',
   AL_LEAD_ASSIGNED: 'AL — Pipeline lead assigned to you',

@@ -11,6 +11,7 @@ import { DateHint, TimeSelect, TimezoneSelect } from './ui'
 import { ConfirmAction } from './tutoring/confirm'
 import type { Instructor } from './instructors-panel'
 import { escapeLike } from '../utils/like-escape'
+import { cutoffDeadlineError } from '../utils/class-guards'
 
 // Class creation wizard (admin UX addendum, school-first revision):
 // school → details → sessions → review. Everything downstream hangs off the
@@ -195,6 +196,11 @@ export default function ClassWizard({
   const [deadlineEdited, setDeadlineEdited] = useState(dv('deadlineEdited', false))
   const [registrationClose, setRegistrationClose] = useState(dv('registrationClose', '')) // cohort-specific; never copied
   const [synapGroup, setSynapGroup] = useState(dv('synapGroup', initial?.synapGroup ?? ''))
+  // PL-442B: the deliberate-skip escape — diagnostics ON with no Synap group
+  // refuses Next unless this is checked; checking stamps synap_reminder_at/by
+  // at create (the collateral skip pattern: dashboard row + creator nudge,
+  // self-clearing on fill).
+  const [synapSkip, setSynapSkip] = useState(dv('synapSkip', false))
   // PL-274 amendment B: two independent per-class switches — emails and nags
   // condition on them (diagnostics-off drops diagnostic promises/reminders;
   // Synap-off drops Synap links; both off skips #2 entirely).
@@ -497,10 +503,27 @@ export default function ClassWizard({
     practiceTestCount.trim() !== '' &&
     Number.isFinite(Number(practiceTestCount)) &&
     Math.trunc(Number(practiceTestCount)) >= 0
+  // PL-442A: cutoff-vs-deadline ordering — ONE source (class-guards.ts,
+  // shared with the Edit-class-details surface). Both dates live on step 2,
+  // so the pair refuses there; the blank-cutoff-vs-first-session variant can
+  // only fire once sessions exist (step 3+), and the create is the backstop.
+  const dateOrderError = cutoffDeadlineError({
+    enrollmentDeadline: enrollmentDeadline || null,
+    registrationClose: registrationClose || null,
+    firstSession: startDate || null,
+  })
+  // PL-442B: diagnostics ON needs a Synap group (or the explicit skip) — the
+  // diagnostic emails' access links otherwise fall back to the portal.
+  const synapNeed =
+    hasDiagnostics && !synapGroup.trim() && !synapSkip
+      ? 'a Synap group URL (or check "no Synap group yet" below the field)'
+      : null
   const detailsNeeds = [
     !classType.trim() && 'class type',
     !price && 'price',
     !capacity && 'capacity',
+    dateOrderError,
+    synapNeed,
   ].filter(Boolean) as string[]
   // PL-237/239: the collateral step validates its own fields.
   const promoPartial =
@@ -521,6 +544,9 @@ export default function ClassWizard({
           ? ([
               sessions.length === 0 && 'at least one session',
               sessions.length > 0 && !allDated && 'a date on every copied session',
+              // PL-442A: the first session exists now — the blank-cutoff
+              // variant of the ordering rule can finally be checked.
+              dateOrderError && `a date fix — ${dateOrderError}`,
             ].filter(Boolean) as string[])
           : step === 4
             ? collateralNeeds
@@ -584,7 +610,7 @@ export default function ClassWizard({
     return {
       step, schoolId, openKind, openTimezone, displayCities, counselorId, classType,
       instructorId, price, capacity, deliveryMode, minEnrollment, enrollmentDeadline,
-      deadlineEdited, registrationClose, synapGroup, hasDiagnostics, isFollowOn,
+      deadlineEdited, registrationClose, synapGroup, synapSkip, hasDiagnostics, isFollowOn,
       shortLink, collateralLang, practiceTestCount, flyerBlurb, letterBlurb,
       letterBlurbEs, promoCode, promoAmount, promoDeadline, sellingBullets,
       prerequisiteNote, defaultLocation, sessions,
@@ -685,19 +711,30 @@ export default function ClassWizard({
       locationFromDefault = Boolean(location)
     }
 
+    // PL-442A backstop: the needs-list blocks Next per step, but the create
+    // is the last line — never write the inverted pair.
+    if (dateOrderError) {
+      setMessage(`Error: ${dateOrderError}.`)
+      setMessageStep(2)
+      setSaving(false)
+      return
+    }
+
     // PL-439: who created this class — a resumed draft's stamp when there is
     // one (drafts stamp their creator), else the signed-in staff member. An
     // unresolvable identity stamps NULL rather than blocking the create; the
     // creator-targeted nudges fall back to the admin default recipient.
-    let createdBy = draftCreator
-    if (!createdBy) {
-      try {
-        const { data: auth } = await supabase.auth.getUser()
-        createdBy = auth.user?.email?.toLowerCase() ?? null
-      } catch {
-        createdBy = null
-      }
+    // PL-442B: the synap deliberate-skip stamp records the SIGNED-IN user —
+    // they checked the box, whoever's draft this was.
+    let sessionUser: string | null = null
+    try {
+      const { data: auth } = await supabase.auth.getUser()
+      sessionUser = auth.user?.email?.toLowerCase() ?? null
+    } catch {
+      sessionUser = null
     }
+    const createdBy = draftCreator ?? sessionUser
+    const synapSkipped = hasDiagnostics && !synapGroup.trim() && synapSkip
 
     const newClass = {
       // PL-274: open enrollment — no school, no counselor, the class carries
@@ -718,6 +755,11 @@ export default function ClassWizard({
       default_location: location,
       default_location_source: locationFromDefault ? 'instructor_default' : null,
       synap_group: synapGroup.trim() || null,
+      // PL-442B: the deliberate skip stamps who/when — the state-driven
+      // reminder (dashboard row + creator nudge) keys on this and self-clears
+      // when the group is filled.
+      synap_reminder_at: synapSkipped ? new Date().toISOString() : null,
+      synap_reminder_by: synapSkipped ? sessionUser : null,
       delivery_mode: deliveryMode,
       min_enrollment: minSanitized,
       enrollment_deadline: enrollmentDeadline || null,
@@ -848,6 +890,7 @@ export default function ClassWizard({
     setEnrollmentDeadline('')
     setRegistrationClose('')
     setSynapGroup('')
+    setSynapSkip(false)
     setShortLink('')
     setCollateralLang('')
     setPracticeTestCount('2')
@@ -1359,6 +1402,12 @@ export default function ClassWizard({
             <label className="block text-sm font-medium text-gray-700">Registration closes (sign-up cutoff)</label>
             <input type="date" value={registrationClose} onChange={(e) => setRegistrationClose(e.target.value)} className={inputCls} />
             <DateHint value={registrationClose} />
+            {/* PL-442A: the ordering refusal, AT the field it names. */}
+            {dateOrderError && (
+              <p className="text-xs text-red-600 font-semibold mt-1">
+                {dateOrderError.charAt(0).toUpperCase() + dateOrderError.slice(1)}.
+              </p>
+            )}
             <p className="text-xs text-gray-500 mt-1">
               The automatic cutoff — the register page stops taking sign-ups after this. Blank =
               first session. Set later to allow mid-class joins. Decisions run on the registration
@@ -1390,10 +1439,40 @@ export default function ClassWizard({
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Synap group</label>
-            <input type="url" value={synapGroup} onChange={(e) => setSynapGroup(e.target.value)} placeholder="https://…" className={inputCls} />
-          </div>
+          {/* PL-442B: with diagnostics ON the class needs a Synap group for
+              every diagnostic email link — required, with the explicit
+              deliberate-skip escape. Diagnostics OFF hides the field (it's
+              simply not used); the inert note says why it's gone. */}
+          {hasDiagnostics ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Synap group</label>
+              <input type="url" value={synapGroup} onChange={(e) => setSynapGroup(e.target.value)} placeholder="https://…" className={inputCls} />
+              {!synapGroup.trim() && (
+                <label className="flex items-start gap-2 mt-2 text-xs text-amber-700">
+                  <input
+                    type="checkbox"
+                    checked={synapSkip}
+                    onChange={(e) => setSynapSkip(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-semibold">no Synap group yet — I&apos;ll add it before family emails send</span>{' '}
+                    <span className="text-gray-500">
+                      (creates a reminder — dashboard row plus one email before the first
+                      diagnostic email goes out — that clears itself once the group is filled in)
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-gray-400">
+                Synap group{' '}
+                <span className="font-normal text-xs">— no diagnostics — not used</span>
+              </label>
+            </div>
+          )}
 
           {/* PL-317: no-school flavors set the class timezone HERE — online
               picks explicitly (the PL-233 picker); at-HGL is fixed Denver.

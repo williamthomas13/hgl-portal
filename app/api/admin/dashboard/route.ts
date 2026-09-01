@@ -110,6 +110,7 @@ export async function GET() {
       .select(
         `id, class_type, instructor_id, status, min_enrollment, enrollment_deadline, min_enrollment_decision, default_location, delivery_mode, start_date, created_at,
          collateral_reminder_at, short_link, school_id, timezone, fo_short_name,
+         has_diagnostics, synap_group, synap_reminder_at,
          schools ( nickname, timezone ), instructors ( name, email ),
          sessions ( session_date, start_time, end_time ), enrollments ( payment_status )`
       )
@@ -359,6 +360,22 @@ export async function GET() {
       text: `${label(c)} was created without its flyer & letter setup — finish the collateral fields when ready.`,
       href: `/admin?collateral=${c.id}`,
       since: c.collateral_reminder_at,
+    })
+  }
+  // PL-442B: the Synap twin of the collateral row — STATE-DRIVEN: shows
+  // while the deliberate-skip stamp is set, diagnostics are still ON, and
+  // the group is still blank; filling the group (or turning diagnostics off)
+  // clears the stamp and the row with it. Visible to all admins regardless
+  // of who the nudge email targets (the email targets, the row informs).
+  for (const c of liveClasses.filter(
+    (c) => c.has_diagnostics !== false && c.synap_reminder_at && !(c.synap_group ?? '').trim()
+  )) {
+    attention.push({
+      id: `synap-${c.id}`,
+      kind: 'Synap group not set',
+      text: `${label(c)} has diagnostics but no Synap group yet — diagnostic emails' access buttons land on the parent portal instead of the tests until it's filled in.`,
+      href: `/admin?synap=${c.id}`,
+      since: c.synap_reminder_at,
     })
   }
   // PL-384: the PL-349 repoint nudge retired — codes are evergreen and

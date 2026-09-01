@@ -3,6 +3,7 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { loadClassBundles } from '../../../utils/lifecycle'
 import { sendMinEnrollmentDecisionNote } from '../../../utils/instructor-comms'
+import { cutoffDeadlineError } from '../../../utils/class-guards'
 
 // PL-335: the minimum-enrollment decision surface's API — the three
 // resolutions all pass through here except Cancel (the existing
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
   const { data: cls } = await supabase
     .from('classes')
     .select(
-      'id, status, min_enrollment, enrollment_deadline, min_enrollment_decision, instructor_id, enrollments ( payment_status )'
+      'id, status, min_enrollment, enrollment_deadline, registration_close_date, start_date, min_enrollment_decision, instructor_id, enrollments ( payment_status ), sessions ( session_date )'
     )
     .eq('id', body.classId)
     .maybeSingle()
@@ -109,6 +110,19 @@ export async function POST(req: Request) {
   const value = body.deadline ?? null
   if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return NextResponse.json({ error: 'Pass the deadline as a calendar date.' }, { status: 400 })
+  }
+  // PL-442A: the wizard's ordering rule, same ONE source — a deadline the
+  // sign-up cutoff (set, or its first-session default) precedes is refused.
+  const firstSession =
+    ((cls.sessions as { session_date: string }[]) ?? []).map((s) => s.session_date).sort()[0] ??
+    (cls.start_date as string | null)
+  const orderError = cutoffDeadlineError({
+    enrollmentDeadline: value,
+    registrationClose: cls.registration_close_date as string | null,
+    firstSession,
+  })
+  if (orderError) {
+    return NextResponse.json({ error: `${orderError}.` }, { status: 400 })
   }
   const old = cls.enrollment_deadline as string | null
   const { error } = await supabase
