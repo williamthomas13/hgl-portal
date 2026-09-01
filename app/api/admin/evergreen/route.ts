@@ -45,22 +45,38 @@ async function codeOwner(code: string, ignore?: { kind: string; id: string }): P
 export async function GET() {
   const caller = await sessionRole('staff')
   if (!caller) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 })
-  const [{ data: schools }, { data: courses }, { data: legacy }, { data: openClasses }, { data: clicks }] =
-    await Promise.all([
-      supabase.from('schools').select('id, name, nickname, evergreen_code, evergreen_pin_class_id').order('name'),
-      supabase
-        .from('course_meta')
-        .select('course_key, display_name, evergreen_code, evergreen_pin_class_id')
-        .order('course_key'),
-      supabase.from('legacy_redirects').select('code, destination, note, updated_at').order('code'),
-      supabase
-        .from('classes')
-        .select('id, slug, class_type, status, school_id, course_key, created_at, start_date')
-        .eq('status', 'open')
-        .not('slug', 'is', null)
-        .order('created_at', { ascending: false }),
-      supabase.from('short_link_clicks').select('code, day, clicks'),
-    ])
+  const [
+    { data: schools },
+    { data: courses },
+    { data: legacy },
+    { data: openClasses },
+    { data: clicks },
+    { data: courseClasses },
+  ] = await Promise.all([
+    supabase.from('schools').select('id, name, nickname, evergreen_code, evergreen_pin_class_id').order('name'),
+    supabase
+      .from('course_meta')
+      .select('course_key, display_name, evergreen_code, evergreen_pin_class_id')
+      .order('course_key'),
+    supabase.from('legacy_redirects').select('code, destination, note, updated_at').order('code'),
+    supabase
+      .from('classes')
+      .select('id, slug, class_type, status, school_id, course_key, created_at, start_date')
+      .eq('status', 'open')
+      .not('slug', 'is', null)
+      .order('created_at', { ascending: false }),
+    supabase.from('short_link_clicks').select('code, day, clicks'),
+    // PL-447: EVERY course key that has (or has had) a no-school class —
+    // any status, so a course whose only cohort finished still keeps its
+    // row (like a school with no open class does). Newest first for the
+    // display-name resolution.
+    supabase
+      .from('classes')
+      .select('course_key, class_type, created_at')
+      .is('school_id', null)
+      .not('course_key', 'is', null)
+      .order('created_at', { ascending: false }),
+  ])
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   // PL-384: what each code SERVES right now (pin wins while open, else
@@ -97,16 +113,41 @@ export async function GET() {
       candidates: open.filter((c) => c.school_id === sc.id).map((c) => ({ id: c.id, label: c.class_type })),
       clicks: clicksFor(sc.evergreen_code),
     })),
-    courses: ((courses as any[]) ?? []).map((cm) => ({
-      ...cm,
-      serving: cm.evergreen_code
-        ? servingFor((c) => !c.school_id && c.course_key === cm.course_key, cm.evergreen_pin_class_id)
-        : null,
-      candidates: open
-        .filter((c) => !c.school_id && c.course_key === cm.course_key)
-        .map((c) => ({ id: c.id, label: c.class_type })),
-      clicks: clicksFor(cm.evergreen_code),
-    })),
+    // PL-447: the Course section derives from EVERY course key with a
+    // no-school class (the schools-list pattern) — a course_meta row is NOT
+    // required to appear; the code-save upsert mints it on first save, so a
+    // brand-new course shows an empty code box with zero round-trips.
+    // Display name = course_meta → newest class's type → prettified key
+    // (the evergreen.ts resolution). Existing rows untouched.
+    courses: (() => {
+      const metaByKey = new Map(((courses as any[]) ?? []).map((cm) => [cm.course_key, cm]))
+      const newestTypeByKey = new Map<string, string>()
+      for (const c of (courseClasses as any[]) ?? []) {
+        if (!newestTypeByKey.has(c.course_key)) newestTypeByKey.set(c.course_key, c.class_type)
+      }
+      const prettify = (key: string) =>
+        key.split('-').map((w: string) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
+      const allKeys = [...new Set([...metaByKey.keys(), ...newestTypeByKey.keys()])].sort()
+      return allKeys.map((key) => {
+        const cm = metaByKey.get(key) ?? {
+          course_key: key,
+          display_name: null,
+          evergreen_code: null,
+          evergreen_pin_class_id: null,
+        }
+        return {
+          ...cm,
+          display_name: cm.display_name ?? newestTypeByKey.get(key) ?? prettify(key),
+          serving: cm.evergreen_code
+            ? servingFor((c) => !c.school_id && c.course_key === key, cm.evergreen_pin_class_id)
+            : null,
+          candidates: open
+            .filter((c) => !c.school_id && c.course_key === key)
+            .map((c) => ({ id: c.id, label: c.class_type })),
+          clicks: clicksFor(cm.evergreen_code),
+        }
+      })
+    })(),
     legacy: legacy ?? [],
   })
 }
@@ -141,7 +182,25 @@ export async function POST(req: Request) {
             .from('course_meta')
             .upsert({ course_key: id, evergreen_code: code || null, updated_at: new Date().toISOString() }, { onConflict: 'course_key' })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true })
+    // PL-448: claiming a code takes precedence over the wildcard forward —
+    // WARN (never block) when the same-named path is a live page on the main
+    // site, i.e. plausibly a link someone has been sharing as hgl.co/{code}.
+    let warning: string | null = null
+    if (code) {
+      try {
+        const probe = await fetch(`https://highergroundlearning.com/${code}`, {
+          method: 'HEAD',
+          redirect: 'follow',
+          signal: AbortSignal.timeout(4000),
+        })
+        if (probe.ok) {
+          warning = `Heads up: highergroundlearning.com/${code} is a live page on the main site — until now, hgl.co/${code} forwarded there via the wildcard. The code takes precedence, so anyone still sharing that old link will land on the class page instead. If that path was being shared on purpose, pick a different code or add a legacy forward.`
+        }
+      } catch {
+        /* probe is best-effort — no warning beats a wrong one */
+      }
+    }
+    return NextResponse.json({ ok: true, warning })
   }
 
   if (action === 'set_school_pin' || action === 'set_course_pin') {
@@ -161,10 +220,15 @@ export async function POST(req: Request) {
     const { error } =
       action === 'set_school_pin'
         ? await supabase.from('schools').update({ evergreen_pin_class_id: classId }).eq('id', id)
-        : await supabase
+        : // PL-447: course rows may be VIRTUAL (derived from classes, no
+          // course_meta row yet) — a pin on one mints the row, same as the
+          // code-save upsert does.
+          await supabase
             .from('course_meta')
-            .update({ evergreen_pin_class_id: classId, updated_at: new Date().toISOString() })
-            .eq('course_key', id)
+            .upsert(
+              { course_key: id, evergreen_pin_class_id: classId, updated_at: new Date().toISOString() },
+              { onConflict: 'course_key' }
+            )
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }

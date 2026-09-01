@@ -3,7 +3,7 @@ import { permanentRedirect } from 'next/navigation'
 import EvergreenCapture from '../../components/EvergreenCapture'
 import { publicSkin } from '../../components/public-skin'
 import { RegistrationForm } from '../../register/[id]/registration-form'
-import { bumpCodeVisit, resolveEvergreen } from '../../utils/evergreen'
+import { bumpCodeVisit, resolveEvergreen, wildcardForward } from '../../utils/evergreen'
 
 // PL-384 B: /{code}/register — the permanent registration address. Resolves
 // the SAME class the code serves and renders the registration form in place;
@@ -23,7 +23,8 @@ export default async function EvergreenRegisterPage({
 }: {
   params: Promise<{ code: string }>
 }) {
-  const code = decodeURIComponent((await params).code).toLowerCase().trim()
+  const raw = (await params).code
+  const code = decodeURIComponent(raw).toLowerCase().trim()
   const fallbackCapture = (heading: string, classType: string, schoolId: string | null) => (
     <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       <EvergreenCapture
@@ -34,9 +35,10 @@ export default async function EvergreenRegisterPage({
       />
     </div>
   )
-  if (!CODE_RE.test(code)) {
-    return fallbackCapture('No upcoming class at this link right now', 'SAT Prep', null)
-  }
+  // PL-448: an unknown code's /register subpath is just another unknown
+  // hgl.co path — path-preserving wildcard 301 (registrar parity). Known
+  // codes with nothing open still get the capture state below.
+  if (!CODE_RE.test(code)) permanentRedirect(wildcardForward([raw, 'register']))
   const res = await resolveEvergreen(code)
   if (res.kind === 'legacy') permanentRedirect(res.destination)
   if (res.kind === 'school' || res.kind === 'course') {
@@ -55,5 +57,6 @@ export default async function EvergreenRegisterPage({
       res.kind === 'school' ? res.schoolId : null
     )
   }
-  return fallbackCapture('No upcoming class at this link right now', 'SAT Prep', null)
+  // PL-448: not a code we know → the registrar-parity wildcard 301.
+  permanentRedirect(wildcardForward([raw, 'register']))
 }

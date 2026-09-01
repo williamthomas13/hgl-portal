@@ -38,6 +38,8 @@ type LegacyRow = { code: string; destination: string; note: string | null }
 export default function ShortlinksPanel() {
   const [data, setData] = useState<{ schools: SchoolRow[]; courses: CourseRow[]; legacy: LegacyRow[] } | null>(null)
   const [msg, setMsg] = useState('')
+  // PL-448: non-blocking heads-ups (a new code shadowing a live main-site path).
+  const [warn, setWarn] = useState('')
   const [newLegacy, setNewLegacy] = useState({ code: '', destination: '', note: '' })
 
   const load = useCallback(async () => {
@@ -52,6 +54,7 @@ export default function ShortlinksPanel() {
 
   const post = async (body: Record<string, unknown>) => {
     setMsg('')
+    setWarn('')
     const res = await fetch('/api/admin/evergreen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -62,6 +65,7 @@ export default function ShortlinksPanel() {
       setMsg(json.error ?? 'That change failed.')
       return false
     }
+    if (json.warning) setWarn(json.warning) // PL-448: warn, never block
     await load()
     return true
   }
@@ -150,6 +154,9 @@ export default function ShortlinksPanel() {
         hgl.co/{'{code}'}/register. Printed codes never need reprinting or repointing.
       </p>
       {msg && <p className="text-sm text-red-600 font-semibold">{msg}</p>}
+      {warn && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">{warn}</p>
+      )}
       <div className="border border-gray-200 rounded-lg p-4">
         <p className="font-bold text-hgl-slate mb-3">School links</p>
         <ul className="space-y-1.5">
@@ -167,8 +174,10 @@ export default function ShortlinksPanel() {
       <div className="border border-gray-200 rounded-lg p-4">
         <p className="font-bold text-hgl-slate mb-1">Course links</p>
         <p className="text-xs text-gray-500 mb-3">
-          Same idea for no-school courses (follow-ups, HGL-taught classes). &quot;/act&quot; is
-          taken by the legacy 1-on-1 tutoring forward below — pick something like /actprep.
+          Same idea for no-school courses (follow-ups, HGL-taught classes) — every course that has
+          ever had a no-school class is listed automatically; saving a code creates its record.
+          Claiming a code wins over the automatic main-site forward, so a code that matches a
+          shared main-site path (like /act) gets a heads-up when saved.
         </p>
         <ul className="space-y-1.5">
           {data.courses.map((cm) => (
@@ -185,9 +194,11 @@ export default function ShortlinksPanel() {
       <div className="border border-gray-200 rounded-lg p-4">
         <p className="font-bold text-hgl-slate mb-1">Legacy hgl.co forwards</p>
         <p className="text-xs text-gray-500 mb-3">
-          Registrar-level forwards that must keep working after the DNS cutover — the portal
-          serves each as a permanent redirect. Retire rows here once a forward is no longer
-          needed (that frees the code for evergreen use).
+          Overrides only: any hgl.co path that isn&apos;t a code automatically forwards to the SAME
+          path on highergroundlearning.com (replicating the registrar&apos;s standing wildcard —
+          no inventory needed), so a row belongs here only when a path must go somewhere
+          DIFFERENT than its same-named main-site page. Claiming a path as an evergreen code
+          takes precedence over the wildcard. Retiring a row hands the path back to the wildcard.
         </p>
         <ul className="space-y-1.5 mb-3">
           {data.legacy.map((lr) => (
@@ -198,7 +209,7 @@ export default function ShortlinksPanel() {
               {lr.note && <span className="text-xs text-gray-400">({lr.note})</span>}
               <ConfirmAction
                 label="retire"
-                message={`Retire the /${lr.code} forward? Anyone using the old link lands on the honest no-active-class page instead.`}
+                message={`Retire the /${lr.code} override? The path falls back to the automatic wildcard — hgl.co/${lr.code} will forward to highergroundlearning.com/${lr.code}.`}
                 confirmLabel="Yes, retire it"
                 className="text-xs text-red-600 underline"
                 confirmClassName="text-xs text-red-700 font-semibold underline"

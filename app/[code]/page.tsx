@@ -1,11 +1,9 @@
 import type { Metadata } from 'next'
 import { permanentRedirect } from 'next/navigation'
-import { supabaseAdmin as supabase } from '../utils/supabase-admin'
-import { ClassStateCard } from '../components/ClassStateCard'
 import EvergreenCapture from '../components/EvergreenCapture'
 import { publicSkin } from '../components/public-skin'
 import { classPageMetadata, ClassPageView } from '../c/[slug]/view'
-import { bumpCodeVisit, resolveEvergreen } from '../utils/evergreen'
+import { bumpCodeVisit, resolveEvergreen, wildcardForward } from '../utils/evergreen'
 
 // PL-384: hgl.co/{code} — THE permanent address. A school/course has exactly
 // one code, evergreen; the code SERVES its newest open class's page IN PLACE
@@ -14,11 +12,16 @@ import { bumpCodeVisit, resolveEvergreen } from '../utils/evergreen'
 // indexed before this model; a stable per-school URL accumulating authority
 // beats fresh per-cohort slugs — Scarlett's call). Nothing open → the
 // interest-capture state serves at the SAME URL (one URL, honest states).
-// Legacy registrar forwards 301 ahead of everything; unknown codes get the
-// honest no-active-class card — printed collateral must never 404.
 //
-// Root-level dynamic segment: every static route (/admin, /c, /register,
-// /classes, …) wins over it, so it only catches the code namespace.
+// PL-448 resolution order (documented): reserved routes (Next's own router
+// precedence — every static route wins over this segment) → codes
+// (school/course, served in place) → legacy overrides (301 to their stored
+// destination) → the WILDCARD 301: any path that is NONE of those forwards
+// to the same path on highergroundlearning.com, replicating the registrar's
+// standing hgl.co/{anything} forward exactly, forever. The honest
+// no-active-class card retired for unknown paths — the main site's own 404
+// owns that job, as it does today; KNOWN codes with nothing open still get
+// the interest-capture state (a printed code never strands).
 
 export const dynamic = 'force-dynamic'
 
@@ -28,24 +31,6 @@ const CODE_RE = /^[a-z0-9-]{1,32}$/
 
 function normalize(raw: string): string {
   return decodeURIComponent(raw).toLowerCase().trim()
-}
-
-async function honestCard() {
-  let heading = 'No active class right now'
-  let body =
-    "There's no class open for registration at this link right now. Talk to us directly and we'll point you toward the right prep option for your student."
-  try {
-    const { data: blk } = await supabase
-      .from('site_content_blocks')
-      .select('heading, body_markdown')
-      .eq('key', 'no-active-class')
-      .maybeSingle()
-    if (blk?.heading) heading = blk.heading
-    if (blk?.body_markdown) body = blk.body_markdown
-  } catch {
-    // seeds not applied yet — the fallback copy stands
-  }
-  return <ClassStateCard title={heading} body={body} />
 }
 
 export async function generateMetadata({
@@ -73,8 +58,10 @@ export default async function EvergreenCodePage({
 }: {
   params: Promise<{ code: string }>
 }) {
-  const code = normalize((await params).code)
-  if (!CODE_RE.test(code)) return honestCard()
+  const raw = (await params).code
+  const code = normalize(raw)
+  // PL-448: malformed = not a code = the wildcard's business (path verbatim).
+  if (!CODE_RE.test(code)) permanentRedirect(wildcardForward([raw]))
 
   const res = await resolveEvergreen(code)
 
@@ -104,5 +91,6 @@ export default async function EvergreenCodePage({
     )
   }
 
-  return honestCard()
+  // PL-448: not a code we know → the registrar-parity wildcard 301.
+  permanentRedirect(wildcardForward([raw]))
 }

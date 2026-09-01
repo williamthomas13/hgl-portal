@@ -8,16 +8,21 @@ email first (classes).
 
 1. **Resend paid plan** — before any real class email (one registration wave exceeds the
    100/day free tier).
-2. **hgl.co legacy forwards (PL-378 amendment — BEFORE the DNS cutover):** Scarlett
-   inventories every live registrar-level hgl.co forward (log into the registrar and list
-   them; known today: hgl.co/act → highergroundlearning.com/act, already entered) and adds
-   each in **Classes → Short links → Legacy hgl.co forwards** — after the cutover the portal
-   answers ALL of hgl.co, and any forward not in that list dies. Rows are editable/retirable
-   there later.
-   **PL-384 note:** the printed class codes (isd, mis, nido, sls) need NO registrar action
-   and NO reprinting — they are their schools' evergreen codes now; the portal serves each
-   code's newest open class right at hgl.co/{code} (interest page between classes), with
-   registration at hgl.co/{code}/register. Click history carried over unchanged.
+2. ~~**hgl.co legacy forwards inventory**~~ **RETIRED (PL-448, Sep 1):** the registrar's
+   real setup turned out to be ONE wildcard — hgl.co/{anything} forwards to
+   highergroundlearning.com/{anything} — and the portal now replicates exactly that: any
+   hgl.co path that isn't a known code (or a deliberate override) 301s to the same path on
+   the main site, forever. **No per-path inventory exists to migrate, so there is nothing
+   for Scarlett to inventory — the step is gone.** The "Legacy hgl.co forwards" panel
+   section survives only for OVERRIDES (a path that must go somewhere *different* than its
+   same-named main-site page); the /act row was retired as redundant (the wildcard covers
+   it identically). Resolution order: reserved portal routes → evergreen codes → legacy
+   overrides → wildcard 301.
+   **PL-384 note (unchanged):** the printed class codes (isd, mis, nido, sls) need NO
+   registrar action and NO reprinting — they are their schools' evergreen codes now; the
+   portal serves each code's newest open class right at hgl.co/{code} (interest page
+   between classes), with registration at hgl.co/{code}/register. Click history carried
+   over unchanged.
 3. **DNS cutover** (the batch-36 7-step runbook) after Scarlett's walkthrough clears.
    - **PL-410 post-DNS: re-verify Google Calendar push channels.** Google stores the
      webhook URL *inside* each channel, so channels registered pre-cutover keep

@@ -128,6 +128,17 @@ export async function bumpCodeVisit(code: string) {
   )
 }
 
+/** PL-448: the registrar-parity wildcard — hgl.co/{anything} that is not a
+ *  reserved route, a code, or a legacy override 301s to the SAME path on the
+ *  main site, replicating today's registrar forward exactly. Segments arrive
+ *  decoded (Next params) and re-encode verbatim — case and all. */
+export function wildcardForward(segments: string[]): string {
+  const path = segments
+    .map((s) => encodeURIComponent(decodeURIComponent(s)))
+    .join('/')
+  return `https://highergroundlearning.com/${path}`
+}
+
 /** The class-page URL internal surfaces should share: the permanent /{code}
  *  address when the class's school/course code currently RESOLVES to it,
  *  else its /c/{slug} internal address. Pass the base ('' for site-relative). */
