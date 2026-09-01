@@ -1081,7 +1081,7 @@ export default function AdminDashboard() {
   const [classDrafts, setClassDrafts] = useState<
     { id: string; name: string; created_by: string | null; updated_at: string }[]
   >([])
-  const [resumeDraft, setResumeDraft] = useState<{ id: string; state: Record<string, unknown>; name?: string; updatedAt?: string } | null>(null)
+  const [resumeDraft, setResumeDraft] = useState<{ id: string; state: Record<string, unknown>; name?: string; updatedAt?: string; createdBy?: string | null } | null>(null)
   const [draftListError, setDraftListError] = useState('')
 
   function registrationUrl(c: ClassRow) {
@@ -3034,7 +3034,7 @@ export default function AdminDashboard() {
                             }
                             setWizardPrefill(null)
                             setWizardSourceLabel('')
-                            setResumeDraft({ id: dr.id, state: json.draft.state, name: dr.name, updatedAt: dr.updated_at })
+                            setResumeDraft({ id: dr.id, state: json.draft.state, name: dr.name, updatedAt: dr.updated_at, createdBy: json.draft.created_by ?? null })
                             setWizardKey((k) => k + 1)
                           }}
                           className="text-xs text-hgl-blue underline"

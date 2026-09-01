@@ -3,6 +3,7 @@ import { sendAdminAlert } from './email'
 import { emailBaseUrl } from './base-url'
 import { ADMIN_EMAIL } from './lifecycle'
 import { classDisplayLabel } from './class-label'
+import { creatorRecipient } from './creator-recipient'
 
 // PL-429A: the skipped-collateral email nudge — urgency-keyed, never a dumb
 // timer. It rings at the first moment collateral would actually be USED: the
@@ -26,7 +27,7 @@ export async function sweepCollateralNudges(): Promise<number> {
     .from('classes')
     .select(
       `id, class_type, status, start_date, delivery_mode, enrollment_deadline,
-       collateral_reminder_at, short_link, school_id, fo_short_name,
+       collateral_reminder_at, short_link, school_id, fo_short_name, created_by,
        schools ( nickname ), sessions ( session_date )`
     )
     .not('collateral_reminder_at', 'is', null)
@@ -51,10 +52,16 @@ export async function sweepCollateralNudges(): Promise<number> {
       shortName: c.fo_short_name,
       classType: c.class_type,
     })
+    // PL-439: the nudge goes to the class's CREATOR (they skipped the
+    // collateral, they get the reminder) — direct, no subscription fan-out.
+    // Creator unknown or no longer active staff → the standing admin
+    // default (subscribers with the legacy fallback), never silently nobody.
+    const creator = await creatorRecipient(c.created_by)
     const status = await sendAdminAlert({
       // Once per class, ever — the dashboard row is the persistent reminder.
       dedupeKey: `collateral_nudge:${c.id}`,
-      adminEmail: ADMIN_EMAIL,
+      adminEmail: creator ?? ADMIN_EMAIL,
+      direct: Boolean(creator),
       templateKey: 'AL_COLLATERAL_NUDGE',
       vars: { alertClassName: label },
       subject: `${label}'s collateral isn't set up — the counselor welcome goes out plain without it`,

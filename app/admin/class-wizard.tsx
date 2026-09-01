@@ -131,8 +131,9 @@ export default function ClassWizard({
   initial?: WizardPrefill
   /** PL-370: resuming a saved draft — full wizard state + the row to
    *  update on later saves (and delete when the class is created).
-   *  PL-426: name + updatedAt feed the editing banner. */
-  resumeDraft?: { id: string; state: Record<string, unknown>; name?: string; updatedAt?: string }
+   *  PL-426: name + updatedAt feed the editing banner.
+   *  PL-439: createdBy = the draft's stamp, carried onto classes.created_by. */
+  resumeDraft?: { id: string; state: Record<string, unknown>; name?: string; updatedAt?: string; createdBy?: string | null }
   /** PL-426: explicitly exits draft-editing (page remounts a blank wizard). */
   onStartBlank?: () => void
   onSchoolsChange: () => void
@@ -146,6 +147,9 @@ export default function ClassWizard({
   const d = resumeDraft?.state as Record<string, any> | undefined
   const dv = <T,>(key: string, fallback: T): T => (d && key in d ? (d[key] as T) : fallback)
   const [draftId, setDraftId] = useState<string | null>(resumeDraft?.id ?? null)
+  // PL-439: a resumed draft's creator stamp carries through to the class row;
+  // a straight-through run stamps the signed-in staff member at create time.
+  const [draftCreator, setDraftCreator] = useState<string | null>(resumeDraft?.createdBy ?? null)
   const [draftMsg, setDraftMsg] = useState('')
   const [savingDraft, setSavingDraft] = useState(false)
   // PL-426: the editing banner's facts + the amendment's quiet save state.
@@ -681,10 +685,25 @@ export default function ClassWizard({
       locationFromDefault = Boolean(location)
     }
 
+    // PL-439: who created this class — a resumed draft's stamp when there is
+    // one (drafts stamp their creator), else the signed-in staff member. An
+    // unresolvable identity stamps NULL rather than blocking the create; the
+    // creator-targeted nudges fall back to the admin default recipient.
+    let createdBy = draftCreator
+    if (!createdBy) {
+      try {
+        const { data: auth } = await supabase.auth.getUser()
+        createdBy = auth.user?.email?.toLowerCase() ?? null
+      } catch {
+        createdBy = null
+      }
+    }
+
     const newClass = {
       // PL-274: open enrollment — no school, no counselor, the class carries
       // its own timezone, and the slug is minted from type + term alone.
       school_id: school?.id ?? null,
+      created_by: createdBy,
       counselor_id: isOpen ? null : counselorId || null,
       timezone: isOpen ? classTimezone : null,
       // PL-353: online classes may carry their own public city list.
@@ -816,6 +835,7 @@ export default function ClassWizard({
       onDraftSaved?.()
     }
     // Reset for the next class.
+    setDraftCreator(null) // PL-439: the next class isn't the draft's
     setStep(1)
     setSchoolId('')
     setCounselorId('')
