@@ -151,7 +151,7 @@ export default function AvailabilityReviewCard({
                 {formatTimeRange(s.starts_at, s.ends_at, ORG_TZ)} ({staffTimeCityLabel(ORG_TZ)} time)
                 {' '}{one<any>(one<any>(s.tutoring_engagements)?.subjects)?.name ?? 'tutoring'} {s.status === 'proposed' ? 'proposal' : 'session'}{' '}
                 now falls <strong>outside</strong> the shared availability ·{' '}
-                <a href={`/admin/tutoring?session=${s.id}&reschedule=1`} className="text-hgl-blue underline font-semibold">
+                <a href={`/admin/tutoring?session=${s.id}&reschedule=1&why=availability`} className="text-hgl-blue underline font-semibold">
                   review / move it →
                 </a>
               </li>

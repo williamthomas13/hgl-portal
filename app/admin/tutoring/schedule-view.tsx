@@ -6,6 +6,8 @@ import { autoTutorColor } from '../../utils/calendar-colors'
 import { classifyNotice, isoWeekday, zonedToUtc } from '../../utils/tutoring'
 import { DateHint } from '../ui'
 import { formatTimeRange, hhmmRange, staffTimeCityLabel } from '../../utils/dates'
+import { availabilitySummary } from '../../utils/availability'
+import { sessionOutsideWindows, type AvailRange } from '../../utils/availability-diff'
 import { WEEKDAYS, fmtTime, wallClock, type RecurrenceSlotUI, type SessionRow, type Tutor } from './types'
 import type { WizardDraft } from './engagement-wizard'
 
@@ -105,6 +107,7 @@ export default function ScheduleView({
   refreshSignal,
   focusSessionId = null,
   focusAction = null,
+  focusWhy = null,
   onUseProposal,
   onDraftsChanged,
 }: {
@@ -114,6 +117,9 @@ export default function ScheduleView({
    *  tutor + week and open its dialog. */
   focusSessionId?: string | null
   focusAction?: 'ack' | 'reschedule' | null
+  /** PL-446A: the originating conflict ('assignment:{classId}' |
+   *  'availability') — the dialog says what it's resolving. */
+  focusWhy?: string | null
   /** PL-337 C: "Use this schedule" hands the dragged proposal to the wizard
    *  as a prefill — nothing mutates until the wizard's normal Create. */
   onUseProposal?: (payload: Partial<WizardDraft>) => void
@@ -295,6 +301,10 @@ export default function ScheduleView({
     newDurationMinutes: number
     busySaving: boolean
     error: string
+    /** PL-446: the student's shared windows ("Mon 4–6 PM · …"), null = none
+     *  on record; plus whether the DROP target falls outside them. */
+    availabilitySummaryLine: string | null
+    outsideWindows: boolean
   }>(null)
   const suppressChipClickRef = useRef(false)
   const [horizonWeeks, setHorizonWeeks] = useState(12)
@@ -523,6 +533,30 @@ export default function ScheduleView({
       recurrence = null
     }
 
+    // PL-446B/C (drag edition): the student's shared windows — shown in the
+    // decision panel, and the drop target checked against them (warn-not-
+    // block, same as the busy read above).
+    let availabilitySummaryLine: string | null = null
+    let outsideWindows = false
+    try {
+      const { data: windowRows } = await supabase
+        .from('student_availability')
+        .select('weekday, start_time, end_time, timezone')
+        .eq('student_id', s.student_id)
+      const ranges: AvailRange[] = ((windowRows as any[]) ?? []).map((r) => ({
+        weekday: r.weekday,
+        start_time: String(r.start_time).slice(0, 5),
+        end_time: String(r.end_time).slice(0, 5),
+        timezone: r.timezone,
+      }))
+      if (ranges.length > 0) {
+        availabilitySummaryLine = availabilitySummary(ranges)
+        outsideWindows = sessionOutsideWindows(newStartsAt, newEndsAt, ranges)
+      }
+    } catch {
+      // unknown availability is never 'unavailable' — no line, no warning
+    }
+
     setPendingMove({
       session: s,
       newStartsAt,
@@ -537,6 +571,8 @@ export default function ScheduleView({
       newDurationMinutes,
       busySaving: false,
       error: '',
+      availabilitySummaryLine,
+      outsideWindows,
     })
   }
 
@@ -555,6 +591,19 @@ export default function ScheduleView({
         new_ends_at: pendingMove.newEndsAt,
         notice: pendingMove.late ? 'late' : 'ok',
         requested_by: 'staff',
+        // PL-446C: committing over the on-screen warnings IS the confirm —
+        // record what was overridden in the note trail (cancel_note).
+        ...((pendingMove.conflictLabel || pendingMove.outsideWindows)
+          ? {
+              note: `override confirmed despite: ${[
+                pendingMove.conflictLabel && `overlaps ${pendingMove.conflictLabel}`,
+                pendingMove.outsideWindows &&
+                  `outside ${pendingMove.session.students?.first_name ?? 'the student'}'s shared availability`,
+              ]
+                .filter(Boolean)
+                .join('; ')}`,
+            }
+          : {}),
       }),
     })
     const json = await res.json().catch(() => ({}))
@@ -905,6 +954,19 @@ export default function ScheduleView({
           {pendingMove.conflictLabel && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
               ⚠ The new time overlaps {pendingMove.conflictLabel} — a warning, not a block.
+            </p>
+          )}
+          {/* PL-446B/C: the student's stated windows + the outside check. */}
+          <p className="text-xs text-gray-600">
+            {pendingMove.availabilitySummaryLine
+              ? `${pendingMove.session.students?.first_name ?? 'The student'} is usually free: ${pendingMove.availabilitySummaryLine}`
+              : `No availability shared for ${pendingMove.session.students?.first_name ?? 'this student'}.`}
+          </p>
+          {pendingMove.outsideWindows && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              ⚠ The new time falls outside{' '}
+              {pendingMove.session.students?.first_name ?? 'the student'}&apos;s shared availability —
+              a warning, not a block (committing records the override).
             </p>
           )}
           {pendingMove.error && <p className="text-xs text-red-600 font-semibold">{pendingMove.error}</p>}
@@ -1388,6 +1450,7 @@ export default function ScheduleView({
           tz={tz}
           initialAction={pendingFocusAction === 'reschedule' ? 'reschedule' : 'none'}
           ackFocus={pendingFocusAction === 'ack'}
+          conflictWhy={selected.id === focusSessionId ? focusWhy : null}
           onClose={(msg) => {
             setSelected(null)
             setPendingFocusAction(null)
@@ -1466,6 +1529,7 @@ function SessionDialog({
   onClose,
   initialAction = 'none',
   ackFocus = false,
+  conflictWhy = null,
 }: {
   session: SessionRow
   tz: string
@@ -1474,6 +1538,9 @@ function SessionDialog({
   initialAction?: 'none' | 'reschedule'
   /** PL-262: the alert email's ack link pre-arms the Acknowledge confirm. */
   ackFocus?: boolean
+  /** PL-446A: what this reschedule is RESOLVING — 'assignment:{classId}'
+   *  (the PL-434 card) or 'availability' (the review surface). */
+  conflictWhy?: string | null
 }) {
   const [action, setAction] = useState<'none' | 'reschedule' | 'edit_time' | 'forfeit' | 'no_show' | 'delete'>(initialAction)
   const [newDate, setNewDate] = useState('')
@@ -1482,6 +1549,109 @@ function SessionDialog({
   const [note, setNote] = useState('')
   const [noticeOverride, setNoticeOverride] = useState<'' | 'ok' | 'late'>('')
   const [busy, setBusy] = useState(false)
+  // PL-446B: the student's shared windows (loaded once; null = none shared).
+  const [windows, setWindows] = useState<AvailRange[] | null>(null)
+  const [windowsLoaded, setWindowsLoaded] = useState(false)
+  // PL-446A: the originating conflict, recomputed live (state-driven — if
+  // the conflict already resolved, the banner says so honestly).
+  const [origin, setOrigin] = useState<
+    | null
+    | { kind: 'assignment'; classLabel: string; classIntervals: { start: string; end: string }[]; hitStart: string | null; hitEnd: string | null }
+    | { kind: 'availability' }
+  >(null)
+  // PL-446C: warnings collected at commit — the first click arms, the
+  // second proceeds and records the override in the note trail.
+  const [armedWarnings, setArmedWarnings] = useState<string[] | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  const studentFirst = session.students?.first_name ?? 'the student'
+
+  useEffect(() => {
+    let stale = false
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('student_availability')
+          .select('weekday, start_time, end_time, timezone')
+          .eq('student_id', session.student_id)
+        if (stale) return
+        const ranges: AvailRange[] = ((data as any[]) ?? []).map((r) => ({
+          weekday: r.weekday,
+          start_time: String(r.start_time).slice(0, 5),
+          end_time: String(r.end_time).slice(0, 5),
+          timezone: r.timezone,
+        }))
+        setWindows(ranges.length > 0 ? ranges : null)
+      } finally {
+        if (!stale) setWindowsLoaded(true)
+      }
+    })()
+    return () => {
+      stale = true
+    }
+  }, [session.student_id])
+
+  useEffect(() => {
+    if (!conflictWhy) return
+    if (conflictWhy === 'availability') {
+      setOrigin({ kind: 'availability' })
+      return
+    }
+    const m = /^assignment:(.+)$/.exec(conflictWhy)
+    if (!m) return
+    let stale = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/admin/assignment-conflicts?classId=${m[1]}`)
+        const json = await res.json().catch(() => ({}))
+        if (stale || !res.ok) return
+        const mine = (json.conflicts ?? []).find((c: { sessionId: string }) => c.sessionId === session.id)
+        setOrigin({
+          kind: 'assignment',
+          classLabel: json.classLabel ?? 'the class',
+          classIntervals: json.classIntervals ?? [],
+          hitStart: mine?.classStart ?? null,
+          hitEnd: mine?.classEnd ?? null,
+        })
+      } catch {
+        /* the banner is context, not a gate — silence */
+      }
+    })()
+    return () => {
+      stale = true
+    }
+  }, [conflictWhy, session.id])
+
+  // PL-446C: the two LOCAL checks, live as the slot is picked. (The tutor's
+  // real busy — Google + portal holds — is read once at commit.)
+  const liveWarnings = useMemo(() => {
+    const t = (() => {
+      if (!newDate || !newTime) return null
+      const start = zonedToUtc(newDate, newTime, tz)
+      return { starts: start.toISOString(), ends: new Date(start.getTime() + duration * 60_000).toISOString() }
+    })()
+    if (!t) return []
+    const w: string[] = []
+    if (origin?.kind === 'assignment') {
+      const hit = origin.classIntervals.find(
+        (c) => new Date(c.start).getTime() < Date.parse(t.ends) && new Date(c.end).getTime() > Date.parse(t.starts)
+      )
+      if (hit) {
+        w.push(
+          `still overlaps ${origin.classLabel} (${new Date(hit.start).toLocaleDateString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric' })}, ${formatTimeRange(hit.start, hit.end, tz)})`
+        )
+      }
+    }
+    if (windows && sessionOutsideWindows(t.starts, t.ends, windows)) {
+      w.push(`falls outside ${studentFirst}'s shared availability (usually free: ${availabilitySummary(windows)})`)
+    }
+    return w
+  }, [newDate, newTime, duration, origin, windows, tz, studentFirst])
+
+  // A changed pick disarms a stale confirm.
+  useEffect(() => {
+    setArmedWarnings(null)
+  }, [newDate, newTime, duration])
 
   const upcoming = session.status === 'proposed' || session.status === 'confirmed'
   const autoNotice = classifyNotice(new Date(session.starts_at))
@@ -1527,6 +1697,31 @@ function SessionDialog({
             {session.gcal_event_id ? ' · on Google Calendar' : ' · not yet on Google Calendar'}
             {session.cancel_note && ` · note: ${session.cancel_note}`}
           </p>
+          {/* PL-446A: WHY this dialog was opened — the target stays visible
+              while picking; recomputed live, so an already-resolved conflict
+              says so honestly instead of re-alarming. */}
+          {origin?.kind === 'assignment' && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
+              {origin.hitStart ? (
+                <>
+                  <span className="font-bold">Resolving: conflicts with {origin.classLabel}</span> —{' '}
+                  {new Date(origin.hitStart).toLocaleDateString('en-US', { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' })}
+                  , {formatTimeRange(origin.hitStart, origin.hitEnd ?? origin.hitStart, tz)} ({staffTimeCityLabel(tz)} time).
+                  Pick a slot clear of the class sessions below.
+                </>
+              ) : (
+                <>
+                  This session <span className="font-bold">no longer conflicts</span> with {origin.classLabel} — already clear.
+                </>
+              )}
+            </div>
+          )}
+          {origin?.kind === 'availability' && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
+              <span className="font-bold">Resolving:</span> this session falls outside {studentFirst}&apos;s
+              shared availability.
+            </div>
+          )}
           {session.reschedule_requested_at && (
             <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
               <p>
@@ -1632,6 +1827,14 @@ function SessionDialog({
                 `Correct this session's time (no policy classification — use Reschedule for family-requested changes). Times in ${staffTimeCityLabel(tz)} time.`
               )}
             </p>
+            {/* PL-446B: the student's stated windows, right by the picker. */}
+            {windowsLoaded && (
+              <p className="text-xs text-gray-600">
+                {windows
+                  ? `${studentFirst} is usually free: ${availabilitySummary(windows)}`
+                  : `No availability shared for ${studentFirst}.`}
+              </p>
+            )}
             <div className="flex gap-2 items-center flex-wrap">
               <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="border border-gray-300 rounded p-1.5" />
               <DateHint value={newDate} />
@@ -1663,11 +1866,75 @@ function SessionDialog({
               placeholder="Note (why, who asked)"
               className="w-full border border-gray-300 rounded p-1.5"
             />
+            {/* PL-446C: the picked slot's problems, inline as they pick. */}
+            {liveWarnings.length > 0 && (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 space-y-0.5">
+                {liveWarnings.map((w) => (
+                  <p key={w}>⚠ The chosen slot {w}.</p>
+                ))}
+              </div>
+            )}
+            {armedWarnings && armedWarnings.length > liveWarnings.length && (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 space-y-0.5">
+                {armedWarnings
+                  .filter((w) => !liveWarnings.includes(w))
+                  .map((w) => (
+                    <p key={w}>⚠ The chosen slot {w}.</p>
+                  ))}
+              </div>
+            )}
+            {armedWarnings && (
+              <p className="text-xs text-amber-900 font-semibold">
+                A warning, not a block — you may know better (phone-arranged, etc.). Confirming
+                records the override in the session&apos;s note trail.
+              </p>
+            )}
             <button
-              disabled={busy || !newDate || !newTime}
-              onClick={() => {
+              disabled={busy || checking || !newDate || !newTime}
+              onClick={async () => {
                 const t = newInstants()
                 if (!t) return
+                // PL-446C: check BEFORE committing — local checks (conflict
+                // source + windows) plus the tutor's real busy (Google +
+                // portal holds; PL-433 discipline: unknown availability
+                // warns nothing, never blocks). First click arms; the
+                // second proceeds and records the override.
+                if (!armedWarnings) {
+                  setChecking(true)
+                  const w = [...liveWarnings]
+                  try {
+                    const res = await fetch('/api/gcal/freebusy', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ tutorId: session.tutor_id, timeMin: t.starts, timeMax: t.ends }),
+                    })
+                    const json = await res.json().catch(() => ({}))
+                    if (res.ok && json.available !== false) {
+                      for (const b of (json.busy ?? []) as { start: string; end: string; title?: string | null }[]) {
+                        if (new Date(b.start).getTime() < Date.parse(t.ends) && new Date(b.end).getTime() > Date.parse(t.starts)) {
+                          w.push(
+                            b.title
+                              ? `overlaps the tutor's “${b.title}”`
+                              : "overlaps a busy block on the tutor's calendar"
+                          )
+                        }
+                      }
+                    }
+                  } catch {
+                    /* busy read unavailable → availability unknown, no warning */
+                  }
+                  setChecking(false)
+                  const unique = [...new Set(w)]
+                  if (unique.length > 0) {
+                    setArmedWarnings(unique)
+                    return
+                  }
+                }
+                const overridden = armedWarnings ?? []
+                const finalNote =
+                  overridden.length > 0
+                    ? `${note ? `${note} — ` : ''}override confirmed despite: ${overridden.join('; ')}`
+                    : note
                 if (action === 'reschedule') {
                   call(
                     {
@@ -1676,7 +1943,7 @@ function SessionDialog({
                       new_starts_at: t.starts,
                       new_ends_at: t.ends,
                       ...(noticeOverride ? { notice: noticeOverride } : {}),
-                      note,
+                      note: finalNote,
                     },
                     'Rescheduled — replacement scheduled and calendar updated.'
                   )
@@ -1687,9 +1954,15 @@ function SessionDialog({
                   )
                 }
               }}
-              className="bg-hgl-slate text-white py-2 px-4 rounded hover:opacity-90 disabled:opacity-50"
+              className={`${armedWarnings ? 'bg-amber-700' : 'bg-hgl-slate'} text-white py-2 px-4 rounded hover:opacity-90 disabled:opacity-50`}
             >
-              {action === 'reschedule' ? 'Reschedule' : 'Save time'}
+              {checking
+                ? 'Checking the slot…'
+                : armedWarnings
+                  ? `${action === 'reschedule' ? 'Reschedule' : 'Save'} anyway (${armedWarnings.length} warning${armedWarnings.length === 1 ? '' : 's'})`
+                  : action === 'reschedule'
+                    ? 'Reschedule'
+                    : 'Save time'}
             </button>
           </div>
         )}

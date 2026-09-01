@@ -61,6 +61,7 @@ export default function TutoringAdmin() {
   // ?session={id} (+ &ack=1 or &reschedule=1) opens its dialog ready to act.
   const [focusSessionId, setFocusSessionId] = useState<string | null>(null)
   const [focusSessionAction, setFocusSessionAction] = useState<'ack' | 'reschedule' | null>(null)
+  const [focusWhy, setFocusWhy] = useState<string | null>(null)
   // PL-338: saved schedule drafts — the card lists them, Resume hands one to
   // the wizard, and any change bumps the version so the list recounts.
   const [draftToResume, setDraftToResume] = useState<ScheduleDraftRow | null>(null)
@@ -114,6 +115,9 @@ export default function TutoringAdmin() {
       setActiveSection('schedule')
       setFocusSessionId(session)
       setFocusSessionAction(q.get('ack') ? 'ack' : q.get('reschedule') ? 'reschedule' : null)
+      // PL-446A: the originating conflict rides the link so the dialog can
+      // say what it's resolving ('assignment:{classId}' or 'availability').
+      setFocusWhy(q.get('why'))
       return
     }
     if (invoice) {
@@ -351,6 +355,7 @@ export default function TutoringAdmin() {
                       refreshSignal={refreshSignal}
                       focusSessionId={focusSessionId}
                       focusAction={focusSessionAction}
+                      focusWhy={focusWhy}
                       // PL-337 C: "Use this schedule" prefills the wizard —
                       // same handoff shape as resuming a saved draft.
                       onUseProposal={(payload) => {

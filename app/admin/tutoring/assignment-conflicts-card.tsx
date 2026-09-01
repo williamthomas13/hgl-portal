@@ -69,6 +69,7 @@ export default function AssignmentConflictsCard({
         </p>
       ) : (
         <AssignmentConflicts
+          originClassId={classId}
           instructorName={instructorName}
           conflicts={conflicts}
           heading={`${instructorName.split(' ')[0]}'s class assignment conflicts with ${conflicts.length} tutoring session${conflicts.length === 1 ? '' : 's'} — reschedule them:`}

@@ -65,6 +65,24 @@ export async function assignmentConflictCounts(
   return counts
 }
 
+/** PL-446C: the class's future session intervals as ISO pairs — the
+ *  reschedule dialog's still-overlaps check runs against these. */
+export async function futureClassIntervals(
+  classId: string
+): Promise<{ start: string; end: string }[]> {
+  const { data: cls } = await supabase
+    .from('classes')
+    .select('id, timezone, schools ( timezone ), sessions ( session_date, start_time, end_time )')
+    .eq('id', classId)
+    .maybeSingle()
+  if (!cls) return []
+  const tz = (cls as any).timezone ?? one<any>((cls as any).schools)?.timezone ?? 'America/Denver'
+  return classSessionIntervals(((cls as any).sessions as any[]) ?? [], tz).map((i) => ({
+    start: new Date(i.start).toISOString(),
+    end: new Date(i.end).toISOString(),
+  }))
+}
+
 export type AssignmentConflict = {
   sessionId: string
   startsAt: string
@@ -73,6 +91,10 @@ export type AssignmentConflict = {
   studentLast: string
   familyId: string | null
   subjectName: string
+  /** PL-446A: the class session this tutoring session collides with — the
+   *  reschedule dialog names WHAT it's resolving. */
+  classStart: string
+  classEnd: string
 }
 
 export async function tutoringConflictsForClass(
@@ -108,7 +130,9 @@ export async function tutoringConflictsForClass(
     const eng = one<any>(s.tutoring_engagements)
     if (s.status === 'proposed' && !holdActive(eng?.status ?? 'active', eng?.approval_requested_at ?? null)) continue
     const iv = { start: new Date(s.starts_at).getTime(), end: new Date(s.ends_at).getTime() }
-    if (!intervals.some((c) => c.start < iv.end && c.end > iv.start)) continue
+    // PL-446A: keep the MATCHED class interval — the dialog shows the target.
+    const hit = intervals.find((c) => c.start < iv.end && c.end > iv.start)
+    if (!hit) continue
     const stu = one<any>(s.students)
     conflicts.push({
       sessionId: s.id,
@@ -118,6 +142,8 @@ export async function tutoringConflictsForClass(
       studentLast: stu?.last_name ?? '',
       familyId: stu?.family_id ?? null,
       subjectName: one<any>(eng?.subjects)?.name ?? 'tutoring',
+      classStart: new Date(hit.start).toISOString(),
+      classEnd: new Date(hit.end).toISOString(),
     })
   }
   return conflicts.sort((a, b) => a.startsAt.localeCompare(b.startsAt))

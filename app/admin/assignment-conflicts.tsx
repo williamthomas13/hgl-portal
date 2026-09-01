@@ -24,11 +24,15 @@ export default function AssignmentConflicts({
   instructorName,
   conflicts,
   heading,
+  originClassId,
 }: {
   instructorName: string
   conflicts: AssignmentConflict[]
   /** Override the lead line (the NA resolution card supplies its own). */
   heading?: string
+  /** PL-446A: carried on the reschedule link so the dialog can show WHAT
+   *  it's resolving and check the new slot against the class. */
+  originClassId?: string | null
 }) {
   if (conflicts.length === 0) return null
   const first = instructorName.split(' ')[0]
@@ -54,7 +58,7 @@ export default function AssignmentConflicts({
               )}
             </span>
             <a
-              href={`/admin/tutoring?session=${c.sessionId}&reschedule=1`}
+              href={`/admin/tutoring?session=${c.sessionId}&reschedule=1${originClassId ? `&why=assignment:${originClassId}` : ''}`}
               className="text-hgl-blue underline font-semibold"
             >
               reschedule →

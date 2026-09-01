@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
-import { tutoringConflictsForClass } from '../../../utils/instructor-conflicts'
+import { futureClassIntervals, tutoringConflictsForClass } from '../../../utils/instructor-conflicts'
 import { classDisplayLabel } from '../../../utils/class-label'
 
 // PL-434: the resolution surface's data — the SAME conflict computation the
@@ -32,10 +32,13 @@ export async function GET(req: Request) {
     classType: (cls as any).class_type,
   })
   const inst = one<any>((cls as any).instructors)
+  // PL-446: the class's future intervals ride along — the reschedule
+  // dialog's pre-commit still-overlaps check runs against them.
+  const classIntervals = await futureClassIntervals(classId)
   if (!(cls as any).instructor_id) {
-    return NextResponse.json({ classLabel, instructorName: null, conflicts: [] })
+    return NextResponse.json({ classLabel, instructorName: null, conflicts: [], classIntervals })
   }
   const conflicts = await tutoringConflictsForClass(classId, (cls as any).instructor_id)
-  return NextResponse.json({ classLabel, instructorName: inst?.name ?? inst?.email ?? 'The instructor', conflicts })
+  return NextResponse.json({ classLabel, instructorName: inst?.name ?? inst?.email ?? 'The instructor', conflicts, classIntervals })
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

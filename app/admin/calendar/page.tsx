@@ -529,7 +529,7 @@ export default function AdminCalendarPage() {
               </p>
             )}
             {assignedName && (
-              <AssignmentConflicts instructorName={assignedName} conflicts={assignedConflicts} />
+              <AssignmentConflicts instructorName={assignedName} conflicts={assignedConflicts} originClassId={suggestClassId} />
             )}
             {fit && (
               <ul className="divide-y divide-gray-100">

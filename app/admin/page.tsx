@@ -1853,6 +1853,7 @@ export default function AdminDashboard() {
                 <AssignmentConflicts
                   instructorName={assignResult.instructorName}
                   conflicts={assignResult.conflicts}
+                  originClassId={assignResult.classId}
                 />
               </div>
             )}
