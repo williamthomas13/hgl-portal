@@ -24,6 +24,16 @@ begin
       set collateral_reminder_at = null
       where collateral_reminder_at is not null
         and coalesce(trim(short_link), '') <> '';
+    -- The collateral-changed touch trigger watches short_link (it was a
+    -- collateral field) — recreate it over the surviving columns first; a
+    -- bare DROP would otherwise refuse (2BP01) or CASCADE the trigger away.
+    drop trigger if exists classes_touch_collateral on public.classes;
+    create trigger classes_touch_collateral
+      before update of class_type, delivery_mode, capacity, enrollment_deadline,
+        default_location, collateral_language, letter_blurb, letter_blurb_es,
+        flyer_blurb, practice_test_count, promo_code, promo_amount, promo_deadline
+      on public.classes
+      for each row execute function stamp_collateral_changed();
     alter table public.classes drop column short_link;
   end if;
 end $$;

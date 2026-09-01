@@ -729,7 +729,10 @@ export async function ClassPageView({
           className="absolute inset-0 h-full w-full object-cover"
           decoding="async"
         />
-        <div aria-hidden className="absolute inset-0 bg-hgl-slate/80" />
+        {/* PL-451: eased a step (80 -> 75) — the mural reads through while the
+            headline holds >=3.6:1 (large-text AA) and bullets >=4.0:1 against
+            the image's measured 99th-percentile lightest pixels. */}
+        <div aria-hidden className="absolute inset-0 bg-hgl-slate/75" />
         <div className="relative max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white">
           {school?.logo_url ? (
             <div className="inline-block bg-white rounded-lg p-2 mb-4">
