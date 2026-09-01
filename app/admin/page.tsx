@@ -743,6 +743,12 @@ export default function AdminDashboard() {
   const [activeSection, setActiveSection] = useState<string>('dashboard')
   // PL-237: which class the Branding & collateral tab's collateral card shows.
   const [collateralClassId, setCollateralClassId] = useState('')
+  // PL-452: the ?announce= doorway — opens the send panel on the picked class.
+  const [announceOpen, setAnnounceOpen] = useState(false)
+  // PL-452: classes whose CS welcome is on the send log (null = not loaded —
+  // no chips render until the truth arrives; recomputed with every rosters
+  // refresh, so a send from any path clears the chip).
+  const [announcedClassIds, setAnnouncedClassIds] = useState<Set<string> | null>(null)
   // PL-190: which topline tab's sub-nav is showing. Changes only via the
   // topline (a real navigation with ?tab=) or a deep-link param.
   const [activeGroup, setActiveGroup] = useState<string>('dashboard')
@@ -785,6 +791,15 @@ export default function AdminDashboard() {
       setActiveGroup('classes')
       setActiveSection('branding')
       setCollateralClassId(collateralClass)
+    }
+    // PL-452: the "not yet announced" chip's doorway — same landing as
+    // ?collateral= plus the send panel opened at the preview.
+    const announceClass = q.get('announce')
+    if (announceClass) {
+      setActiveGroup('classes')
+      setActiveSection('branding')
+      setCollateralClassId(announceClass)
+      setAnnounceOpen(true)
     }
     const qboRow = q.get('qbo')
     if (qboRow) {
@@ -1004,7 +1019,17 @@ export default function AdminDashboard() {
     fetchClassDrafts()
   }, [fetchClassDrafts])
 
+  const fetchAnnounced = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/class-announcements')
+      const json = await res.json().catch(() => ({}))
+      if (res.ok && Array.isArray(json.announced)) setAnnouncedClassIds(new Set(json.announced))
+    } catch {
+      /* chips simply don't render until the next successful read */
+    }
+  }, [])
   const fetchRosters = useCallback(async () => {
+    fetchAnnounced() // PL-452: the chip recomputes with every roster refresh
     setFetchingRosters(true)
     const { data, error } = await supabase
       .from('classes')
@@ -2326,6 +2351,27 @@ export default function AdminDashboard() {
             <span className="inline-block px-3 py-1 bg-[#00AEEE]/10 text-hgl-blue text-sm font-bold rounded-full whitespace-nowrap">
               {paidCount} paid{pendingCount > 0 ? ` + ${pendingCount} pending` : ''} / {c.capacity}
             </span>
+            {/* PL-452: the roster card's Collateral section was removed
+                DELIBERATELY (Scarlett's design: the card is Kelsie's quick
+                roster view; collateral creation lives with class creation
+                under Branding & collateral) — do NOT restore downloads or
+                send machinery here. The one allowed surface is this chip:
+                state-driven off the send log, and the chip IS the doorway
+                (deep-links the send panel, pre-selected, preview open).
+                An announced class renders nothing at all. */}
+            {c.school_id &&
+              !isCancelled &&
+              (sortedSessions[sortedSessions.length - 1]?.session_date ?? c.start_date) >= todayIsoLocal &&
+              announcedClassIds !== null &&
+              !announcedClassIds.has(c.id) && (
+                <a
+                  href={`/admin?announce=${c.id}`}
+                  title="The school hasn't received the class-is-ready welcome yet — opens the send panel with this class picked, preview ready"
+                  className="inline-block px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full whitespace-nowrap hover:bg-amber-200"
+                >
+                  not yet announced →
+                </a>
+              )}
             <button
               onClick={() => duplicateClass(c)}
               title="Start a new class from this one — copies details and collateral fields, never sessions or dates"
@@ -3326,6 +3372,8 @@ export default function AdminDashboard() {
                 onSaved={fetchRosters}
                 slug={c.slug ?? null}
                 pageFacts={classPageFacts(c)}
+                openSendOnMount={announceOpen}
+                onSendPanelOpened={() => setAnnounceOpen(false)}
               />
             )
           })()}

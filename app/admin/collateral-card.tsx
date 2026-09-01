@@ -209,6 +209,8 @@ export default function CollateralCard({
   onSaved,
   slug = null,
   pageFacts = null,
+  openSendOnMount = false,
+  onSendPanelOpened,
 }: {
   classId: string
   classType: string
@@ -222,6 +224,9 @@ export default function CollateralCard({
   /** PL-450: the class's resolved code facts (the admin page's evergreen
    *  map) — drives the read-only printed-link display and the nudge. */
   pageFacts?: { code: string | null; servesThisClass: boolean } | null
+  /** PL-452: the ?announce= doorway — open the send panel immediately. */
+  openSendOnMount?: boolean
+  onSendPanelOpened?: () => void
 }) {
   const [form, setForm] = useState({
     collateral_language: fields.collateral_language ?? '',
@@ -317,6 +322,70 @@ export default function CollateralCard({
     onSaved()
   }
 
+  // PL-452: ONE loader for the send panel — the button and the ?announce=
+  // doorway both open through here.
+  async function openSendPanel() {
+    setCsDialog({
+      loading: true,
+      counselors: [],
+      schoolHasCompletedClass: false,
+      defaultInclude: true,
+      include: true,
+      canSuppress: false,
+      previews: null,
+      includeCollateral: true,
+      confirmNoCollateral: false,
+      ncSendOnRecord: false,
+    })
+    try {
+      const res = await fetch(`/api/admin/class-confirmed?class_id=${classId}`)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        // PL-449C: name what failed + the honest status — never bare.
+        setCsDialog((d) =>
+          d
+            ? {
+                ...d,
+                loading: false,
+                error: json.error
+                  ? `Couldn't build the send preview — ${json.error} (HTTP ${res.status})`
+                  : `Couldn't build the send preview (HTTP ${res.status}) — try again; if it keeps failing, tell Code.`,
+              }
+            : d
+        )
+        return
+      }
+      setCsDialog({
+        loading: false,
+        counselors: json.counselors ?? [],
+        schoolHasCompletedClass: !!json.schoolHasCompletedClass,
+        defaultInclude: !!json.defaultInclude,
+        include: !!json.defaultInclude,
+        canSuppress: !!json.canSuppress,
+        previews: json.previews ?? null,
+        previewsMissingReason: json.previewsMissingReason ?? null,
+        attachmentNames: json.attachmentNames ?? [],
+        logoNote: json.logoNote ?? null,
+        includeCollateral: json.defaultIncludeCollateral !== false,
+        confirmNoCollateral: false,
+        ncSendOnRecord: !!json.ncSendOnRecord,
+      })
+    } catch {
+      setCsDialog((d) =>
+        d ? { ...d, loading: false, error: "Couldn't reach the server." } : d
+      )
+    }
+  }
+
+  // PL-452: the "not yet announced" chip deep-links here with the panel open.
+  useEffect(() => {
+    if (openSendOnMount) {
+      openSendPanel()
+      onSendPanelOpened?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSendOnMount])
+
   const artifactUrl = (artifact: string, lang: string, inline = false) =>
     `/api/classes/${classId}/collateral/${artifact}?lang=${lang}${inline ? `&inline=1&v=${previewNonce}` : ''}`
 
@@ -404,61 +473,12 @@ export default function CollateralCard({
         <button
           type="button"
           disabled={sendingCs || (csDialog?.loading ?? false)}
-          onClick={async () => {
+          onClick={() => {
             if (csDialog) {
               setCsDialog(null)
               return
             }
-            setCsDialog({
-              loading: true,
-              counselors: [],
-              schoolHasCompletedClass: false,
-              defaultInclude: true,
-              include: true,
-              canSuppress: false,
-              previews: null,
-              includeCollateral: true,
-              confirmNoCollateral: false,
-              ncSendOnRecord: false,
-            })
-            try {
-              const res = await fetch(`/api/admin/class-confirmed?class_id=${classId}`)
-              const json = await res.json().catch(() => ({}))
-              if (!res.ok) {
-                // PL-449C: name what failed + the honest status — never bare.
-                setCsDialog((d) =>
-                  d
-                    ? {
-                        ...d,
-                        loading: false,
-                        error: json.error
-                          ? `Couldn't build the send preview — ${json.error} (HTTP ${res.status})`
-                          : `Couldn't build the send preview (HTTP ${res.status}) — try again; if it keeps failing, tell Code.`,
-                      }
-                    : d
-                )
-                return
-              }
-              setCsDialog({
-                loading: false,
-                counselors: json.counselors ?? [],
-                schoolHasCompletedClass: !!json.schoolHasCompletedClass,
-                defaultInclude: !!json.defaultInclude,
-                include: !!json.defaultInclude,
-                canSuppress: !!json.canSuppress,
-                previews: json.previews ?? null,
-                previewsMissingReason: json.previewsMissingReason ?? null,
-                attachmentNames: json.attachmentNames ?? [],
-                logoNote: json.logoNote ?? null,
-                includeCollateral: json.defaultIncludeCollateral !== false,
-                confirmNoCollateral: false,
-                ncSendOnRecord: !!json.ncSendOnRecord,
-              })
-            } catch {
-              setCsDialog((d) =>
-                d ? { ...d, loading: false, error: "Couldn't reach the server." } : d
-              )
-            }
+            openSendPanel()
           }}
           className="text-xs font-semibold bg-hgl-slate text-white rounded px-3 py-1.5 disabled:opacity-50"
         >
@@ -618,7 +638,10 @@ export default function CollateralCard({
                       })
                       const json = await res.json().catch(() => ({}))
                       setMessage(res.ok ? json.message : 'Error: ' + json.error)
-                      if (res.ok) setCsDialog(null)
+                      if (res.ok) {
+                        setCsDialog(null)
+                        onSaved() // PL-452: the send log changed — the chip recomputes
+                      }
                     } catch {
                       setMessage("Error: couldn't reach the server — nothing was sent.")
                     } finally {
