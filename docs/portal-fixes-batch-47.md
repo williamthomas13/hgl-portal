@@ -13,7 +13,10 @@ PL-409 overcorrected: the timecard subject/heading now says "August 16 – 31, 2
 ## PL-444 — Instructor phone numbers: populate from Scarlett's shared contact info (Scarlett, Sep 1)
 The Tutors panel's Phone column is all "—" but Scarlett previously shared staff contact info that included phone numbers. Locate the preserved source (the batch-35/PL-358 team-entries JSON, intake docs, or wherever that contact record was captured) and populate `instructors.phone` from it — VERBATIM from the record, no invented/guessed numbers; entries without a phone in the source stay honestly blank. If NO preserved source carries the phones, STOP and say so in the ship note (Scarlett will re-share the list — do not scrape or guess). Phones render where the panel already shows them; editable per the existing profile editor.
 
-## PL-445 — Ramp AL_SYNAP_NUDGE (Scarlett approved, Sep 1)
+## ✅ PL-445 — SHIPPED (Sep 1) — RAMPED LIVE, activation only, 11/11
+`AL_SYNAP_NUDGE` v1 flipped LIVE with zero copy edits: the active version IS the reviewed one (asserted against the `[DRAFT REVIEW: AL_SYNAP_NUDGE]` send's `body_snapshot_id` — the batch-46 proof pattern), bytes byte-identical to the seed, live gate now serves the REGISTRY body (`renderRegistered` versionId = the active version; code twin stays the fallback), live render **byte-for-byte identical on subject + html** to the `renderVersion` review path on the same MIS fixture (body mirrored line-for-line from `sweepSynapNudges`, subject matches the review send's own `subject_rendered`). Spot send `[RAMPED LIVE: AL_SYNAP_NUDGE v1]` → billy@ `sent`. **Drafts-awaiting-ramp returns to EMPTY.**
+
+## PL-445 (original) — Ramp AL_SYNAP_NUDGE (Scarlett approved, Sep 1)
 Activate v1 LIVE byte-for-byte vs the review render (body_snapshot_id proof per the batch-46 pattern), live gate serves the registry body, spot send → billy@. Drafts-awaiting-ramp returns to EMPTY.
 
 ## PL-446 — Reschedule dialog: show WHY, show the student's availability, and check the new slot (Scarlett, Sep 1)
