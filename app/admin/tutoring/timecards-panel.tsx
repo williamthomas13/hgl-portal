@@ -328,9 +328,10 @@ export default function TimecardsPanel() {
               <span className="font-bold text-hgl-slate">
                 {formatDateRange(p, periodRows[0].period_end)}
               </span>
-              {/* PL-409: payroll anchors Salt Lake City time — label only. */}
+              {/* PL-443: the date range needs no zone label (nothing to
+                  convert); the payday note stays. */}
               <span className="text-xs text-gray-400">
-                Salt Lake City time · payday the {Number(p.slice(8, 10)) === 1 ? '20th' : '5th'}
+                payday the {Number(p.slice(8, 10)) === 1 ? '20th' : '5th'}
               </span>
               {approvedCount > 0 && (
                 <span className="ml-auto flex items-center gap-3">

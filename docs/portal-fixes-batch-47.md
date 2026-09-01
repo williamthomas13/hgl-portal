@@ -4,7 +4,10 @@
 
 (CLOSED for batch 47 hand-off, Sep 1. Next PL: PL-453.)
 
-## PL-443 — Drop the timezone label from date-only period ranges (Scarlett, Sep 1)
+## ✅ PL-443 — SHIPPED (Sep 1) — every reverted spot listed
+Rule refined and applied: **zone labels attach to TIMES (and datetime deadlines), never to bare date ranges** — nothing to convert in "August 16 – 31, 2026". Full sweep of PL-409's commit (5 files) — the three date-only spots that gained the label, all reverted: **①** `timecards.ts` `periodLabel` — ONE const drove all four email renders (subject "Your timecard for … is ready to confirm", the `<h2>` heading, the preheader, and the `{payPeriodRange}` variable the live T5 template interpolates) — label stripped at the source; the T5 seeds/registry samples never carried a literal label, so no template version needed; payroll boundary math still anchors America/Denver. **②** tutor portal timecard header (`timecard-panel.tsx`) — the "Salt Lake City time" note beside the date range removed. **③** admin payroll per-period header (`timecards-panel.tsx`) — the label removed, the "payday the 20th/5th" clause KEPT (PL-409 had prepended onto a pre-existing payday note — partial revert, not a deletion). **Kept, correctly (not date-ranges):** the Schools card's timezone readout ("· Düsseldorf time" — a settings readout PL-409 fixed in passing) and the activity-feed due-date change (never had a zone label). `tutor-hours-report.ts`/`report-period.ts` confirmed label-free. Every time-of-day render keeps its label (~30 `staffTimeCityLabel` call sites checked — none came from PL-409, all attach to actual times).
+
+## PL-443 (original) — Drop the timezone label from date-only period ranges (Scarlett, Sep 1)
 PL-409 overcorrected: the timecard subject/heading now says "August 16 – 31, 2026 (Salt Lake City time)" — a pure DATE range needs no zone label (nothing to convert). Rule refinement: zone labels attach to TIMES (and datetime deadlines), never to bare date ranges. Fix the timecard subject/heading/period lines + sweep the PL-409 additions for other date-only spots that gained the label; time-of-day renders keep their labels. Ship notes list each reverted spot.
 
 ## PL-444 — Instructor phone numbers: populate from Scarlett's shared contact info (Scarlett, Sep 1)
