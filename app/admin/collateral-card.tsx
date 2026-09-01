@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../utils/supabase'
+import { fetchErrorLine } from '../utils/fetch-error'
 import { flyerIntroDefault } from '../utils/collateral-shared'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { DateHint } from './ui'
@@ -28,6 +29,55 @@ export type CollateralFields = {
   hero_image?: unknown
   /** PL-355: prerequisite line near the bullets. */
   prerequisite_note?: string | null
+}
+
+// PL-449: preview thumbnails FETCH the artifact so a failure can show the
+// route's plain reason — the old bare <img> swallowed every 400/500 body
+// into a broken-image icon (the MIS incident read as mysterious alt-text
+// boxes with no explanation anywhere).
+function PreviewThumb({ url, label }: { url: string; label: string }) {
+  const [state, setState] = useState<
+    { kind: 'loading' } | { kind: 'ok'; src: string } | { kind: 'error'; message: string }
+  >({ kind: 'loading' })
+  useEffect(() => {
+    let alive = true
+    let objectUrl: string | null = null
+    setState({ kind: 'loading' })
+    fetch(url)
+      .then(async (res) => {
+        if (!alive) return
+        if (!res.ok) {
+          setState({ kind: 'error', message: await fetchErrorLine(res, 'render this preview') })
+          return
+        }
+        objectUrl = URL.createObjectURL(await res.blob())
+        if (alive) setState({ kind: 'ok', src: objectUrl })
+      })
+      .catch(() => {
+        if (alive)
+          setState({
+            kind: 'error',
+            message: "Couldn't render this preview — the server didn't answer; try again.",
+          })
+      })
+    return () => {
+      alive = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [url])
+  if (state.kind === 'ok') {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={state.src} alt={label} className="w-40 border border-gray-300 rounded shadow-sm" />
+  }
+  return (
+    <div className="w-40 min-h-52 border border-gray-300 rounded shadow-sm bg-white p-2 text-[11px] leading-snug text-gray-600 flex items-center">
+      {state.kind === 'loading' ? (
+        <span className="animate-pulse text-gray-400">Rendering {label}…</span>
+      ) : (
+        <span className="text-red-600">{state.message}</span>
+      )}
+    </div>
+  )
 }
 
 // PL-351: the per-class hero photo — upload (alt required), replace, remove
@@ -200,6 +250,12 @@ export default function CollateralCard({
     include: boolean
     canSuppress: boolean
     previews: { include: string; exclude: string } | null
+    // PL-449: when the preview can't render, the panel says WHAT failed.
+    previewsMissingReason?: string | null
+    // PL-449 amendment 2: the exact files the send will carry — visible
+    // BEFORE any send (the panel contract).
+    attachmentNames?: string[]
+    logoNote?: string | null
     // PL-237: the collateral fork — attachments on/off + the explicit
     // second confirm the no-collateral send requires.
     includeCollateral: boolean
@@ -281,6 +337,15 @@ export default function CollateralCard({
         </p>
       )}
 
+      {/* PL-449 soft-fail note: a missing logo degrades ONE element (the
+          name renders in the slot), never the document — but say so. */}
+      {school && !school.logo_url && (
+        <p className="mb-3 text-xs text-amber-700">
+          School logo missing — the flyer shows the school name in its place. Upload the logo
+          under Classes → Schools.
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-2 mb-3">
         {langs.map((lang) => (
           <span key={lang} className="flex flex-wrap gap-2">
@@ -354,7 +419,18 @@ export default function CollateralCard({
               const res = await fetch(`/api/admin/class-confirmed?class_id=${classId}`)
               const json = await res.json().catch(() => ({}))
               if (!res.ok) {
-                setCsDialog((d) => (d ? { ...d, loading: false, error: json.error ?? 'Failed to load.' } : d))
+                // PL-449C: name what failed + the honest status — never bare.
+                setCsDialog((d) =>
+                  d
+                    ? {
+                        ...d,
+                        loading: false,
+                        error: json.error
+                          ? `Couldn't build the send preview — ${json.error} (HTTP ${res.status})`
+                          : `Couldn't build the send preview (HTTP ${res.status}) — try again; if it keeps failing, tell Code.`,
+                      }
+                    : d
+                )
                 return
               }
               setCsDialog({
@@ -365,6 +441,9 @@ export default function CollateralCard({
                 include: !!json.defaultInclude,
                 canSuppress: !!json.canSuppress,
                 previews: json.previews ?? null,
+                previewsMissingReason: json.previewsMissingReason ?? null,
+                attachmentNames: json.attachmentNames ?? [],
+                logoNote: json.logoNote ?? null,
                 includeCollateral: json.defaultIncludeCollateral !== false,
                 confirmNoCollateral: false,
                 ncSendOnRecord: !!json.ncSendOnRecord,
@@ -466,8 +545,25 @@ export default function CollateralCard({
                   </span>
                 </label>
               )}
-              {csDialog.previews && (
-                <details>
+              {/* PL-449 amendment 2 (the panel contract, confirmed with
+                  Scarlett's expectation): the composed preview AND the exact
+                  attachments are on screen BEFORE any send — the preview
+                  opens expanded, never tucked away. */}
+              {csDialog.includeCollateral && (csDialog.attachmentNames?.length ?? 0) > 0 && (
+                <p className="text-xs text-gray-600">
+                  Will attach (generated fresh at send):{' '}
+                  {csDialog.attachmentNames!.map((n) => (
+                    <code key={n} className="bg-gray-100 border border-gray-200 rounded px-1 mr-1">
+                      {n}
+                    </code>
+                  ))}
+                </p>
+              )}
+              {csDialog.logoNote && (
+                <p className="text-xs text-amber-700">{csDialog.logoNote}</p>
+              )}
+              {csDialog.previews ? (
+                <details open>
                   <summary className="cursor-pointer text-xs text-hgl-blue underline">
                     Preview what they&apos;ll receive ({csDialog.include ? 'with' : 'without'} the announcement)
                   </summary>
@@ -477,15 +573,29 @@ export default function CollateralCard({
                     className="w-full h-96 bg-white border border-gray-200 rounded mt-2"
                   />
                 </details>
+              ) : (
+                <p className="text-xs text-red-600">
+                  {csDialog.previewsMissingReason ??
+                    "Couldn't build the preview — tell Code."}{' '}
+                  Sending is blocked until the preview renders.
+                </p>
               )}
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  disabled={sendingCs || (!csDialog.includeCollateral && !csDialog.confirmNoCollateral)}
+                  // PL-449: no blind sends — the composed preview must have
+                  // rendered before the button arms (the panel contract).
+                  disabled={
+                    sendingCs ||
+                    !csDialog.previews ||
+                    (!csDialog.includeCollateral && !csDialog.confirmNoCollateral)
+                  }
                   title={
-                    !csDialog.includeCollateral && !csDialog.confirmNoCollateral
-                      ? 'Tick the confirmation above — this send has no letter or flyer'
-                      : undefined
+                    !csDialog.previews
+                      ? 'The preview must render before sending — fix what it names above'
+                      : !csDialog.includeCollateral && !csDialog.confirmNoCollateral
+                        ? 'Tick the confirmation above — this send has no letter or flyer'
+                        : undefined
                   }
                   onClick={async () => {
                     setSendingCs(true)
@@ -574,12 +684,10 @@ export default function CollateralCard({
         <div className="flex flex-wrap gap-3 mb-4">
           {langs.flatMap((lang) =>
             (['flyer.jpg', 'letter.jpg'] as const).map((artifact) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <PreviewThumb
                 key={artifact + lang}
-                src={artifactUrl(artifact, lang, true)}
-                alt={`${artifact} ${lang} preview`}
-                className="w-40 border border-gray-300 rounded shadow-sm"
+                url={artifactUrl(artifact, lang, true)}
+                label={`${artifact} ${lang} preview`}
               />
             ))
           )}

@@ -172,6 +172,10 @@ export function flyerHtml(m: CollateralModel, lang: CollateralLanguage, assets: 
   .school-logo-wrap { position:absolute; right:5mm; top:3mm; width:62mm; height:38mm;
     display:flex; align-items:center; justify-content:center; z-index:2; }
   .school-logo-wrap img { max-width:100%; max-height:100%; }
+  /* PL-449: missing/unusable logo — the school's NAME holds the slot so the
+     document still says whose class this is; the render never dies over art. */
+  .school-logo-text { color:#fff; font-size:13pt; font-weight:600; text-align:center;
+    line-height:1.25; max-width:54mm; }
   .headline { position:absolute; left:13mm; top:44mm; z-index:2; color:${SLATE};
     font-weight:500; line-height:1.04; }
   .qr { position:absolute; left:108mm; top:45mm; width:37mm; z-index:2; text-align:center; }
@@ -228,7 +232,13 @@ export function flyerHtml(m: CollateralModel, lang: CollateralLanguage, assets: 
   ${svgBands}
   <img class="hero" src="${assets.hero}" alt="">
   <img class="hgl-logo" src="${assets.logoWhite}" alt="Higher Ground Learning">
-  ${m.schoolLogoUrl ? `<div class="school-logo-wrap"><img src="${esc(m.schoolLogoUrl)}" alt=""></div>` : ''}
+  ${
+    m.schoolLogoUrl
+      ? `<div class="school-logo-wrap"><img src="${esc(m.schoolLogoUrl)}" alt=""></div>`
+      : m.hasSchool
+        ? `<div class="school-logo-wrap"><div class="school-logo-text">${esc(m.schoolName)}</div></div>`
+        : ''
+  }
   <div class="headline" style="font-size:${headlinePt}pt;">${headline}</div>
   <div class="qr"><img src="${assets.qrDataUrl}" alt="QR"><div class="cap">${t.qrCaption}</div></div>
   <div class="intro">${flyerIntro(m, lang)}</div>

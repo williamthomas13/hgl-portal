@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from '../../../utils/supabase-server'
 import { supabaseAdmin } from '../../../utils/supabase-admin'
 import { adminAllowlist } from '../../../utils/portal-auth'
-import { processLogo } from '../../../utils/logo-process'
+import { looksLikeImage, processLogo, sharpAvailable } from '../../../utils/logo-process'
 import { escapeLike } from '../../../utils/like-escape'
 
 // School logo upload (July 8 refinements §2): the browser posts the raw file
@@ -49,9 +49,28 @@ export async function POST(request: Request) {
     .single()
   if (!school) return new Response('School not found', { status: 404 })
 
+  const original = Buffer.from(await file.arrayBuffer())
+  // PL-449A: the corrupt SLS logo was a PNG whose high bytes had been mangled
+  // through a text decode — it served fine and decoded nowhere. Refuse
+  // anything that doesn't LOOK like an image before any processing.
+  if (!looksLikeImage(original)) {
+    return new Response(
+      'That file does not look like an image — export the logo as a PNG or JPG and try again',
+      { status: 422 }
+    )
+  }
+  // PL-449B: when the image library itself is unavailable on this runtime,
+  // refuse plainly rather than storing unprocessed bytes — the whole point
+  // of this route is that every stored crest is background-cleaned.
+  if (!(await sharpAvailable())) {
+    return new Response(
+      "Couldn't process the image — the server's image library is unavailable right now. Nothing was uploaded; try again in a few minutes, and tell Code if it keeps failing.",
+      { status: 503 }
+    )
+  }
   let png: Buffer | null
   try {
-    png = await processLogo(Buffer.from(await file.arrayBuffer()))
+    png = await processLogo(original)
   } catch (e) {
     console.error(`school-logo processing failed for ${schoolId}:`, e)
     return new Response('Could not read that image — try a PNG or JPG export', { status: 422 })

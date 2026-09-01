@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
-import sharp from 'sharp'
+// PL-449: no module-scope sharp — a native-load failure must degrade THIS
+// feature with a plain refusal, never kill the route module (the Sep-1
+// incident pattern).
+import { getSharp } from '../../../../utils/logo-process'
 import { sessionRole } from '../../../../utils/staff-gate'
 import { supabaseAdmin as supabase } from '../../../../utils/supabase-admin'
 import { CLASS_PAGE_BUCKET, parseClassPageImage, type ClassPageImage } from '../../../../utils/class-page-images'
@@ -78,6 +81,13 @@ export async function POST(request: Request) {
   const existing = await loadExisting(t)
   if (!existing.found) return NextResponse.json({ error: 'That block/class no longer exists.' }, { status: 404 })
 
+  const sharp = await getSharp()
+  if (!sharp) {
+    return NextResponse.json(
+      { error: "Couldn't process the image — the server's image library is unavailable right now. Nothing was uploaded; try again in a few minutes, and tell Code if it keeps failing." },
+      { status: 503 }
+    )
+  }
   let buffer: Buffer
   let srcWidth: number
   try {

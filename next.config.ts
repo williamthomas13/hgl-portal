@@ -19,6 +19,44 @@ const nextConfig: NextConfig = {
       // "input directory /var/task/node_modules/@sparticuz/chromium/bin
       // does not exist" (seen in prod July 7).
       './node_modules/@sparticuz/chromium/bin/**/*',
+      // PL-449: sharp's platform packages load via computed require paths the
+      // tracer can't follow — ship the linux binaries explicitly (the Sep-1
+      // incident: sharp failed to load in prod and killed every importing
+      // route's module graph). Locally these globs match nothing (darwin
+      // installs darwin binaries) — that's fine, includes are best-effort.
+      './node_modules/sharp/**/*',
+      './node_modules/@img/sharp-linux-x64/**/*',
+      './node_modules/@img/sharp-libvips-linux-x64/**/*',
+      './node_modules/@img/sharp-linux-arm64/**/*',
+      './node_modules/@img/sharp-libvips-linux-arm64/**/*',
+    ],
+    // PL-449 amendment 2: the counselor-welcome send renders the SAME
+    // collateral (letter PDF + flyer PDF/JPG attachments) in ITS function —
+    // it was never in this map, so its lambda lacked both the template art
+    // and the Chromium binary. Same includes as the artifact route.
+    '/api/admin/class-confirmed': [
+      './public/collateral/**/*',
+      './node_modules/@sparticuz/chromium/bin/**/*',
+      './node_modules/sharp/**/*',
+      './node_modules/@img/sharp-linux-x64/**/*',
+      './node_modules/@img/sharp-libvips-linux-x64/**/*',
+      './node_modules/@img/sharp-linux-arm64/**/*',
+      './node_modules/@img/sharp-libvips-linux-arm64/**/*',
+    ],
+    // PL-449: the two direct sharp routes (logo upload, block-image variants).
+    '/api/admin/school-logo': [
+      './node_modules/sharp/**/*',
+      './node_modules/@img/sharp-linux-x64/**/*',
+      './node_modules/@img/sharp-libvips-linux-x64/**/*',
+      './node_modules/@img/sharp-linux-arm64/**/*',
+      './node_modules/@img/sharp-libvips-linux-arm64/**/*',
+    ],
+    '/api/admin/site-content/image': [
+      './node_modules/sharp/**/*',
+      './node_modules/@img/sharp-linux-x64/**/*',
+      './node_modules/@img/sharp-libvips-linux-x64/**/*',
+      './node_modules/@img/sharp-linux-arm64/**/*',
+      './node_modules/@img/sharp-libvips-linux-arm64/**/*',
     ],
     // Phase 7e: agreement-acceptance PDF snapshots render in these functions
     // (same chromium-not-traced failure seen in prod July 15).

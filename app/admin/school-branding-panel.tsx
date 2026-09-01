@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '../utils/supabase'
 import type { School } from './class-wizard'
+import { fetchErrorLine } from '../utils/fetch-error'
 
 // Phase 4.5 school collateral branding (spec §7): crest/logo upload (renders
 // top-right on the flyer), accent color (flyer burst + CTA circles), and the
@@ -50,7 +51,8 @@ function SchoolRow({ school, onChange }: { school: SchoolBranding; onChange: () 
     const res = await fetch('/api/admin/school-logo', { method: 'POST', body })
     setBusy(false)
     if (!res.ok) {
-      setMessage('Error uploading: ' + (await res.text()))
+      // PL-449C: one plain line with the honest status — never the raw body.
+      setMessage(await fetchErrorLine(res, 'upload the logo'))
       return
     }
     setMessage('Logo updated (background removed automatically).')
@@ -95,7 +97,7 @@ function SchoolRow({ school, onChange }: { school: SchoolBranding; onChange: () 
             className="h-9 max-w-24 object-contain border border-gray-200 rounded bg-white"
           />
         ) : (
-          <span className="text-xs text-gray-400 italic">no logo — flyer omits it</span>
+          <span className="text-xs text-gray-400 italic">no logo — flyer shows the school name instead</span>
         )}
         <label className="text-xs text-hgl-blue underline cursor-pointer">
           {school.logo_url ? 'replace' : 'upload'}
@@ -162,7 +164,8 @@ export default function SchoolBrandingPanel({
   return (
     <div>
       <p className="text-xs text-gray-500 mb-2">
-        Logo renders top-right on the flyer (omitted if blank). Accent colors the flyer&rsquo;s
+        Logo renders top-right on the flyer (the school&rsquo;s name holds the spot until one is
+        uploaded). Accent colors the flyer&rsquo;s
         promo burst and CTA circle — blank uses HGL blue. Language is the school&rsquo;s default;
         each class can override it on its Collateral card.
       </p>

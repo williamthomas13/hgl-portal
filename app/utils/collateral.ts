@@ -36,6 +36,10 @@ export type CollateralModel = {
 
   schoolName: string
   schoolNickname: string
+  /** PL-449: true when the class belongs to a school row — the flyer's
+   *  logo slot falls back to the school NAME when the logo is missing or
+   *  unusable; open-enrollment classes have no slot at all. */
+  hasSchool: boolean
   schoolLogoUrl: string | null
   accentColor: string
 
@@ -160,6 +164,7 @@ export async function loadCollateralModel(classId: string): Promise<CollateralMo
     hasDiagnostics: c.has_diagnostics !== false,
     schoolName: school?.name ?? 'your school',
     schoolNickname: school?.nickname ?? school?.name ?? 'Your school',
+    hasSchool: school != null,
     schoolLogoUrl: school?.logo_url || null,
     accentColor: usableAccent(school?.accent_color),
     languageSetting,

@@ -2,7 +2,7 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import QRCode from 'qrcode'
 import { supabaseAdmin } from './supabase-admin'
-import { processLogo } from './logo-process'
+import { looksLikeImage, processLogo } from './logo-process'
 import type { Browser } from 'puppeteer-core'
 import type { StaticAssets } from './collateral-templates'
 
@@ -157,24 +157,40 @@ export function qrDataUrl(url: string): Promise<string> {
 
 const logoCache = new Map<string, string | null>()
 
+// PL-449: every branch is SOFT — a dead, corrupt, or unprocessable logo
+// degrades to the templates' text fallback (null) or the raw bytes, never
+// throws, and never poisons the warm-lambda cache with a transient failure.
 export async function schoolLogoDataUrl(url: string | null): Promise<string | null> {
   if (!url) return null
   if (logoCache.has(url)) return logoCache.get(url) ?? null
   let value: string | null = null
+  let cacheable = true
   try {
     const res = await fetch(url)
-    if (res.ok) {
+    if (!res.ok) {
+      // 404 = the asset is gone (stable — cache); 5xx = transient (retry
+      // next render). Either way the document renders without the logo.
+      console.error(`school logo fetch failed (${res.status}) — rendering without it: ${url}`)
+      cacheable = res.status < 500
+    } else {
       const buf = Buffer.from(await res.arrayBuffer())
-      const processed = await processLogo(buf)
-      value = processed
-        ? `data:image/png;base64,${processed.toString('base64')}`
-        : `data:${res.headers.get('content-type') ?? 'image/png'};base64,${buf.toString('base64')}`
+      if (!looksLikeImage(buf)) {
+        // The stored bytes aren't an image (the SLS text-mangled PNG) —
+        // treat as missing so the text fallback renders, never inline junk.
+        console.error(`school logo bytes are not a decodable image — rendering without it: ${url}`)
+      } else {
+        const processed = await processLogo(buf)
+        value = processed
+          ? `data:image/png;base64,${processed.toString('base64')}`
+          : `data:${res.headers.get('content-type') ?? 'image/png'};base64,${buf.toString('base64')}`
+      }
     }
   } catch (e) {
     console.error('school logo processing failed (falling back to stored URL):', e)
     value = url // template renders the remote image as before
+    cacheable = false
   }
-  logoCache.set(url, value)
+  if (cacheable) logoCache.set(url, value)
   return value
 }
 

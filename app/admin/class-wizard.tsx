@@ -12,6 +12,7 @@ import { ConfirmAction } from './tutoring/confirm'
 import type { Instructor } from './instructors-panel'
 import { escapeLike } from '../utils/like-escape'
 import { cutoffDeadlineError } from '../utils/class-guards'
+import { fetchErrorLine } from '../utils/fetch-error'
 
 // Class creation wizard (admin UX addendum, school-first revision):
 // school → details → sessions → review. Everything downstream hangs off the
@@ -2050,7 +2051,12 @@ export default function ClassWizard({
                       body.set('schoolId', school.id)
                       body.set('file', file)
                       const res = await fetch('/api/admin/school-logo', { method: 'POST', body })
-                      setBrandingMsg(res.ok ? 'Logo updated (background removed automatically).' : 'Error uploading the logo.')
+                      // PL-449C: the refusal reason + honest status, one line.
+                      setBrandingMsg(
+                        res.ok
+                          ? 'Logo updated (background removed automatically).'
+                          : await fetchErrorLine(res, 'upload the logo')
+                      )
                       if (res.ok) onSchoolsChange()
                     }}
                   />

@@ -5,6 +5,7 @@ import { supabase } from '../utils/supabase'
 import { formatDateAdmin, staffTimeCityLabel } from '../utils/dates'
 import { SchoolCommsRow } from './school-comms'
 import { escapeLike } from '../utils/like-escape'
+import { fetchErrorLine } from '../utils/fetch-error'
 import { EmailLink, TimezoneSelect, useDeepLinkFocus } from './ui'
 import type { SchoolBranding } from './school-branding-panel'
 
@@ -86,7 +87,8 @@ function SchoolEditor({
     body.set('file', file)
     const res = await fetch('/api/admin/school-logo', { method: 'POST', body })
     setBusy(false)
-    if (!res.ok) setError('Error uploading the logo: ' + (await res.text()))
+    // PL-449C: one plain line with the honest status — never the raw body.
+    if (!res.ok) setError(await fetchErrorLine(res, 'upload the logo'))
     else onClose(true)
   }
 

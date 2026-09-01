@@ -200,6 +200,16 @@ export async function GET(request: Request) {
     .in('status', ['sending', 'sent', 'delivered'])
     .limit(1)
 
+  // PL-449 amendment 2: the panel's contract — the composed preview AND the
+  // exact attachment filenames are visible BEFORE any send (the POST
+  // attaches these three, primary language, generated fresh at send).
+  const attachLang = languagesFor(model)[0]
+  const attachmentNames = [
+    `${collateralFilename(model, 'letter', attachLang)}.pdf`,
+    `${collateralFilename(model, 'flyer', attachLang)}.pdf`,
+    `${collateralFilename(model, 'flyer', attachLang)}.jpg`,
+  ]
+
   return NextResponse.json({
     ok: true,
     counselors: contactRows,
@@ -207,6 +217,24 @@ export async function GET(request: Request) {
     defaultInclude,
     canSuppress,
     previews,
+    // PL-449: why the preview may be absent — the panel says WHAT is missing
+    // instead of a bare "Failed to load.".
+    previewsMissingReason: previews
+      ? null
+      : !model.shortLink || !model.enrollmentDeadline
+        ? `couldn't build the preview — the class record is missing ${[
+            !model.shortLink && 'its printable link (set the school code in Classes → Short links)',
+            !model.enrollmentDeadline && 'the enrollment deadline',
+          ]
+            .filter(Boolean)
+            .join(' and ')}`
+        : "couldn't build the preview — the email template failed to render (tell Code)",
+    attachmentNames,
+    // PL-449 soft-fail note: the flyer prints the school NAME in the logo
+    // slot until a logo is uploaded — say so instead of surprising anyone.
+    logoNote: model.hasSchool && !model.schoolLogoUrl
+      ? 'School logo missing — the flyer shows the school name in its place. Upload the logo under Classes → Schools.'
+      : null,
     defaultIncludeCollateral: !(cls.collateral_reminder_at && !cls.short_link),
     ncSendOnRecord: (ncSends?.length ?? 0) > 0,
   })
