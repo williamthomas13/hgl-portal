@@ -1,3 +1,5 @@
+import { zonedToUtc } from './tutoring'
+
 // Formatting for plain calendar dates (Postgres `date` → "YYYY-MM-DD").
 //
 // Class/session dates are calendar dates, not instants: "2026-09-12" means
@@ -310,6 +312,51 @@ export function familyWhenPhrase(opts: {
     opts.baseTimezone
   )} in ${opts.baseCityLabel ?? staffTimeCityLabel(opts.baseTimezone)}`
   return `${famDay}, ${formatTimeRange(opts.startIso, opts.endIso, famTz)} in ${staffTimeCityLabel(famTz)} (${secondary})`
+}
+
+/** PL-441: a CLASS session quoted to the INSTRUCTOR — PL-419's family
+ *  pattern, instructor edition, and the ONE composer for every
+ *  instructor-audience email that carries class session times. The
+ *  instructor's own profile zone leads, labeled "your time", with the
+ *  class-local clock secondary under the class's public city where the zones
+ *  differ ("Saturday, September 5 — 11:30 AM–1:30 PM your time ·
+ *  6:30–8:30 PM in Munich"; the secondary carries its own date only when the
+ *  calendar dates diverge). Same zone — or no profile zone at all — renders
+ *  ONCE, still labeled with the class city: never bare numbers, never an
+ *  assumed Denver. A session with no start time stays the plain calendar
+ *  date (there is no instant to convert). */
+export function instructorWhenPhrase(opts: {
+  /** Class-local calendar date, YYYY-MM-DD (Postgres `date`). */
+  sessionDate: string
+  /** Class-local wall clock, 'HH:MM[:SS]' or null. */
+  startHHMM?: string | null
+  endHHMM?: string | null
+  classTimezone: string
+  /** The class's public city label (contextTimeCityLabel of the bundle). */
+  classCityLabel: string
+  instructorTimezone?: string | null
+}): string {
+  if (!opts.startHHMM) return formatDateFull(opts.sessionDate)
+  const start = zonedToUtc(opts.sessionDate, opts.startHHMM.slice(0, 5), opts.classTimezone)
+  const end = opts.endHHMM
+    ? zonedToUtc(opts.sessionDate, opts.endHHMM.slice(0, 5), opts.classTimezone)
+    : null
+  const day = (tz: string) =>
+    start.toLocaleDateString('en-US', {
+      timeZone: tz,
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  const iTz = (opts.instructorTimezone ?? '').trim() || null
+  if (!iTz || iTz === opts.classTimezone) {
+    return `${day(opts.classTimezone)} — ${formatTimeRange(start, end, opts.classTimezone)} in ${opts.classCityLabel}`
+  }
+  const classDay = day(opts.classTimezone)
+  const instructorDay = day(iTz)
+  const secondary = `${instructorDay === classDay ? '' : `${classDay}, `}${formatTimeRange(start, end, opts.classTimezone)} in ${opts.classCityLabel}`
+  return `${instructorDay} — ${formatTimeRange(start, end, iTz)} your time · ${secondary}`
 }
 
 // ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ import {
   type CoverageEvent,
 } from './coverage-copy'
 import { leadAssignedDetails } from './lead-assign-copy'
-import { formatDateFull, contextZonedDeadline, contextTimeCityLabel, staffTimeCityLabel, bySessionStart, formatTimeRange } from './dates'
+import { formatDateFull, contextZonedDeadline, contextTimeCityLabel, staffTimeCityLabel, bySessionStart, formatTimeRange, instructorWhenPhrase } from './dates'
 import { availabilityDiff } from './availability-diff'
 import { zonedToUtc } from './tutoring'
 import type { ResolvedVars } from './comms-md'
@@ -1578,9 +1578,26 @@ export const SAMPLE_EXTRA: ExtraVars = {
   digestMilestoneLine:
     '<p><strong>🎉 The class just reached its minimum — it officially runs.</strong></p>',
   // PL-80c: class-shaped (mirrors scheduleListHtml — the SIS SAT Prep sample
-  // class's Saturday sessions), never the tutoring list.
+  // class's Saturday sessions), never the tutoring list. PL-441: COMPUTED
+  // through the one instructor-clock composer (the PL-137 anti-drift rule) —
+  // a Stockholm class read by a Salt Lake City instructor, so the preview
+  // shows the real both-clocks shape ("your time" first, Stockholm second).
   classScheduleBlock:
-    '<ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Saturday, September 5, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, September 12, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, September 19, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, September 26, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 3, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 10, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 17, 2026 — 10:00–12:00 · Room 204</li><li style="margin:2px 0">Saturday, October 24, 2026 — 10:00–12:00 · Room 204</li></ul>',
+    '<ul style="margin:0;padding-left:20px;color:#334155">' +
+    ['2026-09-05', '2026-09-12', '2026-09-19', '2026-09-26', '2026-10-03', '2026-10-10', '2026-10-17', '2026-10-24']
+      .map(
+        (d) =>
+          `<li style="margin:2px 0">${instructorWhenPhrase({
+            sessionDate: d,
+            startHHMM: '18:30',
+            endHHMM: '20:30',
+            classTimezone: 'Europe/Stockholm',
+            classCityLabel: 'Stockholm',
+            instructorTimezone: 'America/Denver',
+          })} · Room 204</li>`
+      )
+      .join('') +
+    '</ul>',
   fyiOriginalSubject: 'Classroom location for SIS SAT Prep',
   familyEmailBlock:
     '<p>Hey Alex,</p><p>One last reminder: the first day of class is September 5, 2026 from 10:00 AM to 12:00 PM.</p><p><strong>All classes take place in Room 204</strong></p>',

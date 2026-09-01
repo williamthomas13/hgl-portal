@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { renderMarkdownBody } from './comms-md'
-import { formatDateFull, formatDateOnly } from './dates'
+import { contextTimeCityLabel, formatDateFull, formatDateOnly, instructorWhenPhrase } from './dates'
 import { classDetailsSendDate, effectiveDeadline, localDate, localHour, registrationCloseFor, type ClassBundle } from './lifecycle'
 import { createHash } from 'crypto'
 import { createGcalEvent, deleteGcalEvent, loadGcalConnection, patchGcalEvent } from './gcal'
@@ -63,12 +63,25 @@ export function instructorCountsLine(bundle: ClassBundle): string {
 
 const firstName = (name: string | null) => name?.trim().split(/\s+/)[0] || 'there'
 
-function scheduleListHtml(bundle: ClassBundle): string {
+// PL-441: session rows render on the INSTRUCTOR's clock via the one
+// instructor-clock composer — labeled, class-local secondary when the zones
+// differ. The old render was the reported bug: bare class-local 24h numbers
+// ("18:30–20:30") with no zone anywhere, read as local by an SLC instructor.
+// Exported for the compile-and-call harness (composer-path verification).
+export function scheduleListHtml(bundle: ClassBundle, instructor: ClassInstructor): string {
+  const cityLabel = contextTimeCityLabel(bundle)
   const rows = [...bundle.sessions]
     .sort((a, b) => `${a.session_date}${a.start_time ?? ''}`.localeCompare(`${b.session_date}${b.start_time ?? ''}`))
     .map((s) => {
-      const t = s.start_time ? ` — ${s.start_time.slice(0, 5)}${s.end_time ? `–${s.end_time.slice(0, 5)}` : ''}` : ''
-      return `<li style="margin:2px 0">${formatDateFull(s.session_date)}${t}${s.location ? ` · ${s.location}` : ''}</li>`
+      const when = instructorWhenPhrase({
+        sessionDate: s.session_date,
+        startHHMM: s.start_time,
+        endHHMM: s.end_time,
+        classTimezone: bundle.timezone,
+        classCityLabel: cityLabel,
+        instructorTimezone: instructor.timezone,
+      })
+      return `<li style="margin:2px 0">${when}${s.location ? ` · ${s.location}` : ''}</li>`
     })
   return rows.length ? `<ul style="margin:0;padding-left:20px;color:#334155">${rows.join('')}</ul>` : ''
 }
@@ -112,7 +125,7 @@ export async function sendInstructorWelcome(
   const extras = {
     ...baseExtras(bundle, instructor),
     // PL-80c: IN_WELCOME's own variable — {scheduleBlock} belongs to tutoring.
-    classScheduleBlock: scheduleListHtml(bundle),
+    classScheduleBlock: scheduleListHtml(bundle, instructor),
   }
   const stub = instructorStub(bundle, instructor)
   const fallback = (): Rendered => ({

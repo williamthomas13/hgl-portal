@@ -603,6 +603,15 @@ export async function sendPatternChangeNotices(
     }
 
     if (tutor?.email) {
+      // PL-441: the tutor's copy renders the plan on the TUTOR's own clock —
+      // recurrence IS their wall clock. Reusing the family summary above sent
+      // a Rome family's converted times to an SLC tutor.
+      const tutorSummary = scheduleSummaryText({
+        recurrence: Array.isArray(e.recurrence) ? e.recurrence : [],
+        start_date: e.start_date ?? null,
+        tutorTz: tutor?.timezone ?? 'America/Denver',
+        familyTz: tutor?.timezone ?? 'America/Denver',
+      })
       await sendOnce({
         dedupeKey: `t3t_pattern_change:${engagementId}:${Date.now()}`,
         emailType: 'T3_TUTOR_PATTERN',
@@ -610,7 +619,7 @@ export async function sendPatternChangeNotices(
         subject: `Schedule change: ${student.first_name} — ${subjectName}`,
         html: wrap(
           `<h3 style="color:#334155">Schedule change</h3>
-           <p>${student.first_name}'s regular weekly plan changed to: <strong>${summary}</strong>.</p>
+           <p>${student.first_name}'s regular weekly plan changed to: <strong>${tutorSummary}</strong> (your time).</p>
            <p>${delta.added} upcoming session${delta.added === 1 ? '' : 's'} re-planned${
              delta.dropped > 0 ? `, ${delta.dropped} old slot${delta.dropped === 1 ? '' : 's'} removed` : ''
            } — your Google Calendar is already updated; completed and billed sessions are untouched.</p>`,
