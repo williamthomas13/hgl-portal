@@ -31,6 +31,37 @@ email first (classes).
      each row's stored `webhook_url`); within the hour, spot-check
      `gcal_watch_channels` rows show the new domain AND hand-move one QA event —
      the drift banner should appear within ~1 minute.
+3b. **QA-data purge — BEFORE the first import** (Scarlett, Sep 2: "the portal is full of
+   test data"). `node scripts/purge-qa-data.mjs` dry-runs by default and lists every
+   QA family/student/enrollment/engagement/invoice/lead/email row + QA class cohort it
+   would remove; real classes, instructors, schools, logos, templates, settings are
+   untouched. Discipline: dry run → review the output TOGETHER (the PL-48 lists date
+   from July — add the QA cast that arrived since: Janeson's fixture sessions, the ISD
+   QA counselor, the Willie Tomás sentinel invoice, the standing MIS QA conflicts) →
+   amend `QA_*` lists → dry run again → `--apply`. Never straight to `--apply`.
+   Leaves external systems alone on purpose: Stripe test PaymentIntents + QBO sandbox
+   docs stay; **gcal events of deleted QA sessions are NOT removed — sweep Billy's
+   tutor calendar by hand.** Afterwards the dry run should show the real classes with
+   zero enrollments and nothing else.
+3c. **QBO out of sandbox — BEFORE (or same day as) the Stripe live-mode switch** (Phase 6
+   spec §12 rule: sandbox-synced rows never re-queue after the flip and backfill is
+   skipped, so real payments taken while QBO points at sandbox silently miss the books).
+   - **Start 1–2 weeks early:** Intuit "Get production keys" questionnaire (left in
+     progress in July). Needs EULA + privacy-policy URLs (publish `hgl-portal-eula.md`
+     as an unlinked sqsp page) and the FINAL portal host — so the PL-155b domain
+     decision comes first; add the production `/api/qbo/callback` to the app's redirect
+     URIs if the domain changes. Known summer-2026 Intuit provisioning bugs: budget slack.
+   - **Bookkeeper, real company:** two Items (→ 408-3 International Test Prep for classes,
+     → 408-5 International Online Prep for tutoring add-ons) + a "Stripe Clearing" bank
+     account. Nothing else changes in the books.
+   - **Switch day:** `QBO_ENVIRONMENT=production` + production client id/secret in Vercel
+     → re-run Connect QuickBooks from admin against the real company → re-map the two
+     Items in Settings → THEN Stripe live mode (new live webhook endpoint with
+     `checkout.session.completed` + `charge.refunded`, live keys in Vercel) → watch one
+     real registration: Paid → qbo_sync_log pending → synced → bookkeeper sees the Sales
+     Receipt in 408-3 with the deposit in Stripe Clearing.
+   - The sandbox company needs no cleanup; it simply stops being written to.
+
 4. **Mid-flight class imports** — per class, in any order (idempotent):
    ```
    node scripts/import-class-registrations.mjs --class <slug> --csv <export.csv> \
