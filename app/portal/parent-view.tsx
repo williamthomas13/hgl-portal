@@ -280,6 +280,15 @@ export default async function ParentView({
                     ''
                   )}
                 </p>
+                {/* PL-455: the Synap group carries the second diagnostic and
+                    any catch-up/retake, so the link stays for the whole run —
+                    a calm line with NO due-date claim after day one (the
+                    second diagnostic's timing is the instructor's call). */}
+                {synap && (
+                  <p className="text-sm opacity-90 mt-1">
+                    Your practice tests live in the class&apos;s Synap group.
+                  </p>
+                )}
               </>
             )}
           </div>
@@ -290,14 +299,28 @@ export default async function ParentView({
             >
               Add to calendar
             </a>
-            {preStart && synap && (
-              <a
-                href={synap}
-                className="bg-hgl-blue hover:opacity-90 rounded px-3 py-1.5 font-bold"
-              >
-                Take the diagnostic test
-              </a>
-            )}
+            {/* PL-455: pre-start keeps the "first up" button; from the first
+                session on it relabels to a persistent, calmer link. The card
+                itself is gated above on a FUTURE session (and never renders
+                for cancelled classes), so the link is gone the day after the
+                last session by construction. No Synap group → nothing at all
+                (batch-46 rule: never a dead button). */}
+            {synap &&
+              (preStart ? (
+                <a
+                  href={synap}
+                  className="bg-hgl-blue hover:opacity-90 rounded px-3 py-1.5 font-bold"
+                >
+                  Take the diagnostic test
+                </a>
+              ) : (
+                <a
+                  href={synap}
+                  className="bg-white/15 hover:bg-white/25 rounded px-3 py-1.5 font-semibold"
+                >
+                  Diagnostic tests (Synap)
+                </a>
+              ))}
           </div>
         </div>
       )
