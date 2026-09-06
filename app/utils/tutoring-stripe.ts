@@ -1,4 +1,5 @@
 import { emailBaseUrl } from './base-url'
+import { billingAddress, familyRecipients } from './billing-recipient'
 import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert } from './email'
@@ -73,7 +74,9 @@ async function loadInvoiceWithFamily(invoiceId: string) {
 export async function ensureStripeCustomer(family: FamilyBilling): Promise<string> {
   if (family.stripe_customer_id) return family.stripe_customer_id
   const customer = await stripe.customers.create({
-    email: (family.billing_email ?? family.parent_email).toLowerCase(),
+    // PL-454: the Stripe customer is ADDRESSED to the billing contact when set
+    // (Stripe's own hosted-invoice mail follows it) — same rule, one place.
+    email: billingAddress(family).toLowerCase(),
     name: `${family.parent_first_name} ${family.parent_last_name ?? ''}`.trim(),
     metadata: { hgl_family_id: family.id },
   })
@@ -314,8 +317,8 @@ async function issueHostedInvoice(
     // new document and must re-send; plain retries of the same document dedupe.
     dedupeKey: `t2_invoice:${inv.id}:${finalized.id}`,
     emailType: 'T2_INVOICE',
-    to: [family.billing_email ?? family.parent_email],
-    cc: family.billing_cc_emails?.length ? family.billing_cc_emails : undefined,
+    // PL-454: ONE routing rule (billing-recipient.ts reads the registry flag).
+    ...familyRecipients(family, 'T2_INVOICE'),
     subject: email.subject,
     html: email.html,
   })
@@ -477,8 +480,7 @@ export async function handleAutopayFailure(invoiceId: string, reason: string): P
   await sendOnce({
     dedupeKey: `t4_failed:${invoiceId}:${attempts}`,
     emailType: 'T4_PAYMENT_FAILED',
-    to: [inv.family.billing_email ?? inv.family.parent_email],
-    cc: inv.family.billing_cc_emails?.length ? inv.family.billing_cc_emails : undefined,
+    ...familyRecipients(inv.family, 'T4_PAYMENT_FAILED'),
     subject: email.subject,
     html: email.html,
   })
@@ -629,8 +631,7 @@ export async function sendPaymentReminder(
     dedupeKey,
     emailType: 'T2B_PAYMENT_REMINDER',
     templateKey: 'T2B_PAYMENT_REMINDER',
-    to: [fam.billing_email ?? fam.parent_email],
-    cc: fam.billing_cc_emails?.length ? fam.billing_cc_emails : undefined,
+    ...familyRecipients(fam, 'T2B_PAYMENT_REMINDER'),
     subject: email.subject,
     html: email.html,
   })
@@ -786,7 +787,7 @@ export async function sweepCollections(now: Date = new Date()): Promise<Collecti
               <a href="${emailBaseUrl()}/admin/tutoring?invoice=${inv.id}" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Apply the 10% late fee</a>
               &nbsp;&nbsp;<a href="${emailBaseUrl()}/admin/tutoring?family=${fam.id}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See ${fam.parent_first_name}'s recent activity</a>
             </p>
-            <p><a href="mailto:${fam.billing_email ?? fam.parent_email}?subject=${encodeURIComponent(`Your ${month.label} HGL tutoring invoice`)}" style="color:#00AEEE">Send a manual email</a>
+            <p><a href="mailto:${billingAddress(fam)}?subject=${encodeURIComponent(`Your ${month.label} HGL tutoring invoice`)}" style="color:#00AEEE">Send a manual email</a>
             — opens pre-addressed to the family.</p>`,
         }).catch(() => {})
         result.lateFeeFlags++

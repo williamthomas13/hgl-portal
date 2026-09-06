@@ -385,7 +385,7 @@ export default async function ParentView({
   const [{ data: famRow }, { data: intakeLeadRow }] = await Promise.all([
     supabaseAdmin
       .from('families')
-      .select('id, parent_first_name, parent_last_name, parent_email, parent_phone')
+      .select('id, parent_first_name, parent_last_name, parent_email, parent_phone, billing_name, billing_email')
       .in('id', familyIds)
       .limit(1)
       .maybeSingle(),

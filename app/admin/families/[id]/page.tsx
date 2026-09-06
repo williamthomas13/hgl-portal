@@ -351,7 +351,7 @@ export default function FamilyProfilePage() {
       .select(
         `id, parent_first_name, parent_last_name, parent_email, parent_phone,
          guardian2_name, guardian2_email, guardian2_phone,
-         billing_email, billing_cc_emails, autopay, timezone, marketing_opt_out,
+         billing_email, billing_name, billing_cc_emails, autopay, timezone, marketing_opt_out,
          billing_notes, address, created_at`
       )
       .eq('id', familyId)
@@ -786,8 +786,8 @@ export default function FamilyProfilePage() {
                     </div>
                     {fam.billing_email && (
                       <div>
-                        <dt className="text-xs font-semibold text-gray-500">Billing email</dt>
-                        <dd className="text-xs"><Email v={fam.billing_email} /></dd>
+                        <dt className="text-xs font-semibold text-gray-500">Billing contact</dt>
+                        <dd className="text-xs">{fam.billing_name ? `${fam.billing_name} · ` : ''}<Email v={fam.billing_email} /></dd>
                       </div>
                     )}
                     {(fam.billing_cc_emails ?? []).length > 0 && (
@@ -1118,11 +1118,32 @@ export default function FamilyProfilePage() {
               <div className="text-sm space-y-4">
                 <p className="text-xs text-gray-600">
                   Autopay: <span className="font-semibold">{fam.autopay ? 'on' : 'off'}</span>
-                  {fam.billing_email && (
+                </p>
+                {/* PL-454: the optional billing contact — staff-editable here,
+                    family-editable under the portal's Your information; the
+                    SAME write path. Set → the registry's billing-flagged
+                    templates (invoices, payment reminders, proposals) go
+                    there; blank → everything to the parent. Never a login. */}
+                <p className="text-xs text-gray-600">
+                  Billing contact:{' '}
+                  {fam.billing_email ? (
                     <>
-                      {' '}· billing email <Email v={fam.billing_email} />
+                      <span className="font-semibold">{fam.billing_name || 'unnamed'}</span> · <Email v={fam.billing_email} />
                     </>
+                  ) : (
+                    <span className="text-gray-400">none — billing mail goes to the parent</span>
                   )}
+                  <FactEdit
+                    label="Billing contact name"
+                    value={fam.billing_name ?? null}
+                    onSave={(v) => saveFact({ action: 'update_parent', familyId: fam.id, fields: { billing_name: v } })}
+                  />
+                  <FactEdit
+                    label="Billing email"
+                    value={fam.billing_email ?? null}
+                    warning="Delivery-only — this address can't sign in. Invoices, payment reminders and monthly proposals go here instead of the parent; clear it to send everything to the parent again."
+                    onSave={(v) => saveFact({ action: 'update_parent', familyId: fam.id, fields: { billing_email: v } })}
+                  />
                 </p>
                 {d.invoices.length > 0 ? (
                   <div>

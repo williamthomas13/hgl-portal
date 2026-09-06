@@ -25,7 +25,8 @@
     "regress:counselor-roster": "node scripts/regress-counselor-roster.mjs",
     "regress:proposal-holds": "node scripts/regress-proposal-holds.mjs",
     "regress:intl-calendar": "node scripts/regress-intl-calendar.mjs",
-    "regress:alert-categories": "node scripts/regress-alert-categories.mjs"
+    "regress:alert-categories": "node scripts/regress-alert-categories.mjs",
+    "regress:billing-recipient": "node scripts/regress-billing-recipient.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

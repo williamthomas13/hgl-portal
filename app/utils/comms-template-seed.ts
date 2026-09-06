@@ -11,6 +11,15 @@ export type TemplateSeed = {
   audience: 'parent' | 'student' | 'both'
   from_identity: 'info' | 'billy'
   category: 'transactional' | 'relationship'
+  /** PL-454: billing-category template — routes to the family's optional
+   *  billing contact when one is set. 'replaces' = the billing contact takes
+   *  the parent's place (invoice / dunning / payment-failed: money only);
+   *  'copies-parent' = the billing contact is the recipient and the parent
+   *  is cc'd (the email also carries schedule / class facts the parent owns).
+   *  Absent = never rerouted (the parent's enrollment record, logistics,
+   *  everything else). THE categorization lives here and nowhere else —
+   *  familyRecipients() in billing-recipient.ts reads it. */
+  billing?: 'replaces' | 'copies-parent'
   subject: string
   /** PL-279: null = no preheader (the FO pair ships without improvised copy). */
   preheader: string | null
@@ -98,6 +107,7 @@ P.S. Here's what other students have had to say about the class:
   },
   {
     template_key: 'PR1',
+    billing: 'copies-parent',
     display_name: 'PR1 — Payment reminder (2h)',
     sequence_number: 'PR1',
     audience: 'parent',
@@ -120,6 +130,7 @@ P.S. Do you have a question about the class? It's probably answered in our FAQs 
   },
   {
     template_key: 'PR2',
+    billing: 'copies-parent',
     display_name: 'PR2 — Payment reminder (24h)',
     sequence_number: 'PR2',
     audience: 'parent',
@@ -142,6 +153,7 @@ P.S. FAQs: {faqLinks}`,
   },
   {
     template_key: 'PR3',
+    billing: 'copies-parent',
     display_name: 'PR3 — Payment reminder (72h)',
     sequence_number: 'PR3',
     audience: 'parent',
@@ -158,6 +170,7 @@ Quick nudge: {studentFirstName}'s spot in {className} is still reserved but unco
   },
   {
     template_key: 'PR4',
+    billing: 'copies-parent',
     display_name: 'PR4 — Payment reminder (final)',
     sequence_number: 'PR4',
     audience: 'parent',
@@ -977,6 +990,7 @@ Higher Ground Learning`,
   },
   {
     template_key: 'T1_MONTHLY_PROPOSAL',
+    billing: 'copies-parent',
     display_name: 'T1 — Monthly schedule proposal',
     sequence_number: 'T1',
     audience: 'parent',
@@ -1007,6 +1021,7 @@ If we don't hear from you within {autoconfirmDays} days, the schedule confirms a
   },
   {
     template_key: 'T1B_PROPOSAL_NUDGE',
+    billing: 'copies-parent',
     display_name: 'T1b — Proposal nudge',
     sequence_number: 'T1b',
     audience: 'parent',
@@ -1029,6 +1044,7 @@ No action needed to keep everything as-is — the schedule confirms automaticall
   },
   {
     template_key: 'T2_INVOICE',
+    billing: 'replaces',
     display_name: 'T2 — Monthly invoice',
     sequence_number: 'T2',
     audience: 'parent',
@@ -1055,6 +1071,7 @@ Pay by card or directly from a US bank account (ACH) — both options are on the
   // marketing — financial facts only.
   {
     template_key: 'T2B_PAYMENT_REMINDER',
+    billing: 'replaces',
     display_name: 'T2b — Unpaid invoice payment reminder',
     sequence_number: 'T2b',
     audience: 'parent',
@@ -1118,6 +1135,7 @@ Just confirming your request to move {studentFirstName}'s {subjectName} session 
   },
   {
     template_key: 'T4_PAYMENT_FAILED',
+    billing: 'replaces',
     display_name: 'T4 — Payment failed',
     sequence_number: 'T4',
     audience: 'parent',
@@ -2303,3 +2321,10 @@ Nothing you need to do — this is just so you always know where the class stand
 [button:Open your class page]({instructorViewLink})`,
   },
 ]
+
+/** PL-454: the billing-category keys with their verdict, derived from the
+ *  flags above (ONE source — the routing helper and the regress harness both
+ *  read this). */
+export const BILLING_TEMPLATE_KEYS: ReadonlyMap<string, 'replaces' | 'copies-parent'> = new Map(
+  TEMPLATE_SEEDS.filter((t) => t.billing).map((t) => [t.template_key, t.billing as 'replaces' | 'copies-parent'])
+)

@@ -59,7 +59,7 @@ const INVOICE_STATUS_COPY: Record<string, { label: string; cls: string }> = {
 export default async function TutoringSection({ email }: { email: string }) {
   const { data: familyRows } = await supabase
     .from('families')
-    .select('id, parent_email, timezone, autopay, stripe_payment_method_id')
+    .select('id, parent_email, timezone, autopay, stripe_payment_method_id, billing_name, billing_email')
     .ilike('parent_email', escapeLike(email))
   if (!familyRows || familyRows.length === 0) return null
   const familyIds = familyRows.map((f) => f.id)
@@ -411,6 +411,18 @@ export default async function TutoringSection({ email }: { email: string }) {
       {((invoices as any[]) ?? []).length > 0 && (
         <div id="portal-billing" style={{ scrollMarginTop: 16 }} className="mb-6">
           <h3 className="font-semibold text-hgl-slate text-sm mb-1">Billing</h3>
+          {/* PL-454: the family's optional billing contact — set under Your
+              information; when set, invoices and payment mail go there. */}
+          {(() => {
+            const b = familyRows.find((f: any) => f.billing_email)
+            return b ? (
+              <p className="text-xs text-gray-500 mb-2">
+                Invoices go to {b.billing_name ? `${b.billing_name} · ` : ''}
+                <span className="font-semibold text-hgl-slate">{b.billing_email}</span>
+                {' '}(change this under Your information).
+              </p>
+            ) : null
+          })()}
           <ul className="divide-y divide-gray-100 text-sm">
             {((invoices as any[]) ?? []).map((i) => {
               const st = INVOICE_STATUS_COPY[i.status] ?? { label: i.status, cls: 'bg-gray-100 text-gray-600' }

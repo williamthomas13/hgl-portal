@@ -1,4 +1,5 @@
 import { emailBaseUrl } from '../../../utils/base-url'
+import { familyRecipients } from '../../../utils/billing-recipient'
 import { sweepAdminRosterReport } from '../../../utils/roster-report'
 import { dispatchScheduledCampaigns, resumePausedCampaigns } from '../../../utils/campaign-send'
 import { NextResponse } from 'next/server'
@@ -220,7 +221,9 @@ async function sweepPaymentReminders(bundle: ClassBundle, c: Counters) {
         emailType: 'payment_reminder',
         enrollmentId: e.id,
         classId: bundle.id,
-        to: [ctx.parentEmail],
+        // PL-454: registry-flagged 'copies-parent' — the billing contact
+        // receives, the parent is cc'd (the enrollment is the parent's record).
+        ...familyRecipients({ parent_email: ctx.parentEmail, billing_email: e.billingEmail }, `PR${r.n}`),
         subject,
         html,
         bodySnapshotId: versionId,

@@ -109,7 +109,7 @@ export default function FamilyInfoPanel({
   intakeLead,
   students,
 }: {
-  family: { id: string; parent_first_name: string | null; parent_last_name: string | null; parent_email: string; parent_phone: string | null }
+  family: { id: string; parent_first_name: string | null; parent_last_name: string | null; parent_email: string; parent_phone: string | null; billing_name?: string | null; billing_email?: string | null }
   intakeLead: { id: string; intake: any } | null
   students: { id: string; first_name: string; last_name: string; student_phone: string | null; pronouns: string | null; grade_level: string | null; special_needs: string | null }[]
 }) {
@@ -167,6 +167,30 @@ export default function FamilyInfoPanel({
             — this is how you sign in; reply to any of our emails and we&apos;ll change it with you
           </span>
         </div>
+        {/* PL-454: the optional billing contact — delivery-only (never a
+            login). Set → invoices, payment reminders, and the monthly
+            tutoring proposals go there (the parent stays copied on anything
+            that also carries schedule facts); clear → everything returns to
+            the parent. Same write path as every other fact. */}
+        <div className="pt-3 pb-1">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Send billing emails to someone else — optional
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            A spouse, an office, an accountant: invoices, payment reminders, and monthly tutoring proposals go to
+            this address instead of yours. Leave it blank and they come to you. This address can&apos;t sign in.
+          </p>
+        </div>
+        <Row
+          label="Billing contact name"
+          value={family.billing_name ?? null}
+          onSave={(next) => save({ action: 'update_parent', familyId: family.id, fields: { billing_name: next } })}
+        />
+        <Row
+          label="Billing email"
+          value={family.billing_email ?? null}
+          onSave={(next) => save({ action: 'update_parent', familyId: family.id, fields: { billing_email: next } })}
+        />
         {intake ? (
           <>
             <Row

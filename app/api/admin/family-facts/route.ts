@@ -19,7 +19,9 @@ import { sessionFamily } from '../../../utils/family-gate'
 
 // PL-419: `timezone` rides the parent action — the family's clock for every
 // portal/email time render (derived at registration/intake, corrected here).
-const PARENT_FIELDS = ['parent_first_name', 'parent_last_name', 'parent_email', 'parent_phone', 'timezone'] as const
+// PL-454: the optional billing contact (name + delivery-only email) — parent-
+// and staff-editable; clearing either returns billing mail to the parent.
+const PARENT_FIELDS = ['parent_first_name', 'parent_last_name', 'parent_email', 'parent_phone', 'timezone', 'billing_name', 'billing_email'] as const
 const STUDENT_FIELDS = ['student_email', 'student_phone', 'pronouns', 'grade_level', 'special_needs'] as const
 const INTAKE_FIELDS = [
   'preferredContactMethod',
@@ -34,13 +36,15 @@ const INTAKE_FIELDS = [
 // staff-mediated; timezone = derived/staff, PL-419); the student's phone,
 // pronouns, grade, learning notes (never the student email); every intake
 // answer (contact preference, emergency contact, arrival instruction).
-const PARENT_SELF_FIELDS = new Set(['parent_first_name', 'parent_last_name', 'parent_phone'])
+const PARENT_SELF_FIELDS = new Set(['parent_first_name', 'parent_last_name', 'parent_phone', 'billing_name', 'billing_email'])
 const STUDENT_SELF_FIELDS = new Set(['student_phone', 'pronouns', 'grade_level', 'special_needs'])
 
 const FIELD_LABELS: Record<string, string> = {
   parent_first_name: 'the parent first name',
   parent_last_name: 'the parent last name',
   parent_phone: 'the parent phone number',
+  billing_name: 'the billing contact',
+  billing_email: 'the billing contact',
   student_phone: 'the student phone number',
   pronouns: 'the pronouns on file',
   grade_level: 'the grade level',
@@ -108,7 +112,7 @@ export async function POST(req: Request) {
           )
         }
         const v = String(body.fields[k] ?? '').trim()
-        patch[k] = k === 'parent_email' ? v.toLowerCase() : v || null
+        patch[k] = k === 'parent_email' || k === 'billing_email' ? v.toLowerCase() || null : v || null
       }
     }
     if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Nothing to save.' }, { status: 400 })
@@ -117,6 +121,22 @@ export async function POST(req: Request) {
         new Intl.DateTimeFormat('en-US', { timeZone: String(patch.timezone) })
       } catch {
         return NextResponse.json({ error: 'That is not a recognized timezone — pick one from the list.' }, { status: 400 })
+      }
+    }
+    // PL-454: the billing email is a DELIVERY address, never a login — no auth
+    // user, no dedupe against other families. It just has to be an address
+    // that isn't the parent's own (that would reroute nothing).
+    if (patch.billing_email !== undefined && patch.billing_email != null) {
+      const email = String(patch.billing_email)
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        return NextResponse.json({ error: 'That does not look like an email address.' }, { status: 400 })
+      }
+      const { data: own } = await supabase.from('families').select('parent_email').eq('id', familyId).maybeSingle()
+      if (own?.parent_email && own.parent_email.toLowerCase() === email) {
+        return NextResponse.json(
+          { error: "That is already the family's own address — leave the billing contact blank and billing mail goes there anyway." },
+          { status: 400 }
+        )
       }
     }
     if (patch.parent_email !== undefined) {

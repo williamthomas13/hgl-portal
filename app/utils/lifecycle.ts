@@ -84,6 +84,8 @@ export type EnrollmentRow = {
   marketingOptOut: boolean
   parentFirstName: string
   parentEmail: string
+  /** PL-454: the family's optional billing contact (delivery-only). */
+  billingEmail: string | null
   studentFirstName: string
   studentLastName: string
   studentEmail: string | null
@@ -256,7 +258,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       product_orders ( quantity, price_paid, status, tracking_url, products ( name ) ),
       students (
         first_name, last_name, student_email, graduating_year, pronouns,
-        families ( id, parent_first_name, parent_email, marketing_opt_out, timezone )
+        families ( id, parent_first_name, parent_email, billing_email, marketing_opt_out, timezone )
       )
     )
   `
@@ -315,6 +317,9 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
           marketingOptOut: family.marketing_opt_out ?? false,
           parentFirstName: family.parent_first_name,
           parentEmail: family.parent_email,
+          // PL-454: the optional billing contact rides the row so the PR1–4
+          // sends can route through familyRecipients (never rerouted here).
+          billingEmail: family.billing_email ?? null,
           studentFirstName: student.first_name,
           studentLastName: student.last_name,
           studentEmail: student.student_email ?? null,

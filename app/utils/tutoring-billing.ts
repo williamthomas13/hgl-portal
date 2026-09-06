@@ -1,4 +1,5 @@
 import { emailBaseUrl } from './base-url'
+import { familyRecipients } from './billing-recipient'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { sendOnce, sendAdminAlert } from './email'
@@ -700,8 +701,8 @@ export async function generateMonthlyCycle(
     const sent = await sendOnce({
       dedupeKey: `t1_proposal:${invoice.id}`,
       emailType: 'T1_MONTHLY_PROPOSAL',
-      to: [family.billing_email ?? family.parent_email],
-      cc: family.billing_cc_emails?.length ? family.billing_cc_emails : undefined,
+      // PL-454: ONE routing rule (billing-recipient.ts reads the registry flag).
+      ...familyRecipients(family, 'T1_MONTHLY_PROPOSAL'),
       subject: email.subject,
       html: email.html,
     })
@@ -1339,8 +1340,7 @@ export async function sweepProposals(now: Date = new Date()): Promise<ProposalSw
       const sent = await sendOnce({
         dedupeKey: `t1b_nudge:${inv.id}`,
         emailType: 'T1B_PROPOSAL_NUDGE',
-        to: [fam.billing_email ?? fam.parent_email],
-        cc: fam.billing_cc_emails?.length ? fam.billing_cc_emails : undefined,
+        ...familyRecipients(fam, 'T1B_PROPOSAL_NUDGE'),
         subject: email.subject,
         html: email.html,
       })
