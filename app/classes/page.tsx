@@ -134,10 +134,14 @@ export default async function ClassesBrowsePage({
           className="absolute inset-0 h-full w-full object-cover"
           decoding="async"
         />
-        {/* PL-451: eased a step (80 -> 75) — the mural reads through while the
-            headline holds >=3.6:1 (large-text AA) and bullets >=4.0:1 against
-            the image's measured 99th-percentile lightest pixels. */}
-        <div aria-hidden className="absolute inset-0 bg-hgl-slate/75" />
+        {/* PL-451 eased 80 -> 75; PL-453 one more measured step, 75 -> 70:
+            sampled pixel-by-pixel under the text boxes (text hidden), the
+            white headline holds >=3.26:1 at its single worst pixel
+            (large-text AA is 3:1) and bullets >=3.80:1 at the 99th percentile
+            on both surfaces × desktop/375px. /65 was measured and REJECTED
+            (headline 2.94:1 at 375px on the class page; bullets p99 3.48:1
+            on /classes) — this is the last passing value. */}
+        <div aria-hidden className="absolute inset-0 bg-hgl-slate/70" />
         <div className="relative max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/collateral/hgl-logo-white.png" alt="Higher Ground Learning logo" className="h-14 w-auto mb-4" />
