@@ -62,6 +62,12 @@ async function staffCookie() {
 }
 
 // --- arrange: throwaway class with sessions ---------------------------------
+// Batch 48: dates are RELATIVE — the hardcoded Sep 1/8 2026 dates drifted into
+// the past on Sep 6 and /api/register refused the closed class (the gate
+// failed for the harness's own reason, not the app's).
+const plusDays = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+const DAY1 = plusDays(25)
+const DAY2 = plusDays(32)
 const { data: school } = await db.from('schools').select('id, nickname').limit(1).single()
 const { data: cls, error: clsErr } = await db
   .from('classes')
@@ -71,14 +77,14 @@ const { data: cls, error: clsErr } = await db
     status: 'open',
     price: 500,
     capacity: 10,
-    start_date: '2026-09-01',
+    start_date: DAY1,
   }])
   .select('id')
   .single()
 if (clsErr) throw clsErr
 await db.from('sessions').insert([
-  { class_id: cls.id, session_date: '2026-09-01', start_time: '16:00', end_time: '18:00' },
-  { class_id: cls.id, session_date: '2026-09-08', start_time: '16:00', end_time: '18:00' },
+  { class_id: cls.id, session_date: DAY1, start_time: '16:00', end_time: '18:00' },
+  { class_id: cls.id, session_date: DAY2, start_time: '16:00', end_time: '18:00' },
 ])
 console.log(`QA class ${cls.id} (${school.nickname} SAT Prep) created\n`)
 
