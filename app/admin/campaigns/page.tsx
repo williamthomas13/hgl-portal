@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useDeepLinkFocus } from '../ui'
 import { supabase } from '../../utils/supabase'
 import { CollapsibleSection } from '../ui'
 import { SidebarNav, CONTACTS_SIDEBAR } from '../sidebar'
@@ -31,6 +32,12 @@ const chipCls = (on: boolean) =>
   }`
 
 export default function CampaignsPage() {
+  // PL-460: the "campaign paused" alert lands ON the campaign row (its
+  // resume control), not the list top.
+  const [focusCampaign] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('campaign') : null
+  )
+  useDeepLinkFocus(focusCampaign ? `campaign-${focusCampaign}` : null)
   const [segment, setSegment] = useState<any>({})
   const [schools, setSchools] = useState<{ id: string; name: string }[]>([])
   const [classTypes, setClassTypes] = useState<string[]>([])
@@ -543,7 +550,7 @@ export default function CampaignsPage() {
           ) : (
             <ul className="divide-y divide-gray-100 text-sm">
               {campaigns.map((c) => (
-                <li key={c.id} className="py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <li key={c.id} id={`campaign-${c.id}`} className="py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="font-semibold text-hgl-slate">{c.name}</span>
                   <span className="text-xs text-gray-500">{c.segmentSummary}</span>
                   <span className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>

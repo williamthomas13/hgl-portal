@@ -211,7 +211,7 @@ export async function requestCoverage(opts: {
        <p>Accept or decline from your portal — one click either way. If you accept, the session
        moves onto your schedule and calendar, and the student's session-note history opens up to
        you so you can walk in prepared.</p>
-       <p style="margin:20px 0"><a href="${base}/portal?view=tutor" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Answer in your portal</a></p>`,
+       <p style="margin:20px 0"><a href="${base}/portal?view=tutor#portal-coverage" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Answer in your portal</a></p>`,
       { preheader: `${session.studentFirst} · ${session.subjectName} · ${when}`, footer: footerStaff() }
     ),
   })
@@ -221,7 +221,7 @@ export async function requestCoverage(opts: {
     {
       tutorFirstName: first,
       coverageSessionBlock: sessionLines.join('\n'),
-      coverageRespondLink: `${base}/portal?view=tutor`,
+      coverageRespondLink: `${base}/portal?view=tutor#portal-coverage`,
     },
     codeTwin
   )
@@ -374,7 +374,7 @@ export async function respondCoverage(opts: {
          <p>Hi ${first},</p>
          <p>${outcomeLine}</p>
          ${noteButton}
-         <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
+         <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor#portal-coverage" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
         { preheader: outcomeLine.slice(0, 90), footer: footerStaff() }
       ),
     })
@@ -385,7 +385,7 @@ export async function respondCoverage(opts: {
         tutorFirstName: first,
         coverageOutcomeLine: outcomeLine,
         coverageNoteButton: noteButton,
-        coverageRespondLink: `${emailBaseUrl()}/portal?view=tutor`,
+        coverageRespondLink: `${emailBaseUrl()}/portal?view=tutor#portal-coverage`,
       },
       codeTwin
     )
@@ -561,7 +561,7 @@ export async function sendCoverageNote(opts: {
        on ${when}, which you're covering:</p>
        <blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid #00AEEE;background:#f8fafc">${noteHtml}</blockquote>
        <p>It's saved with the rest of the handoff, so you don't need to keep this email.</p>
-       <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
+       <p style="margin:20px 0"><a href="${emailBaseUrl()}/portal?view=tutor#portal-coverage" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open your portal</a></p>`,
       { preheader: `${fromName} on ${session.studentFirst} — ${when}`, footer: footerStaff() }
     ),
   })
@@ -572,7 +572,7 @@ export async function sendCoverageNote(opts: {
       tutorFirstName: subFirst,
       coverageNoteBlock: noteHtml,
       coverageNoteFrom: fromName,
-      coverageRespondLink: `${emailBaseUrl()}/portal?view=tutor`,
+      coverageRespondLink: `${emailBaseUrl()}/portal?view=tutor#portal-coverage`,
     },
     codeTwin
   )

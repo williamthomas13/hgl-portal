@@ -27,7 +27,8 @@
     "regress:intl-calendar": "node scripts/regress-intl-calendar.mjs",
     "regress:alert-categories": "node scripts/regress-alert-categories.mjs",
     "regress:billing-recipient": "node scripts/regress-billing-recipient.mjs",
-    "regress:silent-import": "node scripts/regress-silent-import.mjs"
+    "regress:silent-import": "node scripts/regress-silent-import.mjs",
+    "regress:cta-landings": "node scripts/regress-cta-landings.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

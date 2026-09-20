@@ -390,7 +390,8 @@ export async function handleClassCheckoutCompleted(
       body: `<p>Enrollment <code>${paidEnrollmentId}</code> completed Stripe checkout
         (session <code>${sessionId}</code>) after its class was cancelled. No welcome email
         was sent. Issue the refund in the Stripe dashboard and reply to the family from the
-        cancellation thread.</p>`,
+        cancellation thread.</p>
+        <p ><a href="${emailBaseUrl()}/admin?class=${(data[0] as { class_id?: string }).class_id ?? ''}&enrollment=${paidEnrollmentId}" >Open the roster row</a> — mark it Refunded there once Stripe confirms.</p>`,
     }).catch((e) => console.error('Admin alert failed:', e))
     return { outcome: 'paid_after_cancel', enrollmentId: paidEnrollmentId }
   }

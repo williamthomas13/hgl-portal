@@ -91,7 +91,7 @@ async function sendReminder(opts: {
   const tz = tutor.timezone ?? PAYROLL_TZ
   const first = tutor.name?.split(' ')[0] ?? 'there'
   const base = emailBaseUrl()
-  const notesLink = `${base}/portal?view=tutor`
+  const notesLink = `${base}/portal?view=tutor#portal-notes`
   const dateLabel = new Date(opts.dateIso + 'T12:00:00Z').toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -209,7 +209,7 @@ export async function sweepWeeklyNotesDigest(now: Date = new Date()): Promise<nu
       if (!tutor?.email || tutor.pref_notes_reminders !== 'weekly') continue
       const tz = tutor.timezone ?? PAYROLL_TZ
       const first = tutor.name?.split(' ')[0] ?? 'there'
-      const notesLink = `${emailBaseUrl()}/portal?view=tutor`
+      const notesLink = `${emailBaseUrl()}/portal?view=tutor#portal-notes`
       const lines = sessions
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
         .map(

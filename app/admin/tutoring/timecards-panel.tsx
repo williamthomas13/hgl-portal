@@ -386,7 +386,7 @@ export default function TimecardsPanel() {
               <tbody className="divide-y divide-gray-100">
                 {periodRows.map((r) => (
                   <Fragment key={r.id}>
-                  <tr>
+                  <tr id={`timecard-${r.id}`}>
                     <td className="py-1.5 pr-4 font-semibold text-hgl-slate">
                       {r.instructors?.name ?? r.instructors?.email}
                       {/* PL-212: visible at the approval decision, not just

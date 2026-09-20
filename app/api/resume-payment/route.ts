@@ -100,7 +100,9 @@ export async function GET(request: Request) {
         dedupeKey: `resume_pkg_gone:${enrollmentId}`,
         adminEmail: ADMIN_EMAIL,
         subject: 'Resume-payment: selected tutoring package no longer available',
-        body: `<p>Enrollment <code>${enrollmentId}</code> resumed checkout, but the tutoring
+    // PL-460: the roster row is where staff resend the link / fix the add-on.
+    body: `<p ><a href="${baseUrl}/admin?enrollment=${enrollmentId}" >Open the roster row</a></p>` +
+        `<p>Enrollment <code>${enrollmentId}</code> resumed checkout, but the tutoring
           package they originally selected (<code>${pending?.pending_package_id}</code>) is no
           longer active. The rebuilt checkout is class-only — reach out to the family about
           their tutoring hours.</p>`,
@@ -139,7 +141,9 @@ export async function GET(request: Request) {
       dedupeKey: `resume_total_mismatch:${enrollmentId}:${Math.round(rebuiltTotal * 100)}`,
       adminEmail: ADMIN_EMAIL,
       subject: 'Resume-payment total differs from the original checkout',
-      body: `<p>Enrollment <code>${enrollmentId}</code> resumed checkout at
+    // PL-460: the roster row is where staff resend the link / fix the add-on.
+    body: `<p ><a href="${baseUrl}/admin?enrollment=${enrollmentId}" >Open the roster row</a></p>` +
+      `<p>Enrollment <code>${enrollmentId}</code> resumed checkout at
         <strong>$${rebuiltTotal.toFixed(2)}</strong>, but the cart they originally built was
         <strong>$${originalTotal.toFixed(2)}</strong> (a price changed in between, or an add-on
         became unavailable). The checkout proceeded at the current price — double-check the

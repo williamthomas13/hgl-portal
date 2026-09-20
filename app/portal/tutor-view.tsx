@@ -386,12 +386,14 @@ export default async function TutorView({
         <UpcomingSessions rows={upcomingRows} timezone={tz} />
       </div>
 
+      <div id="portal-coverage" style={{ scrollMarginTop: 16 }}>
       <CoveragePanel
         requests={coverageRows}
         handoffs={handoffs}
         upcoming={coverable}
         managerLine={managerLine}
       />
+      </div>
 
       {/* PL-258: the tutor's own student roster — contacts, schedules,
           subjects, recent notes. No finances anywhere. */}
@@ -400,7 +402,9 @@ export default async function TutorView({
         <MyStudentsPanel tutorId={tutor.id} timezone={tz} />
       </div>
 
-      <SessionNotesPanel sessions={noteSessions} timezone={tz} />
+      <div id="portal-notes" style={{ scrollMarginTop: 16 }}>
+        <SessionNotesPanel sessions={noteSessions} timezone={tz} />
+      </div>
 
       {/* PL-203: share materials with the families of students I tutor.
           PL-411: upcoming sessions ride along so a share can anchor to

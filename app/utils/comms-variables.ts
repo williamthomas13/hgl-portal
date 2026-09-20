@@ -1540,18 +1540,18 @@ export const SAMPLE_EXTRA: ExtraVars = {
   classroomFormLink: 'https://hgl-portal.vercel.app/test-link',
   payPeriodRange: 'September 1 – September 15',
   timecardHours: '14.5',
-  timecardLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
+  timecardLink: 'https://hgl-portal.vercel.app/portal?view=tutor#portal-timecards',
   sessionDate: 'Wednesday, July 22',
   // PL-339: quoted session times are ranges now.
   sessionWhenPhrase: 'Wed, Aug 5, 4:00–5:30 PM',
   missingSessionsBlock: '4:00 PM — Ana García\n6:00 PM — Marcus Lee',
-  notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
+  notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor#portal-notes',
   // PL-157: the coverage/handoff values below are the SAME derived constants
   // the SUB_* per-template pins use — shared pool and pins literally cannot
   // disagree about the scenario.
   coverageSessionBlock: SAMPLE_COVERAGE_SESSION_BLOCK,
   counselorRosterLink: 'https://hgl-portal.vercel.app/test-link',
-  coverageRespondLink: 'https://hgl-portal.vercel.app/portal?view=tutor',
+  coverageRespondLink: 'https://hgl-portal.vercel.app/portal?view=tutor#portal-coverage',
   coverageOutcomeLine: SAMPLE_COVERAGE_OUTCOME_LINE,
   coverageNoteBlock: SAMPLE_COVERAGE_NOTE_BLOCK,
   coverageNoteFrom: SAMPLE_COVERAGE_FACTS.requesterName,

@@ -354,7 +354,7 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
              when a student didn't show or a session ran a different length, so if that happened,
              mark it on the card to keep our records right. Then hit
              <strong>Confirm timecard</strong>.</p>
-             <p><a href="${base}/portal?view=tutor">Review and confirm your timecard →</a></p>
+             <p><a href="${base}/portal?view=tutor#portal-timecards">Review and confirm your timecard →</a></p>
              <p style="color:#64748b;font-size:13px">Marking a no-show doesn't change your pay —
              you're paid for the reserved time either way. That's also why sessions cancelled
              inside 24 hours stay on the card.</p>`,
@@ -368,7 +368,7 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
             tutorFirstName: tutorFirst,
             payPeriodRange: periodLabel,
             timecardHours: String(total ?? 0),
-            timecardLink: `${base}/portal?view=tutor`,
+            timecardLink: `${base}/portal?view=tutor#portal-timecards`,
           },
           codeTwin
         )

@@ -93,7 +93,8 @@ export async function POST(req: Request) {
         dedupeKey: `tutoring_invoice_failed:${invoice.id}:${invoice.attempt_count ?? 0}`,
         adminEmail: ADMIN_EMAIL,
         subject: 'Tutoring invoice payment failed (family pay-by-link)',
-        body: `<p>A payment attempt on hosted invoice <code>${invoice.id}</code>
+      body: `<p ><a href="${emailBaseUrl()}/admin/tutoring?invoice=${tutoringInvoiceId}" >Open the invoice</a> — retry, remind, or void from there.</p>` +
+        `<p>A payment attempt on hosted invoice <code>${invoice.id}</code>
           (portal invoice <code>${tutoringInvoiceId}</code>) failed — commonly an ACH debit
           bouncing after a few days. The invoice link still works; the 10/30-day escalation
           applies from the due date.</p>`,
@@ -202,7 +203,8 @@ export async function POST(req: Request) {
             dedupeKey: `qbo_refund_extra:${refundPi}:${Math.round(refundedAmount * 100)}`,
             adminEmail: ADMIN_EMAIL,
             subject: 'Additional Stripe refund needs a manual QuickBooks entry',
-            body: `<p>Payment <code>${refundPi}</code> (enrollment <code>${refundEnrollmentId}</code>)
+            body: `<p ><a href="${emailBaseUrl()}/admin?enrollment=${refundEnrollmentId}" >Open the roster row</a> · <a href="${emailBaseUrl()}/admin?tab=settings&section=qbo" >QuickBooks panel</a></p>` +
+            `<p>Payment <code>${refundPi}</code> (enrollment <code>${refundEnrollmentId}</code>)
               was refunded again in Stripe — cumulative refunds now total
               <strong>$${refundedAmount.toFixed(2)}</strong>, but a Refund Receipt for the earlier
               amount ($${Number(existing.amount ?? 0).toFixed(2)}) already synced to QuickBooks.</p>

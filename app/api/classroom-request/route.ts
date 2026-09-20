@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { emailBaseUrl } from '../../utils/base-url'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { verifyClassroomRequestToken, ADMIN_EMAIL } from '../../utils/lifecycle'
 import { sendAdminAlert } from '../../utils/email'
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
     subject: `Counselor set ${label} location: ${answer}`,
     body: `<p>${counselorName || 'A counselor'} answered the classroom request for
       <strong>${label}</strong>: <strong>${answer}</strong>.</p>
+      <p ><a href="${emailBaseUrl()}/admin?class=${classId}" >Open the class card</a> — the location is saved there; adjust it if the answer needs tidying.</p>
       <p>The class location is updated everywhere. If the class-details email already went out,
       the schedule-update email goes out automatically on the next hourly sweep.</p>`,
   })

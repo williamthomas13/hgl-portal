@@ -80,6 +80,16 @@ export default function TemplateEditor() {
       .order('template_key')
     setError(error ? `${error.message} — has migration 20260712000002 been applied?` : '')
     if (data) setTemplates(data as TemplateRow[])
+    // PL-460: the "unfilled placeholders" alert lands on THE template, open
+    // in the editor — never the list top.
+    const wanted = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('template') : null
+    if (wanted && data) {
+      const hit = (data as TemplateRow[]).find((t) => t.template_key === wanted)
+      if (hit) {
+        setSelected((cur) => cur ?? hit)
+        setShowHistory(false)
+      }
+    }
   }, [])
 
   useEffect(() => {

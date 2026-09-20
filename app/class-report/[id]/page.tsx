@@ -134,7 +134,10 @@ export default async function ClassReportPage({
   if (!report) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <p className="bg-white rounded-lg border p-6 text-gray-600">Class not found.</p>
+        <p className="bg-white rounded-lg border p-6 text-gray-600">
+          We couldn&apos;t find that class report — the link may be out of date. If you followed a link from
+          one of our emails, just reply to it and we&apos;ll send a fresh one.
+        </p>
       </div>
     )
   }

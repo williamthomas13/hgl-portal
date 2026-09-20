@@ -2195,7 +2195,7 @@ export async function sendOnce(opts: {
         Template: ${opts.templateKey ?? opts.emailType} · first send: <code>${opts.dedupeKey}</code></p>
         <p>This usually means the template was edited to use a variable the sending code doesn't
         supply. Fix it in
-        <a href="${emailBaseUrl()}/admin/communications/templates" style="color:#00AEEE">the templates page</a>
+        <a href="${emailBaseUrl()}/admin/communications/templates?template=${encodeURIComponent(opts.templateKey ?? templateMetaFor(opts.emailType, opts.dedupeKey).key)}" style="color:#00AEEE">the template</a>
         — every later send of this template has the same problem until it's corrected.</p>`,
     }).catch((e) => console.error('unresolved-variable alert failed:', e))
   }

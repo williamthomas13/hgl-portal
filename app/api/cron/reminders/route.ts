@@ -797,7 +797,9 @@ async function sweepAddonSchedulingNudges(c: Counters) {
         dedupeKey: `addon_sched_stalled:${row.enrollment_id}`,
         adminEmail: ADMIN_EMAIL,
         subject: `Add-on hours idle — ${ctx.studentFirstName} ${ctx.studentLastName} (worth a call)`,
-        body: `<p>${ctx.parentFirstName} (${ctx.parentEmail}) bought
+      // PL-460: "worth a call" lands where the phone number and call log are.
+      body: `<p ><a href="${emailBaseUrl()}/admin/families/${enrollment.familyId}" >Open the family profile</a> — phone, call log, and the schedule door are there.</p>` +
+        `<p>${ctx.parentFirstName} (${ctx.parentEmail}) bought
           ${state.hoursRemaining} tutoring hour${state.hoursRemaining === 1 ? '' : 's'} with the
           ${ctx.className} class, got the scheduling email and one nudge, and still hasn't shared
           availability or scheduled. No more automated emails go out — this one's a phone call.</p>`,
@@ -1212,7 +1214,9 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
     paidCount: paid,
     minEnrollment: bundle.minEnrollment,
     firstSession: bundle.firstSession,
-    adminUrl: `${emailBaseUrl()}/admin`,
+    // PL-460: the class card IS where the instructor dropdown and the
+    // minimum-enrollment decision live — never the dashboard root.
+    adminUrl: `${emailBaseUrl()}/admin?class=${bundle.id}&decision=min`,
   }
 
   // PL-66: registry copy when live (subject WITHOUT the [HGL Admin] prefix —
@@ -1222,7 +1226,7 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
       <strong>${bundle.minEnrollment}</strong> — the class is running, and no instructor is
       assigned yet.</p>
       <p>First session: <strong>${formatDate(bundle.firstSession)}</strong>.</p>
-      <p><a href="${base.adminUrl}">Open the admin class view</a> and select an instructor
+      <p><a href="${base.adminUrl}">Open the class card</a> and select an instructor
       from the dropdown — or add a new one — so the class-details email can go out on
       schedule.</p>`
   const renderNudge = async (nudge: number) => {
@@ -1878,7 +1882,7 @@ export async function GET(req: Request) {
         dedupeKey: `intl_cal_drift:${new Date().toISOString().slice(0, 10)}`,
         adminEmail: ADMIN_EMAIL,
         subject: `International Classes calendar: ${intlAudit.drift.length} hand edit${intlAudit.drift.length === 1 ? '' : 's'} detected`,
-        body: `<p>These events on the shared calendar no longer match the portal — someone edited
+        body: `<p ><a href="${emailBaseUrl()}/admin/calendar" >Open the International Classes calendar</a> — re-sync or adopt each edit there.</p><p>These events on the shared calendar no longer match the portal — someone edited
           them by hand in Google. The portal is NOT overwriting them; resolve each by editing the
           class in the portal (which re-syncs) or restoring the event:</p>
           <ul>${intlAudit.drift.map((d) => `<li><strong>${d.what}</strong> — ${d.problem}</li>`).join('')}</ul>`,

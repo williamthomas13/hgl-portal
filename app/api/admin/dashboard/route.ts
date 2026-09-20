@@ -497,7 +497,7 @@ export async function GET() {
       id: `unresolved-${templateKey}`,
       kind: 'Email sent with unfilled placeholders',
       text: `${templateKey} went out ${entry.sends} time${entry.sends === 1 ? '' : 's'} in the last week still showing ${[...entry.tokens].map((t) => `{${t}}`).join(', ')} — recipients see the placeholder text.`,
-      href: `/admin/communications/templates`,
+      href: `/admin/communications/templates?template=${encodeURIComponent(templateKey)}`,
       urgent: true,
     })
   }
@@ -540,7 +540,7 @@ export async function GET() {
       kind: 'Timecard awaiting approval',
       text: `${ins?.name ?? ins?.email ?? 'A tutor'} confirmed ${shortDate(t.period_start)} → ${shortDate(t.period_end)}; it needs office approval.`,
       // PL-298 audit: land on the Timecards section, not the tutoring root.
-      href: `/admin/tutoring?section=timecards`,
+      href: `/admin/tutoring?section=timecards&timecard=${t.id}`,
     })
   }
 

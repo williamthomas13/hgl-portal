@@ -391,7 +391,8 @@ export async function processGcalQueue(): Promise<GcalQueueResult> {
             dedupeKey: `gcal_sync_failed:${row.id}`,
             adminEmail: ADMIN_EMAIL,
             subject: 'Google Calendar push FAILED for a tutoring session',
-            body: `<p>After ${MAX_ATTEMPTS} attempts, session <code>${row.session_id}</code>
+            body: `<p ><a href="${emailBaseUrl()}/admin/tutoring?session=${row.session_id}" >Open the session</a> — saving any edit there re-queues the calendar push.</p>
+              <p>After ${MAX_ATTEMPTS} attempts, session <code>${row.session_id}</code>
               could not be pushed to the tutor's Google Calendar.</p>
               <p>Last error: <code>${message.slice(0, 500)}</code></p>
               <p>The portal schedule is still correct — only the calendar copy is missing.

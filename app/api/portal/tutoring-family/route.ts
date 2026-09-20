@@ -245,7 +245,7 @@ export async function POST(req: Request) {
             <p><strong>${fmtDenver(original.starts_at)} → ${fmtDenver(picked.starts_at)}</strong> (Denver)</p>
             <p>Free reschedule (24h+ notice). The tutor's Google Calendar and the schedule-change emails are already
             handled — nothing to do unless it looks wrong. It's also listed under
-            <a href="${emailBaseUrl()}/admin/tutoring" style="color:#00AEEE">Recent parent activity on the tutoring page</a>.</p>`,
+            <a href="${emailBaseUrl()}/admin/tutoring?session=${replacement.id}" style="color:#00AEEE">Recent parent activity on the tutoring page</a>.</p>`,
         }),
       ])
     )

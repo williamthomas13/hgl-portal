@@ -81,6 +81,13 @@ export default function TutoringAdmin() {
     const q = new URLSearchParams(window.location.search)
     const invoice = q.get('invoice')
     const family = q.get('family')
+    // PL-460: the "Timecard awaiting approval" row lands ON the card.
+    const timecard = q.get('timecard')
+    if (timecard) {
+      setActiveSection('timecards')
+      setFocusElement(`timecard-${timecard}`)
+      return
+    }
     const schedule = q.get('schedule')
     const session = q.get('session')
     const continueFor = q.get('continue')

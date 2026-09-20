@@ -225,7 +225,7 @@ export async function runCampaignSend(campaignId: string): Promise<CampaignRunRe
         schedules) keep their headroom — transactional always wins. The remaining
         ${pendingLeft} recipient${pendingLeft === 1 ? '' : 's'} send automatically when the
         quota resets; nothing to do unless you want to
-        <a href="${emailBaseUrl()}/admin/campaigns" style="color:#00AEEE">cancel it</a>.</p>`,
+        <a href="${emailBaseUrl()}/admin/campaigns?campaign=${campaignId}" style="color:#00AEEE">cancel it</a>.</p>`,
     }).catch((e) => console.error('campaign-paused alert failed:', e))
   }
 
