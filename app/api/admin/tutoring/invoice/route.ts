@@ -26,7 +26,7 @@ type Body =
   | { action: 'send_now'; id: string }
   | { action: 'retry_charge'; id: string }
   | { action: 'void'; id: string }
-  | { action: 'mark_change_handled'; id: string }
+  | { action: 'mark_change_handled'; id: string; reason?: string }
   // PL-334 C: one manual reminder (deduped for the day) · restart the
   // automatic cadence (re-stamps the cycle clock).
   | { action: 'send_reminder'; id: string }
@@ -231,12 +231,52 @@ export async function POST(req: Request) {
     }
 
     if (body.action === 'mark_change_handled') {
-      const { error } = await supabase
+      // PL-459 F: replying IS the handling. Either a session on this month
+      // changed since the request (the reply is the new schedule) or staff
+      // says how it was resolved — that line lands in the activity feed.
+      // Either way the family's confirmation window restarts FROM THE REPLY,
+      // never from the original send: proposal_sent_at is re-stamped and the
+      // nudge clock cleared (the sweep derives everything from those).
+      const { data: full } = await supabase
         .from('tutoring_invoices')
-        .update({ change_requested_at: null, updated_at: new Date().toISOString() })
+        .select('id, family_id, period, status, change_requested_at, change_request_note, tutoring_invoice_lines ( session_id )')
         .eq('id', invoice.id)
+        .maybeSingle()
+      if (!full?.change_requested_at) return NextResponse.json({ error: 'No open change request on this month.' }, { status: 400 })
+      const sessionIds = ((full.tutoring_invoice_lines as any[]) ?? []).map((l) => l.session_id).filter(Boolean)
+      const { count: changed } = sessionIds.length
+        ? await supabase
+            .from('tutoring_sessions')
+            .select('id', { count: 'exact', head: true })
+            .in('id', sessionIds)
+            .gt('updated_at', full.change_requested_at)
+        : { count: 0 }
+      const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : ''
+      if (!changed && !reason) {
+        return NextResponse.json(
+          { error: 'Nothing on this month changed since the request — say in a line how it was resolved (e.g. "agreed by phone: keeping Oct 27 at 5pm") so the reply is on record.' },
+          { status: 400 }
+        )
+      }
+      const nowIso = new Date().toISOString()
+      const month = new Date(String(full.period).slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+      const what = reason || (changed === 1 ? 'a session was rescheduled' : `${changed} sessions were rescheduled`)
+      const replyLine = `[${nowIso.slice(0, 16).replace('T', ' ')}] HGL reply (${caller.email}): ${what}`
+      const patch: Record<string, unknown> = {
+        change_requested_at: null,
+        change_request_note: `${full.change_request_note ?? ''}\n${replyLine}`.trim(),
+        nudge_sent_at: null,
+        updated_at: nowIso,
+      }
+      if (full.status === 'proposed') patch.proposal_sent_at = nowIso
+      const { error } = await supabase.from('tutoring_invoices').update(patch).eq('id', invoice.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json({ ok: true })
+      await supabase.from('family_fact_edits').insert({
+        family_id: full.family_id,
+        actor: `staff:${caller.email}`,
+        summary: `replied to the ${month} tutoring change request — ${what}`,
+      })
+      return NextResponse.json({ ok: true, changed: changed ?? 0 })
     }
 
     // PL-334 C: the row's reminder controls. Operational per Phase 3.1 —

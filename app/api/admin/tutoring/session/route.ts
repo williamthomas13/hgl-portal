@@ -4,6 +4,7 @@ import { sessionRole } from '../../../../utils/staff-gate'
 import { enqueueGcalSync, processGcalQueue } from '../../../../utils/gcal-sync'
 import { deleteGcalEvent, loadGcalConnection } from '../../../../utils/gcal'
 import { rescheduleSession } from '../../../../utils/reschedule'
+import { rebuildProposalInvoice } from '../../../../utils/tutoring-billing'
 import { sendRescheduleAck, sendScheduleChangeNotices } from '../../../../utils/tutoring-emails'
 
 // Session actions (Phase 7a §5): one-off create, time edit, reschedule
@@ -130,6 +131,24 @@ export async function POST(req: Request) {
         requestedBy: body.requested_by ?? 'staff',
       })
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+      // PL-459 A (verified: nothing recomputed the month before): when the
+      // moved session sits on a draft/proposed invoice, rebuild that
+      // proposal so its lines + total match what the family will see.
+      {
+        // A proposed session carries no invoice_id — its invoice is reached
+        // through the line row that bills it.
+        const { data: line } = await supabase
+          .from('tutoring_invoice_lines')
+          .select('invoice_id, tutoring_invoices ( status )')
+          .eq('session_id', body.id)
+          .limit(1)
+          .maybeSingle()
+        const invStatus = (Array.isArray(line?.tutoring_invoices) ? line?.tutoring_invoices[0] : line?.tutoring_invoices)?.status
+        if (line?.invoice_id && (invStatus === 'draft' || invStatus === 'proposed')) {
+          const rebuilt = await rebuildProposalInvoice(line.invoice_id)
+          if (!rebuilt.ok) console.error('proposal rebuild after reschedule failed:', rebuilt.error)
+        }
+      }
       // after() callbacks must RETURN their promises or the work dies with
       // the frozen lambda.
       after(() => Promise.allSettled([processGcalQueue(), result.followUp()]))

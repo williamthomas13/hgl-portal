@@ -405,7 +405,7 @@ export default function FamilyProfilePage() {
           : Promise.resolve({ data: [] } as any),
         supabase
           .from('tutoring_invoices')
-          .select('id, period, status, total, due_at, paid_at')
+          .select('id, period, status, total, due_at, paid_at, change_requested_at')
           .eq('family_id', familyId)
           .order('period', { ascending: false })
           .limit(24),
@@ -1155,7 +1155,11 @@ export default function FamilyProfilePage() {
                             {inv.period}
                           </a>{' '}
                           — {money(inv.total)} ·{' '}
-                          {inv.paid_at ? `paid ${formatDateShort(inv.paid_at)}` : inv.status}
+                          {inv.paid_at
+                            ? `paid ${formatDateShort(inv.paid_at)}`
+                            : inv.change_requested_at && ['draft', 'proposed'].includes(inv.status)
+                              ? 'change requested — needs our reply'
+                              : inv.status}
                         </li>
                       ))}
                     </ul>

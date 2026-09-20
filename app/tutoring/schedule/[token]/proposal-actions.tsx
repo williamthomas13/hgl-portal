@@ -152,17 +152,22 @@ export default function ProposalActions({
 
   return (
     <div className="space-y-3">
+      {/* PL-459: the family said this schedule doesn't work — a still-live
+          Confirm on it would be dishonest. They hear back from HGL first. */}
       {changeRequested && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-          You&apos;ve already asked for changes — we&apos;re on it. You can still confirm the current
-          schedule below if it turns out to work after all.
-        </p>
+        <div data-testid="change-request-received" className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-3">
+          <p className="font-semibold">We got your request — we&apos;ll reply by email with an updated schedule.</p>
+          <p className="text-xs mt-1">
+            Nothing to do until then. Changed your mind and the schedule below works after all? Just reply
+            to our email and say so.
+          </p>
+        </div>
       )}
       {notice && (
         <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded p-2">{notice}</p>
       )}
 
-      {mode === 'buttons' && (
+      {mode === 'buttons' && !changeRequested && (
         <div className="flex flex-wrap gap-3">
           <button
             disabled={busy}

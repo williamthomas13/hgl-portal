@@ -1452,6 +1452,13 @@ export default function ScheduleView({
           ackFocus={pendingFocusAction === 'ack'}
           conflictWhy={selected.id === focusSessionId ? focusWhy : null}
           onClose={(msg) => {
+            // PL-459 A: a change-request reschedule returns to the invoice
+            // row (the box offers "mark handled" there) — one loop, no hunting.
+            const cr = selected.id === focusSessionId && focusWhy ? /^change-request:(.+)$/.exec(focusWhy) : null
+            if (cr && msg && !msg.startsWith('Error')) {
+              window.location.assign(`/admin/tutoring?invoice=${cr[1]}&replied=1`)
+              return
+            }
             setSelected(null)
             setPendingFocusAction(null)
             if (msg) {
@@ -1558,6 +1565,7 @@ function SessionDialog({
     | null
     | { kind: 'assignment'; classLabel: string; classIntervals: { start: string; end: string }[]; hitStart: string | null; hitEnd: string | null }
     | { kind: 'availability' }
+    | { kind: 'change-request'; invoiceId: string; note: string | null; monthLabel: string }
   >(null)
   // PL-446C: warnings collected at commit — the first click arms, the
   // second proceeds and records the override in the note trail.
@@ -1596,6 +1604,25 @@ function SessionDialog({
     if (conflictWhy === 'availability') {
       setOrigin({ kind: 'availability' })
       return
+    }
+    // PL-459 A: opened from the invoice row's change-request box — quote the
+    // family's own words while the slot is picked.
+    const cr = /^change-request:(.+)$/.exec(conflictWhy)
+    if (cr) {
+      let staleCr = false
+      supabase
+        .from('tutoring_invoices')
+        .select('id, period, change_request_note')
+        .eq('id', cr[1])
+        .maybeSingle()
+        .then(({ data }) => {
+          if (staleCr || !data) return
+          const monthLabel = new Date(String(data.period).slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+          setOrigin({ kind: 'change-request', invoiceId: data.id, note: data.change_request_note ?? null, monthLabel })
+        })
+      return () => {
+        staleCr = true
+      }
     }
     const m = /^assignment:(.+)$/.exec(conflictWhy)
     if (!m) return
@@ -1714,6 +1741,17 @@ function SessionDialog({
                   This session <span className="font-bold">no longer conflicts</span> with {origin.classLabel} — already clear.
                 </>
               )}
+            </div>
+          )}
+          {origin?.kind === 'change-request' && (
+            <div data-testid="change-request-origin" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
+              <span className="font-bold">Resolving: the family&apos;s change request for {origin.monthLabel}</span>
+              {origin.note && (
+                <blockquote className="mt-1 border-l-2 border-amber-300 pl-2 whitespace-pre-wrap">{origin.note}</blockquote>
+              )}
+              <p className="mt-1">
+                Pick the new slot below. When you save, you land back on the invoice to mark the request handled.
+              </p>
             </div>
           )}
           {origin?.kind === 'availability' && (

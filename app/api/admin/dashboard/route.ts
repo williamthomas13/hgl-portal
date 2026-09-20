@@ -544,6 +544,28 @@ export async function GET() {
     })
   }
 
+  // PL-459 E: an open change request on a proposed month is HGL's move, not
+  // the family's — it counts with the things waiting on staff and lands ON
+  // the invoice row's change-request box (tap a session to reschedule it).
+  {
+    const { data: openChanges } = await supabase
+      .from('tutoring_invoices')
+      .select('id, period, change_request_note, families ( parent_first_name, parent_last_name )')
+      .not('change_requested_at', 'is', null)
+      .in('status', ['draft', 'proposed'])
+    for (const inv of (openChanges as any[]) ?? []) {
+      const fam = one<any>(inv.families)
+      const month = new Date(String(inv.period).slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' })
+      const lastNote = String(inv.change_request_note ?? '').split('\n').filter(Boolean).pop()?.replace(/^\[[^\]]*\]\s*/, '') ?? ''
+      attention.push({
+        id: `change-req-${inv.id}`,
+        kind: 'Change requested — needs our reply',
+        text: `${fam ? `${fam.parent_first_name} ${fam.parent_last_name ?? ''}`.trim() : 'A family'} asked for a change to the ${month} tutoring schedule${lastNote ? ` — “${lastNote.slice(0, 80)}”` : ''}. Tap a session on the invoice to reschedule it, then mark the request handled.`,
+        href: `/admin/tutoring?invoice=${inv.id}`,
+      })
+    }
+  }
+
   for (const s of (reschedules as any[]) ?? []) {
     const st = one<any>(s.students)
     attention.push({

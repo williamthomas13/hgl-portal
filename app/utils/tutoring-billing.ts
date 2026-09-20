@@ -54,6 +54,14 @@ export type CycleSettings = {
   paymentReminderDays: number
 }
 
+/** PL-459: "Oct 27, 5:00 PM" — every session line names its start time so
+ *  two same-day sessions are distinguishable and "the original time" in a
+ *  change request means something on the invoice row. */
+function sessionWhen(startsAt: string, tz: string): string {
+  const d = new Date(startsAt)
+  return `${d.toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' })}`
+}
+
 export async function loadCycleSettings(): Promise<CycleSettings> {
   const { data } = await supabase
     .from('app_settings')
@@ -535,9 +543,7 @@ export async function generateMonthlyCycle(
           lines.push({
             invoice_id: invoice.id,
             session_id: s.id,
-            description: `${eng.student!.first_name} — ${eng.subject!.name} with ${eng.tutor?.name ?? 'tutor'}, ${new Date(
-              s.starts_at
-            ).toLocaleDateString('en-US', { timeZone: tz, month: 'short', day: 'numeric' })} (past the prepaid package)`,
+            description: `${eng.student!.first_name} — ${eng.subject!.name} with ${eng.tutor?.name ?? 'tutor'}, ${sessionWhen(s.starts_at, tz)} (past the prepaid package)`,
             qty_hours: h2,
             rate: eng.hourly_rate,
             amount: Number((h2 * eng.hourly_rate).toFixed(2)),
@@ -548,11 +554,7 @@ export async function generateMonthlyCycle(
 
       for (const s of engSessions) {
         const hours = s.duration_minutes / 60
-        const when = new Date(s.starts_at).toLocaleDateString('en-US', {
-          timeZone: eng.tutor?.timezone ?? ORG_TZ,
-          month: 'short',
-          day: 'numeric',
-        })
+        const when = sessionWhen(s.starts_at, eng.tutor?.timezone ?? ORG_TZ)
         if (eng.funding === 'package' && coveredIds.has(s.id)) {
           packageCoveredHours += hours
           continue // covered by the prepaid balance — no line
@@ -1140,11 +1142,7 @@ export async function rebuildProposalInvoice(invoiceId: string): Promise<{ ok: b
         continue
       }
       remaining = eng.funding === 'package' ? 0 : remaining
-      const when = new Date(s.starts_at).toLocaleDateString('en-US', {
-        timeZone: tz,
-        month: 'short',
-        day: 'numeric',
-      })
+      const when = sessionWhen(s.starts_at, tz)
       lines.push({
         invoice_id: invoice.id,
         session_id: s.id,
@@ -1251,11 +1249,11 @@ export async function requestChanges(invoiceId: string, note: string): Promise<{
       schedule:</p><blockquote style="border-left:3px solid #cbd5e1;margin:8px 0;padding:4px 12px;color:#334155">${note
         .trim()
         .replace(/</g, '&lt;')}</blockquote>
-      <p>Edit the sessions on
-      <a href="${appUrl()}/admin/tutoring?invoice=${invoiceId}" style="color:#00AEEE">the tutoring page</a>
-      (this month's invoice row opens highlighted) — the proposal page and invoice update automatically.
-      The month stays unconfirmed until they confirm or the auto-confirm window closes (it pauses
-      while a change request is open).</p>`,
+      <p><a href="${appUrl()}/admin/tutoring?invoice=${invoiceId}" style="color:#00AEEE">Open the ${billingMonth(String(invoice.period).slice(0, 7)).label} invoice</a>
+      — tap the session to reschedule it. The invoice total and the family's proposal page update when you
+      save; then mark the request handled (the family's confirmation window restarts from your reply).
+      The month stays unconfirmed until they confirm or that window closes — it is paused while the
+      request is open.</p>`,
   }).catch((e) => console.error('change-request alert failed:', e))
   return { ok: true }
 }

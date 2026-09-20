@@ -10,7 +10,7 @@ import { ConfirmAction } from './confirm'
 // fee (flagged at 30 days, never automatic), void, and the monthly-cycle
 // trigger for off-schedule runs.
 
-type LineRow = { id: string; description: string; amount: number; kind: string }
+type LineRow = { id: string; description: string; amount: number; kind: string; session_id: string | null }
 
 type InvoiceRow = {
   id: string
@@ -54,6 +54,32 @@ const STATUS_STYLES: Record<InvoiceRow['status'], string> = {
 }
 
  
+/** PL-459 E: while a change request is open the ball is in HGL's court —
+ *  the pill says so, in the needs-action color, everywhere the state renders. */
+function changeOpen(r: Pick<InvoiceRow, 'status' | 'change_requested_at'>): boolean {
+  return Boolean(r.change_requested_at) && (r.status === 'draft' || r.status === 'proposed')
+}
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+/** PL-459 C: the dates a request names ("Oct 27", "October 27th", "10/27") —
+ *  a convenience for pre-highlighting a line, never for auto-editing. */
+function datesNamed(note: string | null): string[] {
+  if (!note) return []
+  const out = new Set<string>()
+  for (const m of note.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/gi)) {
+    out.add(`${m[1].slice(0, 3).toLowerCase()} ${Number(m[2])}`)
+  }
+  for (const m of note.matchAll(/\b(\d{1,2})\/(\d{1,2})\b/g)) {
+    const mo = Number(m[1])
+    if (mo >= 1 && mo <= 12) out.add(`${MONTHS[mo - 1]} ${Number(m[2])}`)
+  }
+  return [...out]
+}
+/** "…, Oct 27, 5:00 PM" → "oct 27" */
+function lineDate(description: string): string | null {
+  const m = /,\s*([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:,|\s|$)/.exec(description)
+  return m ? `${m[1].toLowerCase()} ${Number(m[2])}` : null
+}
+
 function one<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
   return Array.isArray(v) ? ((v[0] as T) ?? null) : v
@@ -111,6 +137,14 @@ export default function InvoicesPanel() {
   const [message, setMessage] = useState('')
   const [expanded, setExpanded] = useState('')
   const [lineForm, setLineForm] = useState<{ id: string; kind: 'adjustment' | 'credit'; description: string; amount: string } | null>(null)
+  // PL-459 B: the one-line reason "mark handled" asks for when no session changed.
+  const [handledReason, setHandledReason] = useState<Record<string, string>>({})
+  // PL-459 A: the reschedule dialog lands back here with ?replied=1 — say so.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('replied') === '1') {
+      setMessage('Session rescheduled — the invoice and proposal page are updated. Mark the request handled below.')
+    }
+  }, [])
   const [genMonth, setGenMonth] = useState('')
   // PL-162: the trust line quotes the real settings day, not a hardcoded one.
   const [generateDay, setGenerateDay] = useState(20)
@@ -149,7 +183,7 @@ export default function InvoicesPanel() {
          change_request_note, change_requested_at, stripe_hosted_invoice_url, charge_attempts,
          late_fee_flagged_at,
          families ( parent_first_name, parent_last_name, parent_email, autopay ),
-         tutoring_invoice_lines ( id, description, amount, kind )`
+         tutoring_invoice_lines ( id, description, amount, kind, session_id )`
       )
       .order('period', { ascending: false })
       .limit(120)
@@ -169,7 +203,7 @@ export default function InvoicesPanel() {
            change_request_note, change_requested_at, stripe_hosted_invoice_url, charge_attempts,
            late_fee_flagged_at,
            families ( parent_first_name, parent_last_name, parent_email, autopay ),
-           tutoring_invoice_lines ( id, description, amount, kind )`
+           tutoring_invoice_lines ( id, description, amount, kind, session_id )`
         )
         .eq('id', target)
         .maybeSingle()
@@ -341,7 +375,9 @@ export default function InvoicesPanel() {
             </span>
           </summary>
           <div className="space-y-2">
-            {monthRows
+            {[...monthRows]
+              // PL-459 E: rows waiting on STAFF (open change request) sort first.
+              .sort((a, b) => Number(changeOpen(b)) - Number(changeOpen(a)))
               .map((r) => (
                 <div key={r.id} id={`invoice-${r.id}`} className={`rounded p-3 ${r.status === 'void' ? 'bg-gray-100 opacity-60' : 'bg-gray-50'}`}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -362,8 +398,10 @@ export default function InvoicesPanel() {
                         </a>
                       )}
                     </span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[r.status]}`}>
-                      {STATUS_LABELS[r.status]}
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${changeOpen(r) ? 'bg-amber-100 text-amber-800' : STATUS_STYLES[r.status]}`}
+                    >
+                      {changeOpen(r) ? 'Change requested — needs our reply' : STATUS_LABELS[r.status]}
                     </span>
                     {r.auto_confirmed && <span className="text-[10px] text-gray-400 uppercase">auto-confirmed</span>}
                     {r.families?.autopay && <span className="text-[10px] text-purple-600 uppercase font-bold">autopay</span>}
@@ -380,16 +418,74 @@ export default function InvoicesPanel() {
                   </div>
 
                   {r.change_requested_at && (
+                    /* PL-459 A–C: the box LEADS with the action. The request
+                       text, then every session line as the thing to tap —
+                       each opens THE reschedule path (the PL-446 dialog) on
+                       that session with why=change-request so the dialog
+                       quotes the request; the line whose date the request
+                       names is pre-highlighted (convenience only). "Mark
+                       handled" is secondary and asks for a one-line reason
+                       when no session was changed (a phone resolution). */
                     <div className="mt-2 text-xs bg-amber-50 border border-amber-200 rounded p-2 text-amber-900">
-                      <strong>Change requested</strong>{' '}— auto-confirm is paused:
-                      <pre className="whitespace-pre-wrap font-sans mt-1">{r.change_request_note}</pre>
-                      <button
-                        disabled={busy}
-                        onClick={() => invoiceCall({ action: 'mark_change_handled', id: r.id }, 'Marked handled — the auto-confirm clock resumes.')}
-                        className="underline text-hgl-blue mt-1"
-                      >
-                        mark handled
-                      </button>
+                      <strong>The family asked for a change</strong> — the confirmation window is paused until you reply:
+                      <pre className="whitespace-pre-wrap font-sans mt-1 border-l-2 border-amber-300 pl-2">{r.change_request_note}</pre>
+                      {changeOpen(r) ? (
+                        <>
+                          <p className="mt-2 font-semibold">Reschedule a session ↓ — tap the one to move:</p>
+                          <ul className="mt-1 space-y-1">
+                            {(() => {
+                              const named = datesNamed(r.change_request_note)
+                              const sessionLines = (r.tutoring_invoice_lines ?? []).filter((l) => l.kind === 'session' && l.session_id)
+                              const matches = sessionLines.filter((l) => named.includes(lineDate(l.description) ?? ''))
+                              const highlight = matches.length === 1 ? matches[0].id : null
+                              return sessionLines.map((l) => (
+                                <li key={l.id}>
+                                  <a
+                                    href={`/admin/tutoring?session=${l.session_id}&reschedule=1&why=change-request:${r.id}`}
+                                    data-testid="change-request-session-link"
+                                    className={`block rounded px-2 py-1.5 border ${
+                                      highlight === l.id
+                                        ? 'bg-white border-amber-500 ring-2 ring-amber-400 font-semibold'
+                                        : 'bg-white/70 border-amber-200 hover:border-amber-500'
+                                    }`}
+                                  >
+                                    {l.description}
+                                    {highlight === l.id && <span className="ml-2 text-[10px] uppercase text-amber-700">named in the request</span>}
+                                    <span className="float-right text-hgl-blue">reschedule →</span>
+                                  </a>
+                                </li>
+                              ))
+                            })()}
+                          </ul>
+                          <p className="mt-1 text-[11px] text-amber-800">
+                            Saving a new time updates the invoice total and the family&apos;s proposal page.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="mt-1 text-[11px]">This month is past the proposal stage — reply to the family directly.</p>
+                      )}
+                      <div className="mt-2 pt-2 border-t border-amber-200 flex flex-wrap items-center gap-2">
+                        <span className="text-[11px]">Then:</span>
+                        <input
+                          value={handledReason[r.id] ?? ''}
+                          onChange={(e) => setHandledReason({ ...handledReason, [r.id]: e.target.value })}
+                          placeholder="how it was resolved (needed only if no session changed)"
+                          className="border border-amber-300 rounded px-2 py-1 text-xs bg-white flex-1 min-w-[12rem]"
+                        />
+                        <button
+                          disabled={busy}
+                          data-testid="mark-change-handled"
+                          onClick={() =>
+                            invoiceCall(
+                              { action: 'mark_change_handled', id: r.id, reason: handledReason[r.id] ?? '' },
+                              'Marked handled — the family gets a fresh confirmation window from now.'
+                            )
+                          }
+                          className="underline text-hgl-blue"
+                        >
+                          mark handled
+                        </button>
+                      </div>
                     </div>
                   )}
 

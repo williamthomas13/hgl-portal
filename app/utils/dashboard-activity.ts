@@ -212,7 +212,9 @@ export async function loadActivity(opts: {
       type: 'Family edits',
       groupKey: `Family edits|${f.family_id}`,
       when: f.created_at,
-      text: `${parentName} ${f.summary} from the family portal.`,
+      text: String(f.actor ?? '').startsWith('staff:')
+        ? `${String(f.actor).slice(6)} ${f.summary} (${parentName}).`
+        : `${parentName} ${f.summary} from the family portal.`,
       href: `/admin/families/${f.family_id}`,
     })
   }

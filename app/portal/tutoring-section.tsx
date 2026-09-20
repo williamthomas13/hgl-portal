@@ -425,7 +425,11 @@ export default async function TutoringSection({ email }: { email: string }) {
           })()}
           <ul className="divide-y divide-gray-100 text-sm">
             {((invoices as any[]) ?? []).map((i) => {
-              const st = INVOICE_STATUS_COPY[i.status] ?? { label: i.status, cls: 'bg-gray-100 text-gray-600' }
+              // PL-459: while their request is open, the honest state is "we owe you a reply".
+              const st =
+                i.change_requested_at && (i.status === 'proposed' || i.status === 'draft')
+                  ? { label: "Change requested — we'll reply", cls: 'bg-amber-100 text-amber-800' }
+                  : (INVOICE_STATUS_COPY[i.status] ?? { label: i.status, cls: 'bg-gray-100 text-gray-600' })
               return (
                 <li key={i.id} className="py-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span className="font-semibold text-hgl-slate">
