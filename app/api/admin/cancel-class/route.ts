@@ -129,7 +129,7 @@ export async function POST(request: Request) {
   // Snapshot the recipient sets from the pre-flip bundle. (On a re-run after
   // a partial failure the statuses have already moved — reload and use flags.)
   const paid = bundle.enrollments.filter(
-    (e) => e.payment_status === 'Paid' || (alreadyCancelled && e.payment_status === 'Completed')
+    (e) => (e.payment_status === 'Paid' || (alreadyCancelled && e.payment_status === 'Completed')) && !e.commsMuted // PL-457
   )
   const pending = bundle.enrollments.filter((e) => e.payment_status === 'Pending')
   const waitlisted = bundle.enrollments.filter((e) => e.payment_status === 'Waitlisted')

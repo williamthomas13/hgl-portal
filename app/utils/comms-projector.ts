@@ -85,6 +85,8 @@ export function projectBundle(bundle: ClassBundle, prePackages: TutoringPackage[
   }
 
   for (const e of bundle.enrollments) {
+    // PL-457: a muted enrollment projects nothing — nothing will send.
+    if (e.commsMuted) continue
     if (e.payment_status === 'Pending') {
       // PL-363: imported Pendings never enter the PR ladder — no projection.
       if (e.source === 'import') continue

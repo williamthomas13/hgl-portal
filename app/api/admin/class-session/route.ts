@@ -125,6 +125,7 @@ export async function POST(req: Request) {
     for (const e of bundle.enrollments) {
       if (!informed.has(e.id)) continue
       if (e.payment_status !== 'Paid' && e.payment_status !== 'Completed') continue
+      if (e.commsMuted) continue // PL-457: comms handled outside the portal
       const ctx = emailContext(bundle, e)
       const parent = await renderEmail('SU_SCHEDULE_UPDATE', ctx, 'parent', { changesBlock }, () =>
         scheduleUpdateEmail(ctx, 'parent', changes)
@@ -290,6 +291,7 @@ export async function POST(req: Request) {
   for (const e of bundle.enrollments) {
     if (!informed.has(e.id)) continue
     if (e.payment_status !== 'Paid' && e.payment_status !== 'Completed') continue
+    if (e.commsMuted) continue // PL-457: comms handled outside the portal
     const ctx = emailContext(bundle, e)
     const parent = await renderEmail('SU_SCHEDULE_UPDATE', ctx, 'parent', { changesBlock }, () =>
       scheduleUpdateEmail(ctx, 'parent', changes)

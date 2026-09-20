@@ -472,6 +472,7 @@ export async function sweepFollowOnForBundle(bundle: ClassBundle): Promise<FoSwe
     // The audience: families who finished (or fully paid) the feeder class.
     if (e.payment_status !== 'Paid' && e.payment_status !== 'Completed') continue
     if (e.marketingOptOut) continue // marketing-shaped — the opt-out is honored
+    if (e.commsMuted) continue // PL-457: comms handled outside the portal
     if (registeredFamilies.has(e.familyId)) {
       report.suppressed.push(e.id)
       continue

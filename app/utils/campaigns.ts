@@ -120,7 +120,7 @@ export async function resolveSegment(def: SegmentDef): Promise<SegmentRecipient[
     supabase
       .from('enrollments')
       .select(
-        `id, payment_status, promo_code_used, class_price_paid, amount_paid,
+        `id, payment_status, promo_code_used, class_price_paid, amount_paid, comms_muted,
          students!inner ( family_id, first_name ),
          classes ( id, class_type, status, school_id, price, start_date ),
          enrollment_addons ( price_paid )`
@@ -187,7 +187,9 @@ export async function resolveSegment(def: SegmentDef): Promise<SegmentRecipient[
     const cls = one<any>(e.classes)
     if (!famId) continue
     const f = factFor(famId)
-    if (cls) {
+    // PL-457: a muted enrollment must not make its family a "students of
+    // class X" campaign target (the class's comms live elsewhere).
+    if (cls && !e.comms_muted) {
       f.classRows.push({
         classType: cls.class_type,
         schoolId: cls.school_id,

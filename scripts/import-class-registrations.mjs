@@ -22,6 +22,10 @@
 //   | --baseline-current              (explicitly: today's class schedule IS what they saw)
 //     [--all-paid | --all-pending]    (when the CSV has no paid column)
 //     [--by <staff email>] [--dry-run]
+//     [--silent]   PL-457: the class's comms stay in the previous system —
+//                  claim EVERY sequence step (not just the already-due ones)
+//                  and mute the enrollment so the portal never emails these
+//                  families; without it, behaviour is byte-identical to before.
 //
 // Mapping file: { "parentFirst": "Parent First Name", "parentLast": "...",
 //   "parentEmail": "Email", "studentFirst": "...", "studentLast": "...",
@@ -58,6 +62,7 @@ const has = (name) => args.includes(`--${name}`)
 const classRef = flag('class')
 const csvPath = flag('csv')
 const dryRun = has('dry-run')
+const silent = has('silent')
 const recordedBy = (typeof flag('by') === 'string' ? flag('by') : 'import-script').toLowerCase()
 if (!classRef || typeof classRef !== 'string' || !csvPath || typeof csvPath !== 'string') {
   console.error('Need --class <id|slug> and --csv <file>.')
@@ -221,12 +226,23 @@ const lastSession = classSessions[classSessions.length - 1] ?? firstSession
 const dueSteps = firstSession
   ? SEQUENCE.filter((s) => isDue(tz, stepTargetDate(s, { firstSession, lastSession }), s.hour))
   : []
+// PL-457 A: --silent claims EVERY step; plus the non-sequence family sends the
+// sweep keys per enrollment (thank-you student leg, the E9 upsell, the class
+// survey + its reminder). The comms_muted flag on the row is the belt under
+// these braces — sendOnce refuses anything keyed on the enrollment.
+const claimSteps = silent ? SEQUENCE : dueSteps
+const SILENT_EXTRA_KEYS = ['thank_you_s', 'tutoring_upsell', 'class_survey', 'class_survey_reminder']
 
 // ---- import ----------------------------------------------------------------
 const allPaid = has('all-paid')
 const allPending = has('all-pending')
 const summary = { rows: 0, created: 0, paid: 0, pending: 0, waitlisted: 0, skippedExisting: 0, skippedBad: 0, claims: 0 }
-console.log(`\nImporting into ${label} (${cls.id}) — ${dataRows.length} CSV rows, ${dueSteps.length} sequence step(s) already due will be claimed per Paid row${dryRun ? ' [DRY RUN]' : ''}.\n`)
+const claimsPerPaidRow = 3 + claimSteps.length * 2 + (silent ? SILENT_EXTRA_KEYS.length : 0)
+console.log(
+  silent
+    ? `\nImporting into ${label} (${cls.id}) — ${dataRows.length} CSV rows. SILENT: all ${SEQUENCE.length} sequence steps (×parent/student) + ${SILENT_EXTRA_KEYS.length} sweep keys will be claimed per Paid row (${claimsPerPaidRow} claim rows each) and the enrollment muted${dryRun ? ' [DRY RUN]' : ''}.\n`
+    : `\nImporting into ${label} (${cls.id}) — ${dataRows.length} CSV rows, ${dueSteps.length} sequence step(s) already due will be claimed per Paid row${dryRun ? ' [DRY RUN]' : ''}.\n`
+)
 
 for (const row of dataRows) {
   summary.rows++
@@ -254,7 +270,8 @@ for (const row of dataRows) {
   const amount = amountRaw && !isNaN(Number(amountRaw.replace(/[$,]/g, ''))) ? Number(amountRaw.replace(/[$,]/g, '')) : Number(cls.price)
 
   if (dryRun) {
-    console.log(`  DRY: ${sFirst} ${sLast} (${parentEmail}) → ${status}${isPaid ? ` $${amount}` : ''}${registeredAt ? ` @ ${registeredAt.slice(0, 10)}` : ''}`)
+    console.log(`  DRY: ${sFirst} ${sLast} (${parentEmail}) → ${status}${isPaid ? ` $${amount}` : ''}${registeredAt ? ` @ ${registeredAt.slice(0, 10)}` : ''}${isPaid ? ` — would claim ${claimsPerPaidRow} send keys${silent ? ' + mute' : ''}` : ''}`)
+    if (isPaid) summary.claims += claimsPerPaidRow
     continue
   }
 
@@ -312,6 +329,8 @@ for (const row of dataRows) {
       source: 'import',
       source_recorded_by: recordedBy,
       schedule_snapshot: snapshot,
+      // PL-457: sendOnce refuses every send keyed on a muted enrollment.
+      comms_muted: silent,
     }])
     .select('id')
     .single()
@@ -329,7 +348,8 @@ for (const row of dataRows) {
       `parent_confirmation:${enr.id}`,
       `student_confirmation:${enr.id}`,
       `thank_you:${enr.id}`,
-      ...dueSteps.flatMap((s) => ['p', 's'].map((tag) => `${s.type}_${tag}:${enr.id}`)),
+      ...claimSteps.flatMap((s) => ['p', 's'].map((tag) => `${s.type}_${tag}:${enr.id}`)),
+      ...(silent ? SILENT_EXTRA_KEYS.map((k) => `${k}:${enr.id}`) : []),
     ]
     for (const dedupe_key of claimKeys) {
       const { error: claimErr } = await db.from('email_sends').insert([{
@@ -339,7 +359,9 @@ for (const row of dataRows) {
         class_id: cls.id,
         recipient_email: parentEmail,
         status: 'cancelled',
-        cancel_reason: 'imported mid-flight — the previous system already handled this step',
+        cancel_reason: silent
+          ? 'silent import — this class\'s emails are handled outside the portal'
+          : 'imported mid-flight — the previous system already handled this step',
       }])
       if (claimErr && claimErr.code !== '23505') console.error(`  claim failed ${dedupe_key}: ${claimErr.message}`)
       else summary.claims++
@@ -352,4 +374,5 @@ for (const row of dataRows) {
 }
 
 console.log(`\nDone. ${JSON.stringify(summary)}`)
+if (silent) console.log(`SILENT: all ${SEQUENCE.length} sequence steps claimed per Paid row (${summary.claims} claim rows ${dryRun ? 'would be ' : ''}written) — these enrollments are comms-muted; the portal will send their families nothing.`)
 console.log('Reminder: imported Paid rows were NOT posted to QuickBooks (the old system already booked that revenue). Imported Pendings are exempt from automatic payment reminders/expiry — they surface on Needs Attention; send the payment link from the roster row when ready.')

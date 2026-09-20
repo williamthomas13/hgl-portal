@@ -2113,6 +2113,44 @@ export async function sendOnce(opts: {
     }
   }
 
+  // PL-457: a muted enrollment (cutover import for a class whose comms stay
+  // in the previous system) gets NOTHING from the portal — every family-,
+  // student-, instructor- or school-facing send keyed on an enrollment passes
+  // through here, so this one check holds for the sequence, schedule
+  // updates, cancellations, surveys, upsells, instructor messages, the lot.
+  // A cancelled row records WHY in the send log (unless a claim already
+  // holds the key). Alerts to staff carry no enrollmentId and are unaffected.
+  if (opts.enrollmentId) {
+    const { data: enr } = await supabase
+      .from('enrollments')
+      .select('comms_muted')
+      .eq('id', opts.enrollmentId)
+      .maybeSingle()
+    if (enr?.comms_muted) {
+      console.warn(`[PL-457] send refused — enrollment ${opts.enrollmentId} is comms-muted: ${opts.dedupeKey}`)
+      await supabase
+        .from('email_sends')
+        .insert([
+          {
+            dedupe_key: opts.dedupeKey,
+            template_key: opts.templateKey ?? templateMetaFor(opts.emailType, opts.dedupeKey).key,
+            enrollment_id: opts.enrollmentId,
+            class_id: opts.classId ?? null,
+            recipient_email: opts.to[0]?.toLowerCase() ?? 'unknown@invalid',
+            recipient_role: opts.recipientRole ?? templateMetaFor(opts.emailType, opts.dedupeKey).role,
+            status: 'cancelled',
+            cancel_reason: 'comms muted — this enrollment was imported for a class whose emails are handled outside the portal',
+            scheduled_for: new Date().toISOString(),
+            is_test: opts.isTest ?? false,
+          },
+        ])
+        .then(({ error }) => {
+          if (error && error.code !== '23505') console.error('mute record failed (send stays refused):', error.message)
+        })
+      return 'suppressed'
+    }
+  }
+
   // PL-60: no email leaves with a dead primary action. Empty, "#", relative,
   // or unresolved-{variable} hrefs are exactly how the incident presented
   // (a Gmail button that anchors to the message itself). Loud in production
