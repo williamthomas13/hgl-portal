@@ -8,6 +8,37 @@
 
 **Go-live context (Sep 20):** Resend is on Pro (50k/mo), highergroundlearning.com verified. SLS crest re-uploaded; Deep Dive + PSAT evergreen codes set. The four live classes (SLS, Leone XIII, MIS, ASF — AISCT was cancelled) end ~Sep 30–Oct 1 and have had everything through the 2nd diagnostic reminder from MailerLite. **Decision (Scarlett):** MailerLite finishes ALL comms for those four; the portal gets their families/students/enrollments (then scores) as RECORDS ONLY via a silent import (PL-457). Every class that opens registration from here on is born in the portal. Order now: QA purge → silent import of the four → public-page walkthrough → domain/EULA/Intuit → QBO production → Stripe live → link pre-flight → DNS → sqsp repoint → MailerLite closes after its last automation (~Oct 5).
 
+## ⏸ PL-456 — STOPPED FOR SCARLETT'S OK (Sep 20) — match table below; **nothing written yet**
+Matched on the row (case/punctuation-insensitive name compare against `instructors.name`); the row's display name is kept as-is, nothing renamed. All 22 rows currently have a blank phone. The PL-226 editor saves `phone` as free text, trimmed (`phone.trim() || null`) — so the write is VERBATIM as on the sheet, trimmed, nothing normalized, no +1 prepended (Kelsey Lee's international number stays `3530858152597` as given — but see her row).
+
+| sheet name | phone (verbatim) | instructors row | row display name | verdict |
+|---|---|---|---|---|
+| Billy Thomas | (801) 712-2778 | 74bc29e7 | Billy Thomas | write |
+| Eric Brown | (215) 704-9783 | 028cbd89 | Eric Brown | write |
+| Kelsie Rank | (801) 440-8702 | 0d9235f8 | Kelsie Rank | write |
+| Kaile Cota | (231) 944-2203 | 97f662d3 | Kaile Cota | write (spelling matches the row) |
+| Gwen De Silva | (660) 238-6363 | 60ca44b9 | Gwen De Silva | write (the row is literally "Gwen De Silva", not Gwendolyn) |
+| Rebecca Baumher | 215-892-5455 | 1f50c13f | Rebecca Baumher | write |
+| Kevin Marren | (650) 464-0600 | d43e5756 | Kevin Marren | write |
+| Linden Hughes | (801) 450-6880 | f8916d8a | Linden Hughes | write |
+| Julia Fusia | (209) 605-1726 | 953f835f | Julia Fusia | write (spelling matches) |
+| Jason Topa | (740) 398-1374 | 26d362cb | Jason Topa | write (spelling matches) |
+| Alexa Jordan | (630)-731-5390 | 4b600769 | Alexa Jordan | write (verbatim, odd hyphen and all) |
+| Heather Witzel Lakin | (215) 764-0525 | 1a41a9fd | Heather Witzel Lakin | write |
+| Austin Webb | (520) 419-8405 | fb71740c | Austin Webb | write |
+| Quinn Murphey | 210-367-6117 | 7b115bab | Quinn Murphey | write (spelling matches) |
+| Ashley Khouri | (814) 553-6439 | 15bea3e1 | Ashley Khouri | write |
+| Charlotte Thayer | 817-521-5785 | 271021a2 | Charlotte Thayer | write |
+| Ava Alexander | (570) 396-2370 | a795ab3d | Ava Alexander | write |
+| **Kelsey Lee** | 3530858152597 | **— no row** | — | **NO instructors row — reported, NOT created.** (Is she a current instructor who needs a row via the Tutors panel, or a former one? Scarlett decides.) |
+| Katie Horvath | (801) 891-5686 | 53fd2e95 | Katie Horvath | write |
+| Andie Arnold | (402) 301-1173 | bfd7dc39 | Andie Arnold | write |
+| Alex Cook | — | af107a78 | Alex Cook | leave blank (sheet: "never call") |
+| Delaney Hall | — | af0ffe55 | Delaney Hall | leave blank (no number given) |
+| (no list entry) | — | ed449916 | Janet Amaya Pisco | stays blank (row without a list entry) |
+
+**Plan on OK:** 19 rows written verbatim, 2 left blank by instruction, 1 row untouched (no entry), 1 name unmatched (Kelsey Lee). **Side notes NOT imported anywhere:** the list as handed to Code carried exactly two annotations — Alex Cook "never call" and Delaney Hall "none given" — no hours/wk, "online only" or "case by case" notes were in it (those live in the July `tutor_notes` staff notes, e.g. Kaile's "Only reach out case by case"). If Scarlett wants "never call" recorded, `tutor_notes` (the staff notes on the instructor row) is the existing place — say the word. **Scarlett: reply "OK" (or amend rows) and the write runs as a one-time script with the exact table above; ship note then lists rows written.**
+
 ## PL-456 — Instructor phones (completes the stopped PL-444) (Scarlett, Sep 20)
 Scarlett re-shared the staff phone list (below, at her instruction). Enter VERBATIM into `instructors.phone` — no guessing, no reconstruction from area codes.
 - **Discipline:** first print a match table (list name → instructors row id + display name + current phone) and STOP for Scarlett's OK before writing. Names come from an informal staff sheet and may not match rows exactly (e.g. "Gwen De Silva" is likely Gwendolyn; check the spellings of Kaile Cota, Julia Fusia, Jason Topa, Quinn Murphey against the table) — match on the row, keep the row's existing name, never rename. No row → report it, don't create one. Row with no list entry → stays blank.
