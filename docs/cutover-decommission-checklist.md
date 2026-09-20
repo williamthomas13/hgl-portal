@@ -31,18 +31,28 @@ email first (classes).
      each row's stored `webhook_url`); within the hour, spot-check
      `gcal_watch_channels` rows show the new domain AND hand-move one QA event —
      the drift banner should appear within ~1 minute.
-3b. **QA-data purge — BEFORE the first import** (Scarlett, Sep 2: "the portal is full of
-   test data"). `node scripts/purge-qa-data.mjs` dry-runs by default and lists every
-   QA family/student/enrollment/engagement/invoice/lead/email row + QA class cohort it
-   would remove; real classes, instructors, schools, logos, templates, settings are
-   untouched. Discipline: dry run → review the output TOGETHER (the PL-48 lists date
-   from July — add the QA cast that arrived since: Janeson's fixture sessions, the ISD
-   QA counselor, the Willie Tomás sentinel invoice, the standing MIS QA conflicts) →
-   amend `QA_*` lists → dry run again → `--apply`. Never straight to `--apply`.
-   Leaves external systems alone on purpose: Stripe test PaymentIntents + QBO sandbox
-   docs stay; **gcal events of deleted QA sessions are NOT removed — sweep Billy's
-   tutor calendar by hand.** Afterwards the dry run should show the real classes with
-   zero enrollments and nothing else.
+3b. **Purge — BEFORE Scarlett creates the SLS / ASF / Leone XIII classes and BEFORE the
+   silent import** (PL-458, Sep 20: "everything transactional goes, configuration stays").
+   `node scripts/purge-qa-data.mjs` dry-runs by default: prints EVERY class row with a
+   KEEP / PURGE / NEW verdict (status, session dates, enrollment count), the parent logins
+   that go, every table with its row count, whether `--apply` would be refused, and the
+   post-state. Whole-table wipe of the transactional tables in FK-safe order (families →
+   students → enrollments → add-ons/attendance/agreements/availability/scores; leads;
+   contacts + affiliations; tutoring engagements/sessions/invoices/lines/timecards; email
+   sends + events + legacy log; campaigns; QBO + gcal sync logs; drift; notes; class-scoped
+   rows of the PURGE_CLASS_IDS classes) + the 3 QA parent logins. KEPT: schools, instructors
+   + tutor notes, templates, settings, short links / codes / course_meta, packages, site
+   content, logos, connections, staff/manager logins (Eric stays), every class not listed.
+   Discipline: dry run → review TOGETHER → amend `PURGE_CLASS_IDS` if a NEW row should go →
+   `--snapshot-only` (writes the gitignored JSON snapshot, deletes nothing) → `--apply`.
+   Guards: refuses everything past 2026-10-15; refuses `--apply` if any enrollment has
+   `source='import'`, any stored PaymentIntent is not a Stripe test-mode object, the Stripe
+   key is live, or QuickBooks points at production. `--apply` writes the snapshot FIRST and
+   aborts if that fails. External systems untouched: Stripe test PaymentIntents, QBO
+   sandbox docs, storage files; **gcal events of deleted QA sessions are NOT removed —
+   sweep Billy's tutor calendar by hand.** Afterwards the dry run prints 0 families / 0
+   leads / 0 contacts / 0 sends and the surviving class rows (MIS only, plus whatever
+   Scarlett created after Sep 20).
 3c. **QBO out of sandbox — BEFORE (or same day as) the Stripe live-mode switch** (Phase 6
    spec §12 rule: sandbox-synced rows never re-queue after the flip and backfill is
    skipped, so real payments taken while QBO points at sandbox silently miss the books).
