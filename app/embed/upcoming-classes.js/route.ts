@@ -128,8 +128,8 @@ export async function GET(request: Request) {
     const monogram = (n: string) => n.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w) && !/^(of|the|and|de|del|di|la|le|du)$/i.test(w)).map((w) => w[0].toUpperCase()).slice(0, 3).join('') || 'HGL'
     recentTiles = tiles.slice(0, 4).map((t) => {
       const tile = t.logo
-        ? `<span style="display:inline-flex;align-items:center;justify-content:center;height:56px;width:88px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:6px"><img src="${esc(t.logo)}" alt="${esc(t.name)} logo" style="max-height:100%;max-width:100%;object-fit:contain"/></span>`
-        : `<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;height:56px;width:88px;border-radius:8px;background:${esc(usableAccent(t.accent))};color:#fff;font-weight:800;letter-spacing:.04em">${esc(monogram(t.name))}</span>`
+        ? `<span style="display:inline-flex;align-items:center;justify-content:center;height:72px;max-width:160px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:8px;box-sizing:border-box"><img src="${esc(t.logo)}" alt="${esc(t.name)} logo" style="height:100%;width:auto;max-width:144px;object-fit:contain"/></span>`
+        : `<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;height:72px;width:72px;border-radius:8px;background:${esc(usableAccent(t.accent))};color:#fff;font-weight:800;font-size:22px;letter-spacing:.04em">${esc(monogram(t.name))}</span>`
       const href = t.code ? `${base}/${t.code}` : `${base}/classes`
       return `<a href="${esc(href)}" style="display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:#334155;min-width:110px">${tile}<span style="font-size:12px;text-align:center;line-height:1.3">${esc(t.name)}${t.city ? `<br><span style="color:#94a3b8">${esc(t.city)}</span>` : ''}</span></a>`
     }).join('')

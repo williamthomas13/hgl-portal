@@ -34,6 +34,20 @@ export async function POST(req: Request) {
     return json({ error: 'Invalid request.' }, 400)
   }
 
+  // PL-488 (Scarlett, Sep 21): every field required EXCEPT "Anything else" —
+  // validated SERVER-SIDE first so an old cached embed can never slip a
+  // partial lead through; the error names every missing field. (The honeypot
+  // check runs after, so a probe with the honeypot set proves the rule
+  // without creating a row.)
+  const REQUIRED: [string, string][] = [
+    ['parentFirst', 'First name'], ['parentLast', 'Last name'], ['parentEmail', 'Email'], ['parentPhone', 'Phone'],
+    ['connectPref', 'How you prefer to connect'], ['studentFirst', 'Student first name'], ['studentLast', 'Student last name'],
+    ['studentSchool', "Student's school"], ['subject', 'What you would like help with'],
+  ]
+  // Legacy single-name callers: contact_name / studentName count for the split pair.
+  const has = (k: string) => Boolean(str(body[k], 300)) || (k === 'parentFirst' && Boolean(str(body.parentName, 200))) || (k === 'parentLast' && Boolean(str(body.parentName, 200))) || (k === 'studentFirst' && Boolean(str(body.studentName, 200))) || (k === 'studentLast' && Boolean(str(body.studentName, 200)))
+  const missing = REQUIRED.filter(([k]) => !has(k)).map(([, label]) => label)
+  if (missing.length) return json({ error: `Please fill in: ${missing.join(', ')}.`, missing }, 400)
   // Honeypot: real parents never fill the invisible field.
   if (str(body.company)) return json({ ok: true })
   if (ipThrottled(req)) return json({ error: 'Too many requests — please try again in a few minutes.' }, 429)

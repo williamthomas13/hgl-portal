@@ -7,6 +7,7 @@ import { DEFAULT_TIMEZONE } from '../utils/lifecycle'
 import { imageAttrs } from '../utils/class-page-images'
 import { publicSkin, PAGE_HERO } from '../components/public-skin'
 import SchoolTile from '../components/SchoolTile'
+import RecentMore from '../components/RecentMore'
 import SiteHeader from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
 // PL-479/485: /classes is the ONE public page whose consult button reads
@@ -64,6 +65,8 @@ export default async function ClassesBrowsePage({
 }) {
   const sp = await searchParams
   const cityFilter = typeof sp.city === 'string' ? sp.city : null
+  // PL-491: ?recent=all = the no-JS fallback of the "more" link.
+  const recentAll = sp.recent === 'all'
 
   const { data } = await supabase
     .from('classes')
@@ -139,14 +142,15 @@ export default async function ClassesBrowsePage({
   // count — they are real history. The city is the SCHOOL's own city (or the
   // class's display cities); never the timezone's city dressed up as one.
   const RECENT_CAP = 12
-  const recentAll = rowsWithHrefs
+  const recentEvery = rowsWithHrefs
     .filter((c) => c.past)
     .sort((a, b) => String(b.lastSession).localeCompare(String(a.lastSession)))
-  const recent = recentAll.slice(0, RECENT_CAP)
-  const moreSchools = new Set(recentAll.slice(RECENT_CAP).map((c) => c.school?.name ?? c.label)).size
+  const recent = recentEvery.slice(0, RECENT_CAP)
+  const recentRest = recentEvery.slice(RECENT_CAP)
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  // PL-490: "Month YYYY" — a stray .slice(0, 6) left over from the old text
+  // list truncated this to "Februa" / "June 2" on prod.
   const monthYear = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1] ?? ''} ${iso.slice(0, 4)}`
-    .slice(0, 6)
 
   const cities = [...new Set(upcoming.map((c) => c.city).filter(Boolean))].sort()
   const visible = cityFilter ? upcoming.filter((c) => c.city === cityFilter) : upcoming
@@ -271,13 +275,13 @@ export default async function ClassesBrowsePage({
           <div className="mt-12" data-testid="recent-classes">
             <h2 className="text-lg font-bold text-hgl-slate mb-3">Recent classes</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {recent.map((c) => {
+              {[...recent, ...(recentAll ? recentRest : [])].map((c) => {
                 const inner = (
                   <>
                     <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} accentColor={c.school?.accent_color} size="sm" />
                     <div>
                       <h2 className="font-bold text-hgl-slate leading-snug">{c.school?.name ?? c.label}</h2>
-                      <p className="text-sm text-gray-500 mt-1">{c.city ? `${c.city} · ` : ''}{monthYear(String(c.lastSession))}{c.school ? ` · ${c.label.replace(`${c.school.name} `, '').replace(/ Class$/, '')}` : ''}</p>
+                      <p className="text-sm text-gray-500 mt-1">{c.city ? `${c.city} · ` : ''}<span data-testid="recent-month">{monthYear(String(c.lastSession))}</span>{c.school ? ` · ${c.label.replace(`${c.school.name} `, '').replace(/ Class$/, '')}` : ''}</p>
                     </div>
                   </>
                 )
@@ -292,8 +296,23 @@ export default async function ClassesBrowsePage({
                 )
               })}
             </div>
-            {moreSchools > 0 && (
-              <p className="mt-3 text-sm text-gray-400">and {moreSchools} more school{moreSchools === 1 ? '' : 's'}</p>
+            {/* PL-491: the remainder renders hidden; "more" (a real link) shows it in place, or /classes?recent=all without JS. */}
+            {!recentAll && recentRest.length > 0 && (
+              <>
+                <p className="mt-3"><RecentMore count={recentRest.length} /></p>
+                {/* inline display:none — Tailwind's .grid would override the [hidden] attribute */}
+                <div id="recent-rest" style={{ display: 'none' }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-5" data-testid="recent-rest">
+                  {recentRest.map((c) => (
+                    <a key={c.id} href={c.schoolCode ? `/${c.schoolCode}` : c.pageHref} className="bg-white rounded-lg shadow-sm p-4 flex flex-col gap-2 border border-transparent hover:border-hgl-blue transition" data-testid="class-card" data-state="recent">
+                      <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} accentColor={c.school?.accent_color} />
+                      <div>
+                        <h2 className="font-bold text-hgl-slate leading-snug">{c.school?.name ?? c.label}</h2>
+                        <p className="text-sm text-gray-500 mt-1">{c.city ? `${c.city} · ` : ''}<span data-testid="recent-month">{monthYear(String(c.lastSession))}</span>{c.school ? ` · ${c.label.replace(`${c.school.name} `, '').replace(/ Class$/, '')}` : ''}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}

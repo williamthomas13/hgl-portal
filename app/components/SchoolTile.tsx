@@ -24,19 +24,23 @@ export default function SchoolTile({
   accentColor?: string | null
   size?: 'sm' | 'md'
 }) {
-  const box = size === 'sm' ? 'h-12 w-16' : 'h-16 w-24'
+  // PL-491: ~72px tall on every card state (wide wordmarks — ISP, ASM, ULIS,
+  // ISM — were unreadable at 34px); up to ~160px wide, object-contain, a
+  // little padding — wide logos take the width, square crests stay square,
+  // never cropped or stretched. The monogram is a matching 72px square.
+  void size
   if (logoUrl) {
     return (
-      <span className={`inline-flex items-center justify-center bg-white rounded-md border border-gray-100 p-1.5 ${box}`} data-testid="school-tile">
+      <span className="inline-flex self-start items-center justify-center bg-white rounded-md border border-gray-100 p-2 h-[72px] max-w-[160px]" data-testid="school-tile">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoUrl} alt={`${name} logo`} className="max-h-full max-w-full object-contain" loading="lazy" decoding="async" />
+        <img src={logoUrl} alt={`${name} logo`} className="h-full w-auto max-w-[144px] object-contain" loading="lazy" decoding="async" />
       </span>
     )
   }
   return (
     <span
       aria-hidden
-      className={`inline-flex items-center justify-center rounded-md text-white font-extrabold tracking-wide ${size === 'sm' ? 'text-sm' : 'text-lg'} ${box}`}
+      className="inline-flex self-start items-center justify-center rounded-md text-white font-extrabold tracking-wide text-2xl h-[72px] w-[72px]"
       style={{ background: usableAccent(accentColor ?? null) }}
       data-testid="school-tile-monogram"
     >

@@ -26,12 +26,14 @@ export default async function EvergreenRegisterPage({
 }) {
   const raw = (await params).code
   const code = decodeURIComponent(raw).toLowerCase().trim()
-  const fallbackCapture = (heading: string, classType: string, schoolId: string | null) => (
+  const fallbackCapture = (heading: string, classType: string, schoolId: string | null, school: { name: string; logo: string | null } | null = null) => (
     <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       <EvergreenCapture
         schoolId={schoolId}
         classType={classType}
         schoolLabel={heading.replace(/^No upcoming (class at )?/, '').replace(/ (class )?right now.*$/, '')}
+        schoolName={school?.name ?? null}
+        schoolLogo={school?.logo ?? null}
         heading={heading}
         sub="Add your email to the interest list to be contacted when registration opens for the next course."
       />
@@ -61,7 +63,8 @@ export default async function EvergreenRegisterPage({
         ? `No upcoming class at ${res.label} right now, but we'll likely have one set up soon.`
         : `No upcoming ${res.label} class right now, but we'll likely have one set up soon.`,
       res.classType,
-      res.kind === 'school' ? res.schoolId : null
+      res.kind === 'school' ? res.schoolId : null,
+      res.kind === 'school' ? { name: res.schoolName, logo: res.schoolLogo } : null
     )
   }
   // PL-448: not a code we know → the registrar-parity wildcard 301.

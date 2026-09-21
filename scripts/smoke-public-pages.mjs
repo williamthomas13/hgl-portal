@@ -26,13 +26,38 @@ const env = Object.fromEntries(
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 const plus = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 const IP_SLUG = 'qa-smoke-in-progress'
+// PL-489: one class per public STATE (open · full · closed · in-progress ·
+// cancelled) + a school with no class (no-upcoming) — so the header/footer
+// audit is a gate, not an eye.
+const STATE_SLUGS = { open: 'qa-smoke-open', full: 'qa-smoke-full', closed: 'qa-smoke-closed', cancelled: 'qa-smoke-cancelled' }
 async function cleanupInProgress() {
-  const { data: cls } = await db.from('classes').select('id').eq('slug', IP_SLUG)
+  const { data: cls } = await db.from('classes').select('id').in('slug', [IP_SLUG, ...Object.values(STATE_SLUGS)])
   for (const c of cls ?? []) {
+    await db.from('email_sends').delete().eq('class_id', c.id)
+    await db.from('enrollments').delete().eq('class_id', c.id)
     await db.from('sessions').delete().eq('class_id', c.id)
     await db.from('classes').delete().eq('id', c.id)
   }
-  await db.from('schools').delete().eq('nickname', 'QASMOKE')
+  const { data: fams } = await db.from('families').select('id').like('parent_email', 'billy+qasmoke%')
+  for (const f of fams ?? []) { await db.from('students').delete().eq('family_id', f.id); await db.from('families').delete().eq('id', f.id) }
+  await db.from('schools').delete().in('nickname', ['QASMOKE', 'QASMOKE2'])
+}
+async function createStateFixtures(schoolId) {
+  const mk = async (slug, o) => {
+    const { data: c } = await db.from('classes').insert([{ class_type: 'SAT Prep', status: o.status ?? 'open', start_date: plus(o.first), price: 749, capacity: o.capacity ?? 20, min_enrollment: 1, school_id: schoolId, slug, delivery_mode: 'online', default_location: 'Live online', timezone: 'Europe/Rome', registration_close_date: plus(o.close), enrollment_deadline: plus(o.close), practice_test_count: 2 }]).select('id').single()
+    await db.from('sessions').insert([0, 7].map((n) => ({ class_id: c.id, session_date: plus(o.first + n), start_time: '18:00:00', end_time: '20:00:00' })))
+    if (o.paid) {
+      const { data: fam } = await db.from('families').insert([{ parent_first_name: 'QA', parent_last_name: 'Smoke', parent_email: `billy+qasmoke-${slug}@highergroundlearning.com` }]).select('id').single()
+      const { data: st } = await db.from('students').insert([{ family_id: fam.id, first_name: 'QA', last_name: 'Smoke' }]).select('id').single()
+      await db.from('enrollments').insert([{ class_id: c.id, student_id: st.id, payment_status: 'Paid', paid_at: new Date().toISOString(), comms_muted: true }])
+    }
+    return c.id
+  }
+  await mk(STATE_SLUGS.open, { first: 30, close: 25 })
+  await mk(STATE_SLUGS.full, { first: 30, close: 25, capacity: 1, paid: true })
+  await mk(STATE_SLUGS.closed, { first: -30, close: -35 })
+  await mk(STATE_SLUGS.cancelled, { first: 30, close: 25, status: 'cancelled' })
+  await db.from('schools').insert([{ name: 'QA Smoke School Two', nickname: 'QASMOKE2', timezone: 'Europe/Rome', city: 'Milan', evergreen_code: 'qasmoke2', collateral_language: 'en' }])
 }
 async function createInProgress() {
   await cleanupInProgress()
@@ -89,11 +114,55 @@ try {
   const clRes = await fetch(`${base}/classes`)
   const clHtml = await clRes.text().catch(() => '')
   check('/classes renders school cards (in-progress fixture as a card with a tile)', /data-testid="class-card"[^>]*data-state="in-progress"/.test(clHtml) && /data-testid="school-tile(-monogram)?"/.test(clHtml))
+  // PL-490: a recent card's date reads "Month YYYY" (the closed fixture is a recent card).
+  const months = [...clHtml.matchAll(/data-testid="recent-month">([^<]*)</g)].map((m) => m[1])
+  check('/classes recent cards read "Month YYYY" (PL-490)', months.length > 0 && months.every((m) => /^[A-Z][a-z]+ \d{4}$/.test(m)), months.slice(0, 3).join(' | '))
+  // PL-491: the overflow line is a real link ("more" → expands in place; /classes?recent=all without JS).
+  const recentCount = (clHtml.match(/data-state="recent"/g) ?? []).length
+  if (/data-testid="recent-more"/.test(clHtml)) {
+    check('/classes "more" is a real link to ?recent=all with the remainder pre-rendered hidden', /href="\/classes\?recent=all"/.test(clHtml) && /id="recent-rest" style="display:none"/.test(clHtml))
+    const allHtml = await (await fetch(`${base}/classes?recent=all`)).text().catch(() => '')
+    check('/classes?recent=all shows every recent class (no-JS fallback)', !/data-testid="recent-more"/.test(allHtml) && (allHtml.match(/data-state="recent"/g) ?? []).length >= recentCount)
+  } else {
+    console.log(`note  /classes has ${recentCount} recent card(s) — under the cap, no "more" link to check`)
+  }
   check('/classes carries the new intro line + the "Talk to us" button', /Live test-prep classes at partner schools around the world, online, and at our HQ in Salt Lake City, USA\./.test(clHtml) && /data-testid="classes-talk-to-us"/.test(clHtml))
   for (const [name, path] of [['/classes', '/classes'], ['/{code} in progress', '/qasmoke'], ['/team', '/team'], ['/inquire', '/inquire']]) {
     const h = path === '/classes' ? clHtml : await (await fetch(`${base}${path}`)).text().catch(() => '')
     check(`${name} renders the site header + footer (PL-478)`, /data-testid="site-header"/.test(h) && /data-testid="site-footer"/.test(h))
   }
+  // PL-489: the header/footer audit — one URL per public state, gated.
+  const { data: smokeSchool } = await db.from('schools').select('id').eq('nickname', 'QASMOKE').maybeSingle()
+  await createStateFixtures(smokeSchool.id)
+  for (const [state, path, marker] of [
+    // the code URL serves the school's newest OPEN class (the open fixture) — the in-progress class keeps its /c address
+    ['open (/{code})', '/qasmoke', 'data-track="register"'],
+    ['full', `/c/${STATE_SLUGS.full}`, 'Join the waitlist'],
+    ['closed', `/c/${STATE_SLUGS.closed}`, 'Registration for this class has closed'],
+    ['in-progress', `/c/${IP_SLUG}`, 'under way — registration closed'],
+    ['cancelled', `/c/${STATE_SLUGS.cancelled}`, 'isn’t running'],
+    ['no-upcoming', '/qasmoke2', 'No upcoming class at QASMOKE2'],
+    ['unknown code (/c/{bad})', `/c/${BAD_SLUG}`, 'No active class'],
+  ]) {
+    const h = await (await fetch(`${base}${path}`)).text().catch(() => '')
+    check(`state "${state}" (${path}) renders its marker`, h.includes(marker), marker)
+    check(`state "${state}" carries the site header + footer (PL-478/489)`, /data-testid="site-header"/.test(h) && /data-testid="site-footer"/.test(h))
+  }
+  const nuHtml = await (await fetch(`${base}/qasmoke2`)).text().catch(() => '')
+  check('no-upcoming card carries the brand lockup (PL-483/489)', /data-testid="brand-lockup"/.test(nuHtml))
+
+  // PL-488: the inquiry API refuses a blank required field (server-side, naming it) and accepts a blank "anything else" (the honeypot is set so no row is written).
+  const full = { parentFirst: 'QA', parentLast: 'Smoke', parentEmail: 'billy+qasmoke-inq@highergroundlearning.com', parentPhoneCountry: '+1', parentPhone: '801 555 0100', connectPref: 'Email', studentFirst: 'QA', studentLast: 'Student', studentSchool: 'Homeschooled', subject: 'SAT', other: '', company: 'bot' }
+  const post = (b) => fetch(`${base}/api/inquiry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })
+  const okRes = await post(full)
+  check('inquiry API accepts every required field + a BLANK "anything else"', okRes.status === 200, `status ${okRes.status}`)
+  for (const k of ['parentFirst', 'parentLast', 'parentEmail', 'parentPhone', 'connectPref', 'studentFirst', 'studentLast', 'studentSchool', 'subject']) {
+    const r = await post({ ...full, [k]: '' })
+    const j = await r.json().catch(() => ({}))
+    check(`inquiry API rejects a blank "${k}" and names it`, r.status === 400 && /Please fill in:/.test(j.error ?? '') && Array.isArray(j.missing) && j.missing.length === 1, `${r.status} ${j.error ?? ''}`)
+  }
+  const embedJs = await (await fetch(`${base}/embed/inquire.js`)).text().catch(() => '')
+  check('inquiry embed carries the same required set (data-require switch retired)', !/data-require/.test(embedJs) && (embedJs.match(/"required":true/g) ?? []).length === 9)
   const embedHtml = await (await fetch(`${base}/embed/upcoming-classes.js`)).text().catch(() => '')
   check('/embed/upcoming-classes.js never carries the site header', !/site-header/.test(embedHtml))
   const regRes = await fetch(`${base}/qasmoke/register`)
@@ -129,6 +198,26 @@ if (!chromePath) {
       check('in-progress page has no horizontal overflow at 375px', overflow <= 0, `overflow ${overflow}px`)
       const banner = await page.$('[data-testid="in-progress-banner"]')
       check('in-progress banner renders at 375px', banner !== null)
+      // PL-491: the school tile is readable — rendered height ≥ 64px on /classes at 375px, no overflow.
+      await page.goto(`${base}/classes`, { waitUntil: 'networkidle0', timeout: 30_000 })
+      // (visible tiles only — the "more" remainder is display:none until clicked)
+      const tileHeights = await page.$$eval('[data-testid="school-tile"], [data-testid="school-tile-monogram"]', (els) => els.filter((el) => el.offsetParent !== null).map((el) => el.getBoundingClientRect().height))
+      check('/classes school tiles render ≥ 64px tall at 375px (PL-491)', tileHeights.length > 0 && tileHeights.every((h) => h >= 64), `heights ${[...new Set(tileHeights.map((h) => Math.round(h)))].join(',')}`)
+      // PL-491: the remainder is really hidden until "more" is clicked, then shown in place (Tailwind's .grid used to override [hidden]).
+      const moreState = await page.evaluate(async () => {
+        const more = document.querySelector('[data-testid="recent-more"]')
+        if (!more) return null
+        const vis = () => [...document.querySelectorAll('[data-state="recent"]')].filter((e) => e.offsetParent !== null).length
+        const before = vis()
+        more.click()
+        await new Promise((r) => setTimeout(r, 300))
+        return { before, after: vis(), total: document.querySelectorAll('[data-state="recent"]').length }
+      })
+      if (moreState) check('/classes "more" expands the hidden remainder in place', moreState.before < moreState.total && moreState.after === moreState.total, JSON.stringify(moreState))
+      const tileWidths = await page.$$eval('[data-testid="school-tile"]', (els) => els.map((el) => Math.round(el.getBoundingClientRect().width)))
+      check('/classes logo tiles wrap their logo (not stretched to a fixed width)', tileWidths.length === 0 || tileWidths.some((w) => w < 160) || tileWidths.every((w) => w <= 160), `widths ${[...new Set(tileWidths)].join(',')}`)
+      const clOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+      check('/classes has no horizontal overflow at 375px with the larger tiles', clOverflow <= 0, `overflow ${clOverflow}px`)
       await page.goto(`${base}/register/${ipId}`, { waitUntil: 'networkidle0', timeout: 30_000 })
       const back = await page.$('[data-testid="back-to-class-page"]')
       check('/register while closed links back to the class page', back !== null)

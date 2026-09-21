@@ -15,6 +15,10 @@ export type EvergreenResolution =
       kind: 'school'
       schoolId: string
       label: string
+      /** PL-489: the school's facts for the no-upcoming-class card's lockup. */
+      schoolName: string
+      schoolLogo: string | null
+      accentColor: string | null
       classSlug: string | null
       classType: string
       pinned: boolean
@@ -100,7 +104,7 @@ export async function resolveEvergreen(code: string): Promise<EvergreenResolutio
 
   const { data: school } = await supabase
     .from('schools')
-    .select('id, name, nickname, evergreen_code, evergreen_pin_class_id')
+    .select('id, name, nickname, evergreen_code, evergreen_pin_class_id, logo_url, accent_color')
     .eq('evergreen_code', code)
     .maybeSingle()
   if (school) {
@@ -109,6 +113,9 @@ export async function resolveEvergreen(code: string): Promise<EvergreenResolutio
       kind: 'school',
       schoolId: school.id,
       label: school.nickname ?? school.name,
+      schoolName: school.name,
+      schoolLogo: school.logo_url ?? null,
+      accentColor: school.accent_color ?? null,
       classSlug: slug,
       classType: (await latestClassType({ school_id: school.id })) ?? 'SAT Prep',
       pinned,

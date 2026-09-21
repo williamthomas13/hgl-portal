@@ -62,7 +62,7 @@ export function embedScript(spec: EmbedSpec, base: string): string {
   var spec = ${JSON.stringify({ ...spec, base, dialCodes: DIAL_CODES })};
   var source = el.getAttribute('data-source') || ('sqsp:' + location.pathname);
   var interest = el.getAttribute('data-interest') || '';
-  var requireExtra = (el.getAttribute('data-require') || '').split(',').map(function(s){return s.trim()}).filter(Boolean);
+  // PL-488: ONE required set everywhere (the spec); the per-page attribute switch is retired — nothing can loosen or change the set.
   var S = {
     wrap: 'font-family:inherit;color:#334155;max-width:640px;width:100%;box-sizing:border-box',
     h: 'font-size:22px;font-weight:700;margin:0 0 6px;color:#1e293b',
@@ -77,7 +77,7 @@ export function embedScript(spec: EmbedSpec, base: string): string {
   };
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function field(f){
-    var req = f.required || requireExtra.indexOf(f.name) >= 0;
+    var req = !!f.required;
     var lab = '<label style="' + S.label + '" for="hgl-f-' + f.name + '">' + esc(f.label) + (req ? ' <span style="color:#ef4444">*</span>' : '') + '</label>';
     if (f.type === 'textarea') return '<div style="' + S.row + '">' + lab + '<textarea style="' + S.input + ';min-height:90px" id="hgl-f-' + f.name + '" name="' + f.name + '" ' + (req ? 'required' : '') + ' placeholder="' + esc(f.placeholder || '') + '"></textarea></div>';
     if (f.type === 'select') {
@@ -107,7 +107,7 @@ export function embedScript(spec: EmbedSpec, base: string): string {
       var v = input ? input.value.trim() : '';
       data[f.name] = v;
       if (f.type === 'phone') { var cc = form.querySelector('[name="' + f.name + 'Country"]'); data[f.name + 'Country'] = cc ? cc.value : ''; }
-      if ((f.required || requireExtra.indexOf(f.name) >= 0) && !v) missing.push(f.label);
+      if (f.required && !v) missing.push(f.label);
     });
     var hp = form.querySelector('[name="company"]'); data.company = hp ? hp.value : '';
     if (missing.length) { err.textContent = 'Please fill in: ' + missing.join(', ') + '.'; err.style.display = 'block'; return; }
@@ -145,15 +145,16 @@ export const INQUIRE_SPEC: EmbedSpec = {
   heading: "Let's get started",
   intro: "Tell us a little about what you're looking for and we'll usually be able to reach out the same day. We'll get the rest of the details later when we connect!",
   fields: [
+    // PL-488 (Scarlett, Sep 21): every field required EXCEPT "Anything else".
     { name: 'parentFirst', label: 'First name', type: 'text', required: true },
     { name: 'parentLast', label: 'Last name', type: 'text', required: true },
     { name: 'parentEmail', label: 'Email', type: 'email', required: true },
-    { name: 'parentPhone', label: 'Phone / WhatsApp', type: 'phone' },
-    { name: 'connectPref', label: 'How do you prefer to connect?', type: 'select', options: ['Phone call', 'Text', 'Email', 'WhatsApp'], placeholder: 'Pick one…' },
-    { name: 'studentFirst', label: 'Student first name', type: 'text' },
-    { name: 'studentLast', label: 'Student last name', type: 'text' },
-    { name: 'studentSchool', label: "Student's school", type: 'text' },
-    { name: 'subject', label: 'What would you like help with?', type: 'select', options: INTEREST_OPTIONS, placeholder: 'Pick one…' },
+    { name: 'parentPhone', label: 'Phone / WhatsApp', type: 'phone', required: true },
+    { name: 'connectPref', label: 'How do you prefer to connect?', type: 'select', required: true, options: ['Phone call', 'Text', 'Email', 'WhatsApp'], placeholder: 'Pick one…' },
+    { name: 'studentFirst', label: 'Student first name', type: 'text', required: true },
+    { name: 'studentLast', label: 'Student last name', type: 'text', required: true },
+    { name: 'studentSchool', label: "Student's school", type: 'text', required: true, placeholder: 'Homeschooled or graduated? Just say so' },
+    { name: 'subject', label: 'What would you like help with?', type: 'select', required: true, options: INTEREST_OPTIONS, placeholder: 'Pick one…' },
     { name: 'other', label: 'Anything else we should know?', type: 'textarea', placeholder: 'Grade, recent scores, goals, timing — whatever is useful' },
   ],
   submitLabel: 'Get in touch',

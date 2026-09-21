@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { INTEREST_OPTIONS } from '../utils/embed-forms'
 
 // PL-38 client form: a superset of the six Squarespace variants, kept short —
 // cold inquiries answer in under a minute; the full intake comes later.
@@ -51,9 +52,21 @@ export default function InquiryForm({
 
   const set = (k: keyof typeof f) => (v: string) => setF((prev) => ({ ...prev, [k]: v }))
 
+  // PL-488: every field required except "Anything else" — the honest error
+  // names EVERY missing field (a browser's native check stops at the first).
+  const REQUIRED: [keyof typeof f, string][] = [
+    ['parentFirst', 'First name'], ['parentLast', 'Last name'], ['parentEmail', 'Email'], ['parentPhone', 'Phone'],
+    ['connectPref', 'How you prefer to connect'], ['studentFirst', 'Student first name'], ['studentLast', 'Student last name'],
+    ['studentSchool', "Student's school"], ['subject', 'What you would like help with'],
+  ]
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    const missing = REQUIRED.filter(([k]) => !String(f[k] ?? '').trim()).map(([, label]) => label)
+    if (missing.length) {
+      setError(`Please fill in: ${missing.join(', ')}.`)
+      return
+    }
     setSaving(true)
     try {
       const res = await fetch('/api/inquiry', {
@@ -84,7 +97,7 @@ export default function InquiryForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} noValidate className="space-y-4" data-testid="inquiry-form">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="First name" required>
           <input className={inputCls} required autoComplete="given-name" value={f.parentFirst} onChange={(e) => set('parentFirst')(e.target.value)} />
@@ -95,11 +108,11 @@ export default function InquiryForm({
         <Field label="Email" required>
           <input className={inputCls} type="email" required value={f.parentEmail} onChange={(e) => set('parentEmail')(e.target.value)} />
         </Field>
-        <Field label="Phone">
-          <input className={inputCls} type="tel" value={f.parentPhone} onChange={(e) => set('parentPhone')(e.target.value)} />
+        <Field label="Phone" required>
+          <input className={inputCls} type="tel" required value={f.parentPhone} onChange={(e) => set('parentPhone')(e.target.value)} />
         </Field>
-        <Field label="How do you prefer to connect?">
-          <select className={`${inputCls} bg-white`} value={f.connectPref} onChange={(e) => set('connectPref')(e.target.value)}>
+        <Field label="How do you prefer to connect?" required>
+          <select className={`${inputCls} bg-white`} required value={f.connectPref} onChange={(e) => set('connectPref')(e.target.value)}>
             <option value="">Pick one…</option>
             <option value="call">Phone call</option>
             <option value="text">Text</option>
@@ -107,23 +120,24 @@ export default function InquiryForm({
             <option value="whatsapp">WhatsApp</option>
           </select>
         </Field>
-        <Field label="Student first name">
-          <input className={inputCls} value={f.studentFirst} onChange={(e) => set('studentFirst')(e.target.value)} />
+        <Field label="Student first name" required>
+          <input className={inputCls} required value={f.studentFirst} onChange={(e) => set('studentFirst')(e.target.value)} />
         </Field>
-        <Field label="Student last name">
-          <input className={inputCls} value={f.studentLast} onChange={(e) => set('studentLast')(e.target.value)} />
+        <Field label="Student last name" required>
+          <input className={inputCls} required value={f.studentLast} onChange={(e) => set('studentLast')(e.target.value)} />
         </Field>
-        <Field label="Student's school">
-          <input className={inputCls} value={f.studentSchool} onChange={(e) => set('studentSchool')(e.target.value)} />
+        <Field label="Student's school" required>
+          <input className={inputCls} required placeholder="Homeschooled or graduated? Just say so" value={f.studentSchool} onChange={(e) => set('studentSchool')(e.target.value)} />
         </Field>
       </div>
-      <Field label="What would you like help with?">
-        <input
-          className={inputCls}
-          placeholder="e.g. SAT prep, Algebra 2, college essays"
-          value={f.subject}
-          onChange={(e) => set('subject')(e.target.value)}
-        />
+      <Field label="What would you like help with?" required>
+        {/* PL-488: the same pick-one list the embed uses (+ free text via "Other"). */}
+        <select className={`${inputCls} bg-white`} required value={f.subject} onChange={(e) => set('subject')(e.target.value)}>
+          <option value="">Pick one…</option>
+          {INTEREST_OPTIONS.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
       </Field>
       <Field label="Anything else we should know?">
         <textarea
