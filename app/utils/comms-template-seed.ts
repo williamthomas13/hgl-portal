@@ -2361,6 +2361,48 @@ If we don't hear from you within {autoconfirmDays} days, this updated schedule c
 
 {contactBlock}`,
   },
+  // PL-473: the inquiry auto-reply — NONE existed (the sqsp form sent
+  // Squarespace's default "thanks" only). Seeded as a DRAFT for Scarlett's
+  // copy review; the API renders it LIVE-ONLY (registry-only — nothing sends
+  // until it is flipped). Variables kept to the shared vocabulary.
+  {
+    template_key: 'IQ_INQUIRY_ACK',
+    display_name: 'IQ — Inquiry received (auto-reply to the family)',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Got your note — Higher Ground Learning',
+    footer_note: null,
+    preheader: "We'll be in touch soon, usually the same day",
+    body_markdown: `Hi {parentFirstName},
+
+Thanks for reaching out — we got your note and someone from our team will be in touch soon, usually the same day.
+
+If it's easier to talk it through, just reply to this email or give us a call. We'll figure out the right next step together.
+
+{contactBlock}`,
+  },
+  // PL-477: the school-partnership auto-reply — DRAFT for Scarlett's copy
+  // review; live-only render (nothing sends until flipped).
+  {
+    template_key: 'PT_PARTNER_ACK',
+    display_name: 'PT — Partnership inquiry received (auto-reply to the school contact)',
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: 'Thanks for reaching out about test prep at your school',
+    footer_note: null,
+    preheader: "We'll be in touch within a business day to set up a call",
+    body_markdown: `Hi {parentFirstName},
+
+Thank you for getting in touch about bringing Higher Ground Learning to your school. We'll come back to you within a business day to set up a short call and talk through what would work best for your students — on campus, online, or school-sponsored.
+
+In the meantime, feel free to reply to this email with anything you'd like us to know beforehand.
+
+{contactBlock}`,
+  },
 ]
 
 /** PL-454: the billing-category keys with their verdict, derived from the

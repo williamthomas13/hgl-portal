@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HGL embeds — Squarespace form snippets test</title>
+  <!-- PL-473 / PL-477: the three paste-ready snippets, exactly as they go into a
+       Squarespace CODE block, rendered here to QA them at any width. Relative
+       src resolves against whichever host serves this page. -->
+  <style>body{font-family:Georgia,serif;max-width:720px;margin:24px auto;padding:0 16px;background:#f7f7f5} h2{font-size:18px;margin:32px 0 8px}</style>
+</head>
+<body>
+  <h1>Squarespace form snippets (QA)</h1>
+
+  <h2>1. Inquiry (every "Get started" page — data-source + data-interest per page)</h2>
+  <div id="hgl-inquire" data-source="sqsp:/sat" data-interest="SAT">
+    <noscript><a href="/inquire?source=sqsp:/sat&interest=SAT">Get in touch →</a></noscript>
+  </div>
+  <script src="/embed/inquire.js" defer></script>
+
+  <h2>2. School partnership (/examzen)</h2>
+  <div id="hgl-partner" data-source="sqsp:/examzen">
+    <noscript><a href="/partner?source=sqsp:/examzen">Get started with Higher Ground →</a></noscript>
+  </div>
+  <script src="/embed/partner.js" defer></script>
+
+  <h2>3. College Prep Compass (footer block on every page + /college-prep-compass)</h2>
+  <div id="hgl-compass" data-source="sqsp:footer">
+    <noscript><a href="/compass?source=sqsp:footer">Sign up for the College Prep Compass →</a></noscript>
+  </div>
+  <script src="/embed/compass.js" defer></script>
+</body>
+</html>

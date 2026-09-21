@@ -45,6 +45,11 @@ export type SegmentDef = {
   balance?: 'none_outstanding' | 'past_due'
   usedPromoCode?: boolean
   refunded?: boolean
+  /** PL-477: include College Prep Compass subscribers (marketing_subscribers)
+   *  — people with no family record who signed up for the newsletter, or came
+   *  over in the MailerLite import. They receive nothing until a campaign
+   *  carries this chip. */
+  subscribers?: boolean
 }
 
 export type SegmentStudent = {
@@ -55,7 +60,8 @@ export type SegmentStudent = {
 }
 
 export type SegmentRecipient = {
-  familyId: string
+  /** null = a subscriber-only recipient (PL-477) — no family record. */
+  familyId: string | null
   email: string
   name: string
   students: string[]
@@ -102,6 +108,7 @@ export function segmentSummary(def: SegmentDef, schoolName?: string): string {
   if (def.balance === 'past_due') chips.push('Has a past-due invoice')
   if (def.usedPromoCode) chips.push('Used a promo code')
   if (def.refunded) chips.push('Was refunded before')
+  if (def.subscribers) chips.push('Compass subscribers')
   return chips.length > 0 ? chips.join(' · ') : 'Everyone we can email'
 }
 
@@ -457,6 +464,29 @@ export async function resolveSegment(def: SegmentDef): Promise<SegmentRecipient[
         .map((s) => s.email?.toLowerCase())
         .filter((e): e is string => Boolean(e && suppressed.has(e))),
     })
+  }
+  // PL-477: Compass subscribers — subscriber-only addresses (no family; a
+  // subscriber whose email IS a family's parent email is already in `out`
+  // and dedupes below). Suppressed addresses never enter.
+  if (def.subscribers) {
+    const { data: subs } = await supabase
+      .from('marketing_subscribers')
+      .select('email, first_name, family_id')
+      .order('created_at')
+    for (const sub of (subs as any[]) ?? []) {
+      const em = String(sub.email).toLowerCase()
+      if (suppressed.has(em)) continue
+      out.push({
+        familyId: sub.family_id ?? null,
+        email: em,
+        name: sub.first_name ?? em,
+        students: [],
+        studentRecords: [],
+        why: ['Compass subscriber'],
+        parentSuppressed: false,
+        suppressedStudentEmails: [],
+      })
+    }
   }
   // One row per email (siblings' families are one record already; belt+braces).
   const seen = new Set<string>()

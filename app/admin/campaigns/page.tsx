@@ -240,6 +240,10 @@ export default function CampaignsPage() {
               <button className={chipCls(segment.serviceKind === 'class_only')} onClick={() => set('serviceKind', 'class_only')}>
                 Classes only
               </button>
+              {/* PL-477: newsletter-only people (the Compass signup + the MailerLite import). */}
+              <button className={chipCls(!!segment.subscribers)} onClick={() => set('subscribers', true)} data-testid="chip-subscribers">
+                Compass subscribers
+              </button>
             </div>
 
             {/* PL-280: the full family-history record — class outcomes and

@@ -51,6 +51,10 @@ const LEAD_FIELDS = [
   // PL-108: the close reason travels with the status change.
   'lost_reason_kind',
   'lost_reason',
+  // PL-473/477: lane + tags.
+  'kind',
+  'source_detail',
+  'interest_tag',
 ] as const
 
 type Body =
@@ -58,6 +62,7 @@ type Body =
   | ({ action: 'update'; id: string } & Record<string, unknown>)
   | { action: 'send_intake'; id: string }
   | { action: 'create_family'; id: string }
+  | { action: 'create_school'; id: string; nickname?: string; timezone?: string; city?: string }
   | {
       action: 'schedule_consult'
       id: string
@@ -394,6 +399,70 @@ export async function POST(req: Request) {
         .update({ family_id: familyId, student_id: studentId, updated_at: new Date().toISOString() })
         .eq('id', lead.id)
       return NextResponse.json({ ok: true, familyId, studentId })
+    }
+
+    if (body.action === 'create_school') {
+      // PL-477: a SCHOOL lead converts into a school + its first contact —
+      // the PL-467 add-school path (schools row, contacts row matched by
+      // email, school_affiliations row), never a family. Idempotent: an
+      // existing school (by nickname / name) and contact (by email) are
+      // reused; the lead records school_id.
+      if (!body.id) return NextResponse.json({ error: 'Missing lead id.' }, { status: 400 })
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('id, kind, contact_name, contact_email, contact_phone, student_school, partner, school_id')
+        .eq('id', body.id)
+        .maybeSingle()
+      if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
+      if (lead.kind !== 'school') return NextResponse.json({ error: 'Only a school-partnership lead converts into a school.' }, { status: 400 })
+      const schoolName = (lead.student_school ?? (lead.partner as { school?: string } | null)?.school ?? '').trim()
+      const nickname = String(body.nickname ?? '').trim()
+      const timezone = String(body.timezone ?? '').trim()
+      if (!schoolName) return NextResponse.json({ error: 'The lead needs a school name first.' }, { status: 400 })
+      if (!nickname || !timezone) return NextResponse.json({ error: 'Pick a nickname and a timezone for the school.' }, { status: 400 })
+      let schoolId = lead.school_id as string | null
+      if (!schoolId) {
+        const { data: existing } = await supabase
+          .from('schools')
+          .select('id')
+          .or(`nickname.ilike.${escapeLike(nickname)},name.ilike.${escapeLike(schoolName)}`)
+          .limit(1)
+          .maybeSingle()
+        schoolId = existing?.id ?? null
+      }
+      if (!schoolId) {
+        const { data: created, error } = await supabase
+          .from('schools')
+          .insert([{ name: schoolName, nickname, timezone, city: String(body.city ?? '').trim() || null, collateral_language: 'en' }])
+          .select('id')
+          .single()
+        if (error || !created) return NextResponse.json({ error: error?.code === '23505' ? 'That nickname already exists — pick another.' : (error?.message ?? 'Could not create the school.') }, { status: 500 })
+        schoolId = created.id
+      }
+      let affiliationId: string | null = null
+      if (lead.contact_email) {
+        const email = lead.contact_email.trim().toLowerCase()
+        const [first, ...rest] = (lead.contact_name ?? '').trim().split(/\s+/)
+        const { data: contact } = await supabase.from('contacts').select('id').ilike('email', escapeLike(email)).maybeSingle()
+        let contactId = contact?.id as string | undefined
+        if (!contactId) {
+          const { data: c, error } = await supabase
+            .from('contacts')
+            .insert([{ first_name: first || email, last_name: rest.join(' ') || '—', email, phone: lead.contact_phone ?? null }])
+            .select('id')
+            .single()
+          if (error || !c) return NextResponse.json({ error: error?.message ?? 'Could not create the contact.' }, { status: 500 })
+          contactId = c.id
+        }
+        const { data: aff } = await supabase.from('school_affiliations').select('id').eq('contact_id', contactId).eq('school_id', schoolId).is('ended_at', null).maybeSingle()
+        affiliationId = aff?.id ?? null
+        if (!affiliationId) {
+          const { data: a } = await supabase.from('school_affiliations').insert([{ contact_id: contactId, school_id: schoolId, role: 'counselor' }]).select('id').single()
+          affiliationId = a?.id ?? null
+        }
+      }
+      await supabase.from('leads').update({ school_id: schoolId, updated_at: new Date().toISOString() }).eq('id', lead.id)
+      return NextResponse.json({ ok: true, schoolId, affiliationId })
     }
 
     if (body.action === 'schedule_consult') {

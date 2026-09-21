@@ -47,6 +47,14 @@ type Lead = {
   intake: Record<string, any> | null
   family_id: string | null
   student_id: string | null
+  /** PL-477: 'family' (the pipeline) | 'school' (a school-partnership lead — its own lane). */
+  kind?: string | null
+  /** PL-473: which page/button/embed it came from; the pre-selected interest. */
+  source_detail?: string | null
+  interest_tag?: string | null
+  /** PL-477: the partnership form's own facts. */
+  partner?: Record<string, string | null> | null
+  school_id?: string | null
   /** PL-336: the WON ending — set by the sweep (or a manual status pick). */
   converted_at: string | null
   converted_class_id: string | null
@@ -773,6 +781,86 @@ function CloseMatchPrompt({ lead, onChange }: { lead: Lead; onChange: () => void
   )
 }
 
+// PL-477: the school-partnership lead's own card section — the partnership
+// facts + "Create school + contact" (the PL-467 add-school path; never a
+// family). Idempotent server-side.
+function PartnerPanel({ lead, onChanged }: { lead: Lead; onChanged: () => void }) {
+  const p = lead.partner ?? {}
+  const [nickname, setNickname] = useState('')
+  const [timezone, setTimezone] = useState('')
+  const [city, setCity] = useState(String(p.location ?? '').split(/[,/]/).pop()?.trim() ?? '')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const facts: [string, string | null | undefined][] = [
+    ['School', lead.student_school ?? p.school],
+    ['Role', p.role],
+    ['Country / city', p.location],
+    ['Tests', p.tests],
+    ['Students', p.cohortSize],
+    ['Format', p.format],
+    ['Timing', p.timing],
+  ]
+  async function convert() {
+    setBusy(true)
+    setMsg(null)
+    const res = await fetch('/api/admin/leads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_school', id: lead.id, nickname, timezone, city }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setBusy(false)
+    if (!res.ok) {
+      setMsg(json.error ?? 'Could not create the school.')
+      return
+    }
+    setMsg('School + contact created — it is on the Schools panel now.')
+    onChanged()
+  }
+  return (
+    <div className="border border-emerald-200 bg-emerald-50/40 rounded-lg p-3 space-y-2" data-testid="partner-panel">
+      <p className="text-xs font-bold uppercase tracking-wide text-emerald-800">School partnership</p>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        {facts.filter(([, v]) => v).map(([k, v]) => (
+          <div key={k}>
+            <dt className="text-xs text-gray-500">{k}</dt>
+            <dd className="text-hgl-slate">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {p.message && <p className="text-sm text-gray-700 whitespace-pre-wrap">{p.message}</p>}
+      {lead.school_id ? (
+        <p className="text-sm text-emerald-800 font-semibold">Converted — <a href="/admin?section=schools" className="underline">open the Schools panel</a>.</p>
+      ) : (
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs text-gray-600">
+            Nickname
+            <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="e.g. ISM" className="block border border-gray-300 rounded p-1.5 text-sm w-28" />
+          </label>
+          <label className="text-xs text-gray-600">
+            Timezone (IANA)
+            <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Europe/Rome" className="block border border-gray-300 rounded p-1.5 text-sm w-44" />
+          </label>
+          <label className="text-xs text-gray-600">
+            City
+            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Milan" className="block border border-gray-300 rounded p-1.5 text-sm w-32" />
+          </label>
+          <button
+            type="button"
+            disabled={busy || !nickname.trim() || !timezone.trim()}
+            onClick={convert}
+            className="text-xs font-bold text-white bg-emerald-700 rounded px-3 py-2 disabled:opacity-40"
+            data-testid="create-school-contact"
+          >
+            {busy ? 'Creating…' : 'Create school + contact'}
+          </button>
+        </div>
+      )}
+      {msg && <p className="text-xs text-gray-700">{msg}</p>}
+    </div>
+  )
+}
+
 function LeadDetail({
   lead,
   offers,
@@ -1259,6 +1347,7 @@ function LeadDetail({
         )}
       </div>
 
+      {(lead.kind ?? 'family') === 'school' && <PartnerPanel lead={lead} onChanged={onChange} />}
       {lead.intake && <IntakeAnswers intake={lead.intake} />}
       {lead.family_id ? (
         <p className="text-xs text-gray-500">
@@ -1478,8 +1567,15 @@ export default function LeadsAdmin() {
   // highlight the exact lead record on arrival (PL-99 semantics: the focus
   // hook polls until the data-loaded DOM contains the card).
   const [focusLead, setFocusLead] = useState<string | null>(null)
+  // PL-477: two lanes — families (the pipeline) and schools (partnership
+  // inquiries) — never mixed; PL-473: filter by the pre-selected interest.
+  const [lane, setLane] = useState<'family' | 'school'>('family')
+  const [tagFilter, setTagFilter] = useState('')
   useEffect(() => {
-    const leadId = new URLSearchParams(window.location.search).get('lead')
+    const q = new URLSearchParams(window.location.search)
+    const leadId = q.get('lead')
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q.get('kind') === 'school') setLane('school')
     if (leadId) {
       setExpanded(leadId)
       setFocusLead(`lead-${leadId}`)
@@ -1491,12 +1587,17 @@ export default function LeadsAdmin() {
     if (!focusLead || !loaded) return
     const lead = leads.find((l) => `lead-${l.id}` === focusLead)
     if (lead && ['scheduled', 'lost', 'converted'].includes(lead.status)) setShowClosed(true)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (lead && (lead.kind ?? 'family') === 'school') setLane('school')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, focusLead])
 
   // PL-336: converted ("Enrolled") is terminal like scheduled/lost — out of
   // the open counts and the staleness math, hidden behind the same toggle.
-  const open = leads.filter((l) => !['scheduled', 'lost', 'converted'].includes(l.status))
+  const laneLeads = leads.filter((l) => (l.kind ?? 'family') === lane && (!tagFilter || l.interest_tag === tagFilter))
+  const interestTags = [...new Set(leads.map((l) => l.interest_tag).filter((t): t is string => Boolean(t)))].sort()
+  const schoolLaneCount = leads.filter((l) => (l.kind ?? 'family') === 'school' && !['scheduled', 'lost', 'converted'].includes(l.status)).length
+  const open = laneLeads.filter((l) => !['scheduled', 'lost', 'converted'].includes(l.status))
   const staleCount = open.filter(isStale).length
   const visibleStatuses = STATUS_ORDER.filter((s) =>
     showClosed ? true : !['scheduled', 'lost', 'converted'].includes(s)
@@ -1564,12 +1665,45 @@ export default function LeadsAdmin() {
                 />
                 Show started, enrolled &amp; closed
               </label>
+              <div className="flex flex-wrap items-center gap-2" data-testid="lead-lanes">
+                <button
+                  type="button"
+                  onClick={() => setLane('family')}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-full border ${lane === 'family' ? 'bg-hgl-slate text-white border-hgl-slate' : 'bg-white text-hgl-slate border-gray-300'}`}
+                >
+                  Families
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLane('school')}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-full border ${lane === 'school' ? 'bg-hgl-slate text-white border-hgl-slate' : 'bg-white text-hgl-slate border-gray-300'}`}
+                  data-testid="lane-schools"
+                >
+                  Schools{schoolLaneCount > 0 ? ` (${schoolLaneCount})` : ''}
+                </button>
+                {interestTags.length > 0 && (
+                  <select
+                    value={tagFilter}
+                    onChange={(e) => setTagFilter(e.target.value)}
+                    className="border border-gray-300 rounded-full px-3 py-1.5 text-xs bg-white"
+                    aria-label="Filter by interest"
+                  >
+                    <option value="">Any interest…</option>
+                    {interestTags.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                )}
+                {lane === 'school' && (
+                  <span className="text-xs text-gray-500">School-partnership inquiries (the /examzen form) — converting one creates the school + its contact, never a family.</span>
+                )}
+              </div>
               {open.length === 0 && !showClosed && (
-                <p className="text-sm text-gray-500 italic">No open prospective students — nice and quiet.</p>
+                <p className="text-sm text-gray-500 italic">{lane === 'school' ? 'No open school-partnership inquiries.' : 'No open prospective students — nice and quiet.'}</p>
               )}
               <div className="space-y-6">
                 {visibleStatuses.map((status) => {
-                  const group = leads.filter((l) => l.status === status)
+                  const group = laneLeads.filter((l) => l.status === status)
                   if (group.length === 0) return null
                   return (
                     <div key={status}>
@@ -1594,7 +1728,9 @@ export default function LeadsAdmin() {
                               <span className="text-xs text-gray-400">
                                 {SOURCE_LABELS[lead.source] ?? lead.source} ·{' '}
                                 {INTEREST_LABELS[lead.interest] ?? lead.interest}
-                                {lead.subjects ? ` · ${lead.subjects}` : ''} · added {fmtDay(lead.created_at)}
+                                {lead.interest_tag ? ` · ${lead.interest_tag}` : ''}
+                                {lead.subjects && lead.subjects !== lead.interest_tag ? ` · ${lead.subjects}` : ''}
+                                {lead.source_detail ? ` · via ${lead.source_detail}` : ''} · added {fmtDay(lead.created_at)}
                               </span>
                               {lead.assigned_to && (
                                 <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5" title={lead.assigned_to}>
