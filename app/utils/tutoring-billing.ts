@@ -15,6 +15,7 @@ import {
   t1ProposalEmail,
   t1bNudgeEmail,
   type StudentScheduleBlock,
+  t1rUpdatedProposalEmail,
 } from './tutoring-emails'
 import { renderRegistered } from './comms-registered'
 import { signingSecret } from './signing'
@@ -1256,6 +1257,158 @@ export async function requestChanges(invoiceId: string, note: string): Promise<{
       request is open.</p>`,
   }).catch((e) => console.error('change-request alert failed:', e))
   return { ok: true }
+}
+
+// ---------------------------------------------------------------------------
+// PL-461: the reply to a change request — T1R "Updated proposal", or a
+// no-email close. Both END the open request the same way (closeChangeRequest):
+// the trail gets an "HGL reply" line, change_replied_at is stamped, the
+// family's confirmation window restarts from the reply, and the activity feed
+// gets a line. The EMAIL is a choice staff make, never a side effect.
+// ---------------------------------------------------------------------------
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** The family's latest request text — the last note line that isn't an HGL reply. */
+function latestRequestQuote(note: string | null | undefined): string {
+  const lines = String(note ?? '').split('\n').filter((l) => l.trim() && !/\] HGL reply/.test(l))
+  return (lines.pop() ?? '').replace(/^\[[^\]]*\]\s*/, '').trim()
+}
+
+export async function composeUpdatedProposal(
+  invoiceId: string,
+  staffNote: string
+): Promise<{ ok: true; subject: string; html: string; versionId?: string; to: string[]; cc?: string[]; changedLines: number } | { ok: false; error: string }> {
+  const { data: inv } = await supabase
+    .from('tutoring_invoices')
+    .select('id, period, status, total, proposal_sent_at, change_requested_at, change_replied_at, change_request_note, families ( id, parent_first_name, parent_email, billing_email, billing_cc_emails, timezone )')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!inv) return { ok: false, error: 'Unknown invoice.' }
+  if (!['draft', 'proposed'].includes(inv.status)) return { ok: false, error: 'This month is past the proposal stage.' }
+  const family: any = one(inv.families)
+  if (!family) return { ok: false, error: 'No family on this invoice.' }
+  const month = billingMonth(String(inv.period).slice(0, 7))
+  const nextFirst = (() => { const y = Number(month.period.slice(0, 4)); const m = Number(month.period.slice(5, 7)); return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01` })()
+  const { data: sessions } = await supabase
+    .from('tutoring_sessions')
+    .select('id, starts_at, ends_at, status, created_at, updated_at, cancelled_at, rescheduled_to_id, engagement_id, students!inner ( first_name, family_id ), tutoring_engagements ( subjects ( name ), instructors ( name, timezone ) )')
+    .eq('students.family_id', family.id)
+    .gte('starts_at', month.firstDay + 'T00:00:00Z')
+    .lt('starts_at', nextFirst + 'T00:00:00Z')
+    .order('starts_at')
+  const rows = ((sessions as any[]) ?? [])
+  const famTz = family.timezone ?? one<any>(one<any>(rows[0]?.tutoring_engagements)?.instructors)?.timezone ?? ORG_TZ
+  const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: famTz, weekday: 'long', month: 'short', day: 'numeric' })
+  const time = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { timeZone: famTz, hour: 'numeric', minute: '2-digit' })
+  const live = rows.filter((r) => r.status === 'proposed' || r.status === 'confirmed')
+  const byEng = new Map<string, any[]>()
+  for (const r of live) byEng.set(r.engagement_id, [...(byEng.get(r.engagement_id) ?? []), r])
+  const blocks: StudentScheduleBlock[] = [...byEng.values()].map((list) => {
+    const eng = one<any>(list[0].tutoring_engagements)
+    return {
+      studentFirst: one<any>(list[0].students)?.first_name ?? 'your student',
+      subjectName: one<any>(eng?.subjects)?.name ?? 'tutoring',
+      tutorFirst: (one<any>(eng?.instructors)?.name ?? 'your tutor').split(' ')[0],
+      sessionLines: list.map((s) => `${new Date(s.starts_at).toLocaleDateString('en-US', { timeZone: famTz, weekday: 'short', month: 'short', day: 'numeric' })} · ${time(s.starts_at)}–${time(s.ends_at)}`),
+    }
+  })
+  const since = inv.change_replied_at ?? inv.proposal_sent_at ?? inv.change_requested_at ?? '1970-01-01'
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const changes: string[] = []
+  for (const r of rows) {
+    if (r.status === 'rescheduled' && r.rescheduled_to_id && (r.updated_at ?? '') > since) {
+      const to = byId.get(r.rescheduled_to_id)
+      changes.push(to
+        ? (day(r.starts_at) === day(to.starts_at)
+            ? `${day(r.starts_at)} — moved from ${time(r.starts_at)} to ${time(to.starts_at)}`
+            : `${day(r.starts_at)} ${time(r.starts_at)} — moved to ${day(to.starts_at)} at ${time(to.starts_at)}`)
+        : `${day(r.starts_at)} ${time(r.starts_at)} — moved`)
+    } else if (r.status === 'cancelled' && (r.cancelled_at ?? r.updated_at ?? '') > since) {
+      changes.push(`${day(r.starts_at)} ${time(r.starts_at)} — removed`)
+    } else if ((r.status === 'proposed' || r.status === 'confirmed') && (r.created_at ?? '') > since && !rows.some((o) => o.rescheduled_to_id === r.id)) {
+      changes.push(`${day(r.starts_at)} ${time(r.starts_at)}–${time(r.ends_at)} — added`)
+    }
+  }
+  const changeSummaryBlock = changes.length
+    ? `<ul style="margin:0;padding-left:20px;color:#334155">${changes.map((c) => `<li style="margin:2px 0">${esc(c)}</li>`).join('')}</ul>`
+    : '<p>No changes to the schedule — see our note above.</p>'
+  const requestQuote = esc(latestRequestQuote(inv.change_request_note)) || '(your request)'
+  const staffNoteBlock = staffNote.trim() ? `<p>${esc(staffNote.trim()).replace(/\n+/g, '<br>')}</p>` : ''
+  const settings = await loadCycleSettings()
+  const contact = await loadContactInfo()
+  const link = `${appUrl()}/tutoring/schedule/${proposalToken(inv.id)}`
+  const opts = { monthLabel: month.label, blocks, totalDue: Number(inv.total ?? 0), requestQuote, staffNoteBlock, changeSummaryBlock, link, autoconfirmDays: settings.autoconfirmDays, contact }
+  const email = await renderRegistered(
+    'T1R_UPDATED_PROPOSAL',
+    { parentFirstName: family.parent_first_name ?? 'there', parentEmail: family.parent_email },
+    {
+      tutoringMonthLabel: month.label,
+      studentNames: [...new Set(blocks.map((b) => b.studentFirst))].join(' & ') || 'your student',
+      scheduleBlock: scheduleHtml(blocks),
+      monthTotalLine: Number(inv.total ?? 0) > 0 ? `<p style="font-size:16px"><strong>Month total: ${money(Number(inv.total))}</strong> — billed once you confirm, due by the end of this month.</p>` : '',
+      requestQuote,
+      staffNoteBlock,
+      changeSummaryBlock,
+      confirmLink: link,
+      confirmOneTapLink: `${link}?confirm=1`,
+      autoconfirmDays: settings.autoconfirmDays,
+      contactBlock: contactBlockHtml(contact),
+    },
+    () => t1rUpdatedProposalEmail(opts)
+  )
+  const recipients = familyRecipients(family, 'T1R_UPDATED_PROPOSAL')
+  return { ok: true, subject: email.subject, html: email.html, versionId: email.versionId, changedLines: changes.length, ...recipients }
+}
+
+/** Close the open change request — the ONE transition both closes use. */
+export async function closeChangeRequest(
+  invoiceId: string,
+  opts: { by: string; what: string; sentUpdatedProposal: boolean }
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: full } = await supabase
+    .from('tutoring_invoices')
+    .select('id, family_id, period, status, change_requested_at, change_request_note')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!full?.change_requested_at) return { ok: false, error: 'No open change request on this month.' }
+  const nowIso = new Date().toISOString()
+  const month = billingMonth(String(full.period).slice(0, 7)).label
+  const replyLine = `[${nowIso.slice(0, 16).replace('T', ' ')}] HGL reply (${opts.by}): ${opts.what}${opts.sentUpdatedProposal ? ' — updated proposal emailed' : ' — no email'}`
+  const patch: Record<string, unknown> = {
+    change_requested_at: null,
+    change_replied_at: nowIso,
+    change_request_note: `${full.change_request_note ?? ''}\n${replyLine}`.trim(),
+    nudge_sent_at: null,
+    updated_at: nowIso,
+  }
+  if (full.status === 'proposed') patch.proposal_sent_at = nowIso
+  const { error } = await supabase.from('tutoring_invoices').update(patch).eq('id', invoiceId)
+  if (error) return { ok: false, error: error.message }
+  await supabase.from('family_fact_edits').insert({
+    family_id: full.family_id,
+    actor: `staff:${opts.by}`,
+    summary: `replied to the ${month} tutoring change request — ${opts.what}${opts.sentUpdatedProposal ? ' (updated proposal emailed)' : ' (no email)'}`,
+  })
+  return { ok: true }
+}
+
+export async function sendUpdatedProposal(invoiceId: string, staffNote: string, by: string): Promise<{ ok: boolean; error?: string; status?: string }> {
+  const composed = await composeUpdatedProposal(invoiceId, staffNote)
+  if (!composed.ok) return composed
+  const status = await sendOnce({
+    dedupeKey: `t1r:${invoiceId}:${Date.now()}`,
+    emailType: 'T1R_UPDATED_PROPOSAL',
+    templateKey: 'T1R_UPDATED_PROPOSAL',
+    to: composed.to,
+    cc: composed.cc,
+    subject: composed.subject,
+    html: composed.html,
+    bodySnapshotId: composed.versionId,
+  })
+  if (status !== 'sent') return { ok: false, error: `The email did not send (${status}) — nothing was closed.`, status }
+  const closed = await closeChangeRequest(invoiceId, { by, what: staffNote.trim() || (composed.changedLines ? `${composed.changedLines} change${composed.changedLines === 1 ? '' : 's'} to the schedule` : 'schedule confirmed as shown'), sentUpdatedProposal: true })
+  return closed.ok ? { ok: true, status } : closed
 }
 
 // ---------------------------------------------------------------------------

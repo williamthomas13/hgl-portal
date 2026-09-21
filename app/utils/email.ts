@@ -152,6 +152,8 @@ export type EnrollmentEmailContext = {
   schoolCity: string | null
   displayCities: string | null
   defaultLocation: string | null
+  /** PL-468: in-person venue (null = composed from the school at render). */
+  venue?: string | null
   deliveryMode: string
   synapGroup: string | null
   startDate: string
@@ -2327,9 +2329,15 @@ export async function sendOnce(opts: {
 
   if (sendError) {
     console.error(`Resend send failed for ${opts.dedupeKey}:`, sendError.message)
+    // PL-469: the REAL reason rides the row — the health card's "sends are
+    // failing" derives from Resend rejections, never from cap arithmetic.
     await supabase
       .from('email_sends')
-      .update({ status: wasScheduled ? 'scheduled' : 'failed', updated_at: new Date().toISOString() })
+      .update({
+        status: wasScheduled ? 'scheduled' : 'failed',
+        updated_at: new Date().toISOString(),
+        payload: { ...(opts.payload ?? {}), resend_error: `${sendError.name ?? ''} ${sendError.message ?? ''}`.trim().slice(0, 300) },
+      })
       .eq('id', rowId)
     return 'failed'
   }

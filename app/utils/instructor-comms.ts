@@ -124,7 +124,8 @@ function baseExtras(bundle: ClassBundle, instructor: ClassInstructor) {
   return {
     tutorFirstName: firstName(instructor.name),
     instructorCountsLine: instructorCountsLine(bundle),
-    instructorViewLink: `${appUrl()}/portal?view=instructor`,
+    // PL-462: land ON this class's card, not the top of the view.
+    instructorViewLink: `${appUrl()}/portal?view=instructor&class=${bundle.id}`,
     registrationCloseDate: formatDateFull(registrationCloseFor(bundle)),
     // PL-88: name the school — "in person at SIS (Stockholm International
     // School)" / online equivalent.

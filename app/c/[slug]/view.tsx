@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { classPlaceLine } from '../../utils/class-place'
 import { Fragment, cache } from 'react'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { usableAccent } from '../../utils/collateral'
@@ -88,6 +89,7 @@ function sampleClass(courseKey: string) {
     min_enrollment: null,
     delivery_mode: 'in_person',
     default_location: 'Room 204',
+    venue: null,
     timezone: DEFAULT_TIMEZONE,
     display_cities: null,
     selling_bullets: null,
@@ -218,7 +220,7 @@ const loadPage = cache(async (slug: string) => {
     const { data } = await supabase
       .from('classes')
       .select(
-        'id, slug, class_type, status, timezone, default_location, display_cities, registration_close_date, start_date, schools ( city, timezone ), sessions ( session_date, start_time, end_time )'
+        'id, slug, class_type, status, timezone, default_location, venue, display_cities, registration_close_date, start_date, schools ( city, timezone ), sessions ( session_date, start_time, end_time )'
       )
       .eq('course_key', cls.course_key)
       .neq('id', cls.id)
@@ -451,7 +453,8 @@ export async function ClassPageView({
   const zoneCity = publicTimeCityLabel({
     schoolCity: school?.city,
     displayCities: cls.display_cities,
-    location: cls.default_location,
+    // PL-468: venue · room (or "classroom to be confirmed") from day one.
+    location: classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: school?.name }),
     timezone,
     hglInPerson: !school && cls.delivery_mode !== 'online',
   })
@@ -543,7 +546,7 @@ export async function ClassPageView({
   // through it too (they bypass markdown rendering); md() wraps it.
   const sub = (s: string) =>
     String(s)
-      .replaceAll('{address}', cls.default_location ?? 'our office')
+      .replaceAll('{address}', classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: school?.name }) ?? 'our office')
       .replaceAll('{examName}', examName)
       .replace(/\[([^\]]*)\]\(\{examRegistrationLink\}\)/g, (_m, label) =>
         fam?.pageRegUrl ? `[${label}](${fam.pageRegUrl})` : `the ${SCHOOL_BASED_REG_TEXT}`
@@ -872,8 +875,8 @@ export async function ClassPageView({
                         </span>
                       )
                     )}
-                    {(s.location || (!online && cls.default_location)) && (
-                      <span className="text-sm text-gray-400">{s.location || cls.default_location}</span>
+                    {(s.location || (!online && classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: school?.name }))) && (
+                      <span className="text-sm text-gray-400">{s.location || classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: school?.name })}</span>
                     )}
                   </li>
                 )

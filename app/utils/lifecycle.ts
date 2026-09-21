@@ -121,6 +121,8 @@ export type ClassBundle = {
   instructorName: string | null
   instructorEmail: string | null
   defaultLocation: string | null
+  /** PL-468: the in-person venue known at sign-up (null = composed from the school). */
+  venue: string | null
   synapGroup: string | null
   price: number
   capacity: number
@@ -246,7 +248,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
     id, slug, status, counselor_id, class_type, school_id, instructor_id,
     default_location, synap_group, price, capacity, min_enrollment,
     min_enrollment_decision,
-    delivery_mode, enrollment_deadline, registration_close_date, start_date,
+    delivery_mode, venue, enrollment_deadline, registration_close_date, start_date,
     collateral_changed_at, timezone, has_diagnostics, display_cities,
     follow_on_class_id, fo_extended_until, fo_exclude, fo_announce_date, fo_discount_end,
     schools ( name, nickname, timezone, city, address ),
@@ -360,6 +362,7 @@ export async function loadClassBundles(classId?: string): Promise<ClassBundle[]>
       instructorName: instructor?.name ?? instructor?.email ?? null,
       instructorEmail: instructor?.email ?? null,
       defaultLocation: c.default_location || null,
+      venue: c.venue || null,
       synapGroup: c.synap_group || null,
       followOnClassId: c.follow_on_class_id ?? null,
       foExtendedUntil: c.fo_extended_until ?? null,
@@ -458,6 +461,7 @@ export function emailContext(bundle: ClassBundle, e: EnrollmentRow): EnrollmentE
     schoolAddress: bundle.schoolAddress,
     displayCities: bundle.displayCities,
     defaultLocation: bundle.defaultLocation,
+    venue: bundle.venue,
     deliveryMode: bundle.deliveryMode,
     synapGroup: bundle.synapGroup,
     startDate: bundle.startDate,

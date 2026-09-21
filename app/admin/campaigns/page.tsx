@@ -393,8 +393,9 @@ export default function CampaignsPage() {
               </button>
               {quota && (
                 <span className="text-xs text-gray-500">
-                  Email quota today: {quota.usedToday} of {quota.cap} used — marketing keeps a reserve so
-                  invoices and schedules always send.
+                  {quota.cap != null
+                    ? `Sent today: ${quota.usedToday} of the ${quota.cap} campaign brake — marketing keeps a reserve so invoices and schedules always send.`
+                    : `Sent today: ${quota.usedToday} — no campaign brake set (Resend Pro has no daily limit; set one under Settings if you want campaigns to pace themselves).`}
                 </span>
               )}
             </div>
@@ -561,7 +562,7 @@ export default function CampaignsPage() {
                           : 'bg-blue-100 text-blue-700'
                   }`}>
                     {c.status === 'paused'
-                      ? 'paused at the cap'
+                      ? 'paused at the campaign brake'
                       : c.status === 'scheduled'
                         ? `sends ${c.scheduledFor ? new Date(c.scheduledFor).toLocaleString() : 'soon'}`
                         : c.status}

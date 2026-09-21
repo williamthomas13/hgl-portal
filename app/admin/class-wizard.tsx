@@ -249,6 +249,8 @@ export default function ClassWizard({
   const [schoolLanguage, setSchoolLanguage] = useState('en')
   const [brandingMsg, setBrandingMsg] = useState('')
   const [defaultLocation, setDefaultLocation] = useState(dv('defaultLocation', initial?.defaultLocation ?? ''))
+  // PL-468: the in-person venue families see from sign-up (blank = composed from the school).
+  const [venue, setVenue] = useState(dv('venue', ''))
 
   // -- step 2: sessions ------------------------------------------------------
   const [sessions, setSessions] = useState<SessionDraft[]>(dv('sessions', initial?.sessions ?? []))
@@ -760,6 +762,7 @@ export default function ClassWizard({
       capacity: Number(capacity),
       start_date: startDate,
       default_location: location,
+      venue: deliveryMode === 'online' ? null : venue.trim() || null,
       default_location_source: locationFromDefault ? 'instructor_default' : null,
       synap_group: synapGroup.trim() || null,
       // PL-442B: the deliberate skip stamps who/when — the state-driven
@@ -1421,8 +1424,20 @@ export default function ClassWizard({
             </p>
           </div>
 
+          {deliveryMode !== 'online' && !isOpen && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Venue (families see this from sign-up)</label>
+              <input
+                type="text"
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+                placeholder="e.g. ASF campus — blank = “On campus at {school name}”"
+                className={inputCls}
+              />
+            </div>
+          )}
           <div>
-            <label className="block text-sm font-medium text-gray-700">Default location</label>
+            <label className="block text-sm font-medium text-gray-700">{deliveryMode === 'online' ? 'Meeting link' : 'Room'}</label>
             <input
               type="text"
               value={defaultLocation}
@@ -1432,7 +1447,7 @@ export default function ClassWizard({
                   ? "Blank = instructor's default meeting link"
                   : isOpen
                     ? 'Higher Ground — set the room/address'
-                    : 'Blank = counselor gets asked 14 days out'
+                    : 'Blank = the school is asked for the room once the class meets minimum'
               }
               className={inputCls}
             />

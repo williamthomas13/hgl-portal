@@ -44,7 +44,7 @@
 //   "studentEmail": null, "graduatingYear": null, "paid": "Paid?",
 //   "paidAmount": null, "registeredAt": "Timestamp", "notes": null,
 //   "waitlist": null, "parentName": null, "studentName": null }
-// (parentName/studentName split a single full-name column on the last space.)
+// (parentName/studentName: REFUSED since PL-466 — map explicit first/last columns.)
 
 import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
@@ -175,11 +175,12 @@ const col = (row, key) => {
   const v = row[headers.indexOf(h)]
   return typeof v === 'string' ? v.trim() : null
 }
+// PL-466: a single full-name column CANNOT be split honestly — "Stefano Carlo
+// Marchini Cigognini" has no last space that means anything. The import
+// refuses to guess: map explicit first/last columns (the cleaned sheets have
+// them). parentName/studentName mappings are now an error, not a heuristic.
 const splitName = (full) => {
-  const parts = String(full ?? '').trim().split(/\s+/)
-  if (parts.length === 0 || !parts[0]) return { first: '', last: '' }
-  if (parts.length === 1) return { first: parts[0], last: '' }
-  return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] }
+  throw new Error(`Refusing to split the full name "${full}" — map explicit first/last columns (two-surname families break any guess).`)
 }
 const truthy = (v) => /^(y|yes|true|paid|x|1|complete|completed)$/i.test(String(v ?? '').trim())
 

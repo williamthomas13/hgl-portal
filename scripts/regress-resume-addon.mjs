@@ -37,13 +37,20 @@ const check = (name, ok, detail = '') => {
 }
 
 // --- arrange: an open class + an active pre-class package ------------------
-const { data: cls } = await db
+// Batch 50: the harness used to grab the newest OPEN class on prod — after the
+// purge that is a real record-only class with a deliberately closed deadline
+// ("Registration for this class has closed"), and registering a QA row into a
+// real roster would be worse than the failure. It now creates its own
+// self-cleaning open class (future dates, registration open), like the
+// cancel-class harness.
+const plusDays = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+const { data: cls, error: clsErr } = await db
   .from('classes')
+  .insert([{ class_type: 'SAT Prep', status: 'open', price: 500, capacity: 10, school_id: null, slug: 'qa-pl52-resume-addon', delivery_mode: 'online', default_location: 'https://zoom.us/j/qa-pl52', timezone: 'America/Denver', min_enrollment: 1, start_date: plusDays(30), registration_close_date: plusDays(25), enrollment_deadline: plusDays(20) }])
   .select('id, price, status, registration_close_date, start_date')
-  .eq('status', 'open')
-  .order('start_date', { ascending: false })
-  .limit(1)
   .single()
+if (clsErr) throw clsErr
+await db.from('sessions').insert([{ class_id: cls.id, session_date: plusDays(30), start_time: '16:00', end_time: '18:00' }, { class_id: cls.id, session_date: plusDays(37), start_time: '16:00', end_time: '18:00' }])
 const { data: pkg } = await db
   .from('tutoring_packages')
   .select('id, name, hours, package_price')
@@ -147,6 +154,12 @@ if (student) {
   await db.from('student_availability').delete().eq('student_id', student.id)
   await db.from('students').delete().eq('id', student.id)
   await db.from('families').delete().eq('id', student.family_id).eq('parent_email', 'qa-pl52@example.com')
+}
+{
+  // the throwaway class (sessions + any stray rows) — every run leaves prod as it found it
+  await db.from('email_sends').delete().eq('class_id', cls.id)
+  await db.from('sessions').delete().eq('class_id', cls.id)
+  await db.from('classes').delete().eq('id', cls.id)
 }
 await stripe.checkout.sessions.expire(resumedSessionId).catch(() => {})
 console.log('\ncleaned up QA rows.')

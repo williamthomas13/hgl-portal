@@ -236,6 +236,7 @@ type ClassRow = {
   capacity: number
   start_date: string
   default_location: string | null
+  venue: string | null
   synap_group: string | null
   school_id: string | null
   /** PL-274: class-level timezone (open-enrollment classes); wins over school. */
@@ -968,7 +969,8 @@ export default function AdminDashboard() {
                 }]
               : []
           })
-          .sort((a, b) => a.first_name.localeCompare(b.first_name))
+          // PL-466: by the WHOLE last-name field ("Marchini Cigognini" sorts under M), then first name.
+          .sort((a, b) => a.last_name.localeCompare(b.last_name) || a.first_name.localeCompare(b.first_name))
       )
     }
   }, [])
@@ -1413,6 +1415,7 @@ export default function AdminDashboard() {
     field:
       | 'synap_group'
       | 'default_location'
+      | 'venue'
       | 'has_diagnostics'
       | 'fo_short_name'
       | 'fo_auto_extend'
@@ -2005,11 +2008,23 @@ export default function AdminDashboard() {
               <div className="mt-2 border border-gray-200 rounded-lg p-3 space-y-1.5 bg-gray-50">
                 {/* PL-250: visible and editable even when unset — counselors
                     often skip the form and just reply by email with the room. */}
+                {/* PL-468: VENUE (known at sign-up, families see it from day
+                    one) vs ROOM (confirmed later by the school; blank = the
+                    room request goes out once the class meets minimum). */}
+                {c.delivery_mode !== 'online' && (
+                  <InlineEditableText
+                    label="Venue"
+                    value={c.venue}
+                    emptyText={c.schools?.name ? `On campus at ${c.schools.name} (composed)` : 'not set'}
+                    title="Where the class is, as families see it from sign-up — e.g. ASF campus. Blank = composed from the school."
+                    onSave={(v) => handleClassField(c, 'venue', v)}
+                  />
+                )}
                 <InlineEditableText
-                  label="Location"
+                  label={c.delivery_mode === 'online' ? 'Meeting link' : 'Room'}
                   value={c.default_location}
-                  emptyText="not set"
-                  title="The class's default location — sessions without their own location fall back to this"
+                  emptyText={c.delivery_mode === 'online' ? 'not set' : 'to be confirmed — the school is asked once the class meets minimum'}
+                  title="The confirmed room (or the meeting link online) — sessions without their own location fall back to this"
                   onSave={(v) => handleClassField(c, 'default_location', v)}
                 />
                 {/* PL-442B: diagnostics OFF makes the field inert (labeled,

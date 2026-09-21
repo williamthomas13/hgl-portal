@@ -16,7 +16,9 @@ import { closeMatchAlertDetails } from './close-match-copy'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+// PL-466: accent- and case-insensitive — "Uzunoglu" ≈ "Uzunoğlu".
+const norm = (s: string | null | undefined) =>
+  (s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase().replace(/\s+/g, ' ')
 
 /** Small edit-distance for typo tolerance (same rule as the PL-194 radar). */
 function editDistance(a: string, b: string): number {

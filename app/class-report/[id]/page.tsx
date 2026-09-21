@@ -289,7 +289,7 @@ export default async function ClassReportPage({
           groups={r.students
             .filter((s) => s.initial || s.final)
             .map((s) => ({
-              label: s.name.split(' ')[0],
+              label: s.firstName,
               values: [s.initial?.total ?? null, s.final?.total ?? null, s.superscore ?? null],
             }))}
           seriesLabels={['Initial', 'Final', 'Superscore']}

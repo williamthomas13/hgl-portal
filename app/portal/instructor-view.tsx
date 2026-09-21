@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import FocusParam from './focus-param'
 import SessionCalendar from '../components/SessionCalendar'
 import AttendancePanel from './attendance-panel'
 import ScoresEntry from '../components/ScoresEntry'
@@ -193,6 +194,8 @@ export default async function InstructorView({
         return (
           <div
             key={c.id}
+            id={`class-${c.id}`}
+            style={{ scrollMarginTop: 16 }}
             className={`bg-white rounded-lg shadow-md border-t-4 p-6 ${
               isPast ? 'border-gray-300 opacity-80' : 'border-hgl-blue'
             }`}
@@ -477,7 +480,7 @@ export default async function InstructorView({
       const liveClasses = withMeta.filter((x) => !x.isPast).map((x) => x.c)
       const pastClasses = withMeta.filter((x) => x.isPast).map((x) => x.c)
       if (liveClasses.length < 3) {
-        return <>{(classes as any[]).map((c) => <div key={c.id}>{renderCard(c)}</div>)}</>
+        return <><FocusParam param="class" prefix="class-" />{(classes as any[]).map((c) => <div key={c.id}>{renderCard(c)}</div>)}</>
       }
       return (
         <ClassTabs

@@ -34,6 +34,7 @@ try {
   const expected = {
     T1_MONTHLY_PROPOSAL: 'copies-parent',
     T1B_PROPOSAL_NUDGE: 'copies-parent',
+    T1R_UPDATED_PROPOSAL: 'copies-parent',
     T2_INVOICE: 'replaces',
     T2B_PAYMENT_REMINDER: 'replaces',
     T4_PAYMENT_FAILED: 'replaces',

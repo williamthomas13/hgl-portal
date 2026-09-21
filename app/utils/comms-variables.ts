@@ -1,4 +1,5 @@
 import type { EnrollmentEmailContext, Audience } from './email'
+import { classVenue } from './class-place'
 import { hglMapsQuery } from './hgl-address'
 import { autopayNudgeCopyHtml } from './autopay-nudge-copy'
 import { closeMatchAlertDetails } from './close-match-copy'
@@ -77,6 +78,12 @@ export function sessionScheduleMarkdown(c: EnrollmentEmailContext): string {
 }
 
 export type ExtraVars = {
+  /** T1R (PL-461): the family's request text, escaped. */
+  requestQuote?: string
+  /** T1R: the staff reply as its own paragraph; '' = omitted. */
+  staffNoteBlock?: string
+  /** T1R: one line per session moved/added/removed since the family last saw the proposal. */
+  changeSummaryBlock?: string
   /** SU: pre-rendered list of what changed. */
   changesBlock?: string
   /** #9: pre-rendered package CTA buttons. */
@@ -369,7 +376,8 @@ function locationPreposition(loc: string): 'in' | 'at' {
 
 export function classLocationTailText(
   location: string | null | undefined,
-  deliveryMode: string | null | undefined
+  deliveryMode: string | null | undefined,
+  venue?: string | null
 ): string {
   const loc = location?.trim()
   if (deliveryMode === 'online') {
@@ -377,27 +385,34 @@ export function classLocationTailText(
       ? `online — here's the meeting link: ${loc}`
       : `online — we'll send the meeting link before class`
   }
+  // PL-468: venue + room, one rule (class-place.ts). "at ASF campus · Room
+  // US 109" from day one; "at ASF campus — classroom to be confirmed" until
+  // the school confirms the room.
+  const v = venue?.trim()
+  if (v) return `at ${loc ? `${v} · ${loc}` : `${v} — classroom to be confirmed`}`
   if (!loc) return 'in TBD'
   return `${locationPreposition(loc)} ${loc}`
 }
 
 function classLocationTailHtml(
   location: string | null | undefined,
-  deliveryMode: string | null | undefined
+  deliveryMode: string | null | undefined,
+  venue?: string | null
 ): string {
   const loc = location?.trim()
   if (deliveryMode === 'online' && loc && /^https?:\/\//i.test(loc)) {
     return `online — here's the meeting link: <a href="${loc}">${loc}</a>`
   }
-  return classLocationTailText(location, deliveryMode)
+  return classLocationTailText(location, deliveryMode, venue)
 }
 
 /** The full preview sentence for the admin/counselor entry hints. */
 export function classLocationSentence(
   location: string | null | undefined,
-  deliveryMode: string | null | undefined = 'in_person'
+  deliveryMode: string | null | undefined = 'in_person',
+  venue?: string | null
 ): string {
-  return `All classes will take place ${classLocationTailText(location, deliveryMode)}.`
+  return `All classes will take place ${classLocationTailText(location, deliveryMode, venue)}.`
 }
 
 // PL-67: first name only for mid-sentence instructor mentions (#6 onward) —
@@ -674,7 +689,7 @@ export const VARIABLES: Record<string, VariableDef> = {
       "Mode-aware, follows \"take place\": in-person → \"in Room 204 (map)\" · online → \"online — here's the meeting link: <link>\"",
     block: true, // may contain the meeting-link / maps anchor
     resolve: (c) => {
-      const base = classLocationTailHtml(c.defaultLocation, c.deliveryMode)
+      const base = classLocationTailHtml(c.defaultLocation, c.deliveryMode, c.venue ?? classVenue({ deliveryMode: c.deliveryMode, schoolName: c.schoolName }))
       // PL-406: in-person classes append a maps link when a REAL address
       // resolves — the school's street address (schools.address), or for
       // at-HGL classes the PL-399 resolver (address-shaped location
@@ -1245,6 +1260,18 @@ export const VARIABLES: Record<string, VariableDef> = {
       ${detail('Notes', c.notes)}</p>`
     },
   },
+  requestQuote: {
+    description: "T1R: the family's change-request text, verbatim (escaped)",
+    resolve: (_c, _a, e) => e.requestQuote ?? '(their request)',
+  },
+  staffNoteBlock: {
+    description: 'T1R: the staff reply typed on the invoice row, as its own paragraph — empty when none',
+    resolve: (_c, _a, e) => e.staffNoteBlock ?? '',
+  },
+  changeSummaryBlock: {
+    description: 'T1R: one line per session moved / added / removed since the proposal the family last saw (family timezone)',
+    resolve: (_c, _a, e) => e.changeSummaryBlock ?? '<p><em>(what changed)</em></p>',
+  },
   changesBlock: {
     description: 'SU: only the details that changed (computed at send time)',
     block: true,
@@ -1437,6 +1464,10 @@ const SAMPLE_COVERAGE_NOTE_BLOCK = coverageNoteHtml(SAMPLE_COVERAGE_NOTE_PROSE)
 // actually builds; T4's is the attempt-3 (retries exhausted) render — the
 // highest-stakes email in the set.
 export const SAMPLE_EXTRA: ExtraVars = {
+  // T1R (PL-461)
+  requestQuote: "Can't do Oct 27 at original time. Needs to be 5:00 am",
+  staffNoteBlock: '<p>5:00 AM works for Billy — moved. Everything else stays as it was.</p>',
+  changeSummaryBlock: '<ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Tuesday, Oct 27 — moved from 11:00 AM to 5:00 AM</li></ul>',
   // PL-219: survey samples.
   surveyLink: 'https://hgl-portal.vercel.app/test-link',
   surveyReminderLine: '',

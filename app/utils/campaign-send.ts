@@ -1,4 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { loadSendLimits } from './send-limits'
 import { sendOnce, sendAdminAlert } from './email'
 import { ADMIN_EMAIL } from './lifecycle'
 import { unsubscribeToken } from './campaigns'
@@ -20,16 +21,18 @@ async function quotaRemaining(): Promise<number> {
   const dayStartDenver = new Date(
     new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }) + 'T00:00:00-06:00'
   ).toISOString()
-  const [{ data: capRow }, { count: sendsToday }] = await Promise.all([
-    supabase.from('app_settings').select('value').eq('key', 'resend_daily_cap').maybeSingle(),
+  // PL-469: ONE reader. No brake set → campaigns never pause on a number
+  // (Resend Pro has no daily limit; real rejections surface on the health card).
+  const [limits, { count: sendsToday }] = await Promise.all([
+    loadSendLimits(),
     supabase
       .from('email_sends')
       .select('id', { count: 'exact', head: true })
       .in('status', ['sent', 'delivered', 'bounced', 'complained'])
       .gte('sent_at', dayStartDenver),
   ])
-  const cap = Number(capRow?.value ?? 100)
-  return Math.max(0, cap - (sendsToday ?? 0) - TRANSACTIONAL_RESERVE)
+  if (limits.dailyBrake == null) return Number.POSITIVE_INFINITY
+  return Math.max(0, limits.dailyBrake - (sendsToday ?? 0) - TRANSACTIONAL_RESERVE)
 }
 
 export type CampaignRunResult = {
@@ -220,7 +223,7 @@ export async function runCampaignSend(campaignId: string): Promise<CampaignRunRe
     await sendAdminAlert({
       dedupeKey: `campaign_paused:${campaignId}:${new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })}`,
       adminEmail: ADMIN_EMAIL,
-      subject: `Campaign "${campaign.name}" paused at the daily email cap — ${pendingLeft} to go`,
+      subject: `Campaign "${campaign.name}" paused at the campaign brake — ${pendingLeft} to go`,
       body: `<p>The campaign sent ${sent} today and paused so regular emails (invoices,
         schedules) keep their headroom — transactional always wins. The remaining
         ${pendingLeft} recipient${pendingLeft === 1 ? '' : 's'} send automatically when the

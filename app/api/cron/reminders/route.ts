@@ -1639,7 +1639,15 @@ async function sweepClassroomRequests(
     return
   }
 
-  if (today < addDaysISO(bundle.firstSession, -CLASSROOM_REQUEST_LEAD_DAYS)) return
+  // PL-468: the real trigger is "the class meets minimum" — no point asking a
+  // counselor for a room for a class that may not run. Ask the moment the
+  // minimum is met (or staff chose "run anyway"), whether that is 40 days out
+  // or 10; never before. (Before: T-14 regardless of the roster.) The #4
+  // hold-and-alert at T-6 stays the backstop for a room still blank.
+  const paidNow = bundle.enrollments.filter((e) => e.payment_status === 'Paid' || e.payment_status === 'Completed').length
+  const minReached = paidNow >= bundle.minEnrollment || bundle.minEnrollmentDecision === 'run_anyway'
+  if (!minReached) return
+  void CLASSROOM_REQUEST_LEAD_DAYS
   const counselors = contactsForClass(bundle, counselorsBySchool)
   if (counselors.length === 0) return
   if (localHour(bundle.timezone) < 8) return

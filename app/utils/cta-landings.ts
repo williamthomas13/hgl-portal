@@ -44,7 +44,7 @@ export const NEEDS_ATTENTION_LANDINGS: Record<string, StaffLanding> = {
   'Intake complete — ready to schedule': { href: '/admin/leads?lead=', file: 'app/admin/leads/page.tsx', params: ['lead'], control: 'lead-' },
   'Session still needs coverage': { href: '/admin/tutoring?session=', file: 'app/admin/tutoring/page.tsx', params: ['session'], control: 'SessionDialog', controlFile: 'app/admin/tutoring/schedule-view.tsx' },
   'Timecard awaiting approval': { href: '/admin/tutoring?section=timecards&timecard=', file: 'app/admin/tutoring/page.tsx', params: ['timecard'], control: 'timecard-', controlFile: 'app/admin/tutoring/timecards-panel.tsx' },
-  'Change requested — needs our reply': { href: '/admin/tutoring?invoice=', file: 'app/admin/tutoring/page.tsx', params: ['invoice'], control: 'change-request-session-link', controlFile: 'app/admin/tutoring/invoices-panel.tsx' },
+  'Change requested — needs our reply': { href: '/admin/tutoring?invoice=', file: 'app/admin/tutoring/page.tsx', params: ['invoice'], control: 'send-updated-proposal', controlFile: 'app/admin/tutoring/invoices-panel.tsx' },
   'Reschedule request pending': { href: '/admin/tutoring?session=', file: 'app/admin/tutoring/page.tsx', params: ['session', 'reschedule'], control: 'SessionDialog', controlFile: 'app/admin/tutoring/schedule-view.tsx' },
   'Possible duplicate person': { href: '/admin/leads?lead=', file: 'app/admin/leads/page.tsx', params: ['lead'], control: 'lead-' },
   'Proposed session never resolved': { href: '/admin/tutoring?session=', file: 'app/admin/tutoring/page.tsx', params: ['session'], control: 'SessionDialog', controlFile: 'app/admin/tutoring/schedule-view.tsx' },
@@ -105,5 +105,5 @@ export const LINK_LANDINGS: Record<string, LinkLanding> = {
   salesPageLink: { route: 'external (evergreen code → class page)', file: null },
   surveyLink: { route: '/survey/{token}', file: 'app/survey/[token]/page.tsx', invalidBranch: 'PublicNoticeCard' },
   coverageRespondLink: { route: '/portal?view=tutor#portal-coverage', file: 'app/portal/tutor-view.tsx', invalidBranch: 'portal-coverage' },
-  instructorViewLink: { route: '/portal?view=instructor', file: 'app/portal/instructor-view.tsx' },
+  instructorViewLink: { route: '/portal?view=instructor&class={id}', file: 'app/portal/instructor-view.tsx', invalidBranch: 'FocusParam' },
 }

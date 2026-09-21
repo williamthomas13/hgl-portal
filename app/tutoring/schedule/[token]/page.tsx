@@ -54,7 +54,7 @@ export default async function ProposalPage({
   const { data: invoice } = await supabase
     .from('tutoring_invoices')
     .select(
-      `id, period, status, total, change_requested_at, stripe_hosted_invoice_url,
+      `id, period, status, total, change_requested_at, change_replied_at, stripe_hosted_invoice_url,
        families ( id, parent_first_name, timezone )`
     )
     .eq('id', invoiceId)
@@ -159,6 +159,7 @@ export default async function ProposalPage({
             <ProposalActions
               token={token}
               changeRequested={Boolean(invoice.change_requested_at)}
+              changeRepliedAt={!invoice.change_requested_at && invoice.change_replied_at ? String(invoice.change_replied_at) : null}
               sessions={rows
                 .filter((r) => r.status === 'proposed')
                 .map(({ id, day, time, student, subject, tutor }) => ({

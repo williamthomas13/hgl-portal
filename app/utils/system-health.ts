@@ -1,4 +1,5 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
+import { loadSendLimits, denverMonthStartIso } from './send-limits'
 import { DEFAULT_TIMEZONE } from './lifecycle'
 import type { SystemHealth } from '../admin/system-health-card'
 
@@ -16,14 +17,30 @@ export async function computeSystemHealth(
     new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }) + 'T00:00:00-06:00'
   ).toISOString()
   const [
-    { data: capRow },
+    limits,
+    { count: monthToDate },
+    { count: quotaErrorsToday },
     { count: sendsToday },
     { count: campaignToday },
     { count: qboPendingCount },
     { count: qboFailedCount },
     { data: sweepRows },
   ] = await Promise.all([
-    supabase.from('app_settings').select('value').eq('key', 'resend_daily_cap').maybeSingle(),
+    loadSendLimits(),
+    // PL-469: month-to-date IS the plan's real limit (Resend Pro: 50k/month).
+    supabase
+      .from('email_sends')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['sent', 'delivered', 'bounced', 'complained'])
+      .gte('sent_at', denverMonthStartIso()),
+    // PL-469: "sends are failing" comes from REAL Resend rejections
+    // (recorded on the failed row by sendOnce), never from arithmetic.
+    supabase
+      .from('email_sends')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'failed')
+      .gte('updated_at', dayStartDenver)
+      .ilike('payload->>resend_error', '%quota%'),
     // Real sends AND test sends both consume the plan's quota.
     supabase
       .from('email_sends')
@@ -61,14 +78,16 @@ export async function computeSystemHealth(
     recovery = null
   }
 
-  const cap = Number(capRow?.value ?? 100)
   const used = sendsToday ?? 0
   const health: SystemHealth = {
     sends: {
       today: used,
       campaignToday: campaignToday ?? 0,
-      cap,
-      state: used >= cap ? 'full' : used >= cap * 0.8 ? 'warn' : 'ok',
+      dailyBrake: limits.dailyBrake,
+      monthToDate: monthToDate ?? 0,
+      monthlyQuota: limits.monthlyQuota,
+      quotaErrorsToday: quotaErrorsToday ?? 0,
+      state: (quotaErrorsToday ?? 0) > 0 ? 'quota-errors' : limits.dailyBrake != null && used >= limits.dailyBrake ? 'brake' : 'ok',
     },
     qbo: { pending: qboPendingCount ?? 0, failed: qboFailedCount ?? 0 },
     sweep: {

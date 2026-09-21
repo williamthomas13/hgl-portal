@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { loadSendLimits } from '../../../utils/send-limits'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { loadContactInfo } from '../../../utils/tutoring-emails'
@@ -22,6 +23,7 @@ export async function GET() {
   const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]))
   return NextResponse.json({
     contact: await loadContactInfo(),
+    limits: await loadSendLimits(),
     identities: {
       info: { value: map.email_from_info ?? FROM, overridden: Boolean(map.email_from_info) },
       personal: {
@@ -49,6 +51,8 @@ export async function POST(req: Request) {
     action?: string
     identity?: 'info' | 'personal'
     value?: string
+    dailyBrake?: string | number
+    monthlyQuota?: string | number
   }
   try {
     body = await req.json()
@@ -59,6 +63,29 @@ export async function POST(req: Request) {
   // PL-177: editing a sending identity is its own action — a plain settings
   // edit with understood consequences (future sends switch immediately; a
   // brand-new domain still needs Resend verification first).
+  // PL-469: the sending limits — a campaign brake (NOT a Resend limit) and
+  // the plan's monthly quota. Blank clears. Recorded with who changed it.
+  if (body.action === 'set_send_limits') {
+    const parse = (v: unknown, label: string): number | null | 'bad' => {
+      const t = String(v ?? '').trim()
+      if (t === '') return null
+      const n = Number(t)
+      return Number.isInteger(n) && n > 0 ? n : 'bad'
+    }
+    const daily = parse(body.dailyBrake, 'daily')
+    const monthly = parse(body.monthlyQuota, 'monthly')
+    if (daily === 'bad' || monthly === 'bad') {
+      return NextResponse.json({ error: 'Limits are whole numbers greater than zero — or blank for none.' }, { status: 400 })
+    }
+    const stamp = { updated_at: new Date().toISOString(), updated_by: caller.email }
+    const { error } = await supabase.from('app_settings').upsert([
+      { key: 'resend_daily_cap', value: daily == null ? '' : String(daily), ...stamp },
+      { key: 'resend_monthly_quota', value: monthly == null ? '' : String(monthly), ...stamp },
+    ])
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, limits: await loadSendLimits() })
+  }
+
   if (body.action === 'set_identity') {
     const identity = body.identity
     const value = (body.value ?? '').trim()

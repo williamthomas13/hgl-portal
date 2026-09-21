@@ -163,6 +163,42 @@ export function t1ProposalEmail(opts: {
   return { subject, html }
 }
 
+/** PL-461 code twin of T1R_UPDATED_PROPOSAL — identical copy to the seed
+ *  until the registry version is live. */
+export function t1rUpdatedProposalEmail(opts: {
+  monthLabel: string
+  blocks: StudentScheduleBlock[]
+  totalDue: number
+  requestQuote: string
+  staffNoteBlock: string
+  changeSummaryBlock: string
+  link: string
+  autoconfirmDays: number
+  contact: ContactInfo
+}): { subject: string; html: string } {
+  const names = firstNames(opts.blocks)
+  const subject = `Updated: ${names}'s tutoring schedule for ${opts.monthLabel}`
+  const html = wrap(
+    `<h2 style="color:#334155">${names}'s updated ${opts.monthLabel} schedule</h2>
+     <p>Thanks for letting us know what wasn't working. You asked:</p>
+     <blockquote style="border-left:3px solid #cbd5e1;margin:8px 0;padding:4px 12px;color:#334155">${opts.requestQuote}</blockquote>
+     ${opts.staffNoteBlock}
+     <p><strong>What changed</strong></p>
+     ${opts.changeSummaryBlock}
+     <p>Here's the full ${opts.monthLabel} schedule as it stands now:</p>
+     ${scheduleHtml(opts.blocks)}
+     ${opts.totalDue > 0 ? `<p style="font-size:16px"><strong>Month total: ${money(opts.totalDue)}</strong> — billed once you confirm, due by the end of this month.</p>` : ''}
+     <p style="margin:24px 0">
+       <a href="${opts.link}?confirm=1" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Confirm schedule</a>
+     </p>
+     <p><a href="${opts.link}" style="color:#00AEEE">Still not right? Request another change →</a></p>
+     <p style="color:#64748b;font-size:13px">If we don't hear from you within ${opts.autoconfirmDays} days, this updated schedule confirms automatically, exactly as shown.</p>
+     ${contactBlockHtml(opts.contact)}`,
+    { preheader: "We've replied to your change request — please take a look and confirm", footer: footerT() }
+  )
+  return { subject, html }
+}
+
 export function t1bNudgeEmail(opts: {
   monthLabel: string
   names: string | null // student first names; null → generic wording

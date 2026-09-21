@@ -6,6 +6,9 @@ import {
   after7cConfirm,
   confirmInvoice,
   recomputeInvoiceTotals,
+  composeUpdatedProposal,
+  sendUpdatedProposal,
+  closeChangeRequest,
 } from '../../../../utils/tutoring-billing'
 import { issueOrCharge, sendPaymentReminder } from '../../../../utils/tutoring-stripe'
 import { loadContactInfo } from '../../../../utils/tutoring-emails'
@@ -27,6 +30,8 @@ type Body =
   | { action: 'retry_charge'; id: string }
   | { action: 'void'; id: string }
   | { action: 'mark_change_handled'; id: string; reason?: string }
+  | { action: 'preview_updated_proposal'; id: string; note?: string }
+  | { action: 'send_updated_proposal'; id: string; note?: string }
   // PL-334 C: one manual reminder (deduped for the day) · restart the
   // automatic cadence (re-stamps the cycle clock).
   | { action: 'send_reminder'; id: string }
@@ -230,26 +235,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true })
     }
 
+    // PL-461: three ways to close an open change request — reschedule (PL-459,
+    // doesn't close), SEND the updated proposal (T1R), or close with NO email.
+    if (body.action === 'preview_updated_proposal') {
+      const composed = await composeUpdatedProposal(invoice.id, String(body.note ?? ''))
+      if (!composed.ok) return NextResponse.json({ error: composed.error }, { status: 400 })
+      return NextResponse.json({ ok: true, subject: composed.subject, html: composed.html, to: composed.to, cc: composed.cc ?? [], changedLines: composed.changedLines })
+    }
+    if (body.action === 'send_updated_proposal') {
+      const res = await sendUpdatedProposal(invoice.id, String(body.note ?? ''), caller.email)
+      if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
+      return NextResponse.json({ ok: true })
+    }
     if (body.action === 'mark_change_handled') {
-      // PL-459 F: replying IS the handling. Either a session on this month
-      // changed since the request (the reply is the new schedule) or staff
-      // says how it was resolved — that line lands in the activity feed.
-      // Either way the family's confirmation window restarts FROM THE REPLY,
-      // never from the original send: proposal_sent_at is re-stamped and the
-      // nudge clock cleared (the sweep derives everything from those).
+      // The NO-EMAIL close (settled by phone/WhatsApp): a one-line reason is
+      // required unless a session on the month changed since the request.
       const { data: full } = await supabase
         .from('tutoring_invoices')
-        .select('id, family_id, period, status, change_requested_at, change_request_note, tutoring_invoice_lines ( session_id )')
+        .select('id, change_requested_at, tutoring_invoice_lines ( session_id )')
         .eq('id', invoice.id)
         .maybeSingle()
       if (!full?.change_requested_at) return NextResponse.json({ error: 'No open change request on this month.' }, { status: 400 })
       const sessionIds = ((full.tutoring_invoice_lines as any[]) ?? []).map((l) => l.session_id).filter(Boolean)
       const { count: changed } = sessionIds.length
-        ? await supabase
-            .from('tutoring_sessions')
-            .select('id', { count: 'exact', head: true })
-            .in('id', sessionIds)
-            .gt('updated_at', full.change_requested_at)
+        ? await supabase.from('tutoring_sessions').select('id', { count: 'exact', head: true }).in('id', sessionIds).gt('updated_at', full.change_requested_at)
         : { count: 0 }
       const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : ''
       if (!changed && !reason) {
@@ -258,24 +267,9 @@ export async function POST(req: Request) {
           { status: 400 }
         )
       }
-      const nowIso = new Date().toISOString()
-      const month = new Date(String(full.period).slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
       const what = reason || (changed === 1 ? 'a session was rescheduled' : `${changed} sessions were rescheduled`)
-      const replyLine = `[${nowIso.slice(0, 16).replace('T', ' ')}] HGL reply (${caller.email}): ${what}`
-      const patch: Record<string, unknown> = {
-        change_requested_at: null,
-        change_request_note: `${full.change_request_note ?? ''}\n${replyLine}`.trim(),
-        nudge_sent_at: null,
-        updated_at: nowIso,
-      }
-      if (full.status === 'proposed') patch.proposal_sent_at = nowIso
-      const { error } = await supabase.from('tutoring_invoices').update(patch).eq('id', invoice.id)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      await supabase.from('family_fact_edits').insert({
-        family_id: full.family_id,
-        actor: `staff:${caller.email}`,
-        summary: `replied to the ${month} tutoring change request — ${what}`,
-      })
+      const closed = await closeChangeRequest(invoice.id, { by: caller.email, what, sentUpdatedProposal: false })
+      if (!closed.ok) return NextResponse.json({ error: closed.error }, { status: 500 })
       return NextResponse.json({ ok: true, changed: changed ?? 0 })
     }
 

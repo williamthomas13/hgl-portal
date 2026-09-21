@@ -30,11 +30,14 @@ type Slot = { startsAt: string; endsAt: string; label: string }
 export default function ProposalActions({
   token,
   changeRequested,
+  changeRepliedAt = null,
   sessions,
   autoConfirm,
 }: {
   token: string
   changeRequested: boolean
+  /** PL-461: staff replied (T1R or a no-email close) and no new request is open. */
+  changeRepliedAt?: string | null
   sessions: SessionRow[]
   autoConfirm: boolean
 }) {
@@ -162,6 +165,11 @@ export default function ProposalActions({
             to our email and say so.
           </p>
         </div>
+      )}
+      {!changeRequested && changeRepliedAt && (
+        <p className="text-xs text-gray-500" data-testid="updated-in-reply">
+          Updated {new Date(changeRepliedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} in reply to your request — confirm below, or request another change.
+        </p>
       )}
       {notice && (
         <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded p-2">{notice}</p>

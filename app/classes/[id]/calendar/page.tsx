@@ -1,5 +1,6 @@
 'use client'
 
+import { classPlaceLine } from '../../../utils/class-place'
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { ClassNotFound } from '../../../components/PublicNotice'
@@ -26,7 +27,8 @@ type ClassInfo = {
   display_cities?: string | null
   delivery_mode?: string | null
   default_location: string | null
-  schools: { nickname: string; timezone: string | null; city?: string | null } | null
+  venue?: string | null
+  schools: { name?: string | null; nickname: string; timezone: string | null; city?: string | null } | null
   sessions: Session[] | null
 }
 
@@ -149,7 +151,7 @@ export default function ClassCalendarPage() {
             {sessions.map((s) => {
               const start = formatTime(s.start_time)
               const end = formatTime(s.end_time)
-              const loc = s.location ?? info.default_location
+              const loc = s.location ?? classPlaceLine({ venue: info.venue, room: info.default_location, deliveryMode: info.delivery_mode, schoolName: (Array.isArray(info.schools) ? info.schools[0] : info.schools)?.name })
               return (
                 <li key={s.id} className="text-sm bg-gray-50 rounded px-3 py-2">
                   <strong>{formatDate(s.session_date)}</strong>

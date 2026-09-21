@@ -1,5 +1,6 @@
 'use client'
 
+import { classPlaceLine } from '../../utils/class-place'
 import { useState, useEffect, useRef } from 'react'
 import SessionCalendar from '../../components/SessionCalendar'
 import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
@@ -23,6 +24,7 @@ type ClassDetails = {
   price: number
   start_date: string
   default_location: string | null
+  venue?: string | null
   registration_close_date: string | null
   timezone?: string | null
   /** PL-353: an online class's own city list for time labels. */
@@ -439,7 +441,7 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
     sessions.length > 0 ? (
       <SessionCalendar
         sessions={sessions}
-        defaultLocation={classDetails.default_location}
+        defaultLocation={classPlaceLine({ venue: classDetails.venue, room: classDetails.default_location, deliveryMode: classDetails.delivery_mode, schoolName: classDetails.schools?.name })}
         calendarHref={`/classes/${classDetails.id}/calendar`}
         timezone={classDetails.timezone ?? classDetails.schools?.timezone ?? null}
         cityLabel={publicTimeCityLabel({
@@ -781,6 +783,7 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
               </div>
               <div>
                 <label className="block text-sm text-gray-600">Last Name</label>
+                <span className="block text-[11px] text-gray-400 -mt-0.5 mb-1">Include both surnames if you use two.</span>
                 <input type="text" name="parentLast" required defaultValue={page1Snapshot?.parentLast ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
               </div>
               <div className="col-span-2">
@@ -818,6 +821,7 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600">Last Name</label>
+                <span className="block text-[11px] text-gray-400 -mt-0.5 mb-1">Include both surnames if you use two.</span>
                   <input type="text" name={`studentLast_${i}`} required defaultValue={page1Snapshot?.[`studentLast_${i}`] ?? undefined} className="mt-1 w-full border border-gray-300 rounded p-2 focus:border-hgl-blue focus:ring-hgl-blue outline-none transition" />
                 </div>
                 <div className="col-span-2">

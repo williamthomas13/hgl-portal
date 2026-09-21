@@ -29,6 +29,19 @@ type Identities = Record<'info' | 'personal', { value: string; overridden: boole
 export default function ContactSettingsPanel() {
   const [contact, setContact] = useState<ContactInfo | null>(null)
   const [identities, setIdentities] = useState<Identities | null>(null)
+  // PL-469: the sending limits (a campaign brake + the plan's monthly quota).
+  const [limits, setLimits] = useState<{ dailyBrake: string; monthlyQuota: string } | null>(null)
+  const [limitsMsg, setLimitsMsg] = useState('')
+  async function saveLimits() {
+    setLimitsMsg('')
+    const res = await fetch('/api/admin/contact-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set_send_limits', dailyBrake: limits?.dailyBrake ?? '', monthlyQuota: limits?.monthlyQuota ?? '' }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setLimitsMsg(res.ok ? 'Saved — the health card and campaigns read the new numbers immediately.' : `Error: ${json.error ?? res.status}`)
+  }
   const [identityDrafts, setIdentityDrafts] = useState<Record<string, string>>({})
   const [visible, setVisible] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -40,6 +53,7 @@ export default function ContactSettingsPanel() {
       .then((json) => {
         if (json?.contact) {
           setContact(json.contact)
+          if (json.limits) setLimits({ dailyBrake: json.limits.dailyBrake == null ? '' : String(json.limits.dailyBrake), monthlyQuota: json.limits.monthlyQuota == null ? '' : String(json.limits.monthlyQuota) })
           if (json.identities) {
             setIdentities(json.identities)
             setIdentityDrafts({
@@ -131,6 +145,47 @@ export default function ContactSettingsPanel() {
           </span>
         )}
       </div>
+
+      {/* PL-469: the sending limits. The daily number is a BRAKE for
+          campaigns, never a Resend limit and never a gate on transactional
+          sends (sendOnce reads nothing here). */}
+      {limits && (
+        <div className="mt-6 pt-5 border-t border-gray-200" data-testid="send-limits">
+          <h3 className="text-sm font-bold text-hgl-slate mb-1">Sending limits</h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Your Resend plan&apos;s limits. Pro has NO daily limit — the daily number here is a safety brake for
+            campaigns only (they pause at it and resume the next day; invoices, schedules and every other
+            transactional email always send). The monthly quota is the plan&apos;s real limit and shows on the
+            dashboard&apos;s System health card against this month&apos;s sends. Blank = none.
+          </p>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">Campaign brake (sends per day)</label>
+              <input
+                inputMode="numeric"
+                value={limits.dailyBrake}
+                onChange={(e) => setLimits({ ...limits, dailyBrake: e.target.value })}
+                placeholder="none"
+                className="border border-gray-300 rounded p-2 text-sm w-40"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 font-semibold mb-1">Plan quota (sends per month)</label>
+              <input
+                inputMode="numeric"
+                value={limits.monthlyQuota}
+                onChange={(e) => setLimits({ ...limits, monthlyQuota: e.target.value })}
+                placeholder="e.g. 50000"
+                className="border border-gray-300 rounded p-2 text-sm w-40"
+              />
+            </div>
+            <button type="button" onClick={saveLimits} className="bg-hgl-slate text-white py-1.5 px-4 rounded hover:opacity-90 text-sm">
+              Save limits
+            </button>
+            {limitsMsg && <span className={`text-xs ${limitsMsg.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{limitsMsg}</span>}
+          </div>
+        </div>
+      )}
 
       {/* PL-177: the OTHER sending identities — changing one someday is a
           settings edit with understood consequences, not archaeology. */}

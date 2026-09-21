@@ -2320,6 +2320,47 @@ Nothing you need to do — this is just so you always know where the class stand
 
 [button:Open your class page]({instructorViewLink})`,
   },
+  {
+    // PL-461: the family hears back after a change request (copy APPROVED
+    // by Scarlett Sep 21). Ships as a DRAFT — the code twin sends identical
+    // copy until it is flipped live. Deliberately NOT here: {autopayBlock},
+    // {packageNote}, T1's month-end policy sentence.
+    template_key: 'T1R_UPDATED_PROPOSAL',
+    billing: 'copies-parent',
+    display_name: 'T1R — Updated proposal (reply to a change request)',
+    sequence_number: 'T1r',
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "Updated: {studentNames}'s tutoring schedule for {tutoringMonthLabel}",
+    footer_note: null,
+    preheader: "We've replied to your change request — please take a look and confirm",
+    body_markdown: `## {studentNames}'s updated {tutoringMonthLabel} schedule
+
+Thanks for letting us know what wasn't working. You asked:
+
+> {requestQuote}
+
+{staffNoteBlock}
+
+**What changed**
+
+{changeSummaryBlock}
+
+Here's the full {tutoringMonthLabel} schedule as it stands now:
+
+{scheduleBlock}
+
+{monthTotalLine}
+
+[button:Confirm schedule]({confirmOneTapLink})
+
+[Still not right? Request another change →]({confirmLink})
+
+If we don't hear from you within {autoconfirmDays} days, this updated schedule confirms automatically, exactly as shown.
+
+{contactBlock}`,
+  },
 ]
 
 /** PL-454: the billing-category keys with their verdict, derived from the

@@ -10,7 +10,18 @@ import { useVisibleInterval } from '../components/use-visible-interval'
 // imports it type-only.
 
 export type SystemHealth = {
-  sends: { today: number; campaignToday: number; cap: number; state: 'ok' | 'warn' | 'full' }
+  /** PL-469: the daily number is a campaign BRAKE (Resend Pro has no daily
+   *  limit); the plan's real limit is monthly. 'quota-errors' = Resend
+   *  itself rejected sends today — the only state that means "failing". */
+  sends: {
+    today: number
+    campaignToday: number
+    dailyBrake: number | null
+    monthToDate: number
+    monthlyQuota: number | null
+    quotaErrorsToday: number
+    state: 'ok' | 'brake' | 'quota-errors'
+  }
   qbo: { pending: number; failed: number }
   sweep: { lastFinishedAt: string | null; stale: boolean; hanging: boolean }
   /** PL-407: the effective DEFAULT_TIMEZONE and whether CLASS_TIMEZONE is
@@ -42,22 +53,23 @@ export function SystemHealthBody({ health }: { health: SystemHealth }) {
           )}
         </span>
         <span
-          className={`font-bold ${
-            health.sends.state === 'full'
-              ? 'text-red-700'
-              : health.sends.state === 'warn'
-                ? 'text-amber-700'
-                : 'text-gray-800'
-          }`}
+          className={`font-bold text-right ${health.sends.state === 'quota-errors' ? 'text-red-700' : health.sends.state === 'brake' ? 'text-amber-700' : 'text-gray-800'}`}
+          data-testid="health-sends"
         >
-          {health.sends.today} / {health.sends.cap}
-          {health.sends.state === 'full' && (
+          {health.sends.today.toLocaleString()} today
+          <span className="block text-[11px] font-normal text-gray-500">
+            {health.sends.dailyBrake != null
+              ? `campaign brake ${health.sends.dailyBrake.toLocaleString()}${health.sends.state === 'brake' ? ' — campaigns paused until tomorrow; invoices and schedules still send' : ''}`
+              : 'no campaign brake set'}
+          </span>
+          <span className="block text-[11px] font-normal text-gray-500">
+            {health.sends.monthToDate.toLocaleString()} this month
+            {health.sends.monthlyQuota != null ? ` of ${health.sends.monthlyQuota.toLocaleString()} on the plan` : ' (plan quota not set)'}
+          </span>
+          {health.sends.state === 'quota-errors' && (
             <span className="block text-[11px] font-normal">
-              at the daily cap — sends are failing
+              Resend rejected {health.sends.quotaErrorsToday} send{health.sends.quotaErrorsToday === 1 ? '' : 's'} today for quota — check the plan
             </span>
-          )}
-          {health.sends.state === 'warn' && (
-            <span className="block text-[11px] font-normal">approaching the daily cap</span>
           )}
         </span>
       </li>

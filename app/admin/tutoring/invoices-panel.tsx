@@ -139,6 +139,8 @@ export default function InvoicesPanel() {
   const [lineForm, setLineForm] = useState<{ id: string; kind: 'adjustment' | 'credit'; description: string; amount: string } | null>(null)
   // PL-459 B: the one-line reason "mark handled" asks for when no session changed.
   const [handledReason, setHandledReason] = useState<Record<string, string>>({})
+  // PL-461: the T1R preview (subject + rendered body + recipients) before Send.
+  const [t1rPreview, setT1rPreview] = useState<{ invoiceId: string; subject: string; html: string; to: string[]; cc: string[]; changedLines: number } | null>(null)
   // PL-459 A: the reschedule dialog lands back here with ?replied=1 — say so.
   useEffect(() => {
     if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('replied') === '1') {
@@ -464,27 +466,88 @@ export default function InvoicesPanel() {
                       ) : (
                         <p className="mt-1 text-[11px]">This month is past the proposal stage — reply to the family directly.</p>
                       )}
-                      <div className="mt-2 pt-2 border-t border-amber-200 flex flex-wrap items-center gap-2">
-                        <span className="text-[11px]">Then:</span>
-                        <input
+                      {/* PL-461: three ways to close, side by side. Reschedule
+                          (above) makes the change; SEND the updated proposal
+                          emails the family (T1R, preview first); "mark handled
+                          — no email" is for the phone/WhatsApp resolution. The
+                          email is a choice, never a side effect. Same idiom as
+                          the school announcement panel: preview expanded before
+                          Send. */}
+                      <div className="mt-2 pt-2 border-t border-amber-200 space-y-2">
+                        <textarea
                           value={handledReason[r.id] ?? ''}
                           onChange={(e) => setHandledReason({ ...handledReason, [r.id]: e.target.value })}
-                          placeholder="how it was resolved (needed only if no session changed)"
-                          className="border border-amber-300 rounded px-2 py-1 text-xs bg-white flex-1 min-w-[12rem]"
+                          placeholder="Your reply to the family (goes into the email as-is) — or, closing without an email, how it was resolved"
+                          rows={2}
+                          className="border border-amber-300 rounded px-2 py-1 text-xs bg-white w-full"
                         />
-                        <button
-                          disabled={busy}
-                          data-testid="mark-change-handled"
-                          onClick={() =>
-                            invoiceCall(
-                              { action: 'mark_change_handled', id: r.id, reason: handledReason[r.id] ?? '' },
-                              'Marked handled — the family gets a fresh confirmation window from now.'
-                            )
-                          }
-                          className="underline text-hgl-blue"
-                        >
-                          mark handled
-                        </button>
+                        {t1rPreview?.invoiceId === r.id ? (
+                          <div className="border border-gray-200 rounded bg-white p-2" data-testid="t1r-preview">
+                            <p className="text-xs font-semibold text-gray-600 mb-1">Subject: {t1rPreview.subject}</p>
+                            <p className="text-[11px] text-gray-500 mb-1">
+                              To {t1rPreview.to.join(', ')}{t1rPreview.cc.length ? ` · cc ${t1rPreview.cc.join(', ')}` : ''} · {t1rPreview.changedLines} change{t1rPreview.changedLines === 1 ? '' : 's'} listed
+                            </p>
+                            <iframe srcDoc={t1rPreview.html} title={t1rPreview.subject} className="w-full h-72 border border-gray-100 rounded bg-white" />
+                            <div className="flex gap-3 mt-2 items-center">
+                              <button
+                                disabled={busy}
+                                data-testid="send-updated-proposal-confirm"
+                                onClick={() => {
+                                  setT1rPreview(null)
+                                  invoiceCall(
+                                    { action: 'send_updated_proposal', id: r.id, note: handledReason[r.id] ?? '' },
+                                    'Updated proposal sent — the request is closed and the family has a fresh confirmation window.'
+                                  )
+                                }}
+                                className="text-xs font-bold text-white bg-hgl-blue rounded px-3 py-1.5 disabled:opacity-40"
+                              >
+                                Send
+                              </button>
+                              <button onClick={() => setT1rPreview(null)} className="text-xs text-gray-500 underline">
+                                Back
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              disabled={busy}
+                              data-testid="send-updated-proposal"
+                              onClick={async () => {
+                                setBusy(true)
+                                try {
+                                  const res = await fetch('/api/admin/tutoring/invoice', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'preview_updated_proposal', id: r.id, note: handledReason[r.id] ?? '' }),
+                                  })
+                                  const json = await res.json().catch(() => ({}))
+                                  if (!res.ok) setMessage('Error: ' + (json.error ?? res.status))
+                                  else setT1rPreview({ invoiceId: r.id, subject: json.subject, html: json.html, to: json.to ?? [], cc: json.cc ?? [], changedLines: json.changedLines ?? 0 })
+                                } finally {
+                                  setBusy(false)
+                                }
+                              }}
+                              className="text-xs font-bold text-white bg-hgl-blue rounded px-3 py-1.5 disabled:opacity-40"
+                            >
+                              Send updated proposal
+                            </button>
+                            <button
+                              disabled={busy}
+                              data-testid="mark-handled-no-email"
+                              onClick={() =>
+                                invoiceCall(
+                                  { action: 'mark_change_handled', id: r.id, reason: handledReason[r.id] ?? '' },
+                                  'Closed without an email. Next: "confirm for family" under details if they agreed on the phone — or leave it and they confirm on their own (fresh window from now).'
+                                )
+                              }
+                              className="text-xs underline text-hgl-blue"
+                            >
+                              Mark handled — no email
+                            </button>
+                            <span className="text-[11px] text-amber-800">Send previews the email first; no-email needs the line above unless a session already changed.</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

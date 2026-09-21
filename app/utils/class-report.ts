@@ -17,6 +17,8 @@ export type ReportScore = { sections: Record<string, number>; total: number }
 export type ReportStudent = {
   id: string
   name: string
+  /** PL-466: the student's whole first name ("Stefano Carlo"), for chart labels. */
+  firstName: string
   initial: ReportScore | null
   final: ReportScore | null
   gained: number | null
@@ -184,6 +186,8 @@ export async function loadClassReport(classId: string): Promise<ClassReport | nu
       return {
         id: e.student_id,
         name: stu ? `${stu.first_name} ${stu.last_name}` : '—',
+        // PL-466: the WHOLE first-name field — never the first token.
+        firstName: stu?.first_name ?? '—',
         initial,
         final,
         gained: initial && final ? final.total - initial.total : null,

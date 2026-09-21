@@ -1,4 +1,5 @@
 import { NextResponse, after } from 'next/server'
+import { loadSendLimits } from '../../../utils/send-limits'
 import { sameAddress } from '../../../utils/billing-recipient'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
@@ -38,15 +39,15 @@ async function quotaPicture() {
   const dayStartDenver = new Date(
     new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }) + 'T00:00:00-06:00'
   ).toISOString()
-  const [{ data: capRow }, { count: sendsToday }] = await Promise.all([
-    supabase.from('app_settings').select('value').eq('key', 'resend_daily_cap').maybeSingle(),
+  const [limits, { count: sendsToday }] = await Promise.all([
+    loadSendLimits(),
     supabase
       .from('email_sends')
       .select('id', { count: 'exact', head: true })
       .in('status', ['sent', 'delivered', 'bounced', 'complained'])
       .gte('sent_at', dayStartDenver),
   ])
-  return { cap: Number(capRow?.value ?? 100), usedToday: sendsToday ?? 0 }
+  return { cap: limits.dailyBrake, usedToday: sendsToday ?? 0 }
 }
 
 export async function GET() {

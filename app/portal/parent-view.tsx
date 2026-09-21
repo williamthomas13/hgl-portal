@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { classPlaceLine } from '../utils/class-place'
 import SessionCalendar, { type CalendarSession } from '../components/SessionCalendar'
 import { supabaseAdmin } from '../utils/supabase-admin'
 import {
@@ -71,7 +72,7 @@ export default async function ParentView({
         product_orders ( id, status, quantity, tracking_url, shipped_at, products ( name ) ),
         attendance_records ( session_id, enrollment_id, present, arrived_late, left_early, minutes_late, minutes_left_early ),
         classes (
-          id, slug, status, class_type, default_location, delivery_mode,
+          id, slug, status, class_type, default_location, venue, delivery_mode,
           price, start_date, synap_group, timezone, display_cities,
           schools ( name, nickname, timezone, city ),
           instructors ( name, email ),
@@ -228,7 +229,7 @@ export default async function ParentView({
       const preStart = today < firstSession
       const time = fmtTime(next.start_time)
       const endTime = fmtTime(next.end_time)
-      const location = next.location ?? cls.default_location
+      const location = next.location ?? classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: clsSchool?.name })
       const synap = cls.synap_group
         ? /^https?:\/\//i.test(cls.synap_group)
           ? cls.synap_group
@@ -512,17 +513,15 @@ export default async function ParentView({
                             )}
                           </p>
                         ))}
-                        {(cls.default_location || showPlaceholders) && (
+                        {(classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: one<any>(cls.schools)?.name }) || showPlaceholders) && (
                           <p className="text-sm text-gray-600">
-                            {cls.delivery_mode === 'online' ? 'Meeting link' : 'Classroom'}:{' '}
-                            {cls.default_location ? (
-                              /^https?:\/\//i.test(cls.default_location) ? (
-                                <a href={cls.default_location} className="text-hgl-blue underline">
-                                  {cls.default_location}
-                                </a>
-                              ) : (
-                                cls.default_location
-                              )
+                            {cls.delivery_mode === 'online' ? 'Meeting link' : 'Where'}:{' '}
+                            {cls.default_location && /^https?:\/\//i.test(cls.default_location) ? (
+                              <a href={cls.default_location} className="text-hgl-blue underline">
+                                {cls.default_location}
+                              </a>
+                            ) : classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: one<any>(cls.schools)?.name }) ? (
+                              classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: one<any>(cls.schools)?.name })
                             ) : (
                               'details coming soon'
                             )}
