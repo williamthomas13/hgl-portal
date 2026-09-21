@@ -84,6 +84,8 @@
 - **Staff alert sentence** gains the contact preference: "Billy Thomas (email, phone) asked about SAT Prep for Desmond **and wants us to get in touch via {WhatsApp | phone call | text | email}**." — omitted cleanly when they didn't pick one. Same fact on the Prospective Students card, first line.
 - Confirmed, no change needed: the "Rather just talk to a person?" line reads the contact name/email/phone from the portal's contact settings (`loadContactInfo`) — not hard-coded.
 
+**Scarlett's decision (recorded Sep 21, closes PL-473's required-fields question):** on the inquiry form — `/inquire` AND every page's `/embed/inquire.js` snippet — **ALL fields are required:** first name · last name · email · phone (with dial code) · how they prefer to connect · student first name · student last name · student's school · what they'd like help with · the message. No per-page variation. **Not yet implemented:** as shipped, the form requires name + email only and the embed's `data-require` attribute is a per-page switch; making the full set required everywhere (page + embed defaults, API validation rejecting a blank field, the honest "Please fill in: …" message naming every missing field) is a small follow-up on top of PL-473/482 — next PL.
+
 ## PL-483 — Co-branding on school class pages: HGL + the school (Scarlett, walkthrough Sep 21)
 
 ### ✅ SHIPPED (Sep 21) — `app/components/BrandLockup.tsx`, one component on the hero and every state card
