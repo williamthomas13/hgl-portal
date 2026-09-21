@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { checkClaimToken, loadClassBundles } from '../../../utils/lifecycle'
+import { appBaseUrl } from '../../../utils/base-url'
 
 // The link inside a waitlist offer email. Validates the signed token and the
 // 48h window, then creates a Stripe checkout session for the held enrollment
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   const enrollmentId = url.searchParams.get('e')
   const token = url.searchParams.get('t')
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const baseUrl = appBaseUrl()
 
   // PL-149: an aged-out link is a real family with an old email — send
   // them to the friendly page, not the generic one.

@@ -4,6 +4,7 @@ import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { validateFollowOnDiscount } from '../../utils/follow-on'
 import { classTutoringTier } from '../../utils/tutoring-tier'
 import { printfulConfigured, printfulCountries } from '../../utils/printful'
+import { appBaseUrl } from '../../utils/base-url'
 
 // Stripe client. We don't pin apiVersion here — the installed SDK
 // version ships with a default that matches its TypeScript types.
@@ -135,9 +136,9 @@ export async function POST(request: Request) {
     // Base URL for redirects. Set NEXT_PUBLIC_APP_URL in env
     // (local: http://localhost:3000, production: https://hgl-portal.vercel.app
     // or eventually https://portal.highergroundlearning.com).
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ??
-      'http://localhost:3000';
+    // PL-474: ONE reader — success/cancel land on the PORTAL host (the session
+    // + /success live there), whichever host the registration started on.
+    const baseUrl = appBaseUrl();
 
     type LineItem = { price_data: { currency: string; product_data: { name: string }; unit_amount: number }; quantity: number };
     const lineItems: LineItem[] = [];

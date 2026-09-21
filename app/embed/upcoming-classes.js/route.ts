@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
-import { emailBaseUrl } from '../../utils/base-url'
+import { publicSiteOrigin } from '../../utils/base-url'
 import {
   bySessionStart,
   effectiveStartDate,
@@ -36,7 +36,8 @@ const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 export async function GET(request: Request) {
-  const base = emailBaseUrl()
+  // PL-474: "More info" links go to the PUBLIC origin (hgl.co after the flip).
+  const base = publicSiteOrigin()
   const previewEmpty = new URL(request.url).searchParams.get('preview') === 'empty'
 
   const { data } = previewEmpty

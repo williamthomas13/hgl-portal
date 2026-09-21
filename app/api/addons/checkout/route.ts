@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { loadClassBundles, localDate, verifyAddonToken } from '../../../utils/lifecycle'
 import { classTutoringTier } from '../../../utils/tutoring-tier'
+import { appBaseUrl } from '../../../utils/base-url'
 
 // Buy button on the per-enrollment addon page (email #9). Creates an
 // addon-only Stripe checkout session and redirects into payment. The webhook
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
   const enrollmentId = url.searchParams.get('e')
   const token = url.searchParams.get('t')
   const packageId = url.searchParams.get('p')
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const baseUrl = appBaseUrl()
 
   if (!enrollmentId || !token || !packageId || !verifyAddonToken(enrollmentId, token)) {
     // PL-70b: friendly landings for humans, never raw JSON.

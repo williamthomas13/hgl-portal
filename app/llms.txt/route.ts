@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
-import { emailBaseUrl } from '../utils/base-url'
+import { publicSiteOrigin } from '../utils/base-url'
 import { publicTimeCityLabel } from '../utils/dates'
 import { preferredClassPath } from '../utils/evergreen'
 
@@ -18,7 +18,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 
 export async function GET() {
-  const base = emailBaseUrl()
+  const base = publicSiteOrigin() // PL-474: the public origin
   const today = new Date().toISOString().slice(0, 10)
   const [{ data: classes }, { data: schools }] = await Promise.all([
     supabase

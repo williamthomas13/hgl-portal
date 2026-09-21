@@ -13,6 +13,7 @@ import RescheduleRequest from './reschedule-request'
 import { escapeLike } from '../utils/like-escape'
 import { hhmmRange } from '../utils/dates'
 import { LocalDay, LocalTimeRange, LocalZoneNote } from './local-time'
+import { appBaseUrl } from '../utils/base-url'
 
 // Parent tutoring surface (Phase 7d, spec §8) — un-stubs the comms spec's C3
 // widget. Reads run as service role scoped to the signed-in parent's own
@@ -197,7 +198,7 @@ export default async function TutoringSection({ email }: { email: string }) {
 
   const proposedInvoice = (invoices ?? []).find((i) => i.status === 'proposed' || i.status === 'draft')
   const icsToken = tutoringIcsToken(family.id)
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = appBaseUrl()
 
   return (
     <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-slate p-6 mt-8">

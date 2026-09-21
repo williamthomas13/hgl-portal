@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { supabaseAdmin as supabase } from "../../utils/supabase-admin"
 import { checkResumeToken, loadClassBundles, ADMIN_EMAIL } from '../../utils/lifecycle'
 import { sendAdminAlert } from '../../utils/email'
+import { appBaseUrl } from '../../utils/base-url'
 
 // "Finalize Registration" button in payment reminders PR1–4. Creates a fresh
 // Stripe checkout session for the still-Pending enrollment and redirects
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   const enrollmentId = url.searchParams.get('e')
   const token = url.searchParams.get('t')
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const baseUrl = appBaseUrl()
 
   // PL-149: aged-out links get the friendly page.
   const tokenState = enrollmentId && token ? checkResumeToken(enrollmentId, token) : 'invalid'

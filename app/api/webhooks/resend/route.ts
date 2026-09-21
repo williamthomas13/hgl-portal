@@ -3,7 +3,8 @@ import { supabaseAdmin as supabase } from "../../../utils/supabase-admin"
 import { createHmac, timingSafeEqual } from 'crypto'
 
 // Resend delivery-event webhook. Configure in the Resend dashboard →
-// Webhooks → endpoint https://hgl-portal.vercel.app/api/webhooks/resend,
+// Webhooks → endpoint {PRODUCTION_BASE_URL}/api/webhooks/resend (the portal host;
+// re-point it in Resend at the domain cutover — docs/dns-cutover-host-settings.md),
 // subscribed to email.sent, email.delivered, email.opened, email.clicked,
 // email.bounced, email.complained; put the signing secret (whsec_…) in
 // RESEND_WEBHOOK_SECRET. Open/click tracking must also be enabled on the

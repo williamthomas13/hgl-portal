@@ -98,3 +98,92 @@ export function nonProductionOrigins(html: string): string[] {
   }
   return [...found]
 }
+
+// ---------------------------------------------------------------------------
+// PL-474 — two hosts, one session (Scarlett's decision, Sep 21):
+//   portal.highergroundlearning.com  = signed-in surfaces + every emailed link
+//   hgl.co                           = the short PUBLIC front (/{code},
+//                                      /{code}/register, /classes, /team,
+//                                      /inquire; wildcard → main site)
+// Both hosts serve the SAME deployment. What keeps a session on one host:
+//   * proxy.ts 308s signed-in / auth / tokenized paths from the short host
+//     to the canonical portal host (path + query preserved), so nobody ends
+//     up with a session cookie on hgl.co;
+//   * public routes on the portal host keep working — no redirect the other
+//     way, so no loop;
+//   * canonical / OG / sitemap / JSON-LD / embed "More info" URLs use
+//     publicSiteOrigin() — hgl.co once PUBLIC_SHORT_ORIGIN is set (cutover
+//     day), the portal origin until then (before the DNS flip hgl.co still
+//     forwards to Squarespace, so a hgl.co canonical would be a lie).
+// ---------------------------------------------------------------------------
+
+/** The canonical portal host (signed-in surfaces). Override with
+ *  PORTAL_CANONICAL_HOST; default = PRODUCTION_BASE_URL's host. */
+export function canonicalPortalHost(): string {
+  const configured = (process.env.PORTAL_CANONICAL_HOST ?? '').trim().toLowerCase()
+  if (configured) return configured.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  return new URL(PRODUCTION_ORIGIN).host.toLowerCase()
+}
+
+/** The short public hosts the proxy redirects signed-in paths AWAY from. */
+export const SHORT_PUBLIC_HOSTS = (process.env.PUBLIC_SHORT_HOSTS ?? 'hgl.co,www.hgl.co')
+  .split(',')
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean)
+
+/** The origin public pages are canonical on (sitemap, <link rel=canonical>,
+ *  OG url, JSON-LD, embed links). PUBLIC_SHORT_ORIGIN (https://hgl.co) once
+ *  the DNS flip has happened; the email base until then. */
+export function publicSiteOrigin(): string {
+  const configured = (process.env.PUBLIC_SHORT_ORIGIN ?? '').trim().replace(/\/+$/, '')
+  if (configured) {
+    try {
+      new URL(configured)
+      return configured
+    } catch {
+      /* malformed → fall through */
+    }
+  }
+  return emailBaseUrl()
+}
+
+/** ONE reader for the app's own configured origin (Stripe return URLs, the
+ *  QBO redirect URI, portal-internal absolute links). Was
+ *  `process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'` in nine
+ *  files — the cutover flips it in one place now. */
+export function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/+$/, '')
+}
+
+/** Path prefixes that carry a session or a bearer token and therefore live
+ *  ONLY on the canonical portal host. The proxy's matcher and the
+ *  canonical-host gate both read this list. */
+export const PORTAL_ONLY_PATH_PREFIXES = [
+  '/admin',
+  '/portal',
+  '/login',
+  '/auth',
+  '/class-report',
+  '/tutoring',
+  '/intake',
+  '/agreements',
+  '/availability',
+  '/survey',
+  '/classroom-request',
+  '/class-roster',
+  '/addons',
+  '/refund',
+  '/coverage',
+  '/convert',
+  '/waitlist',
+  '/unsubscribe',
+  '/success',
+  '/link-help',
+  '/api/resume-payment',
+  '/api/waitlist',
+] as const
+
+export function isPortalOnlyPath(pathname: string): boolean {
+  const p = pathname.toLowerCase()
+  return PORTAL_ONLY_PATH_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}/`) || (prefix === '/login' && p.startsWith('/login')))
+}

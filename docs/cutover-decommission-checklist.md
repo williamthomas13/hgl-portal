@@ -23,7 +23,11 @@ email first (classes).
    portal serves each code's newest open class right at hgl.co/{code} (interest page
    between classes), with registration at hgl.co/{code}/register. Click history carried
    over unchanged.
-3. **DNS cutover** (the batch-36 7-step runbook) after Scarlett's walkthrough clears.
+3. **DNS cutover** (the batch-36 7-step runbook) after Scarlett's walkthrough clears —
+   **PL-474 (Sep 21): the host-sensitive settings table `docs/dns-cutover-host-settings.md`
+   replaces the runbook's sections 2–4** (decision: `portal.highergroundlearning.com` +
+   `hgl.co`; every env var, Vercel domain, Supabase / Intuit / Resend / Stripe / pg_cron /
+   GitHub / Squarespace setting with its value and verification, in order).
    - **PL-410 post-DNS: re-verify Google Calendar push channels.** Google stores the
      webhook URL *inside* each channel, so channels registered pre-cutover keep
      pointing at the old host. Once `PRODUCTION_BASE_URL` flips, the hourly sweep
@@ -122,9 +126,9 @@ email first (classes).
    every future change ships portal-side):
    ```html
    <div id="hgl-upcoming-classes">
-     <noscript><a href="https://hgl-portal.vercel.app/classes">See upcoming classes →</a></noscript>
+     <noscript><a href="https://hgl.co/classes">See upcoming classes →</a></noscript>
    </div>
-   <script src="https://hgl-portal.vercel.app/embed/upcoming-classes.js" defer></script>
+   <script src="https://portal.highergroundlearning.com/embed/upcoming-classes.js" defer></script>
    ```
    (After the domain cutover the two URLs become the portal's final domain — re-paste once
    then, or paste with the final domain at cutover time.) The strip auto-reflects classes

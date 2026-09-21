@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { companyName, exchangeAuthCode, verifyOauthState } from '../../../utils/qbo'
 import { sessionRole } from '../../../utils/staff-gate'
+import { appBaseUrl } from '../../../utils/base-url'
 
 // Intuit redirects here after the admin approves access (Phase 6 §6).
 // The state param is our signed timestamp (CSRF guard); realmId identifies
 // the QBO company. Lands back on /admin with a ?qbo= status the panel shows.
 export async function GET(req: Request) {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = appBaseUrl()
   const bounce = (status: string) => NextResponse.redirect(`${base}/admin?qbo=${status}`)
 
   const caller = await sessionRole('admin')

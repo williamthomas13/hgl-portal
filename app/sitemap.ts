@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { supabaseAdmin as supabase } from './utils/supabase-admin'
-import { emailBaseUrl } from './utils/base-url'
+import { publicSiteOrigin } from './utils/base-url'
 
 // PL-384 (supersedes PL-359 B): the sitemap lists THE permanent addresses —
 // every school/course evergreen /{code} URL (each always serves something
@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = emailBaseUrl()
+  // PL-474: the sitemap lists the PUBLIC origin (hgl.co after the flip).
+  const base = publicSiteOrigin()
   const entries: MetadataRoute.Sitemap = []
 
   const [{ data: schools }, { data: courses }, { data: classes }] = await Promise.all([

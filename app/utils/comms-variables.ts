@@ -18,6 +18,7 @@ import { formatDateFull, contextZonedDeadline, contextTimeCityLabel, staffTimeCi
 import { availabilityDiff } from './availability-diff'
 import { zonedToUtc } from './tutoring'
 import type { ResolvedVars } from './comms-md'
+import { PRODUCTION_ORIGIN } from './base-url'
 
 // Feature A4 variable registry (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4):
 // the ONLY variables template bodies may use. Pronoun-conditional copy is
@@ -1318,18 +1319,29 @@ export function resolveVariables(
 }
 
 /** Sample data for editor previews and "send test to me" (spec §A4). */
+
+// PL-474: sample copy for the template editor carries a placeholder host so
+// no code literal of any deployment host survives the cutover — rendered
+// samples show the CURRENT production origin.
+function rehostSamples<T>(v: T): T {
+  if (typeof v === 'string') return v.replaceAll('https://SAMPLE_HOST', PRODUCTION_ORIGIN) as T
+  if (Array.isArray(v)) return v.map(rehostSamples) as T
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, rehostSamples(x)])) as T
+  return v
+}
+
 export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   enrollmentId: '00000000-0000-4000-8000-000000000000',
   classId: '00000000-0000-4000-8000-000000000001',
   timezone: 'America/Denver',
-  calendarPageUrl: 'https://hgl-portal.vercel.app/test-link',
-  resumePaymentUrl: 'https://hgl-portal.vercel.app/test-link',
-  portalUrl: 'https://hgl-portal.vercel.app/portal',
-  availabilityUrl: 'https://hgl-portal.vercel.app/test-link',
+  calendarPageUrl: `${PRODUCTION_ORIGIN}/test-link`,
+  resumePaymentUrl: `${PRODUCTION_ORIGIN}/test-link`,
+  portalUrl: `${PRODUCTION_ORIGIN}/portal`,
+  availabilityUrl: `${PRODUCTION_ORIGIN}/test-link`,
   diagnosticDueDate: '2026-09-04',
   addons: [{ name: '5-Hour Package', hours: 5, pricePaid: 600 }],
   marketingOptOut: false,
-  unsubscribeUrl: 'https://hgl-portal.vercel.app/test-link',
+  unsubscribeUrl: `${PRODUCTION_ORIGIN}/test-link`,
   parentFirstName: 'Alex',
   parentEmail: 'sample-parent@example.com',
   studentFirstName: 'Ana',
@@ -1374,7 +1386,7 @@ export const SAMPLE_CONTEXT: EnrollmentEmailContext = {
   followOn: {
     className: 'SAT Math Deep Dive',
     shortName: 'Deep Dive',
-    registrationLink: 'https://hgl-portal.vercel.app/register/sat-math-deep-dive-fall26',
+    registrationLink: `${PRODUCTION_ORIGIN}/register/sat-math-deep-dive-fall26`,
     discountAmount: '$50',
     discountCode: 'DEEPDIVE50',
     endDate: 'Saturday, November 7, 2026',
@@ -1403,7 +1415,7 @@ const SAMPLE_CANCELLATION_OPTIONS = cancellationOptionsHtml(
   'parent',
   SAMPLE_CX_OFFER,
   'January 2027',
-  { convertUrl: 'https://hgl-portal.vercel.app/test-link', refundUrl: 'https://hgl-portal.vercel.app/test-link' }
+  { convertUrl: `${PRODUCTION_ORIGIN}/test-link`, refundUrl: `${PRODUCTION_ORIGIN}/test-link` }
 )
 
 // PL-137/PL-157: ONE scenario drives every substitute-coverage sample — the
@@ -1425,7 +1437,7 @@ export const SAMPLE_COVERAGE_FACTS = {
   when: 'Thursday, September 10 at 4:00 PM',
   requesterName: 'Billy Thomas',
   candidateName: 'Jordan Lee',
-  baseUrl: 'https://hgl-portal.vercel.app',
+  baseUrl: PRODUCTION_ORIGIN,
 }
 // First names split exactly the way coverage.ts splits them for real sends.
 const COVERAGE_REQUESTER_FIRST = SAMPLE_COVERAGE_FACTS.requesterName.split(' ')[0]
@@ -1452,7 +1464,7 @@ const SAMPLE_COVERAGE_OUTCOME_LINE = coverageOutcomeLine({
   contactEmail: 'info@highergroundlearning.com',
 })
 const SAMPLE_COVERAGE_NOTE_BUTTON = coverageNoteButtonHtml({
-  noteUrl: 'https://hgl-portal.vercel.app/test-link',
+  noteUrl: `${PRODUCTION_ORIGIN}/test-link`,
   subFirstName: COVERAGE_CANDIDATE_FIRST,
   studentFirst: SAMPLE_COVERAGE_FACTS.studentFirst,
 })
@@ -1463,13 +1475,13 @@ const SAMPLE_COVERAGE_NOTE_BLOCK = coverageNoteHtml(SAMPLE_COVERAGE_NOTE_PROSE)
 // Composed blocks carry worked examples mirroring what the send code
 // actually builds; T4's is the attempt-3 (retries exhausted) render — the
 // highest-stakes email in the set.
-export const SAMPLE_EXTRA: ExtraVars = {
+export const SAMPLE_EXTRA: ExtraVars = rehostSamples({
   // T1R (PL-461)
   requestQuote: "Can't do Oct 27 at original time. Needs to be 5:00 am",
   staffNoteBlock: '<p>5:00 AM works for Billy — moved. Everything else stays as it was.</p>',
   changeSummaryBlock: '<ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Tuesday, Oct 27 — moved from 11:00 AM to 5:00 AM</li></ul>',
   // PL-219: survey samples.
-  surveyLink: 'https://hgl-portal.vercel.app/test-link',
+  surveyLink: `${PRODUCTION_ORIGIN}/test-link`,
   surveyReminderLine: '',
   // PL-214: CS class-confirmed welcome + SA block samples.
   salesPageLink: 'https://hgl.co/aisj',
@@ -1480,11 +1492,11 @@ export const SAMPLE_EXTRA: ExtraVars = {
   changesBlock:
     '<p><strong>First day of class:</strong> now Saturday, 12 September 2026<br/><strong>Location:</strong> now Room 301</p>',
   upsellPackagesBlock:
-    '<p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">5 hours — save $50</a></p><p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">10 hours — save $250</a></p><p style="margin:8px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">15 hours — save $525</a></p>',
+    `<p style="margin:8px 0"><a href="${PRODUCTION_ORIGIN}/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">5 hours — save $50</a></p><p style="margin:8px 0"><a href="${PRODUCTION_ORIGIN}/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">10 hours — save $250</a></p><p style="margin:8px 0"><a href="${PRODUCTION_ORIGIN}/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:10px 20px;border-radius:6px;text-decoration:none;min-width:260px;text-align:center">15 hours — save $525</a></p>`,
   waitlistPosition: 2,
   claimDeadline: 'Thursday, 3 September, 4:00 PM',
-  claimLink: 'https://hgl-portal.vercel.app/test-link',
-  declineLink: 'https://hgl-portal.vercel.app/test-link',
+  claimLink: `${PRODUCTION_ORIGIN}/test-link`,
+  declineLink: `${PRODUCTION_ORIGIN}/test-link`,
 
   // --- tutoring set ---------------------------------------------------------
   tutorName: 'Billy Thomas',
@@ -1500,9 +1512,9 @@ export const SAMPLE_EXTRA: ExtraVars = {
   monthTotalLine:
     '<p style="font-size:16px"><strong>Month total: $480.00</strong> — billed once you confirm, due by the end of this month.</p>',
   packageNote: '',
-  confirmLink: 'https://hgl-portal.vercel.app/test-link',
-  confirmOneTapLink: 'https://hgl-portal.vercel.app/test-link',
-  approveLink: 'https://hgl-portal.vercel.app/test-link',
+  confirmLink: `${PRODUCTION_ORIGIN}/test-link`,
+  confirmOneTapLink: `${PRODUCTION_ORIGIN}/test-link`,
+  approveLink: `${PRODUCTION_ORIGIN}/test-link`,
   autoconfirmDays: 5,
   daysLeft: 3,
 
@@ -1510,17 +1522,17 @@ export const SAMPLE_EXTRA: ExtraVars = {
   invoiceReminderPrefix: '',
   invoiceTotal: '$480.00',
   invoiceDueDate: 'September 30',
-  invoiceUrl: 'https://hgl-portal.vercel.app/test-link',
+  invoiceUrl: `${PRODUCTION_ORIGIN}/test-link`,
   invoiceIntroBlock:
     '<p>Your invoice for September 2026 tutoring is ready: <strong>$480.00</strong>, due by <strong>September 30</strong>.</p>',
   // PL-362: COMPUTED from the one nudge source (PL-96 drift guard).
-  autopayBlock: autopayNudgeCopyHtml('https://hgl-portal.vercel.app/test-link', 'invoice'),
+  autopayBlock: autopayNudgeCopyHtml(`${PRODUCTION_ORIGIN}/test-link`, 'invoice'),
 
   // T4 (payment failed) — attempt 3 of 3: retries exhausted, pay-now shown
   paymentFailBlock:
     "<p>The $480.00 charge for September 2026 tutoring didn't go through (attempt 3 of 3).</p><p><strong>We've stopped automatic retries.</strong> You can pay directly, or update your saved payment method:</p>",
   payButtonBlock:
-    '<p style="margin:24px 0"><a href="https://hgl-portal.vercel.app/test-link" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>',
+    `<p style="margin:24px 0"><a href="${PRODUCTION_ORIGIN}/test-link" style="background:#506171;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>`,
 
   // T3 (schedule change) — PL-96 sibling sweep: mirrors the REAL parent
   // compose in sendScheduleChangeNotices (subject-first sentence, ul/li
@@ -1532,26 +1544,26 @@ export const SAMPLE_EXTRA: ExtraVars = {
   cancellationOptionsBlock: SAMPLE_CANCELLATION_OPTIONS,
 
   // T7/T8 links + lines
-  intakeFormLink: 'https://hgl-portal.vercel.app/test-link',
-  agreementsLink: 'https://hgl-portal.vercel.app/test-link',
-  autopayLink: 'https://hgl-portal.vercel.app/test-link',
+  intakeFormLink: `${PRODUCTION_ORIGIN}/test-link`,
+  agreementsLink: `${PRODUCTION_ORIGIN}/test-link`,
+  autopayLink: `${PRODUCTION_ORIGIN}/test-link`,
   tutorContactLine:
     '<p><strong>Your tutor: Billy Thomas</strong> — <a href="mailto:billy@highergroundlearning.com" style="color:#00AEEE">billy@highergroundlearning.com</a></p>',
   // PL-234: the sample shows the COMMON case (a real link) — the "tutor
   // sends the meeting link" fallback only renders when no link exists
   // anywhere, so test renders must not imply it's the default.
   locationBlock:
-    '<p><strong>Where:</strong> sessions are online — join here each time: <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">https://hgl-portal.vercel.app/test-link</a></p>',
-  schedulePdfLink: 'https://hgl-portal.vercel.app/test-link',
+    `<p><strong>Where:</strong> sessions are online — join here each time: <a href="${PRODUCTION_ORIGIN}/test-link" style="color:#00AEEE">${PRODUCTION_ORIGIN}/test-link</a></p>`,
+  schedulePdfLink: `${PRODUCTION_ORIGIN}/test-link`,
   contactBlock:
     '<p style="margin-top:24px;padding:12px 16px;background:#f1f5f9;border-radius:8px;color:#334155;font-size:14px">Questions, or want to handle this by hand? Email <a href="mailto:info@highergroundlearning.com" style="color:#00AEEE">info@highergroundlearning.com</a> or give us a call at <strong>+1 (505) 555-0100</strong> — replying to this email works too, and we\'ll take care of it for you.</p>',
 
   // PL-53/54 blocks
   hoursRemaining: '5',
   schedulingCtaBlock:
-    '<p><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Share your availability</a> and we\'ll propose times that fit your family\'s schedule.</p>',
+    `<p><a href="${PRODUCTION_ORIGIN}/test-link" style="color:#00AEEE">Share your availability</a> and we\'ll propose times that fit your family\'s schedule.</p>`,
   classSummaryLine: '<strong>SIS SAT Prep</strong> — starts 5 September 2026',
-  registrationLink: 'https://hgl-portal.vercel.app/test-link',
+  registrationLink: `${PRODUCTION_ORIGIN}/test-link`,
 
   // --- PL-66: counselor / tutor / alert samples (PL-56 standard: read as a
   // real send, never as a bug) ------------------------------------------------
@@ -1559,30 +1571,30 @@ export const SAMPLE_EXTRA: ExtraVars = {
   digestCountSummary: '12 students enrolled',
   digestClassNoun: 'classes',
   digestClassListBlock:
-    '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0"><p style="margin:0 0 4px"><strong>SAT Prep — starts September 5, 2026</strong></p><p style="margin:0;color:#475569">Enrolled: <strong>12 of 15</strong> (2 new since last update) · Waitlist: 1</p><p style="margin:6px 0 0;font-size:13px">Registration link to share: <a href="https://hgl-portal.vercel.app/register/sis-sat-prep-fall26">https://hgl-portal.vercel.app/register/sis-sat-prep-fall26</a></p></div>',
+    '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:10px 0"><p style="margin:0 0 4px"><strong>SAT Prep — starts September 5, 2026</strong></p><p style="margin:0;color:#475569">Enrolled: <strong>12 of 15</strong> (2 new since last update) · Waitlist: 1</p><p style="margin:6px 0 0;font-size:13px">Registration link to share: <a href="https://SAMPLE_HOST/register/sis-sat-prep-fall26">https://SAMPLE_HOST/register/sis-sat-prep-fall26</a></p></div>',
   digestFrequencyBlock:
-    '<p style="font-size:13px;color:#64748b">How often do you want these? <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Weekly</a> · <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Every 2 weeks</a> · <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Monthly</a> · <a href="https://hgl-portal.vercel.app/test-link" style="color:#64748b">Pause</a></p>',
+    `<p style="font-size:13px;color:#64748b">How often do you want these? <a href="${PRODUCTION_ORIGIN}/test-link" style="color:#64748b">Weekly</a> · <a href="${PRODUCTION_ORIGIN}/test-link" style="color:#64748b">Every 2 weeks</a> · <a href="${PRODUCTION_ORIGIN}/test-link" style="color:#64748b">Monthly</a> · <a href="${PRODUCTION_ORIGIN}/test-link" style="color:#64748b">Pause</a></p>`,
   deadlineCountdown: '3 days left',
   spotsLeftPhrase: '3 spots',
   enrolledCountLine: '12 of 15 enrolled',
   enrolledCountPhrase: '12 students',
   minStudentsPhrase: '8 students',
   waitlistDepth: '2',
-  classroomFormLink: 'https://hgl-portal.vercel.app/test-link',
+  classroomFormLink: `${PRODUCTION_ORIGIN}/test-link`,
   payPeriodRange: 'September 1 – September 15',
   timecardHours: '14.5',
-  timecardLink: 'https://hgl-portal.vercel.app/portal?view=tutor#portal-timecards',
+  timecardLink: `${PRODUCTION_ORIGIN}/portal?view=tutor#portal-timecards`,
   sessionDate: 'Wednesday, July 22',
   // PL-339: quoted session times are ranges now.
   sessionWhenPhrase: 'Wed, Aug 5, 4:00–5:30 PM',
   missingSessionsBlock: '4:00 PM — Ana García\n6:00 PM — Marcus Lee',
-  notesLink: 'https://hgl-portal.vercel.app/portal?view=tutor#portal-notes',
+  notesLink: `${PRODUCTION_ORIGIN}/portal?view=tutor#portal-notes`,
   // PL-157: the coverage/handoff values below are the SAME derived constants
   // the SUB_* per-template pins use — shared pool and pins literally cannot
   // disagree about the scenario.
   coverageSessionBlock: SAMPLE_COVERAGE_SESSION_BLOCK,
-  counselorRosterLink: 'https://hgl-portal.vercel.app/test-link',
-  coverageRespondLink: 'https://hgl-portal.vercel.app/portal?view=tutor#portal-coverage',
+  counselorRosterLink: `${PRODUCTION_ORIGIN}/test-link`,
+  coverageRespondLink: `${PRODUCTION_ORIGIN}/portal?view=tutor#portal-coverage`,
   coverageOutcomeLine: SAMPLE_COVERAGE_OUTCOME_LINE,
   coverageNoteBlock: SAMPLE_COVERAGE_NOTE_BLOCK,
   coverageNoteFrom: SAMPLE_COVERAGE_FACTS.requesterName,
@@ -1604,7 +1616,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
   // counts must agree (a min-met line over "6 enrolled / 8 min" reads like a
   // bug; real sends compute both live so they can never disagree).
   instructorCountsLine: '8 enrolled / 8 min / 15 cap',
-  instructorViewLink: 'https://hgl-portal.vercel.app/portal?view=instructor',
+  instructorViewLink: `${PRODUCTION_ORIGIN}/portal?view=instructor`,
   registrationCloseDate: 'September 4, 2026',
   digestMilestoneLine:
     '<p><strong>🎉 The class just reached its minimum — it officially runs.</strong></p>',
@@ -1632,7 +1644,7 @@ export const SAMPLE_EXTRA: ExtraVars = {
   fyiOriginalSubject: 'Classroom location for SIS SAT Prep',
   familyEmailBlock:
     '<p>Hey Alex,</p><p>One last reminder: the first day of class is September 5, 2026 from 10:00 AM to 12:00 PM.</p><p><strong>All classes take place in Room 204</strong></p>',
-}
+})
 
 // PL-82: per-template-key sample OVERRIDES, merged over SAMPLE_EXTRA for
 // previews and test-sends. The 15 alert templates all share
@@ -1662,10 +1674,10 @@ export const SAMPLE_CLOSE_MATCH_FACTS = {
   studentFull: 'Ana García',
   reasons: ['same parent email — maria@example.com', 'student first name matches (Ana)'],
   reviewUrl:
-    'https://hgl-portal.vercel.app/admin/leads?lead=00000000-0000-4000-8000-000000000031&match=00000000-0000-4000-8000-000000000032',
+    `${PRODUCTION_ORIGIN}/admin/leads?lead=00000000-0000-4000-8000-000000000031&match=00000000-0000-4000-8000-000000000032`,
 }
 
-export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
+export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = rehostSamples({
   // PL-417: close-match.ts recordMatch — COMPUTED from the real composer
   // (close-match-copy leaf, the PL-96 drift guard), never hand-typed. The
   // one {alertDetailsBlock} template that previewed the shared registration
@@ -1723,7 +1735,7 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   // sweepInstructorNudges (cron/reminders): min met, nobody teaching yet.
   ADMIN_INSTRUCTOR_NUDGE: {
     alertDetailsBlock:
-      '<p><strong>SIS SAT Prep</strong> (Sample International School) has <strong>8 paid</strong> enrollments against a minimum of <strong>8</strong> — the class is running, and no instructor is assigned yet.</p><p>First session: <strong>Saturday, September 5, 2026</strong>.</p><p><a href="https://hgl-portal.vercel.app/admin">Open the admin class view</a> and select an instructor from the dropdown — or add a new one — so the class-details email can go out on schedule.</p>',
+      '<p><strong>SIS SAT Prep</strong> (Sample International School) has <strong>8 paid</strong> enrollments against a minimum of <strong>8</strong> — the class is running, and no instructor is assigned yet.</p><p>First session: <strong>Saturday, September 5, 2026</strong>.</p><p><a href="https://SAMPLE_HOST/admin">Open the admin class view</a> and select an instructor from the dropdown — or add a new one — so the class-details email can go out on schedule.</p>',
   },
   // registrationNotificationContent (webhook): the shared sample already IS
   // this alert's story — pinned here so it stays right if the shared one moves.
@@ -1741,7 +1753,7 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   // families — location-blank case per the doc.
   AL_CLASS_DETAILS_HOLD: {
     alertDetailsBlock:
-      '<p>The class-details email to your SIS SAT Prep families was due this morning and is being held — <strong>families are waiting on it</strong>. Fill in <strong>location</strong> on the admin page and it releases on the next hourly sweep.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p>',
+      '<p>The class-details email to your SIS SAT Prep families was due this morning and is being held — <strong>families are waiting on it</strong>. Fill in <strong>location</strong> on the admin page and it releases on the next hourly sweep.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin?class=00000000-0000-4000-8000-000000000001" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p>',
   },
   // blank-details warning (cron/reminders, PL-89 shape): both clocks,
   // conditional bullets with the CR chase status, fill-in button, honest
@@ -1750,35 +1762,35 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
     classDetailsSendDate: 'Tuesday, September 1, 2026',
     classDetailsSendPhrase: 'goes out Tuesday, September 1, 2026',
     alertDetailsBlock:
-      '<p><strong>SIS SAT Prep</strong> — first session <strong>Saturday, September 5, 2026</strong> (in 1 week).</p><p>The "class details" email to families goes out <strong>Tuesday, September 1, 2026</strong> (in 3 days), and it can\'t send while these are blank:</p><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:4px 0"><strong>Location</strong> — blank. Classroom request status: asked the counselor Aug 22, 2026 (opened Aug 22, 2026) · nudged Aug 27, 2026 (not yet opened) · last call not yet sent.</li><li style="margin:4px 0"><strong>Instructor</strong> — blank. Assign one on the class page.</li></ul><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p><p>If the room comes through, filling it in releases everything automatically — nothing else to do. If it\'s still blank when the email is due, the send holds and families wait; that\'s the next alert you\'d get.</p>',
+      '<p><strong>SIS SAT Prep</strong> — first session <strong>Saturday, September 5, 2026</strong> (in 1 week).</p><p>The "class details" email to families goes out <strong>Tuesday, September 1, 2026</strong> (in 3 days), and it can\'t send while these are blank:</p><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:4px 0"><strong>Location</strong> — blank. Classroom request status: asked the counselor Aug 22, 2026 (opened Aug 22, 2026) · nudged Aug 27, 2026 (not yet opened) · last call not yet sent.</li><li style="margin:4px 0"><strong>Instructor</strong> — blank. Assign one on the class page.</li></ul><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin?class=00000000-0000-4000-8000-000000000001" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fill in class details</a></p><p>If the room comes through, filling it in releases everything automatically — nothing else to do. If it\'s still blank when the email is due, the send holds and families wait; that\'s the next alert you\'d get.</p>',
   },
   // min-enrollment decision brief (cron/reminders, PL-91 shape): the
   // 3-days-out case with the counselor's final-days push already sent.
   AL_MIN_ENROLLMENT: {
     alertCounts: '6 paid / 8 minimum',
     alertDetailsBlock:
-      '<p><strong>6 paid / 8 minimum / 15 cap</strong> · registration closes in 3 days (Tuesday, August 25, 2026) · first session in 2 weeks (Saturday, September 5, 2026).</p><p>Counselor side: the final-days push (the counselor\'s last-call email) was sent Saturday, August 22, 2026.</p><p><strong>Your three moves:</strong></p><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:6px 0"><strong>Hold</strong> — final-days signups often close the gap; the counselor\'s final-days push is already working that side.</li><li style="margin:6px 0"><strong>Extend the deadline</strong> (commonly a week) — <a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001">set it on the class page</a>. Extending propagates automatically: collateral, the registration page, and the counselor push timing all derive from the class record, and this checkpoint re-arms against the new date (you\'ll get this brief again at new-deadline −3d if still under).</li><li style="margin:6px 0"><strong>Run under minimum, or cancel</strong> — running under is a legitimate call once in a while; <a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001">the cancel flow lives on the class page</a> if it\'s the other way.</li></ul><p>Nothing here is automatic — this brief informs; the decision is yours.</p>',
+      '<p><strong>6 paid / 8 minimum / 15 cap</strong> · registration closes in 3 days (Tuesday, August 25, 2026) · first session in 2 weeks (Saturday, September 5, 2026).</p><p>Counselor side: the final-days push (the counselor\'s last-call email) was sent Saturday, August 22, 2026.</p><p><strong>Your three moves:</strong></p><ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:6px 0"><strong>Hold</strong> — final-days signups often close the gap; the counselor\'s final-days push is already working that side.</li><li style="margin:6px 0"><strong>Extend the deadline</strong> (commonly a week) — <a href="https://SAMPLE_HOST/admin?class=00000000-0000-4000-8000-000000000001">set it on the class page</a>. Extending propagates automatically: collateral, the registration page, and the counselor push timing all derive from the class record, and this checkpoint re-arms against the new date (you\'ll get this brief again at new-deadline −3d if still under).</li><li style="margin:6px 0"><strong>Run under minimum, or cancel</strong> — running under is a legitimate call once in a while; <a href="https://SAMPLE_HOST/admin?class=00000000-0000-4000-8000-000000000001">the cancel flow lives on the class page</a> if it\'s the other way.</li></ul><p>Nothing here is automatic — this brief informs; the decision is yours.</p>',
   },
   // expired-unclaimed variant (cron/reminders, PL-94 cockpit): offer open
   // status + the rescue action row; unopened = the spam-folder tell.
   AL_WAITLIST_ROLLOVER: {
     alertDetailsBlock:
-      '<p>Alex (sample-parent@example.com, student Ana García) did not claim their spot within 48 hours. The offer rolls to the next family automatically.</p><p>Offer email: sent Aug 28 — delivered, not yet opened. <strong>The offer was never opened — this expiry may be a spam-folder artifact; consider a call.</strong></p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001&enrollment=00000000-0000-4000-8000-000000000000" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Re-offer the spot</a>&nbsp;&nbsp;<a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001&enrollment=00000000-0000-4000-8000-000000000000" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Add back at #1</a>&nbsp;&nbsp;<a href="https://hgl-portal.vercel.app/admin?class=00000000-0000-4000-8000-000000000001&enrollment=00000000-0000-4000-8000-000000000000" style="color:#00AEEE">See the waitlist</a></p><p style="color:#64748b;font-size:13px">All three land on the family\'s row on the class roster — the re-offer and add-back one-clicks are there (over-cap asks first, and is logged).</p>',
+      '<p>Alex (sample-parent@example.com, student Ana García) did not claim their spot within 48 hours. The offer rolls to the next family automatically.</p><p>Offer email: sent Aug 28 — delivered, not yet opened. <strong>The offer was never opened — this expiry may be a spam-folder artifact; consider a call.</strong></p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin?class=00000000-0000-4000-8000-000000000001&enrollment=00000000-0000-4000-8000-000000000000" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Re-offer the spot</a>&nbsp;&nbsp;<a href="https://SAMPLE_HOST/admin?class=00000000-0000-4000-8000-000000000001&enrollment=00000000-0000-4000-8000-000000000000" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Add back at #1</a>&nbsp;&nbsp;<a href="https://SAMPLE_HOST/admin?class=00000000-0000-4000-8000-000000000001&enrollment=00000000-0000-4000-8000-000000000000" style="color:#00AEEE">See the waitlist</a></p><p style="color:#64748b;font-size:13px">All three land on the family\'s row on the class roster — the re-offer and add-back one-clicks are there (over-cap asks first, and is logged).</p>',
   },
   // webhook route (PL-92 shape): consequences ledger + the match cockpit.
   AL_WEBHOOK_FAILURE: {
     alertDetailsBlock:
-      '<p>Stripe checkout session <code>cs_test_a1B2c3D4e5F6g7H8</code> completed (payer <strong>sample-parent@example.com</strong>), but the enrollment could not be updated.</p><p>No enrollment matched (enrollment_id=none).</p><p><strong>Because this payment isn\'t matched, none of this has happened yet:</strong> the enrollment still shows unpaid · no confirmation email went to the family · the class email sequence isn\'t scheduled · <strong>payment reminders for this family are NOT suppressed</strong> (they could be dunned despite having paid) · no QuickBooks receipt exists.</p><p><strong>Nothing retries automatically.</strong> Once you match the payment (below), everything above happens on its own — confirmation, sequence, reminder cancellation, QuickBooks — exactly as if the webhook had matched.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/match-payment?session=cs_test_a1B2c3D4e5F6g7H8&email=sample-parent%40example.com" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Match to an enrollment</a>&nbsp;&nbsp;<a href="https://dashboard.stripe.com/test/payments/pi_3SampleMismatch01" style="color:#00AEEE">Open this payment in Stripe</a></p>',
+      '<p>Stripe checkout session <code>cs_test_a1B2c3D4e5F6g7H8</code> completed (payer <strong>sample-parent@example.com</strong>), but the enrollment could not be updated.</p><p>No enrollment matched (enrollment_id=none).</p><p><strong>Because this payment isn\'t matched, none of this has happened yet:</strong> the enrollment still shows unpaid · no confirmation email went to the family · the class email sequence isn\'t scheduled · <strong>payment reminders for this family are NOT suppressed</strong> (they could be dunned despite having paid) · no QuickBooks receipt exists.</p><p><strong>Nothing retries automatically.</strong> Once you match the payment (below), everything above happens on its own — confirmation, sequence, reminder cancellation, QuickBooks — exactly as if the webhook had matched.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin/match-payment?session=cs_test_a1B2c3D4e5F6g7H8&email=sample-parent%40example.com" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Match to an enrollment</a>&nbsp;&nbsp;<a href="https://dashboard.stripe.com/test/payments/pi_3SampleMismatch01" style="color:#00AEEE">Open this payment in Stripe</a></p>',
   },
   // PL-273: the sweep-watch's one-per-outage alert.
   AL_SWEEP_OVERDUE: {
     alertDetailsBlock:
-      '<p><strong>The hourly sweep is overdue.</strong> The last completed run finished <strong>128 minutes ago</strong> (8/6/2026, 9:05:00 AM Denver).</p><p>While it\'s down, nothing sends: reminders, counselor nudges, waitlist offers, billing generation, timecard creation — the whole cadence is paused. Nothing is lost — every send is deduped and claims are retry-safe, so the next successful run delivers the backlog.</p><p><strong>To recover:</strong> re-run the sweep manually — GitHub → Actions → "hourly-sweep" → Run workflow (this is exactly what fixed the Aug 6 outage), or ask Code to hit the endpoint. The dashboard\'s health card shows live status.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin" style="display:inline-block;background:#b91c1c;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the dashboard health card</a></p><p>You\'ll get one email per outage (not one per hour); the next successful sweep notes its own recovery in the dashboard activity feed.</p>',
+      '<p><strong>The hourly sweep is overdue.</strong> The last completed run finished <strong>128 minutes ago</strong> (8/6/2026, 9:05:00 AM Denver).</p><p>While it\'s down, nothing sends: reminders, counselor nudges, waitlist offers, billing generation, timecard creation — the whole cadence is paused. Nothing is lost — every send is deduped and claims are retry-safe, so the next successful run delivers the backlog.</p><p><strong>To recover:</strong> re-run the sweep manually — GitHub → Actions → "hourly-sweep" → Run workflow (this is exactly what fixed the Aug 6 outage), or ask Code to hit the endpoint. The dashboard\'s health card shows live status.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin" style="display:inline-block;background:#b91c1c;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the dashboard health card</a></p><p>You\'ll get one email per outage (not one per hour); the next successful sweep notes its own recovery in the dashboard activity feed.</p>',
   },
   // qbo-sync queue (PL-92 shape): fix-and-retry deep-links THIS failed row.
   AL_QBO_FAILURE: {
     alertDetailsBlock:
-      '<p>After 5 attempts, the Sales Receipt for Stripe payment <code>pi_3SampleQboFail01</code> (enrollment <code>00000000-0000-4000-8000-000000000000</code>) could not be created in QuickBooks.</p><p>Last error: <code>Business Validation Error: Duplicate Document Number Error : You must specify a different number.</code></p><p>The books are missing this transaction until it\'s fixed and retried.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?qbo=00000000-0000-4000-8000-000000000004" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fix &amp; retry this sync</a></p><p><a href="https://dashboard.stripe.com/test/payments/pi_3SampleQboFail01" style="color:#00AEEE">The Stripe payment</a> · <a href="https://hgl-portal.vercel.app/admin/communications?enrollment=00000000-0000-4000-8000-000000000000" style="color:#00AEEE">the enrollment record</a></p>',
+      '<p>After 5 attempts, the Sales Receipt for Stripe payment <code>pi_3SampleQboFail01</code> (enrollment <code>00000000-0000-4000-8000-000000000000</code>) could not be created in QuickBooks.</p><p>Last error: <code>Business Validation Error: Duplicate Document Number Error : You must specify a different number.</code></p><p>The books are missing this transaction until it\'s fixed and retried.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin?qbo=00000000-0000-4000-8000-000000000004" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Fix &amp; retry this sync</a></p><p><a href="https://dashboard.stripe.com/test/payments/pi_3SampleQboFail01" style="color:#00AEEE">The Stripe payment</a> · <a href="https://SAMPLE_HOST/admin/communications?enrollment=00000000-0000-4000-8000-000000000000" style="color:#00AEEE">the enrollment record</a></p>',
   },
   // tutoring-billing cycle: {alertCounts} is the WHOLE noun phrase here
   // ("2 tutoring families") — PL-216 moved the noun into the variable so the
@@ -1787,25 +1799,25 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   AL_UNAGREED: {
     alertCounts: '2 tutoring families',
     alertDetailsBlock:
-      '<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Alex García</a> (sample-parent@example.com)</li><li><a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">Jordan Lee</a> (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <a href="https://hgl-portal.vercel.app/test-link" style="color:#00AEEE">the agreements panel</a> — or click a family\'s name above to jump straight to their row.</p>',
+      `<p>The September 2026 cycle just proposed invoices for families with no accepted scheduling &amp; billing agreement on file (invoicing proceeds, but chase these):</p><ul><li><a href="${PRODUCTION_ORIGIN}/test-link" style="color:#00AEEE">Alex García</a> (sample-parent@example.com)</li><li><a href="${PRODUCTION_ORIGIN}/test-link" style="color:#00AEEE">Jordan Lee</a> (sample-parent2@example.com)</li></ul><p>Send or re-send agreement links from <a href="${PRODUCTION_ORIGIN}/test-link" style="color:#00AEEE">the agreements panel</a> — or click a family\'s name above to jump straight to their row.</p>`,
   },
   // availability route (PL-92 shape): schedule-now opens the wizard preloaded.
   AL_AVAILABILITY_SHARED: {
     alertDetailsBlock:
-      '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
+      '<p><strong>Alex</strong> (sample-parent@example.com) shared Ana\'s availability.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin/tutoring?schedule=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a></p><p>The wizard opens with Ana preselected and the just-shared windows loaded · <a href="https://SAMPLE_HOST/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="color:#00AEEE">the family record</a> shows the shared windows.</p>',
   },
   // PL-429: the skipped-collateral nudge — the sweep's composed body.
   AL_COLLATERAL_NUDGE: {
     alertClassName: 'MIS SAT Prep',
     alertDetailsBlock:
-      '<p><strong>MIS SAT Prep</strong> was created with its flyer &amp; letter setup skipped, and the class record is now otherwise ready — the counselor welcome could go out today, but its default is the PLAIN version (no flyer or parent letter attached) until the collateral fields are finished.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?collateral=00000000-0000-4000-8000-000000000007" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Finish the collateral</a></p><p>Set it up under Classes → Branding &amp; collateral. The dashboard reminder stays until it\'s done; this email won\'t repeat for this class.</p>',
+      '<p><strong>MIS SAT Prep</strong> was created with its flyer &amp; letter setup skipped, and the class record is now otherwise ready — the counselor welcome could go out today, but its default is the PLAIN version (no flyer or parent letter attached) until the collateral fields are finished.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin?collateral=00000000-0000-4000-8000-000000000007" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Finish the collateral</a></p><p>Set it up under Classes → Branding &amp; collateral. The dashboard reminder stays until it\'s done; this email won\'t repeat for this class.</p>',
   },
   // PL-442B: the Synap-group nudge — the sweep's composed body (mirrors
   // sweepSynapNudges in synap-nudge.ts).
   AL_SYNAP_NUDGE: {
     alertClassName: 'MIS SAT Prep',
     alertDetailsBlock:
-      '<p><strong>MIS SAT Prep</strong> was created with &ldquo;no Synap group yet&rdquo; checked, and the first diagnostic email is due <strong>August 29, 2026</strong> (10 days before the first session). Until the group is filled in, that email\'s access button lands on the parent portal instead of the diagnostic tests.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin?synap=00000000-0000-4000-8000-000000000007" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Add the Synap group</a></p><p>Fill it in under the class card&rsquo;s Edit class details. The dashboard reminder stays until it\'s done; this email won\'t repeat for this class.</p>',
+      '<p><strong>MIS SAT Prep</strong> was created with &ldquo;no Synap group yet&rdquo; checked, and the first diagnostic email is due <strong>August 29, 2026</strong> (10 days before the first session). Until the group is filled in, that email\'s access button lands on the parent portal instead of the diagnostic tests.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin?synap=00000000-0000-4000-8000-000000000007" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Add the Synap group</a></p><p>Fill it in under the class card&rsquo;s Edit class details. The dashboard reminder stays until it\'s done; this email won\'t repeat for this class.</p>',
   },
   // PL-424: the availability UPDATE alert — diff lines composed by the
   // availability-diff leaf, exactly as the route composes them.
@@ -1824,7 +1836,7 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
           { weekday: 2, start_time: '16:00', end_time: '18:00' },
         ]
       ).lines.map((l) => `<li style="margin:2px 0">${l}</li>`).join('') +
-      '</ul><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?availability=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Review the change</a></p><p>The review shows this diff against Ana\'s schedule and flags any scheduled sessions or proposals now OUTSIDE the new windows — nothing changes until you decide.</p>',
+      '</ul><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin/tutoring?availability=00000000-0000-4000-8000-000000000005" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Review the change</a></p><p>The review shows this diff against Ana\'s schedule and flags any scheduled sessions or proposals now OUTSIDE the new windows — nothing changes until you decide.</p>',
   },
   // PL-174: leads route assignment notify — COMPUTED from the real composer
   // (lead-assign-copy.ts), per the PL-137 rule. PL-196: the actor samples as
@@ -1839,33 +1851,33 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
       interest: 'test prep, SAT',
       statusLabel: 'Contacted',
       ageDays: 3,
-      leadUrl: 'https://hgl-portal.vercel.app/test-link',
+      leadUrl: `${PRODUCTION_ORIGIN}/test-link`,
     }),
   },
 
   // intake route (PL-97 shape): lead record deep-link + schedule-now button.
   AL_INTAKE_COMPLETE: {
     alertDetailsBlock:
-      '<p><strong>Alex García</strong> (sample-parent@example.com) completed the intake form for <strong>Ana García</strong> (test prep).</p><p>Availability and all answers are on the lead record, ready for matching.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a>&nbsp;&nbsp;<a href="https://hgl-portal.vercel.app/test-link" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the lead record</a></p>',
+      `<p><strong>Alex García</strong> (sample-parent@example.com) completed the intake form for <strong>Ana García</strong> (test prep).</p><p>Availability and all answers are on the lead record, ready for matching.</p><p style="margin:20px 0"><a href="${PRODUCTION_ORIGIN}/test-link" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Schedule Ana now</a>&nbsp;&nbsp;<a href="${PRODUCTION_ORIGIN}/test-link" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the lead record</a></p>`,
   },
   // tutoring-stripe dunning (PL-90 shape): one charge, three attempts, and
   // the emailed invoice link was the LAST automatic step.
   AL_DUNNING_EXHAUSTED: {
     alertParentName: 'Alex García',
     alertDetailsBlock:
-      "<p>Autopay for <strong>Alex García's September 2026 tutoring invoice ($480.00)</strong> failed on the <strong>3rd and final attempt</strong> — one charge, retried automatically 3 times. Last error: <code>Your card was declined.</code></p><p>The family has already been emailed their invoice link to pay by card manually; that was the last automatic step, and <strong>nothing will retry from here</strong>.</p><p>If it stays unpaid, it's a personal follow-up: <a href=\"https://hgl-portal.vercel.app/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002\">the invoice</a> · <a href=\"https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003\">Alex's family record</a></p>",
+      "<p>Autopay for <strong>Alex García's September 2026 tutoring invoice ($480.00)</strong> failed on the <strong>3rd and final attempt</strong> — one charge, retried automatically 3 times. Last error: <code>Your card was declined.</code></p><p>The family has already been emailed their invoice link to pay by card manually; that was the last automatic step, and <strong>nothing will retry from here</strong>.</p><p>If it stays unpaid, it's a personal follow-up: <a href=\"https://SAMPLE_HOST/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002\">the invoice</a> · <a href=\"https://SAMPLE_HOST/admin/tutoring?family=00000000-0000-4000-8000-000000000003\">Alex's family record</a></p>",
   },
   // sweepCollections 10-day (PL-92 shape): recap shows delivered-and-opened
   // — the realistic 10-day texture.
   AL_OVERDUE_10: {
     alertDetailsBlock:
-      '<p><strong>Alex García — September 2026 tutoring invoice: $480.00</strong>, due <strong>September 30</strong> (10 days past due).</p><p>Already handled automatically: invoice sent Sep 21 — delivered, opened Sep 21 · past-due reminder sent to the family just now.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See Alex\'s recent activity</a></p><p><a href="https://hgl-portal.vercel.app/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002" style="color:#00AEEE">Re-send the invoice reminder now</a> — the send-now control on the invoice row (logged as sent-by-hand on the family timeline).</p><p>Nothing else happens automatically until the <strong>30-day mark</strong>, which adds the late-fee flag — that alert is where you decide.</p>',
+      '<p><strong>Alex García — September 2026 tutoring invoice: $480.00</strong>, due <strong>September 30</strong> (10 days past due).</p><p>Already handled automatically: invoice sent Sep 21 — delivered, opened Sep 21 · past-due reminder sent to the family just now.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See Alex\'s recent activity</a></p><p><a href="https://SAMPLE_HOST/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002" style="color:#00AEEE">Re-send the invoice reminder now</a> — the send-now control on the invoice row (logged as sent-by-hand on the family timeline).</p><p>Nothing else happens automatically until the <strong>30-day mark</strong>, which adds the late-fee flag — that alert is where you decide.</p>',
   },
   // sweepCollections 30-day (PL-92 shape): led by the decision; recap shows
   // delivered-not-opened — the realistic escalation texture.
   AL_OVERDUE_30: {
     alertDetailsBlock:
-      '<p><strong>The late-fee flag is now on the table — waive it, apply it, or make it a phone call.</strong></p><p><strong>Alex García — September 2026 tutoring invoice: $480.00</strong>, due September 30 (30+ days past due). Per the signed policy you MAY apply the 10% late fee — never automatic — and consider pausing the schedule.</p><p>Already handled automatically: invoice sent Sep 21 — delivered, not yet opened · 10-day reminder sent Oct 10 — delivered, not yet opened. Nothing further happens automatically.</p><p style="margin:20px 0"><a href="https://hgl-portal.vercel.app/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Apply the 10% late fee</a>&nbsp;&nbsp;<a href="https://hgl-portal.vercel.app/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See Alex\'s recent activity</a></p><p><a href="mailto:sample-parent@example.com?subject=Your%20September%202026%20HGL%20tutoring%20invoice" style="color:#00AEEE">Send a manual email</a> — opens pre-addressed to the family.</p>',
+      '<p><strong>The late-fee flag is now on the table — waive it, apply it, or make it a phone call.</strong></p><p><strong>Alex García — September 2026 tutoring invoice: $480.00</strong>, due September 30 (30+ days past due). Per the signed policy you MAY apply the 10% late fee — never automatic — and consider pausing the schedule.</p><p>Already handled automatically: invoice sent Sep 21 — delivered, not yet opened · 10-day reminder sent Oct 10 — delivered, not yet opened. Nothing further happens automatically.</p><p style="margin:20px 0"><a href="https://SAMPLE_HOST/admin/tutoring?invoice=00000000-0000-4000-8000-000000000002" style="display:inline-block;background:#506171;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Apply the 10% late fee</a>&nbsp;&nbsp;<a href="https://SAMPLE_HOST/admin/tutoring?family=00000000-0000-4000-8000-000000000003" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">See Alex\'s recent activity</a></p><p><a href="mailto:sample-parent@example.com?subject=Your%20September%202026%20HGL%20tutoring%20invoice" style="color:#00AEEE">Send a manual email</a> — opens pre-addressed to the family.</p>',
   },
   // PL-81 coalesced tutor notice: a two-change batch with the current
   // schedule leading — mirrors composeTutorNotice in tutor-notices.ts.
@@ -1900,7 +1912,7 @@ export const SAMPLE_EXTRA_BY_TEMPLATE: Record<string, ExtraVars> = {
   IN_FYI: {
     classSummaryLine: '<strong>SIS SAT Prep</strong> — starts Saturday, September 5, 2026, in person at SIS (Sample International School)',
   },
-}
+})
 
 /** The editor/test-send sample set for one template: shared samples with the
  *  template's own overrides merged on top (PL-82). */

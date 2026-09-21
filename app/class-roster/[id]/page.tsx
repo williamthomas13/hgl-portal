@@ -5,6 +5,7 @@ import { one, type ScoreRow } from '../../portal/shared'
 import CounselorClassCard from '../../portal/counselor-class-card'
 import RequestForm from '../../classroom-request/[id]/request-form'
 import { PublicNoticeCard } from '../../components/PublicNotice'
+import { appBaseUrl } from '../../utils/base-url'
 
 // PL-131: the counselor's no-login roster page — the middle step that was
 // missing. Counselors already had tokenized room entry and a login portal;
@@ -144,7 +145,7 @@ export default async function ClassRosterPage({
   const schoolName = one<any>(cls.schools)?.name ?? 'your school'
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = appBaseUrl()
 
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">

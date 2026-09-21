@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { SHORT_PUBLIC_HOSTS, canonicalPortalHost, isPortalOnlyPath } from './app/utils/base-url'
 
 // Session-refreshing auth gate (Next 16 renamed `middleware` to `proxy`).
 // Scope is deliberately narrow: only /admin, /portal, and /login carry auth
@@ -16,6 +17,23 @@ function safeNext(next: string | null): string | null {
   return next
 }
 export async function proxy(request: NextRequest) {
+  // PL-474: two hosts, one session. A signed-in / auth / tokenized path
+  // requested on the short public host (hgl.co) is 308'd to the SAME path on
+  // the canonical portal host, query intact — nobody ends up with a session
+  // cookie (or a family's bearer token) on hgl.co. Public routes never
+  // redirect in either direction, so there is no loop.
+  const host = (request.headers.get('host') ?? '').toLowerCase().replace(/:\d+$/, '')
+  const path = request.nextUrl.pathname
+  if (SHORT_PUBLIC_HOSTS.includes(host) && isPortalOnlyPath(path)) {
+    const target = `https://${canonicalPortalHost()}${path}${request.nextUrl.search}`
+    return NextResponse.redirect(target, 308)
+  }
+  // Only the three session-gated prefixes need the auth round-trip; every
+  // other matched path (tokenized family links) is here for the host rule
+  // above and passes straight through.
+  if (!(path.startsWith('/admin') || path.startsWith('/portal') || path === '/login')) {
+    return NextResponse.next({ request })
+  }
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -43,7 +61,6 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const path = request.nextUrl.pathname
   if (!user && (path.startsWith('/admin') || path.startsWith('/portal'))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
@@ -70,5 +87,31 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/portal/:path*', '/login'],
+  // PL-474: every portal-only prefix (base-url.ts PORTAL_ONLY_PATH_PREFIXES —
+  // the matcher must be a static literal, so the list is repeated here and
+  // the canonical-host gate checks the two agree).
+  matcher: [
+    '/admin/:path*',
+    '/portal/:path*',
+    '/login',
+    '/auth/:path*',
+    '/class-report/:path*',
+    '/tutoring/:path*',
+    '/intake/:path*',
+    '/agreements/:path*',
+    '/availability/:path*',
+    '/survey/:path*',
+    '/classroom-request/:path*',
+    '/class-roster/:path*',
+    '/addons/:path*',
+    '/refund/:path*',
+    '/coverage/:path*',
+    '/convert/:path*',
+    '/waitlist/:path*',
+    '/unsubscribe/:path*',
+    '/success',
+    '/link-help',
+    '/api/resume-payment',
+    '/api/waitlist/:path*',
+  ],
 }

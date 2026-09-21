@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from './supabase-admin'
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import { credentialKeySecret, signingSecret } from './signing'
+import { appBaseUrl } from './base-url'
 
 // QuickBooks Online client (Phase 6, docs/PHASE6_SPEC.md §6): OAuth2 connect
 // flow, proactive token refresh with atomic refresh-token rotation, and a thin
@@ -110,7 +111,7 @@ async function oauthEndpoints(): Promise<OauthEndpoints> {
 function redirectUri() {
   return (
     process.env.QBO_REDIRECT_URI ??
-    `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/qbo/callback`
+    `${appBaseUrl()}/api/qbo/callback`
   )
 }
 

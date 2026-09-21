@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { plainTextFromMarkdown, renderSiteMarkdown } from '../utils/site-md'
 import { CONSULT_HREF } from '../components/ClassStateCard'
-import { emailBaseUrl } from '../utils/base-url'
+import { publicSiteOrigin } from '../utils/base-url'
 import { publicSkin } from '../components/public-skin'
 
 // PL-358: the public team page — GENERATED from instructor profiles (the
@@ -70,7 +70,7 @@ export default async function TeamPage() {
           ...(shot ? { image: imageAttrs(shot).src } : {}),
           ...(p.bio ? { description: plainTextFromMarkdown(p.bio) } : {}),
           worksFor: { '@id': 'https://www.highergroundlearning.com/#org' },
-          url: `${emailBaseUrl()}/team`,
+          url: `${publicSiteOrigin()}/team`, // PL-474: public origin
         }
       }),
     ],

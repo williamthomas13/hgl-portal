@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { classPlaceLine } from '../../utils/class-place'
 import { Fragment, cache } from 'react'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
@@ -16,7 +17,7 @@ import { hglMapsQuery, isAddressShaped } from '../../utils/hgl-address'
 import { zonedToUtc } from '../../utils/tutoring'
 import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, plainTextFromMarkdown, renderSiteMarkdown } from '../../utils/site-md'
-import { emailBaseUrl } from '../../utils/base-url'
+import { emailBaseUrl, publicSiteOrigin } from '../../utils/base-url'
 import { examFamilyFor, SCHOOL_BASED_REG_TEXT } from '../../utils/exam-family'
 import { ClassStateCard, consultHrefFor } from '../../components/ClassStateCard'
 import InterestCapture from '../../components/InterestCapture'
@@ -347,7 +348,9 @@ export async function classPageMetadata(
   // internal plumbing — always noindex, canonicalized to its code URL when
   // one exists; the /{code} view is the indexable canonical page.
   const codeForCanonical = opts.mode === 'code' ? (opts.code ?? null) : await evergreenCodeFor(cls)
-  const canonicalUrl = codeForCanonical ? `${emailBaseUrl()}/${codeForCanonical}` : null
+  // PL-474: public pages are canonical on the SHORT host (hgl.co) once the
+  // DNS flip is live (PUBLIC_SHORT_ORIGIN) — the portal origin until then.
+  const canonicalUrl = codeForCanonical ? `${publicSiteOrigin()}/${codeForCanonical}` : null
   const title = `${heroTitleFor(cls)} — Higher Ground Learning`
   const bullets = String(cls.selling_bullets ?? '')
     .split('\n')
@@ -369,7 +372,7 @@ export async function classPageMetadata(
     openGraph: {
       title,
       description,
-      url: canonicalUrl ?? `${emailBaseUrl()}/c/${cls.slug}`,
+      url: canonicalUrl ?? `${publicSiteOrigin()}/c/${cls.slug}`,
       siteName: 'Higher Ground Learning',
       ...(ogImage ? { images: [{ url: ogImage }] } : {}),
     },
@@ -653,7 +656,8 @@ export async function ClassPageView({
   // PL-359 A: JSON-LD composed FROM THE RECORD (the financial-facts rule
   // applies to markup too — price/availability/dates are never hand-typed).
   // Honest degrade: fields we can't state truthfully are omitted.
-  const base = emailBaseUrl()
+  // PL-474: JSON-LD + the register offer URL under the PUBLIC origin.
+  const base = publicSiteOrigin()
   // PL-384: the code-served view carries the class's JSON-LD under the CODE
   // URL — the canonical address that accumulates authority.
   const pageUrl = opts.mode === 'code' && opts.code ? `${base}/${opts.code}` : `${base}/c/${cls.slug}`
@@ -947,9 +951,9 @@ export async function ClassPageView({
           {inProgress && (
             <p className="mt-4 text-sm text-gray-600" data-testid="enrolled-signin">
               Already enrolled?{' '}
-              <a href="/login" className="text-hgl-blue underline">
+              <Link href="/login" className="text-hgl-blue underline">
                 Sign in for your class link and diagnostic tests →
-              </a>
+              </Link>
             </p>
           )}
           {/* PL-355 C: sibling sections of the same course — separate

@@ -3,6 +3,7 @@ import CounselorClassCard from './counselor-class-card'
 import { one, type ScoreRow } from './shared'
 import { bySessionStart } from '../utils/dates'
 import { escapeLike } from '../utils/like-escape'
+import { appBaseUrl } from '../utils/base-url'
 
 // Counselor view (PHASE4_SPEC §4): the school's open/upcoming classes with
 // paid/capacity, waitlist depth, and the registration link; a roster per
@@ -66,7 +67,7 @@ export default async function CounselorView({
         .in('student_id', [...studentIds])
     : { data: [] as ScoreRow[] }
 
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base = appBaseUrl()
   const today = new Date().toLocaleDateString('en-CA')
 
   const decorated = (classes ?? []).map((c: any) => {
