@@ -7,6 +7,7 @@ import { contextTimeCityLabel, formatDateFull, formatDateOnly, instructorWhenPhr
 import { classDetailsSendDate, effectiveDeadline, localDate, localHour, registrationCloseFor, type ClassBundle } from './lifecycle'
 import { createHash } from 'crypto'
 import { createGcalEvent, deleteGcalEvent, loadGcalConnection, patchGcalEvent } from './gcal'
+import { classQuietReason } from './class-quiet'
 
 // PL-78/PL-79: instructors stop being out of the loop. Every send and every
 // calendar event here is gated on the instructor's pref_class_digests
@@ -45,12 +46,9 @@ export type ClassInstructor = {
  *  hourly sweep re-welcomed MIS two weeks into its run the moment the send
  *  log was empty), so the guard has to be a state, not a memory. */
 export function instructorQuietReason(bundle: ClassBundle, today: string = localDate(bundle.timezone)): string | null {
-  if (bundle.status === 'cancelled') return 'class cancelled'
-  if (bundle.lastSession && today > bundle.lastSession) return 'class ended (last session has passed)'
-  const paid = bundle.enrollments.filter((e) => e.payment_status === 'Paid' || e.payment_status === 'Completed')
-  if (paid.length > 0 && paid.every((e) => e.commsMuted)) return 'records-only class (every paid enrollment is a comms-muted import)'
-  if (paid.length === 0 && bundle.firstSession && today >= bundle.firstSession) return 'class already running with no portal enrollments (a records-only class before its import lands)'
-  return null
+  // PL-471: the rule is class-level now (class-quiet.ts) — every class-keyed
+  // sweep shares it; this name stays for the instructor call sites.
+  return classQuietReason(bundle, today)
 }
 
 export async function loadClassInstructor(bundle: ClassBundle): Promise<ClassInstructor | null> {

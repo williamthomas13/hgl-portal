@@ -72,6 +72,18 @@ email first (classes).
      Receipt in 408-3 with the deposit in Stripe Clearing.
    - The sandbox company needs no cleanup; it simply stops being written to.
 
+3d. **PRE-FLIGHT before ANY data change during cutover (PL-471 D, Sep 21):** the portal has
+   no queue — every send is decided at sweep time — so run the every-audience projection
+   BEFORE and AFTER each change (assigning an instructor, importing a roster, setting a
+   location, creating a class) and read the diff:
+   ```
+   node scripts/project-sends.mjs --hours 24
+   ```
+   It lists what the next 24 hours' sweeps would send to families, instructors, school
+   contacts, staff (alerts), tutors (timecards + T5) and calendars, names each quiet class
+   and why, and states what it does NOT cover (event-driven sends). The same projection is
+   the "Every audience" panel on Contacts → Communications → Upcoming. Zero rows for a
+   records-only class is the expected reading; anything else is a stop-and-ask.
 4. **Mid-flight class imports** — per class, in any order (idempotent):
    ```
    node scripts/import-class-registrations.mjs --class <slug> --csv <export.csv> \

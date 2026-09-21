@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
+import { classQuietReason, quietInputFromRow } from '../../../utils/class-quiet'
 import { sessionRole } from '../../../utils/staff-gate'
 import { AVAILABILITY_PROPOSAL_BUSINESS_DAYS, addBusinessDays } from '../../../utils/dates'
 import { assignmentConflictCounts, classSessionIntervals } from '../../../utils/instructor-conflicts'
@@ -112,7 +113,7 @@ export async function GET() {
          collateral_reminder_at, school_id, timezone, fo_short_name,
          has_diagnostics, synap_group, synap_reminder_at,
          schools ( nickname, timezone ), instructors ( name, email ),
-         sessions ( session_date, start_time, end_time ), enrollments ( payment_status )`
+         sessions ( session_date, start_time, end_time ), enrollments ( payment_status, comms_muted )`
       )
       .neq('status', 'cancelled'),
     supabase
@@ -302,12 +303,16 @@ export async function GET() {
     return lastDay >= todayIso
   })
   const label = (c: any) => `${one<any>(c.schools)?.nickname ?? ''} ${c.class_type}`.trim()
+  // PL-471: class-keyed rows (instructor / collateral / synap / minimum /
+  // details) are the portal's to-dos for classes the portal RUNS. A
+  // records-only or no-roster class raises none of them.
+  const portalRunClasses = liveClasses.filter((c) => !classQuietReason(quietInputFromRow(c)))
 
   // PL-330/335E: dashboard copy renders calendar dates plain-English — the
   // "starts …" day is the class's real first day (PL-1: earliest session).
   const firstDayOf = (c: any) =>
     (c.sessions ?? []).map((s: any) => s.session_date).sort()[0] ?? c.start_date
-  for (const c of liveClasses.filter((c) => !c.instructor_id)) {
+  for (const c of portalRunClasses.filter((c) => !c.instructor_id)) {
     attention.push({
       id: `no-instructor-${c.id}`,
       kind: 'Class needs an instructor',
@@ -355,7 +360,7 @@ export async function GET() {
   // PL-274: open-enrollment classes have no collateral at all — never nag.
   // PL-450: the stamp alone is the condition — completion clears it (PL-429);
   // the legacy !short_link proxy died with the column.
-  for (const c of liveClasses.filter((c) => c.school_id && c.collateral_reminder_at)) {
+  for (const c of portalRunClasses.filter((c) => c.school_id && c.collateral_reminder_at)) {
     attention.push({
       id: `collateral-${c.id}`,
       kind: 'Collateral not set up',
@@ -369,7 +374,7 @@ export async function GET() {
   // the group is still blank; filling the group (or turning diagnostics off)
   // clears the stamp and the row with it. Visible to all admins regardless
   // of who the nudge email targets (the email targets, the row informs).
-  for (const c of liveClasses.filter(
+  for (const c of portalRunClasses.filter(
     (c) => c.has_diagnostics !== false && c.synap_reminder_at && !(c.synap_group ?? '').trim()
   )) {
     attention.push({
@@ -384,7 +389,7 @@ export async function GET() {
   // resolve to the newest open class automatically; there is nothing to
   // repoint anymore.
   const in3d = new Date(now.getTime() + 3 * 86400000).toISOString().slice(0, 10)
-  for (const c of liveClasses) {
+  for (const c of portalRunClasses) {
     const paid = (c.enrollments ?? []).filter((e: any) => ['Paid', 'Completed'].includes(e.payment_status)).length
     if (
       c.min_enrollment != null &&
@@ -409,7 +414,7 @@ export async function GET() {
     }
   }
   const in7d = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10)
-  for (const c of liveClasses) {
+  for (const c of portalRunClasses) {
     const firstDay = firstDayOf(c)
     if (!c.default_location && firstDay >= todayIso && firstDay <= in7d) {
       attention.push({

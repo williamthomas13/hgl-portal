@@ -4,6 +4,7 @@ import { emailBaseUrl } from './base-url'
 import { ADMIN_EMAIL } from './lifecycle'
 import { classDisplayLabel } from './class-label'
 import { creatorRecipient } from './creator-recipient'
+import { QUIET_SELECT, classQuietReason, quietInputFromRow } from './class-quiet'
 
 // PL-429A: the skipped-collateral email nudge — urgency-keyed, never a dumb
 // timer. It rings at the first moment collateral would actually be USED: the
@@ -15,6 +16,9 @@ import { creatorRecipient } from './creator-recipient'
 // collateral panel save does this now), which cancels a not-yet-rung nudge
 // by making the condition false. Lives here, not in the cron route, so the
 // compile-and-call harness can prove the selection and once-only behavior.
+// PL-471: a quiet class (records-only / ended / no roster) never rings — and
+// the SELECTION is its own function so the send projector reads the same
+// rule the sweep does.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function one<T>(v: T | T[] | null | undefined): T | null {
@@ -22,50 +26,61 @@ function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? ((v[0] as T) ?? null) : v
 }
 
-export async function sweepCollateralNudges(): Promise<number> {
+export type CollateralNudgeCandidate = { id: string; label: string; createdBy: string | null }
+
+/** Classes whose collateral nudge is DUE right now (before the dedupe check). */
+export async function collateralNudgeCandidates(todayIso = new Date().toLocaleDateString('en-CA')): Promise<CollateralNudgeCandidate[]> {
   const { data: classes } = await supabase
     .from('classes')
     .select(
-      `id, class_type, status, start_date, delivery_mode, enrollment_deadline,
+      `id, class_type, delivery_mode, enrollment_deadline,
        collateral_reminder_at, school_id, fo_short_name, created_by,
-       schools ( nickname ), sessions ( session_date )`
+       schools ( nickname, timezone ), ${QUIET_SELECT}`
     )
     .not('collateral_reminder_at', 'is', null)
     .not('school_id', 'is', null)
     .neq('status', 'cancelled')
 
-  const todayIso = new Date().toLocaleDateString('en-CA')
-  let rang = 0
+  const out: CollateralNudgeCandidate[] = []
   for (const c of (classes as any[]) ?? []) {
     // PL-450: completion = the stamp cleared (PL-429's real signal); the
     // legacy short_link proxy died with the column. A class whose run is
-    // over needs no nudge.
+    // over needs no nudge — PL-471: nor does any quiet class.
+    if (classQuietReason(quietInputFromRow(c), todayIso)) continue
     const dates = ((c.sessions ?? []) as any[]).map((s) => s.session_date).sort()
-    const lastDay = dates[dates.length - 1] ?? c.start_date
-    if (lastDay < todayIso) continue
     // The MOMENT: the welcome is otherwise sendable — collateral is the gap.
     if (dates.length === 0 || !c.enrollment_deadline) continue
-
-    const label = classDisplayLabel({
-      schoolNickname: one<any>(c.schools)?.nickname ?? null,
-      deliveryMode: c.delivery_mode,
-      shortName: c.fo_short_name,
-      classType: c.class_type,
+    out.push({
+      id: c.id,
+      label: classDisplayLabel({
+        schoolNickname: one<any>(c.schools)?.nickname ?? null,
+        deliveryMode: c.delivery_mode,
+        shortName: c.fo_short_name,
+        classType: c.class_type,
+      }),
+      createdBy: c.created_by ?? null,
     })
+  }
+  return out
+}
+
+export async function sweepCollateralNudges(): Promise<number> {
+  let rang = 0
+  for (const c of await collateralNudgeCandidates()) {
     // PL-439: the nudge goes to the class's CREATOR (they skipped the
     // collateral, they get the reminder) — direct, no subscription fan-out.
     // Creator unknown or no longer active staff → the standing admin
     // default (subscribers with the legacy fallback), never silently nobody.
-    const creator = await creatorRecipient(c.created_by)
+    const creator = await creatorRecipient(c.createdBy)
     const status = await sendAdminAlert({
       // Once per class, ever — the dashboard row is the persistent reminder.
       dedupeKey: `collateral_nudge:${c.id}`,
       adminEmail: creator ?? ADMIN_EMAIL,
       direct: Boolean(creator),
       templateKey: 'AL_COLLATERAL_NUDGE',
-      vars: { alertClassName: label },
-      subject: `${label}'s collateral isn't set up — the counselor welcome goes out plain without it`,
-      body: `<p><strong>${label}</strong> was created with its flyer &amp; letter setup skipped, and the
+      vars: { alertClassName: c.label },
+      subject: `${c.label}'s collateral isn't set up — the counselor welcome goes out plain without it`,
+      body: `<p><strong>${c.label}</strong> was created with its flyer &amp; letter setup skipped, and the
         class record is now otherwise ready — the counselor welcome could go out today, but its
         default is the PLAIN version (no flyer or parent letter attached) until the collateral
         fields are finished.</p>

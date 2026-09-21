@@ -11,6 +11,7 @@ import {
   type ClassBundle,
   type EnrollmentRow,
 } from './lifecycle'
+import { classQuietReason } from './class-quiet'
 
 // Admin roster report (ADMIN email — upgraded Phase 2 weekly digest, July 8
 // punch list). Lived inside the cron route until PL-380 moved it here so the
@@ -45,7 +46,7 @@ export async function buildRosterReportSections(bundles: ClassBundle[]): Promise
         : paid >= b.minEnrollment
           ? `<span style="color:#15803d;font-weight:bold">runs (min ${b.minEnrollment} met)</span>`
           : `<span style="color:#b45309;font-weight:bold">below minimum — needs ${b.minEnrollment - paid} more paid</span>`
-    if (paid < b.minEnrollment && b.deliveryMode !== 'online') {
+    if (paid < b.minEnrollment && b.deliveryMode !== 'online' && !classQuietReason(b)) {
       underMinInPerson.push(
         `<li><strong>${b.isOpenEnrollment ? b.classType : `${b.schoolLabel} ${b.classType}`}</strong> — ${paid} paid / ${b.minEnrollment} min, starts ${formatDateLong(b.firstSession)}</li>`
       )
@@ -62,9 +63,14 @@ export async function buildRosterReportSections(bundles: ClassBundle[]): Promise
               }</li>`
             })
             .join('')
+    // PL-471: a records-only roster is listed (it is real history) but
+    // FLAGGED — nobody reading the report should expect portal emails,
+    // timecards or a counselor loop for it.
+    const quietReason = classQuietReason(b)
+    const recordsOnly = quietReason != null && /records-only|no portal enrollments/.test(quietReason)
     ;(b.isOpenEnrollment ? openClassBlocks : classBlocks).push(
       `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:8px 0">
-        <p style="margin:0"><strong>${b.isOpenEnrollment ? b.classType : `${b.schoolLabel} ${b.classType}`}</strong> — starts ${formatDateLong(b.firstSession)} ·
+        <p style="margin:0"><strong>${b.isOpenEnrollment ? b.classType : `${b.schoolLabel} ${b.classType}`}</strong>${recordsOnly ? ' <span style="color:#64748b;font-weight:normal">(records only — imported roster; no portal emails, timecards or counselor loop)</span>' : ''} — starts ${formatDateLong(b.firstSession)} ·
         ${paid} paid / ${pending} pending / ${waitlisted} waitlisted ·
         ${b.minEnrollment} min / ${b.capacity} cap · ${verdict}</p>
         <ul style="margin:6px 0 0">${roster}</ul>

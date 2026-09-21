@@ -5,6 +5,7 @@ import { sendOnce, wrap, footerStaff, type Rendered } from './email'
 import { renderRegistered } from './comms-registered'
 import { sessionMinutes, TEST_PREP_WORK_TYPE } from './work-types'
 import { isTestPrepExamSubject } from './exam-family'
+import { classIdsNotPayableThroughPortal } from './class-quiet'
 
 // Phase 7b timecards (docs/PHASE7_SPEC.md §7). Semi-monthly pay periods:
 // 1st–15th (payday the 20th) and 16th–end of month (payday the 5th),
@@ -135,7 +136,55 @@ async function payableClassSessions(tutorId: string, p: PayPeriod) {
     .lte('session_date', p.end)
     .lt('session_date', denverToday())
   if (error) throw new Error(`payable class sessions query failed: ${error.message}`)
-  return data ?? []
+  // PL-471: class hours of a records-only / no-portal-roster class are NOT
+  // payable through the portal (those instructors are paid outside it) —
+  // the class-level rule, never a per-sweep guess.
+  const unpayable = await classIdsNotPayableThroughPortal(supabase)
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  return (data ?? []).filter((s: any) => {
+    const c = Array.isArray(s.classes) ? s.classes[0] : s.classes
+    return !unpayable.has(c?.id)
+  })
+}
+
+/**
+ * PL-471 D: THE tutor selection the timecard sweep runs on — exported so the
+ * send projector answers "who gets a card + T5 when this period closes?"
+ * from the same rule instead of a mirror. Payable 1-on-1 activity in the
+ * period, plus instructors of portal-run classes with sessions in it
+ * (records-only classes excluded — PL-471).
+ */
+export async function tutorsWithPayableActivity(p: PayPeriod): Promise<string[]> {
+  const { fromIso, toIso } = periodBounds(p)
+  const { data: activity } = await supabase
+    .from('tutoring_sessions')
+    .select('tutor_id, status, reschedule_notice')
+    .gte('starts_at', fromIso)
+    .lt('starts_at', toIso)
+    .in('status', ['completed', 'forfeited', 'no_show', 'rescheduled'])
+  // PL-103: tutors whose only period activity was teaching group classes
+  // get a timecard too — the class pay path must not depend on having
+  // 1-on-1 sessions in the same period.
+  const { data: classActivity } = await supabase
+    .from('sessions')
+    .select('classes!inner ( id, instructor_id, status )')
+    .neq('classes.status', 'cancelled')
+    .not('classes.instructor_id', 'is', null)
+    .gte('session_date', p.start)
+    .lte('session_date', p.end)
+  const unpayable = await classIdsNotPayableThroughPortal(supabase)
+  return [
+    ...new Set([
+      ...(activity ?? [])
+        .filter((s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late')
+        .map((s) => s.tutor_id),
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      ...((classActivity as any[]) ?? [])
+        .map((s) => (Array.isArray(s.classes) ? s.classes[0] : s.classes))
+        .filter((c) => c && !unpayable.has(c.id))
+        .map((c) => c.instructor_id as string),
+    ]),
+  ].filter(Boolean)
 }
 
 /**
@@ -255,37 +304,7 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
   const result: TimecardSweepResult = { created: 0, recomputed: 0, t5Sent: 0 }
   try {
     const p = lastClosedPeriod(now)
-    const { fromIso, toIso } = periodBounds(p)
-
-    // Tutors with payable activity in the period.
-    const { data: activity } = await supabase
-      .from('tutoring_sessions')
-      .select('tutor_id, status, reschedule_notice')
-      .gte('starts_at', fromIso)
-      .lt('starts_at', toIso)
-      .in('status', ['completed', 'forfeited', 'no_show', 'rescheduled'])
-    // PL-103: tutors whose only period activity was teaching group classes
-    // get a timecard too — the class pay path must not depend on having
-    // 1-on-1 sessions in the same period.
-    const { data: classActivity } = await supabase
-      .from('sessions')
-      .select('classes!inner ( instructor_id, status )')
-      .neq('classes.status', 'cancelled')
-      .not('classes.instructor_id', 'is', null)
-      .gte('session_date', p.start)
-      .lte('session_date', p.end)
-    const tutorIds = [
-      ...new Set([
-        ...(activity ?? [])
-          .filter((s) => s.status !== 'rescheduled' || s.reschedule_notice === 'late')
-          .map((s) => s.tutor_id),
-        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-        ...((classActivity as any[]) ?? []).map((s) => {
-          const c = Array.isArray(s.classes) ? s.classes[0] : s.classes
-          return c?.instructor_id as string
-        }),
-      ]),
-    ].filter(Boolean)
+    const tutorIds = await tutorsWithPayableActivity(p)
 
     for (const tutorId of tutorIds) {
       const { data: existing } = await supabase

@@ -309,6 +309,10 @@ export default function ClassWizard({
     nickname: '',
     name: '',
     timezone: '',
+    // PL-471: the city is asked for at creation — the public pages label
+    // times with it, and without it the label fell back to the TIMEZONE's
+    // city (Leone XIII read "Rome" on /classes; the school is in Milan).
+    city: '',
     contactFirst: '',
     contactLast: '',
     contactEmail: '',
@@ -392,6 +396,7 @@ export default function ClassWizard({
           nickname: newSchool.nickname.trim(),
           name: newSchool.name.trim(),
           timezone: newSchool.timezone,
+          city: newSchool.city.trim() || null,
           accent_color: newSchool.accentColor || null,
           collateral_language: newSchool.collateralLanguage,
         },
@@ -424,7 +429,7 @@ export default function ClassWizard({
     if (affiliationId) setCounselorId(affiliationId)
     setAddingSchool(false)
     setNewSchool({
-      nickname: '', name: '', timezone: '', contactFirst: '', contactLast: '',
+      nickname: '', name: '', timezone: '', city: '', contactFirst: '', contactLast: '',
       contactEmail: '', accentColor: '', collateralLanguage: 'en',
     })
   }
@@ -1131,10 +1136,20 @@ export default function ClassWizard({
                     className="border border-gray-300 rounded-md p-2"
                   />
                 </div>
-                <TimezoneSelect
-                  value={newSchool.timezone}
-                  onChange={(tz) => setNewSchool({ ...newSchool, timezone: tz })}
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="City (e.g. Milan) — labels the class times"
+                    value={newSchool.city}
+                    onChange={(e) => setNewSchool({ ...newSchool, city: e.target.value })}
+                    className="border border-gray-300 rounded-md p-2"
+                    data-testid="new-school-city"
+                  />
+                  <TimezoneSelect
+                    value={newSchool.timezone}
+                    onChange={(tz) => setNewSchool({ ...newSchool, timezone: tz })}
+                  />
+                </div>
                 <p className="text-xs text-gray-500">
                   First contact at the school (optional — leave blank to add the school alone;
                   until someone is added, room requests, digests, and the final-days push have

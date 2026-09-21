@@ -105,7 +105,7 @@ try {
   }
 
   // ---- act 2: the real modules ----------------------------------------------
-  execSync(`npx tsc app/utils/lifecycle.ts app/utils/comms-projector.ts app/utils/email.ts app/utils/instructor-comms.ts --outDir ${JSON.stringify(build)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`, { stdio: 'inherit' })
+  execSync(`npx tsc app/utils/lifecycle.ts app/utils/comms-projector.ts app/utils/email.ts app/utils/instructor-comms.ts app/utils/class-quiet.ts app/utils/timecards.ts app/utils/collateral-nudge.ts app/utils/synap-nudge.ts app/utils/send-projection.ts --outDir ${JSON.stringify(build)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`, { stdio: 'inherit' })
   const { loadClassBundles, loadTutoringPackages } = req(path.join(build, 'lifecycle.js'))
   const { projectBundle } = req(path.join(build, 'comms-projector.js'))
   const { sendOnce } = req(path.join(build, 'email.js'))
@@ -217,6 +217,55 @@ try {
   check('PL-463: a class already running with no portal enrollments is quiet (the MIS post-purge case)', /no portal enrollments/.test(instructorQuietReason(running) ?? ''))
   const live = { ...b463, enrollments: b463.enrollments.map((e) => ({ ...e, commsMuted: false })), firstSession: '2999-01-01', lastSession: '2999-02-01' }
   check('PL-463: a live portal-run class is NOT quiet', instructorQuietReason(live) === null)
+
+  // ---- act 6: PL-471 — the REST of the class-keyed machinery is quiet too ----
+  const { classQuietReason, classPayableThroughPortal, classIdsNotPayableThroughPortal } = req(path.join(build, 'class-quiet.js'))
+  const { sweepTimecards, tutorsWithPayableActivity, lastClosedPeriod } = req(path.join(build, 'timecards.js'))
+  const { sweepCollateralNudges, collateralNudgeCandidates } = req(path.join(build, 'collateral-nudge.js'))
+  const { sweepSynapNudges, synapNudgeCandidates } = req(path.join(build, 'synap-nudge.js'))
+  const { projectSends } = req(path.join(build, 'send-projection.js'))
+  check('PL-471 A: the class-level rule agrees with the instructor rule on the records-only fixture', classQuietReason(b463) === instructorQuietReason(b463), classQuietReason(b463))
+  check('PL-471 A: a records-only class is NOT payable through the portal (no timecard, no T5)', classPayableThroughPortal(b463) === false)
+  check('PL-471 A: an ENDED portal-run class is still payable (closing period pays)', classPayableThroughPortal({ ...live, lastSession: '2020-01-02' }) === true)
+  check('PL-471 A: a cancelled class is never payable', classPayableThroughPortal({ ...live, status: 'cancelled' }) === false)
+  const unpayable = await classIdsNotPayableThroughPortal(db)
+  check('PL-471 A: the fixture is in the not-payable set the timecard sweep subtracts', unpayable.has(classId))
+  // Timecards: move the fixture sessions INTO the last closed period (an assigned
+  // instructor, taught sessions, all-muted roster) and run the REAL sweep.
+  const period = lastClosedPeriod(new Date())
+  const { data: fixSessions } = await db.from('sessions').select('id').eq('class_id', classId).order('session_date')
+  const inPeriod = [1, 2, 3].map((n) => { const d = new Date(period.start + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) })
+  for (const [i, s] of (fixSessions ?? []).entries()) await db.from('sessions').update({ session_date: inPeriod[i] ?? inPeriod[0] }).eq('id', s.id)
+  const tutorsBefore = await tutorsWithPayableActivity(period)
+  check('PL-471 A: the fixture instructor is NOT among tutors with payable activity for the period', !tutorsBefore.includes('74bc29e7-f578-4c5e-a20d-8805a74cf752'), `tutors: ${tutorsBefore.length}`)
+  const { count: cardsBefore } = await db.from('timecards').select('id', { count: 'exact', head: true })
+  const tcRes = await sweepTimecards()
+  const { count: cardsAfter } = await db.from('timecards').select('id', { count: 'exact', head: true })
+  const { count: stamped } = await db.from('sessions').select('id', { count: 'exact', head: true }).eq('class_id', classId).not('timecard_id', 'is', null)
+  check('PL-471 A: the real timecard sweep creates NO card and sends NO T5 for the records-only class', tcRes.created === 0 && tcRes.t5Sent === 0 && cardsAfter === cardsBefore && stamped === 0, JSON.stringify(tcRes) + ` cards ${cardsBefore}→${cardsAfter}, stamped ${stamped}`)
+  // Collateral / Synap nudges: stamp the fixture as skipped-and-due, run the real sweeps.
+  await db.from('classes').update({ collateral_reminder_at: new Date().toISOString(), synap_reminder_at: new Date().toISOString(), synap_group: null, enrollment_deadline: plus(1), school_id: (await db.from('schools').select('id').eq('nickname', 'MIS').maybeSingle()).data?.id ?? null }).eq('id', classId)
+  // (sessions are now in the past → the class reads as ended AND records-only — both quiet)
+  const collCands = await collateralNudgeCandidates()
+  const synCands = await synapNudgeCandidates()
+  check('PL-471 A: collateral + Synap nudge selections skip the quiet class', !collCands.some((c) => c.id === classId) && !synCands.some((c) => c.id === classId))
+  const rangC = await sweepCollateralNudges()
+  const rangS = await sweepSynapNudges()
+  const { count: nudgeRows } = await db.from('email_sends').select('id', { count: 'exact', head: true }).in('dedupe_key', [`collateral_nudge:${classId}`, `synap_nudge:${classId}`])
+  check('PL-471 A: the real nudge sweeps ring nothing for it', nudgeRows === 0, `rang collateral=${rangC} synap=${rangS} (other classes)`)
+  await db.from('classes').update({ collateral_reminder_at: null, synap_reminder_at: null, school_id: null }).eq('id', classId)
+  // The pre-flight (D): a 30-day projection lists nothing for the quiet class, and names why.
+  const proj = await projectSends({ hours: 24 * 30, classId })
+  check('PL-471 D: the every-audience projection lists ZERO sends/writes for the records-only class', proj.rows.length === 0, JSON.stringify(proj.rows.slice(0, 3)))
+  check('PL-471 D: …and names it as quiet (records-only or ended)', proj.quiet.some((q) => q.classId === classId && /records-only|ended/.test(q.reason)), JSON.stringify(proj.quiet))
+  // Control: the same projection over a LIVE copy of the fixture (future sessions, unmuted roster, blank location) projects the staff HOLD + the instructor welcome.
+  await db.from('enrollments').update({ comms_muted: false }).eq('class_id', classId)
+  for (const [i, s] of (fixSessions ?? []).entries()) await db.from('sessions').update({ session_date: plus(3 + i * 7) }).eq('id', s.id)
+  await db.from('classes').update({ default_location: null }).eq('id', classId)
+  const projLive = await projectSends({ hours: 24 * 30, classId })
+  const kinds = new Set(projLive.rows.map((r) => `${r.audience}:${r.template}`))
+  check('PL-471 D control: a LIVE class projects the class-details HOLD alert and the instructor welcome', kinds.has('staff:AL_CLASS_DETAILS_HOLD') && kinds.has('instructor:IN_WELCOME'), [...kinds].join(', '))
+  check('PL-471 D control: family sequence rows project for the live class', projLive.rows.some((r) => r.audience === 'family'), `${projLive.rows.filter((r) => r.audience === 'family').length} family rows`)
 } finally {
   await cleanup()
   rmSync(tmp, { recursive: true, force: true })

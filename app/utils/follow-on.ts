@@ -54,6 +54,7 @@ import {
 } from './follow-on-shared'
 import { sendAdminAlert } from './email'
 import { ADMIN_EMAIL, addDaysISO } from './lifecycle'
+import { classQuietReason } from './class-quiet'
 
 // ---------------------------------------------------------------------------
 // Tokenized auto-apply links ('fo:' prefix; composite id like 'roster:')
@@ -367,6 +368,11 @@ export async function sweepFollowOnForBundle(bundle: ClassBundle): Promise<FoSwe
   const report: FoSweepReport = { ran: false, attempts: [], suppressed: [], nudged: false }
   if (!bundle.followOnClassId) return { ...report, reason: 'no follow-on class linked' }
   if (bundle.status === 'cancelled') return { ...report, reason: 'feeder cancelled' }
+  // PL-471: a records-only / no-roster feeder runs no follow-on campaign at all
+  // (its families are muted per row already; the cohort-level extend nudge to
+  // staff must not fire either).
+  const quiet = classQuietReason(bundle)
+  if (quiet) return { ...report, reason: `feeder is quiet: ${quiet}` }
   // PL-295C: a cohort can be excluded entirely (e.g. running concurrently
   // with the FO class, earmarked for a later campaign).
   if (bundle.foExclude) return { ...report, reason: 'cohort excluded from the follow-on campaign' }

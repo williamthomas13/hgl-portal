@@ -7,6 +7,7 @@ import { templateLabel } from '../../utils/comms'
 import { FamilyCommsList, type FamilyCommsItem } from '../family-comms'
 import { SidebarNav, CONTACTS_SIDEBAR } from '../sidebar'
 import { useStaffName } from '../staff-name'
+import ProjectionPanel from './projection-panel'
 
 // Feature A3 — communications dashboard (docs/COMMS_ATTENDANCE_PARENT_SPEC.md).
 // Upcoming = scheduled/held rows (materialized by the sweep's projector);
@@ -460,6 +461,9 @@ export default function CommunicationsDashboard() {
             </span>
           )}
         </div>
+
+        {/* PL-471 D: the every-audience pre-flight above the family rows. */}
+        {tab === 'upcoming' && <ProjectionPanel classId={classFilter || null} />}
 
         {/* PL-164: with a family picked, the history view IS the family
             timeline — identical rows to the family record, filters apply. */}

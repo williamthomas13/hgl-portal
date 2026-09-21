@@ -74,6 +74,8 @@ import { studentSurveyUrl } from '../../../utils/survey'
 import { renderRegistered } from '../../../utils/comms-registered'
 import { ADMIN_EMAIL, INTERNAL_EMAIL, PAYMENT_EXPIRY_HOURS, PAYMENT_REMINDERS, SEQUENCE, WAITLIST_CLAIM_HOURS, packageSavings, addDaysISO, addonPageUrlFor, claimUrlFor, classDetailsSnapshot, sessionListChanges, classroomRequestUrlFor, digestFrequencyUrlFor, emailContext, hoursSince, isDue, loadClassBundles, loadTutoringPackages, localDate, localHour, counselorRosterUrlFor, effectiveDeadline, registrationCloseFor, registrationUrlFor, spotsTaken, stepTargetDate, type ClassBundle, type EnrollmentRow, type TutoringPackage, classDetailsSendDate, missingDetailsAlertStart, stepDisabledForClass, isReturningFamily } from '../../../utils/lifecycle'
 import { classTutoringTier } from '../../../utils/tutoring-tier'
+import { classQuietReason } from '../../../utils/class-quiet'
+import { DIGEST_INTERVAL_DAYS, contactsForClass, digestClasses, loadCounselorsBySchool, type CounselorRow } from '../../../utils/counselor-recipients'
 
 // The lifecycle sweep. Runs hourly (Supabase pg_cron; Vercel daily cron as
 // backup). Every decision is derived from *current* DB state and every send
@@ -437,8 +439,11 @@ async function sweepUpsell(bundle: ClassBundle, c: Counters, prePackages: Tutori
 
 async function sweepSequence(bundle: ClassBundle, c: Counters, postPackages: TutoringPackage[]) {
   // Completed students still get the post-class emails (review, tutoring).
+  // PL-471: a comms-muted row is not a family waiting on anything — the
+  // class-details HOLD alert below fires only for families the portal will
+  // actually email (a records-only class therefore never raises it).
   const paid = bundle.enrollments.filter(
-    (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
+    (e) => (e.payment_status === 'Paid' || e.payment_status === 'Completed') && !e.commsMuted
   )
   if (paid.length === 0) return
 
@@ -1307,74 +1312,9 @@ async function sweepInstructorNudges(bundle: ClassBundle, c: Counters) {
 // current DB state and deduped through email_log like everything else.
 // ---------------------------------------------------------------------------
 
-// One ACTIVE school affiliation + its contact. `id` is the affiliation id —
-// digest tokens, digest_last_sent_at, dedupe keys, AND classes.counselor_id
-// all bind to it (addendum §6: class contact assignments reference the
-// affiliation, not the bare contact).
-type CounselorRow = {
-  id: string
-  school_id: string
-  first_name: string
-  email: string
-  digest_frequency: 'weekly' | 'biweekly' | 'monthly' | 'paused'
-  digest_last_sent_at: string | null
-}
-
-async function loadCounselorsBySchool(): Promise<Map<string, CounselorRow[]>> {
-  const { data, error } = await supabase
-    .from('school_affiliations')
-    .select('id, school_id, digest_frequency, digest_last_sent_at, contacts ( first_name, email )')
-    .is('ended_at', null)
-  if (error || !data) {
-    console.error('loadCounselorsBySchool failed:', error?.message)
-    return new Map()
-  }
-  const map = new Map<string, CounselorRow[]>()
-  for (const row of data) {
-    const contact = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts
-    if (!contact) continue
-    const c: CounselorRow = {
-      id: row.id,
-      school_id: row.school_id,
-      first_name: contact.first_name,
-      email: contact.email,
-      digest_frequency: row.digest_frequency as CounselorRow['digest_frequency'],
-      digest_last_sent_at: row.digest_last_sent_at,
-    }
-    map.set(c.school_id, [...(map.get(c.school_id) ?? []), c])
-  }
-  return map
-}
-
-/**
- * Recipients for CLASS-specific sends (classroom requests, final-days push,
- * class-full note): the class's designated school contact when set, else
- * every contact at the school. Digests stay school-wide regardless.
- */
-function contactsForClass(
-  bundle: ClassBundle,
-  counselorsBySchool: Map<string, CounselorRow[]>
-): CounselorRow[] {
-  if (!bundle.schoolId) return []
-  const all = counselorsBySchool.get(bundle.schoolId) ?? []
-  if (bundle.counselorId) {
-    // counselor_id names an AFFILIATION; the map only holds active ones,
-    // so an ended affiliation falls through to everyone at the school.
-    const chosen = all.filter((c) => c.id === bundle.counselorId)
-    if (chosen.length > 0) return chosen
-  }
-  return all
-}
-
-/** Classes a counselor's digest covers: registration still open, not cancelled. */
-function digestClasses(bundles: ClassBundle[], schoolId: string): ClassBundle[] {
-  return bundles.filter(
-    (b) =>
-      b.schoolId === schoolId &&
-      b.status !== 'cancelled' &&
-      localDate(b.timezone) <= registrationCloseFor(b)
-  )
-}
+// PL-471 D: the counselor-recipient rules (CounselorRow, loadCounselorsBySchool,
+// contactsForClass, digestClasses, DIGEST_INTERVAL_DAYS) moved to
+// utils/counselor-recipients.ts so the send projector shares them.
 
 function waitlistDepth(bundle: ClassBundle): number {
   return bundle.enrollments.filter((e) => e.payment_status === 'Waitlisted').length
@@ -1385,9 +1325,6 @@ function paidCount(bundle: ClassBundle): number {
     (e) => e.payment_status === 'Paid' || e.payment_status === 'Completed'
   ).length
 }
-
-// Minimum days between digests per frequency (with slack for cron jitter).
-const DIGEST_INTERVAL_DAYS: Record<string, number> = { weekly: 6, biweekly: 13, monthly: 27 }
 
 async function sweepCounselorDigests(
   bundles: ClassBundle[],
@@ -1806,10 +1743,20 @@ export async function GET(req: Request) {
     await sweepSequence(bundle, counters, packages.post.filter((p) => p.tier === bundleTier))
     await sweepScheduleUpdates(bundle, counters)
     await sweepWaitlist(bundle, counters)
-    await sweepAdminCheckpoints(bundle, counters)
-    await sweepInstructorNudges(bundle, counters)
-    await sweepDeadlinePush(bundle, counselorsBySchool, counters)
-    await sweepClassroomRequests(bundle, counselorsBySchool, counters)
+    // PL-471: the CLASS-keyed staff + school-contact sweeps (missing-details
+    // warning, min-enrollment brief, instructor nudge, final-days push,
+    // classroom request) run only for a class the portal is running — a
+    // records-only / ended / no-roster class raises none of them (the
+    // enrollment-keyed passes above are already gated per row by sendOnce).
+    const quiet = classQuietReason(bundle)
+    if (quiet) {
+      bump(counters, 'classes_quiet')
+    } else {
+      await sweepAdminCheckpoints(bundle, counters)
+      await sweepInstructorNudges(bundle, counters)
+      await sweepDeadlinePush(bundle, counselorsBySchool, counters)
+      await sweepClassroomRequests(bundle, counselorsBySchool, counters)
+    }
     await sweepClassSurveys(bundle, counters)
   }
   await sweepCounselorDigests(bundles, counselorsBySchool, counters)
