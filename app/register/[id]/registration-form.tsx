@@ -426,8 +426,16 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
   if (today > registrationClose) {
     return (
       <PublicNoticeCard title="Registration for this class has closed">
-        Registration for the {classLabel} class is no longer open. Upcoming classes are listed
-        on our main site.
+        Registration for the {classLabel} class is no longer open.{' '}
+        {/* PL-470: while the class is under way, the class page (schedule, venue,
+            calendar) is the useful place — link back to it. */}
+        {classDetails.page_path ? (
+          <a href={classDetails.page_path} className="text-hgl-blue underline font-semibold" data-testid="back-to-class-page">
+            See the class page — schedule, venue and calendar →
+          </a>
+        ) : (
+          'Upcoming classes are listed on our main site.'
+        )}
         {/* PL-54b: demand capture — hear first when the next one opens */}
         <InterestCapture classId={classDetails.id} schoolNickname={schoolLabel} classType={classDetails.class_type} />
       </PublicNoticeCard>

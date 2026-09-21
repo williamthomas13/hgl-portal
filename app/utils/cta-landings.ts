@@ -107,3 +107,14 @@ export const LINK_LANDINGS: Record<string, LinkLanding> = {
   coverageRespondLink: { route: '/portal?view=tutor#portal-coverage', file: 'app/portal/tutor-view.tsx', invalidBranch: 'portal-coverage' },
   instructorViewLink: { route: '/portal?view=instructor&class={id}', file: 'app/portal/instructor-view.tsx', invalidBranch: 'FocusParam' },
 }
+
+/** PL-470: the public class page's STATE call-to-actions (closed / in-progress /
+ *  cancelled / no-class) — each lands where the action completes. Checked by
+ *  the gate like the rest: file exists, control present. */
+export const PUBLIC_STATE_LANDINGS: Record<string, StaffLanding> = {
+  'Already enrolled? Sign in': { href: '/login', file: 'app/login/login-form.tsx', params: [], control: 'type="email"' },
+  'Talk to us — free consultation': { href: '/inquire?source=', file: 'app/inquire/page.tsx', params: ['source', 'interest', 'school'], control: 'InquiryForm' },
+  'Add the schedule to your calendar': { href: '/classes/{id}/calendar', file: 'app/classes/[id]/calendar/page.tsx', params: [], control: 'Add to Google Calendar' },
+  'Email me when it opens (interest list)': { href: '/api/class-interest', file: 'app/api/class-interest/route.ts', params: [], control: "from('class_interest')" },
+  'See the class page (closed /register)': { href: 'page_path', file: 'app/register/[id]/registration-form.tsx', params: [], control: 'back-to-class-page' },
+}

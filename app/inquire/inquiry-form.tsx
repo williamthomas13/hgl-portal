@@ -19,14 +19,24 @@ function Field({ label, required = false, children }: { label: string; required?
   )
 }
 
-export default function InquiryForm({ src }: { src: string | null }) {
+export default function InquiryForm({
+  src,
+  interest = null,
+  school = null,
+}: {
+  src: string | null
+  /** PL-470/473: pre-selected "What would you like help with?" from the link/embed. */
+  interest?: string | null
+  /** PL-470/473: pre-filled student's school (a class page's school). */
+  school?: string | null
+}) {
   const [f, setF] = useState({
     parentName: '',
     parentEmail: '',
     parentPhone: '',
     studentName: '',
-    studentSchool: '',
-    subject: '',
+    studentSchool: school ?? '',
+    subject: interest ?? '',
     connectPref: '',
     other: '',
     company: '', // honeypot — stays empty for humans
@@ -45,7 +55,7 @@ export default function InquiryForm({ src }: { src: string | null }) {
       const res = await fetch('/api/inquiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...f, src }),
+        body: JSON.stringify({ ...f, src, interestTag: interest }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {

@@ -31,7 +31,7 @@ export default async function EvergreenRegisterPage({
         schoolId={schoolId}
         classType={classType}
         heading={heading}
-        sub="Leave your email and we'll let you know the moment the next class opens for registration — nothing else, no newsletter."
+        sub="Add your email to the interest list to be contacted when registration opens for the next course."
       />
     </div>
   )
@@ -49,10 +49,11 @@ export default async function EvergreenRegisterPage({
           <RegistrationForm idOrSlug={res.classSlug} />
         </div>
       )
+    // PL-472: same sentence as the code page.
     return fallbackCapture(
       res.kind === 'school'
-        ? `No upcoming class at ${res.label} right now`
-        : `No upcoming ${res.label} class right now`,
+        ? `No upcoming class at ${res.label} right now, but we'll likely have one set up soon.`
+        : `No upcoming ${res.label} class right now, but we'll likely have one set up soon.`,
       res.classType,
       res.kind === 'school' ? res.schoolId : null
     )

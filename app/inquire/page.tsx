@@ -10,9 +10,16 @@ export const dynamic = 'force-dynamic'
 export default async function InquirePage({
   searchParams,
 }: {
-  searchParams: Promise<{ src?: string }>
+  searchParams: Promise<{ src?: string; source?: string; interest?: string; school?: string }>
 }) {
-  const { src } = await searchParams
+  // PL-470/473: plain links carry their context — ?source= (which page/button;
+  // the legacy ?src= still works), ?interest= (pre-selects "What would you
+  // like help with?") and ?school= (pre-fills the student's school). The
+  // same three the /embed/inquire.js snippet sends.
+  const sp = await searchParams
+  const source = (sp.source ?? sp.src ?? '').trim().slice(0, 100) || null
+  const interest = (sp.interest ?? '').trim().slice(0, 100) || null
+  const school = (sp.school ?? '').trim().slice(0, 200) || null
   const contact = await loadContactInfo()
 
   return (
@@ -26,7 +33,7 @@ export default async function InquirePage({
             Tell us a little about what you&apos;re looking for and we&apos;ll reach out — usually
             the same day. Short and sweet; details come later, in conversation.
           </p>
-          <InquiryForm src={src ?? null} />
+          <InquiryForm src={source} interest={interest} school={school} />
         </div>
         <div className="bg-white rounded-lg shadow-sm p-5 text-sm text-gray-600">
           Rather just talk to a person? Email{' '}

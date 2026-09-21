@@ -54,6 +54,19 @@ try {
     if (!kinds.includes(kind)) console.log(`note  registry entry "${kind}" is not currently emitted by the dashboard (kept — harmless)`)
   }
 
+  // --- 1b. PL-470: public class-page state CTAs ------------------------------
+  const { PUBLIC_STATE_LANDINGS } = req(path.join(build, 'cta-landings.js'))
+  for (const [name, reg] of Object.entries(PUBLIC_STATE_LANDINGS)) {
+    check(`public state CTA "${name}": landing file exists`, existsSync(reg.file), reg.file)
+    if (!existsSync(reg.file)) continue
+    check(`public state CTA "${name}": control "${reg.control}" present`, read(reg.file).includes(reg.control))
+    if (reg.params.length) {
+      const reads = paramReads(reg.file)
+      const src = read(reg.file)
+      for (const p of reg.params) check(`public state CTA "${name}": landing reads ?${p}=`, reads.has(p) || new RegExp(`\\b${p}\\b`).test(src), `${reg.file} does not read ${p}`)
+    }
+  }
+
   // --- 2. email link variables ---------------------------------------------
   const linkVars = Object.keys(vars.VARIABLES ?? vars.VARIABLE_REGISTRY ?? {}).filter((k) => /Link$|Url$/.test(k))
   check(`registry exposes ${linkVars.length} link variables`, linkVars.length >= 25)

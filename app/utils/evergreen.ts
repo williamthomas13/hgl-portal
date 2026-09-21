@@ -37,23 +37,45 @@ async function resolveClass(
   if (pinClassId) {
     const { data: pin } = await supabase
       .from('classes')
-      .select('slug, status')
+      .select('slug, status, start_date, timezone, schools ( timezone ), sessions ( session_date )')
       .eq('id', pinClassId)
       .maybeSingle()
-    if (pin?.status === 'open' && pin.slug) return { slug: pin.slug, pinned: true }
+    if (pin?.status === 'open' && pin.slug && !classEnded(pin as any)) return { slug: pin.slug, pinned: true }
     // Closed/deleted pin → fall through to auto-resolution (never a dead link).
   }
+  // PL-470: "open" is a registration status, not a lifecycle one — a class
+  // whose last session has passed is HISTORY, and its code must fall through
+  // to the interest-capture state ("no upcoming class … add your email"),
+  // never keep serving a dead-end closed card. In-progress classes (closed
+  // registration, sessions still ahead) DO resolve — they get the PL-470
+  // in-progress page.
   let q = supabase
     .from('classes')
-    .select('slug, created_at')
+    .select('slug, created_at, start_date, timezone, schools ( timezone ), sessions ( session_date )')
     .eq('status', 'open')
     .not('slug', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(1)
   if (filter.school_id) q = q.eq('school_id', filter.school_id)
   if (filter.course_key) q = q.eq('course_key', filter.course_key).is('school_id', null)
   const { data } = await q
-  return { slug: (data?.[0] as any)?.slug ?? null, pinned: false }
+  const live = ((data as any[]) ?? []).find((c) => !classEnded(c))
+  return { slug: live?.slug ?? null, pinned: false }
+}
+
+/** PL-470: last session (or start_date) before today in the class's zone. */
+export function classEnded(c: { start_date?: string | null; timezone?: string | null; schools?: any; sessions?: { session_date: string }[] | null }): boolean {
+  const school = Array.isArray(c.schools) ? c.schools[0] : c.schools
+  const tz = c.timezone ?? school?.timezone ?? 'America/Denver'
+  const days = (c.sessions ?? []).map((s) => s.session_date).filter(Boolean).sort()
+  const last = days[days.length - 1] ?? c.start_date ?? null
+  if (!last) return false
+  let today: string
+  try {
+    today = new Date().toLocaleDateString('en-CA', { timeZone: tz })
+  } catch {
+    today = new Date().toISOString().slice(0, 10)
+  }
+  return String(last).slice(0, 10) < today
 }
 
 async function latestClassType(filter: { school_id?: string; course_key?: string }): Promise<string | null> {

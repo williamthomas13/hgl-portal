@@ -80,12 +80,14 @@ export default async function EvergreenCodePage({
         <EvergreenCapture
           schoolId={res.kind === 'school' ? res.schoolId : null}
           classType={res.classType}
+          // PL-472 (Scarlett, Sep 21): the copy lives HERE (not a seeded block) —
+          // one sentence, then the email field directly under it.
           heading={
             res.kind === 'school'
-              ? `No upcoming class at ${res.label} right now`
-              : `No upcoming ${res.label} class right now`
+              ? `No upcoming class at ${res.label} right now, but we'll likely have one set up soon.`
+              : `No upcoming ${res.label} class right now, but we'll likely have one set up soon.`
           }
-          sub="Leave your email and we'll let you know the moment the next class opens for registration — nothing else, no newsletter."
+          sub="Add your email to the interest list to be contacted when registration opens for the next course."
         />
       </div>
     )

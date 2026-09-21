@@ -18,7 +18,8 @@ import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, plainTextFromMarkdown, renderSiteMarkdown } from '../../utils/site-md'
 import { emailBaseUrl } from '../../utils/base-url'
 import { examFamilyFor, SCHOOL_BASED_REG_TEXT } from '../../utils/exam-family'
-import { ClassStateCard, CONSULT_HREF } from '../../components/ClassStateCard'
+import { ClassStateCard, consultHrefFor } from '../../components/ClassStateCard'
+import InterestCapture from '../../components/InterestCapture'
 import ClassPageAnalytics from './analytics'
 import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
 import { publicSkin, PAGE_HERO } from '../../components/public-skin'
@@ -411,20 +412,47 @@ export async function ClassPageView({
   const cancelled = cls.status === 'cancelled'
   const closed = todayInZone > String(registrationClose).slice(0, 10)
   const isFull = cls.capacity != null && spotsTaken >= Number(cls.capacity)
+  // PL-470: from registration-close until the last session ends the class is
+  // IN PROGRESS — the people opening hgl.co/{code} now are overwhelmingly
+  // enrolled families looking for "when is the next session?", so the page
+  // keeps rendering (hero + facts + the full calendar) with the selling
+  // machinery hidden, never the closed dead-end card. After the last session
+  // the code falls through to the interest-capture state (evergreen.ts).
+  const lastSessionDate = String(sessions[sessions.length - 1]?.session_date ?? cls.start_date ?? '').slice(0, 10)
+  const inProgress = closed && !cancelled && Boolean(lastSessionDate) && todayInZone <= lastSessionDate
+  const nextSession = inProgress
+    ? (sessions.find((s: any) => String(s.session_date).slice(0, 10) >= todayInZone) ?? null)
+    : null
+  // PL-470 (Scarlett): every closed / in-progress / cancelled state offers an
+  // action — the consultation door with school + class as context, and the
+  // interest-list capture inline (school classes; the capture keys on the
+  // class's school).
+  const consultHref = consultHrefFor({
+    source: opts.mode === 'code' && opts.code ? `class-page:${opts.code}` : `class-page:${cls.slug ?? cls.id}`,
+    classType: cls.class_type,
+    schoolNickname: school?.nickname ?? null,
+  })
+  const interest = school
+    ? { classId: String(cls.id), schoolNickname: String(school.nickname ?? school.name), classType: String(cls.class_type) }
+    : null
 
   if (cancelled) {
     return (
       <ClassStateCard
         title="This class isn’t running"
         body={`The ${heroTitleFor(cls)} scheduled here was cancelled. If you'd like help planning your student's test prep — or want to hear when the next class opens — we'd love to talk.`}
+        consultHref={consultHref}
+        interest={interest}
       />
     )
   }
-  if (closed) {
+  if (closed && !inProgress) {
     return (
       <ClassStateCard
         title="Registration for this class has closed"
         body={`Registration for the ${heroTitleFor(cls)} closed on ${formatDateFull(String(registrationClose).slice(0, 10))}. If you missed it, talk to us — 1-on-1 tutoring is always available, and we can let you know when the next class opens.`}
+        consultHref={consultHref}
+        interest={interest}
       />
     )
   }
@@ -653,12 +681,14 @@ export async function ClassPageView({
           '@type': 'Offer',
           price: price,
           priceCurrency: 'USD',
-          availability: isFull ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock',
+          // PL-470: an in-progress class states closed registration honestly.
+          availability: inProgress || isFull ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock',
           validThrough: String(registrationClose).slice(0, 10),
           url: `${base}${registerHref}`,
         },
         hasCourseInstance: {
           '@type': 'CourseInstance',
+          eventStatus: 'https://schema.org/EventScheduled',
           courseMode: online ? 'Online' : 'Onsite',
           startDate: firstSession,
           endDate: lastSession,
@@ -759,8 +789,9 @@ export async function ClassPageView({
           )}
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">{heroTitleFor(cls)}</h1>
           <p className="mt-2 text-white/90">
-            {online ? 'Live online' : cls.default_location ? `In person · ${cls.default_location}` : 'In person'}
-            {' · starts '}
+            {/* PL-468 (via PL-470): the hero names venue · room, not the bare room. */}
+            {online ? 'Live online' : `In person · ${classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: school?.name }) ?? ''}`.replace(/ · $/, '')}
+            {inProgress ? ' · started ' : ' · starts '}
             {formatDateFull(firstSession)}
           </p>
           {bullets.length > 0 && (
@@ -786,20 +817,41 @@ export async function ClassPageView({
               dangerouslySetInnerHTML={{ __html: md(heroBlurb.body_markdown) }}
             />
           )}
-          <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-4">
-            <span className="text-3xl font-extrabold">{priceLabel}</span>
-            <a
-              href={registerHref}
-              data-track="register"
-              className="public-cta inline-block bg-white text-center font-bold py-3 px-8 rounded-md hover:opacity-90 transition"
-              style={{ color: accent }}
-            >
-              {isFull ? 'Join the waitlist' : 'Register'}
-            </a>
-          </div>
-          <p className="mt-3 text-sm text-white/90">
-            Registration closes {formatDateFull(String(registrationClose).slice(0, 10))} — {countdown}.
-          </p>
+          {inProgress ? (
+            /* PL-470: calm in-progress banner — no price, no register button. */
+            <div className="mt-6 rounded-md bg-white/10 border border-white/25 px-4 py-3" data-testid="in-progress-banner">
+              <p className="font-semibold">
+                This class is under way — registration closed {formatDateFull(String(registrationClose).slice(0, 10))}.
+              </p>
+              {nextSession && (
+                <p className="mt-1 text-sm text-white/90" data-testid="next-session-line">
+                  Next session: {formatDateOnly(nextSession.session_date, { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {clockLabel(nextSession.start_time)
+                    ? `, ${clockLabel(nextSession.end_time) ? timeRangeLabel(clockLabel(nextSession.start_time)!, clockLabel(nextSession.end_time)!) : clockLabel(nextSession.start_time)} ${zoneCity} time`
+                    : ''}
+                  {' · '}
+                  {online ? 'Live online' : (nextSession.location || classPlaceLine({ venue: cls.venue, room: cls.default_location, deliveryMode: cls.delivery_mode, schoolName: school?.name }) || 'In person')}
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-4">
+                <span className="text-3xl font-extrabold">{priceLabel}</span>
+                <a
+                  href={registerHref}
+                  data-track="register"
+                  className="public-cta inline-block bg-white text-center font-bold py-3 px-8 rounded-md hover:opacity-90 transition"
+                  style={{ color: accent }}
+                >
+                  {isFull ? 'Join the waitlist' : 'Register'}
+                </a>
+              </div>
+              <p className="mt-3 text-sm text-white/90">
+                Registration closes {formatDateFull(String(registrationClose).slice(0, 10))} — {countdown}.
+              </p>
+            </>
+          )}
           {/* PL-351: the class's own photo rides inside the hero, eager (top
               of page) with explicit dimensions — never a reflow. */}
           {heroImage && (
@@ -813,7 +865,7 @@ export async function ClassPageView({
         </div>
       </section>
 
-      {isFull && (
+      {isFull && !inProgress && (
         <div className="bg-yellow-50 border-b border-yellow-200">
           <div className="max-w-3xl mx-auto px-5 py-4 text-sm text-yellow-900">
             <strong>{waitlistNote?.heading || 'This class is currently full.'}</strong>{' '}
@@ -847,9 +899,18 @@ export async function ClassPageView({
               {sessions.map((s: any, i: number) => {
                 const start = clockLabel(s.start_time)
                 const end = clockLabel(s.end_time)
+                // PL-470: in progress → past sessions greyed, the next one highlighted.
+                const isPast = inProgress && String(s.session_date).slice(0, 10) < todayInZone
+                const isNext = Boolean(nextSession && s.id === nextSession.id)
                 return (
-                  <li key={s.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 px-4 py-3">
-                    <span className="text-xs font-bold text-gray-400 w-20 shrink-0">Session {i + 1}</span>
+                  <li
+                    key={s.id}
+                    className={`flex flex-wrap items-baseline gap-x-4 gap-y-0.5 px-4 py-3 ${isPast ? 'opacity-50' : ''} ${isNext ? 'bg-hgl-blue/5 border-l-4 border-hgl-blue' : ''}`}
+                    data-session-state={isNext ? 'next' : isPast ? 'past' : undefined}
+                  >
+                    <span className="text-xs font-bold text-gray-400 w-20 shrink-0">
+                      {isNext ? <span className="text-hgl-blue">Next</span> : `Session ${i + 1}`}
+                    </span>
                     <span className="font-semibold text-hgl-slate">{formatDateOnly(s.session_date, { weekday: 'long', month: 'long', day: 'numeric' })}</span>
                     {/* PL-355 B: a follow-up class shows each feeder city's
                         own local time; same-offset cities share one line. */}
@@ -882,6 +943,14 @@ export async function ClassPageView({
                 )
               })}
             </ul>
+          )}
+          {inProgress && (
+            <p className="mt-4 text-sm text-gray-600" data-testid="enrolled-signin">
+              Already enrolled?{' '}
+              <a href="/login" className="text-hgl-blue underline">
+                Sign in for your class link and diagnostic tests →
+              </a>
+            </p>
           )}
           {/* PL-355 C: sibling sections of the same course — separate
               classes, cross-linked, never a section object. */}
@@ -1055,7 +1124,7 @@ export async function ClassPageView({
             )
           })()}
 
-        {faqBlocks.length > 0 && (
+        {faqBlocks.length > 0 && !inProgress && (
           <section id="faq" data-section="faq">
             <h2 className="text-2xl font-bold text-hgl-slate mb-4">FAQs</h2>
             <div className="space-y-6">
@@ -1081,6 +1150,28 @@ export async function ClassPageView({
 
         {/* ── Closing CTA: price + deadline from the RECORD (financial facts
             never live in authored copy) ─────────────────────────────────── */}
+        {inProgress ? (
+          /* PL-470: the consultation door moves to the bottom, secondary,
+             with the interest-list capture beside it. */
+          <section id="closing" data-section="closing" className="text-center bg-white rounded-lg shadow-sm p-8" data-testid="in-progress-closing">
+            <h2 className="text-xl font-bold text-hgl-slate mb-2">Missed this one?</h2>
+            <p className="text-gray-600 mb-4">
+              1-on-1 tutoring is always available, and we can let you know when the next class
+              {school ? ` at ${school.nickname ?? school.name}` : ''} opens.
+            </p>
+            <a
+              href={consultHref}
+              className="public-cta inline-block bg-gray-100 text-hgl-slate font-bold py-3 px-6 rounded-md hover:bg-gray-200 transition"
+            >
+              Talk to us — free consultation
+            </a>
+            {interest && (
+              <div className="max-w-md mx-auto" data-testid="state-interest-capture">
+                <InterestCapture classId={interest.classId} schoolNickname={interest.schoolNickname} classType={interest.classType} />
+              </div>
+            )}
+          </section>
+        ) : (
         <section id="closing" data-section="closing" className="text-center bg-white rounded-lg shadow-sm p-8">
           <h2 className="text-2xl font-bold text-hgl-slate mb-2">{closing?.heading || 'Ready to get started?'}</h2>
           {closing && (
@@ -1092,8 +1183,9 @@ export async function ClassPageView({
             Registration closes {formatDateFull(String(registrationClose).slice(0, 10))} — {countdown}.
           </p>
         </section>
+        )}
 
-        {(finePrintBlocks.length > 0 || cls.min_enrollment != null) && (
+        {(finePrintBlocks.length > 0 || cls.min_enrollment != null) && !inProgress && (
           <section id="fine-print" data-section="fine-print" className="text-xs text-gray-500 space-y-3">
             <h2 className="text-sm font-bold text-gray-600">The fine print</h2>
             {cls.min_enrollment != null && Number(cls.min_enrollment) >= 1 && (
@@ -1116,7 +1208,7 @@ export async function ClassPageView({
             Higher Ground Learning
           </a>
           {' · '}
-          <a href={CONSULT_HREF} className="underline hover:text-gray-600">
+          <a href={consultHref} className="underline hover:text-gray-600">
             Questions? Talk to us
           </a>
         </footer>
