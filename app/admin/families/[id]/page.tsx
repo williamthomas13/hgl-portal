@@ -620,6 +620,19 @@ export default function FamilyProfilePage() {
                 </p>
                 <p className="text-sm text-gray-700 mt-0.5">
                   {fam.parent_email && <Email v={fam.parent_email} />}
+                  {/* PL-464 A: derived, no column — the family is keyed on a
+                      student's address because no parent address was known.
+                      Editing the parent email (below) clears it by itself. */}
+                  {fam.parent_email &&
+                    d.students.some((st) => (st.student_email ?? '').trim().toLowerCase() === String(fam.parent_email).trim().toLowerCase()) && (
+                      <span
+                        data-testid="using-student-email"
+                        className="ml-2 inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-800"
+                        title="No parent email on file — this family is keyed on the student's address. Edit the parent email once a real one turns up; logins follow it."
+                      >
+                        no parent email — using the student&apos;s address
+                      </span>
+                    )}
                   {fam.parent_email && fam.parent_phone && ' · '}
                   {fam.parent_phone && <Phone v={fam.parent_phone} />}
                   {!fam.parent_email && !fam.parent_phone && 'No contact info on file.'}

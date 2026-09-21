@@ -1,4 +1,5 @@
 import { Resend } from 'resend'
+import { sameAddress } from './billing-recipient'
 import { emailBaseUrl, nonProductionOrigins } from './base-url'
 import { classLocationTailText, sessionScheduleMarkdown } from './comms-variables'
 import { renderMarkdownBody } from './comms-md'
@@ -2146,6 +2147,47 @@ export async function sendOnce(opts: {
         ])
         .then(({ error }) => {
           if (error && error.code !== '23505') console.error('mute record failed (send stays refused):', error.message)
+        })
+      return 'suppressed'
+    }
+  }
+
+  // PL-464 B: one person, one email. A family with no parent address is
+  // keyed on the student's (import + staff paths), and some students share
+  // the parent's inbox — when the STUDENT leg of a fan-out resolves to the
+  // parent's address, the parent version goes (it carries the money and
+  // logistics the student copy omits) and the student leg is recorded as
+  // cancelled so the log stays honest and the dedupe key is claimed.
+  // Proposed rule (Scarlett's veto): parent wins. THE choke point — every
+  // family/student fan-out that names its enrollment passes through here.
+  if (opts.enrollmentId && (opts.recipientRole ?? templateMetaFor(opts.emailType, opts.dedupeKey).role) === 'student') {
+    const { data: legs } = await supabase
+      .from('enrollments')
+      .select('students ( families ( parent_email ) )')
+      .eq('id', opts.enrollmentId)
+      .maybeSingle()
+    const stu = Array.isArray(legs?.students) ? legs?.students[0] : legs?.students
+    const fam = Array.isArray(stu?.families) ? stu?.families[0] : stu?.families
+    if (fam?.parent_email && sameAddress(opts.to[0], fam.parent_email)) {
+      console.warn(`[PL-464] student leg collapsed onto the parent leg (same address): ${opts.dedupeKey}`)
+      await supabase
+        .from('email_sends')
+        .insert([
+          {
+            dedupe_key: opts.dedupeKey,
+            template_key: opts.templateKey ?? templateMetaFor(opts.emailType, opts.dedupeKey).key,
+            enrollment_id: opts.enrollmentId,
+            class_id: opts.classId ?? null,
+            recipient_email: opts.to[0]?.toLowerCase() ?? 'unknown@invalid',
+            recipient_role: 'student',
+            status: 'cancelled',
+            cancel_reason: 'same address as the parent leg — one copy sent (the parent version)',
+            scheduled_for: new Date().toISOString(),
+            is_test: opts.isTest ?? false,
+          },
+        ])
+        .then(({ error }) => {
+          if (error && error.code !== '23505') console.error('same-address record failed (leg stays collapsed):', error.message)
         })
       return 'suppressed'
     }

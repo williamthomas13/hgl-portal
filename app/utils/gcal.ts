@@ -296,6 +296,24 @@ export async function patchGcalEvent(key: ServiceAccountKey, eventId: string, in
   await expectOk(res, 'event patch')
 }
 
+/** PL-463 gate/cleanup helper: the non-cancelled events on `tutorEmail`'s
+ *  calendar whose title contains `q` in [timeMin, timeMax). Read-only. */
+export async function listGcalEvents(
+  key: ServiceAccountKey,
+  tutorEmail: string,
+  calendarId: string | null,
+  q: string,
+  timeMin: string,
+  timeMax: string
+): Promise<{ id: string; summary?: string; start?: { dateTime?: string; date?: string } }[]> {
+  const cal = encodeURIComponent(calendarId || 'primary')
+  const params = new URLSearchParams({ q, timeMin, timeMax, singleEvents: 'true', maxResults: '250' })
+  const res = await gcalFetch(tutorEmail, key, `/calendars/${cal}/events?${params}`)
+  await expectOk(res, 'event list')
+  const json = (await res.json()) as { items?: { id: string; status?: string; summary?: string; start?: { dateTime?: string; date?: string } }[] }
+  return (json.items ?? []).filter((e) => e.status !== 'cancelled')
+}
+
 export async function deleteGcalEvent(
   key: ServiceAccountKey,
   tutorEmail: string,

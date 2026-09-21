@@ -2495,8 +2495,22 @@ export default function AdminDashboard() {
                       {en.students?.families?.parent_first_name}{' '}
                       {en.students?.families?.parent_last_name}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-hgl-blue">
+                    <td
+                      className="px-4 py-3 whitespace-nowrap text-sm text-hgl-blue"
+                      title={
+                        en.students?.student_email &&
+                        en.students?.families?.parent_email &&
+                        String(en.students.student_email).trim().toLowerCase() === String(en.students.families.parent_email).trim().toLowerCase()
+                          ? "No parent email on file — this family is keyed on the student's address (PL-464)"
+                          : undefined
+                      }
+                    >
                       {en.students?.families?.parent_email}
+                      {en.students?.student_email &&
+                        en.students?.families?.parent_email &&
+                        String(en.students.student_email).trim().toLowerCase() === String(en.students.families.parent_email).trim().toLowerCase() && (
+                          <span className="ml-1 text-[10px] uppercase text-amber-700 font-bold">student&apos;s address</span>
+                        )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm">
                       <span

@@ -260,6 +260,7 @@ export default function CounselorsPanel({
   const [loading, setLoading] = useState(false)
   const [editingSchool, setEditingSchool] = useState<string | null>(null)
   const [addingAt, setAddingAt] = useState<string | null>(null)
+  const [addingSchool, setAddingSchool] = useState(false)
   // PL-242: names are doors — ?school={id} lands with the card in view.
   const [focusSchool, setFocusSchool] = useState<string | null>(null)
   useEffect(() => {
@@ -471,6 +472,29 @@ export default function CounselorsPanel({
         person and their history stay.
       </p>
 
+      {/* PL-467: the Schools panel's OWN door — until now the only way to add
+          a school was inside the class wizard, and it demanded a contact. */}
+      <div className="mb-4">
+        {addingSchool ? (
+          <AddSchoolForm
+            onDone={(msg) => {
+              setAddingSchool(false)
+              setMessage(msg)
+              onChange?.()
+            }}
+            onCancel={() => setAddingSchool(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAddingSchool(true)}
+            data-testid="add-school"
+            className="text-sm font-semibold text-white bg-hgl-blue rounded px-3 py-1.5 hover:opacity-90"
+          >
+            + Add a school
+          </button>
+        )}
+      </div>
       <div className="space-y-4 mb-6">
         {schools.map((school) => {
           const rows = affiliations.filter((a) => a.school_id === school.id && !a.ended_at)
@@ -650,6 +674,52 @@ export default function CounselorsPanel({
 
 /** One active contact: the main row + the expandable emails row underneath
  *  (the PL-137 comms timeline machinery, unchanged). */
+/** PL-467: add a school with NO contact — the same insert the class wizard
+ *  does, minus the contact requirement. The card then shows the existing
+ *  "No active contact" state until one is added there. */
+function AddSchoolForm({ onDone, onCancel }: { onDone: (message: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState('')
+  const [nickname, setNickname] = useState('')
+  const [timezone, setTimezone] = useState('')
+  const [city, setCity] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function save() {
+    if (!name.trim() || !nickname.trim() || !timezone) {
+      setError('A school needs its full name, a nickname, and a timezone.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    const { error: e } = await supabase
+      .from('schools')
+      .insert([{ name: name.trim(), nickname: nickname.trim(), timezone, city: city.trim() || null, collateral_language: 'en' }])
+    setBusy(false)
+    if (e) {
+      setError(e.code === '23505' ? 'That nickname already exists.' : e.message)
+      return
+    }
+    onDone(`${nickname.trim()} added — no contact yet, so it gets no digests and nobody can open its portal until you add one on its card.`)
+  }
+  return (
+    <div className="border border-hgl-blue/40 rounded-lg p-4 bg-blue-50/40 space-y-2 text-sm" data-testid="add-school-form">
+      <p className="font-semibold text-hgl-slate">New school</p>
+      <div className="flex flex-wrap gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name (e.g. Istituto Leone XIII)" className="border border-gray-300 rounded p-1.5 text-sm w-72 max-w-full" />
+        <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Nickname (e.g. Leone)" className="border border-gray-300 rounded p-1.5 text-sm w-40" />
+        <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City (optional)" className="border border-gray-300 rounded p-1.5 text-sm w-40" />
+        <TimezoneSelect value={timezone} onChange={setTimezone} />
+      </div>
+      <p className="text-xs text-gray-500">A contact is optional — add one on the school&apos;s card whenever the school should start getting digests and room requests.</p>
+      <div className="flex gap-3 items-center">
+        <button type="button" disabled={busy} onClick={save} className="text-xs font-bold text-white bg-hgl-blue rounded px-3 py-1.5 disabled:opacity-40">Save school</button>
+        <button type="button" onClick={onCancel} className="text-xs text-gray-500 underline">cancel</button>
+        {error && <span className="text-xs text-red-600 font-semibold">{error}</span>}
+      </div>
+    </div>
+  )
+}
+
 function SchoolContactRows({
   a,
   onFrequency,

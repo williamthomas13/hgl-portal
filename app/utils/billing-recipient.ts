@@ -26,6 +26,13 @@ export type FamilyRecipients = { to: string[]; cc?: string[] }
 
 const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase()
 
+/** PL-464: one person, one email — two addresses are the same inbox when
+ *  they match case-insensitively after trimming. */
+export function sameAddress(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = norm(a)
+  return x !== '' && x === norm(b)
+}
+
 /** The billing contact address when one is set and usable, else null. A
  *  billing email equal to the parent's is "not set" (nothing to reroute). */
 export function billingContactEmail(family: Pick<BillingRoutedFamily, 'parent_email' | 'billing_email'>): string | null {

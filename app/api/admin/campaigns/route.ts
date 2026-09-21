@@ -1,4 +1,5 @@
 import { NextResponse, after } from 'next/server'
+import { sameAddress } from '../../../utils/billing-recipient'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { resolveSegment, segmentSummary, type SegmentDef } from '../../../utils/campaigns'
@@ -206,10 +207,12 @@ export async function POST(req: Request) {
         role: 'parent',
       })),
       // PL-280: the student legs (pairs mode; only students with an email).
+      // PL-464 B: a student whose address IS the family's parent address gets
+      // the parent version only — never two copies to one inbox.
       ...(audienceMode === 'pairs'
         ? finalList.flatMap((r) =>
             r.studentRecords
-              .filter((s) => s.email)
+              .filter((s) => s.email && !sameAddress(s.email, r.email))
               .map((s) => ({
                 campaign_id: campaign.id,
                 family_id: r.familyId,

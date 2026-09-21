@@ -27,7 +27,7 @@ try {
     { stdio: 'inherit' }
   )
   const req = createRequire(import.meta.url)
-  const { familyRecipients, billingAddress, billingVerdict } = req(path.join(buildDir, 'billing-recipient.js'))
+  const { familyRecipients, billingAddress, billingVerdict, sameAddress } = req(path.join(buildDir, 'billing-recipient.js'))
   const { TEMPLATE_SEEDS, BILLING_TEMPLATE_KEYS } = req(path.join(buildDir, 'comms-template-seed.js'))
 
   // 1. the table
@@ -76,6 +76,12 @@ try {
   }
   check('billingAddress: billing when set', billingAddress(billed) === 'Office@example.com')
   check('billingAddress: parent when unset / same', billingAddress(parentOnly) === 'Parent@example.com' && billingAddress(parentSame) === 'parent@example.com')
+  // PL-464: one person, one email.
+  check('sameAddress: case/whitespace-insensitive match', sameAddress(' Parent@Example.com ', 'parent@example.com') === true)
+  check('sameAddress: different addresses differ', sameAddress('a@example.com', 'b@example.com') === false)
+  check('sameAddress: blank never matches blank', sameAddress('', '') === false && sameAddress(null, undefined) === false)
+  check('PL-464 C: a billing contact equal to the parent counts as unset (one copy)', familyRecipients({ parent_email: 'p@example.com', billing_email: 'P@EXAMPLE.COM ' }, 'T2_INVOICE').to[0] === 'p@example.com')
+  check('PL-464 C: a cc equal to the billing contact is dropped (one copy)', JSON.stringify(familyRecipients({ parent_email: 'p@example.com', billing_email: 'b@example.com', billing_cc_emails: ['B@example.com', 'p@example.com'] }, 'T2_INVOICE')) === JSON.stringify({ to: ['b@example.com'] }))
   check('a whitespace-only billing email counts as unset', familyRecipients({ parent_email: 'p@example.com', billing_email: '   ' }, 'T2_INVOICE').to[0] === 'p@example.com')
 } finally {
   rmSync(buildDir, { recursive: true, force: true })

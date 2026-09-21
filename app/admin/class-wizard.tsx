@@ -360,18 +360,23 @@ export default function ClassWizard({
     return aff.id
   }
 
+  // PL-467: the first contact is OPTIONAL — a school can exist with no
+  // contact (the Schools panel already shows the honest "no active contact"
+  // state; nobody gets digests or room requests until one is added). If any
+  // contact field is typed, all three are required (never a half contact).
+  const contactTyped = Boolean(newSchool.contactFirst.trim() || newSchool.contactLast.trim() || newSchool.contactEmail.trim())
+  const contactComplete = Boolean(newSchool.contactFirst.trim() && newSchool.contactLast.trim() && newSchool.contactEmail.trim())
   const newSchoolComplete = Boolean(
-    newSchool.nickname.trim() &&
-      newSchool.name.trim() &&
-      newSchool.timezone &&
-      newSchool.contactFirst.trim() &&
-      newSchool.contactLast.trim() &&
-      newSchool.contactEmail.trim()
+    newSchool.nickname.trim() && newSchool.name.trim() && newSchool.timezone && (!contactTyped || contactComplete)
   )
 
   async function saveNewSchool() {
     if (!newSchoolComplete) {
-      setMessage('Error: a new school needs nickname, full name, timezone, and a contact.')
+      setMessage(
+        contactTyped && !contactComplete
+          ? 'Error: a contact needs first name, last name, and email — or leave all three blank to add the school without one.'
+          : 'Error: a new school needs a nickname, full name, and timezone.'
+      )
       return
     }
     if (newSchool.accentColor && !/^#[0-9a-fA-F]{6}$/.test(newSchool.accentColor)) {
@@ -401,17 +406,20 @@ export default function ClassWizard({
     // PL-428 sweep: the step-1 logo picker retired with PL-237 (branding
     // lives on step 4, where the thumbnail now shows what's on record) —
     // the unreachable upload branch went with it.
-    const affiliationId = await ensureContactAffiliation(data.id, {
-      first: newSchool.contactFirst,
-      last: newSchool.contactLast,
-      email: newSchool.contactEmail,
-    })
-    if (!affiliationId) return // school saved; contact error message already set
-    setMessage('')
+    let affiliationId: string | null = null
+    if (contactComplete) {
+      affiliationId = await ensureContactAffiliation(data.id, {
+        first: newSchool.contactFirst,
+        last: newSchool.contactLast,
+        email: newSchool.contactEmail,
+      })
+      if (!affiliationId) return // school saved; contact error message already set
+    }
+    setMessage(contactComplete ? '' : 'School saved with no contact yet — room requests, digests and the final-days push have nobody to email until one is added on the Schools panel.')
     onSchoolsChange()
     onContactsChange()
     setSchoolId(data.id)
-    setCounselorId(affiliationId)
+    if (affiliationId) setCounselorId(affiliationId)
     setAddingSchool(false)
     setNewSchool({
       nickname: '', name: '', timezone: '', contactFirst: '', contactLast: '',
@@ -1125,8 +1133,9 @@ export default function ClassWizard({
                   onChange={(tz) => setNewSchool({ ...newSchool, timezone: tz })}
                 />
                 <p className="text-xs text-gray-500">
-                  First contact at the school (required — room requests, digests, and the
-                  final-days push all need someone to email):
+                  First contact at the school (optional — leave blank to add the school alone;
+                  until someone is added, room requests, digests, and the final-days push have
+                  nobody to email):
                 </p>
                 <div className="grid grid-cols-3 gap-2">
                   <input
@@ -1160,7 +1169,7 @@ export default function ClassWizard({
                   disabled={!newSchoolComplete}
                   className="bg-hgl-slate text-white rounded-md py-2 px-4 font-semibold hover:opacity-90 disabled:opacity-50"
                 >
-                  Save school + contact
+                  {contactComplete ? 'Save school + contact' : 'Save school'}
                 </button>
               </div>
             )}

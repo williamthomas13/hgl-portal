@@ -22,11 +22,23 @@
 //   | --baseline-current              (explicitly: today's class schedule IS what they saw)
 //     [--all-paid | --all-pending]    (when the CSV has no paid column)
 //     [--by <staff email>] [--dry-run]
+//     [--records-only [--school <nickname>]]   PL-465 B: no --class; every row is
+//                  family + student + a dated note, nothing else (cancelled cohorts
+//                  whose class rows no longer exist). Unknown school → reported.
 //     [--silent]   PL-457: the class's comms stay in the previous system —
 //                  claim EVERY sequence step (not just the already-due ones)
 //                  and mute the enrollment so the portal never emails these
 //                  families; without it, behaviour is byte-identical to before.
 //
+// PL-465 mapping keys: "outcome" (enrolled | refunded | moved_to_tutoring |
+//   deferred | class_cancelled; default enrolled), "addonHours" + "addonAmount"
+//   ("Extra 1on1 Hours Paid" + what they paid for them — an add-on cannot be
+//   created "as paid" without a price on record: a row with hours but no
+//   amount gets its enrollment and a clear REFUSED line for the add-on),
+//   "accommodations" (→ the student's accommodations field), "school" (nickname
+//   per row, for --records-only sheets that mix schools).
+// PL-464 A: a row with NO parent email but a student email imports with the
+//   family keyed on the student's address (the profile shows the marker).
 // Mapping file: { "parentFirst": "Parent First Name", "parentLast": "...",
 //   "parentEmail": "Email", "studentFirst": "...", "studentLast": "...",
 //   "studentEmail": null, "graduatingYear": null, "paid": "Paid?",
@@ -37,6 +49,7 @@
 import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
@@ -61,13 +74,16 @@ const flag = (name) => {
 const has = (name) => args.includes(`--${name}`)
 const classRef = flag('class')
 const csvPath = flag('csv')
+const recordsOnly = has('records-only')
+const schoolFlag = typeof flag('school') === 'string' ? flag('school') : null
 const dryRun = has('dry-run')
 const silent = has('silent')
 const recordedBy = (typeof flag('by') === 'string' ? flag('by') : 'import-script').toLowerCase()
-if (!classRef || typeof classRef !== 'string' || !csvPath || typeof csvPath !== 'string') {
-  console.error('Need --class <id|slug> and --csv <file>.')
+if ((!recordsOnly && (!classRef || typeof classRef !== 'string')) || !csvPath || typeof csvPath !== 'string') {
+  console.error('Need --class <id|slug> (or --records-only) and --csv <file>.')
   process.exit(1)
 }
+if (recordsOnly && classRef) { console.error('--records-only takes no --class (these rows never sat in a class).'); process.exit(1) }
 
 // ---- CSV parse (RFC 4180-ish: quotes, embedded commas/newlines) ------------
 function parseCsv(text) {
@@ -114,6 +130,11 @@ const FIELDS = [
   ['registeredAt', /timestamp|registered|submitted|date/i, false],
   ['notes', /notes|comment/i, false],
   ['waitlist', /waitlist/i, false],
+  ['outcome', /outcome|status|what happened/i, false],
+  ['addonHours', /extra.*hours|1.?on.?1.*hours|addon.*hours/i, false],
+  ['addonAmount', /extra.*(amount|paid \$)|addon.*amount|hours.*amount/i, false],
+  ['accommodations', /accommodation/i, false],
+  ['school', /^school$|school nickname/i, false],
 ]
 
 let mapping = {}
@@ -163,21 +184,37 @@ const splitName = (full) => {
 const truthy = (v) => /^(y|yes|true|paid|x|1|complete|completed)$/i.test(String(v ?? '').trim())
 
 // ---- class + baseline ------------------------------------------------------
-const isUuid = /^[0-9a-f-]{36}$/i.test(classRef)
-const { data: cls } = await db
-  .from('classes')
-  .select('id, slug, class_type, status, price, capacity, timezone, default_location, school_id, schools ( nickname, timezone ), sessions ( session_date, start_time, end_time, location )')
-  .eq(isUuid ? 'id' : 'slug', classRef)
-  .maybeSingle()
-if (!cls) { console.error(`Class not found: ${classRef}`); process.exit(1) }
-if (cls.status === 'cancelled') { console.error('This class is cancelled — refusing to import into it.'); process.exit(1) }
-const school = Array.isArray(cls.schools) ? cls.schools[0] : cls.schools
-const tz = cls.timezone ?? school?.timezone ?? 'America/Denver'
-const label = `${school?.nickname ?? 'HGL'} ${cls.class_type}`
+const { data: schoolRows } = await db.from('schools').select('id, nickname, name, timezone')
+const schoolByNick = (nick) => (schoolRows ?? []).find((s) => s.nickname.toLowerCase() === String(nick ?? '').trim().toLowerCase()) ?? null
+let cls = null
+let school = null
+let tz = 'America/Denver'
+let label = 'HGL (records only)'
+if (!recordsOnly) {
+  const isUuid = /^[0-9a-f-]{36}$/i.test(classRef)
+  const { data: row } = await db
+    .from('classes')
+    .select('id, slug, class_type, status, price, capacity, timezone, default_location, school_id, schools ( nickname, timezone ), sessions ( session_date, start_time, end_time, location )')
+    .eq(isUuid ? 'id' : 'slug', classRef)
+    .maybeSingle()
+  if (!row) { console.error(`Class not found: ${classRef}`); process.exit(1) }
+  if (row.status === 'cancelled') { console.error('This class is cancelled — refusing to import into it.'); process.exit(1) }
+  cls = row
+  school = Array.isArray(cls.schools) ? cls.schools[0] : cls.schools
+  tz = cls.timezone ?? school?.timezone ?? 'America/Denver'
+  label = `${school?.nickname ?? 'HGL'} ${cls.class_type}`
+} else if (schoolFlag) {
+  school = schoolByNick(schoolFlag)
+  if (!school) { console.error(`Unknown school nickname "${schoolFlag}" — add the school first (Scarlett), never created by the import.`); process.exit(1) }
+  label = `${school.nickname} (records only)`
+}
 
 let baselineSessions, baselineLocation
 const baselinePath = typeof flag('baseline') === 'string' ? flag('baseline') : null
-if (baselinePath) {
+if (recordsOnly) {
+  baselineSessions = []
+  baselineLocation = null
+} else if (baselinePath) {
   const b = JSON.parse(readFileSync(baselinePath, 'utf8'))
   if (!Array.isArray(b.sessions) || b.sessions.length === 0 || b.sessions.some((s) => !s.session_date)) {
     console.error('Baseline file must carry sessions: [{session_date, start_time, end_time, location?}, …]')
@@ -195,7 +232,7 @@ if (baselinePath) {
   console.error('The schedule-change baseline is required: pass --baseline <file.json> (what these families were shown when they registered) or --baseline-current.')
   process.exit(1)
 }
-const snapshot = {
+const snapshot = recordsOnly ? null : {
   origin: 'registration',
   imported: true,
   first_session: baselineSessions.map((s) => s.session_date).sort()[0],
@@ -220,7 +257,7 @@ const require = createRequire(import.meta.url)
 const { upsertFamilyAndStudent } = require(path.join(out, 'registration.js'))
 const { SEQUENCE, stepTargetDate, isDue } = require(path.join(out, 'lifecycle.js'))
 
-const classSessions = [...(cls.sessions ?? [])].map((s) => s.session_date).sort()
+const classSessions = [...(cls?.sessions ?? [])].map((s) => s.session_date).sort()
 const firstSession = classSessions[0] ?? null
 const lastSession = classSessions[classSessions.length - 1] ?? firstSession
 const dueSteps = firstSession
@@ -238,28 +275,77 @@ const allPaid = has('all-paid')
 const allPending = has('all-pending')
 const summary = { rows: 0, created: 0, paid: 0, pending: 0, waitlisted: 0, skippedExisting: 0, skippedBad: 0, claims: 0 }
 const claimsPerPaidRow = 3 + claimSteps.length * 2 + (silent ? SILENT_EXTRA_KEYS.length : 0)
+// PL-465: outcomes. Anything not 'enrolled' never touches rosters/counts.
+const OUTCOMES = { enrolled: 'enrolled', refunded: 'refunded', refund: 'refunded', moved_to_tutoring: 'moved_to_tutoring', tutoring: 'moved_to_tutoring', '1on1': 'moved_to_tutoring', deferred: 'deferred', defer: 'deferred', class_cancelled: 'class_cancelled', cancelled: 'class_cancelled', canceled: 'class_cancelled' }
+const outcomeOf = (raw) => {
+  const k = String(raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (!k) return recordsOnly ? 'class_cancelled' : 'enrolled'
+  return OUTCOMES[k] ?? null
+}
+const OUTCOME_TEXT = {
+  refunded: 'registered and paid, then refunded',
+  moved_to_tutoring: 'registered, then moved to 1-on-1 tutoring instead of the class',
+  deferred: 'registered, then deferred to a future course',
+  class_cancelled: 'registered for a class that was cancelled',
+}
+const verdicts = []
+const totals = {}
+const bump = (k) => { totals[k] = (totals[k] ?? 0) + 1 }
+const noteHash = (s) => createHash('md5').update(s).digest('hex').slice(0, 10)
 console.log(
   silent
-    ? `\nImporting into ${label} (${cls.id}) — ${dataRows.length} CSV rows. SILENT: all ${SEQUENCE.length} sequence steps (×parent/student) + ${SILENT_EXTRA_KEYS.length} sweep keys will be claimed per Paid row (${claimsPerPaidRow} claim rows each) and the enrollment muted${dryRun ? ' [DRY RUN]' : ''}.\n`
-    : `\nImporting into ${label} (${cls.id}) — ${dataRows.length} CSV rows, ${dueSteps.length} sequence step(s) already due will be claimed per Paid row${dryRun ? ' [DRY RUN]' : ''}.\n`
+    ? `\nImporting into ${label} (${cls?.id ?? 'records only'}) — ${dataRows.length} CSV rows. SILENT: all ${SEQUENCE.length} sequence steps (×parent/student) + ${SILENT_EXTRA_KEYS.length} sweep keys will be claimed per Paid row (${claimsPerPaidRow} claim rows each) and the enrollment muted${dryRun ? ' [DRY RUN]' : ''}.\n`
+    : `\nImporting into ${label} (${cls?.id ?? 'records only'}) — ${dataRows.length} CSV rows, ${dueSteps.length} sequence step(s) already due will be claimed per Paid row${dryRun ? ' [DRY RUN]' : ''}.\n`
 )
 
 for (const row of dataRows) {
   summary.rows++
-  const parentEmail = (col(row, 'parentEmail') ?? '').toLowerCase()
+  let parentEmail = (col(row, 'parentEmail') ?? '').trim().toLowerCase()
+  const studentEmailRaw = (col(row, 'studentEmail') ?? '').trim().toLowerCase() || null
+  // PL-464 A: no parent email → the family is keyed on the student's address.
+  let usingStudentEmail = false
+  if (!parentEmail && studentEmailRaw) { parentEmail = studentEmailRaw; usingStudentEmail = true }
   let pFirst = col(row, 'parentFirst') ?? ''
   let pLast = col(row, 'parentLast') ?? ''
   if (!pFirst && mapping.parentName) ({ first: pFirst, last: pLast } = splitName(col(row, 'parentName')))
   let sFirst = col(row, 'studentFirst') ?? ''
   let sLast = col(row, 'studentLast') ?? ''
   if (!sFirst && mapping.studentName) ({ first: sFirst, last: sLast } = splitName(col(row, 'studentName')))
+  const rowLabel = `${sFirst || '?'} ${sLast || ''}`.trim()
   if (!parentEmail || !parentEmail.includes('@') || !sFirst) {
-    console.log(`  SKIP (missing parent email or student name): ${JSON.stringify(row.slice(0, 4))}`)
+    console.log(`  REFUSED (no parent email AND no student email, or no student name): ${JSON.stringify(row.slice(0, 4))}`)
+    verdicts.push({ row: summary.rows, who: rowLabel, outcome: '—', verdict: 'REFUSED', detail: 'neither a parent nor a student email, or no student name' })
     summary.skippedBad++
     continue
   }
   if (!pFirst) pFirst = parentEmail.split('@')[0]
   if (!sLast) sLast = pLast || '(unknown)'
+  const outcome = outcomeOf(col(row, 'outcome'))
+  if (!outcome) {
+    console.log(`  REFUSED (unknown outcome "${col(row, 'outcome')}"): ${rowLabel}`)
+    verdicts.push({ row: summary.rows, who: rowLabel, outcome: String(col(row, 'outcome')), verdict: 'REFUSED', detail: 'outcome must be enrolled | refunded | moved_to_tutoring | deferred | class_cancelled' })
+    summary.skippedBad++
+    continue
+  }
+  if (recordsOnly && (outcome === 'enrolled' || outcome === 'refunded')) {
+    console.log(`  REFUSED (--records-only cannot create enrollments; outcome "${outcome}"): ${rowLabel}`)
+    verdicts.push({ row: summary.rows, who: rowLabel, outcome, verdict: 'REFUSED', detail: '--records-only rows never sat in a class — use moved_to_tutoring / deferred / class_cancelled' })
+    summary.skippedBad++
+    continue
+  }
+  const rowSchool = col(row, 'school') ? schoolByNick(col(row, 'school')) : school
+  if (col(row, 'school') && !rowSchool) {
+    console.log(`  REFUSED (unknown school nickname "${col(row, 'school')}" — add it first, never created here): ${rowLabel}`)
+    verdicts.push({ row: summary.rows, who: rowLabel, outcome, verdict: 'REFUSED', detail: `unknown school "${col(row, 'school')}"` })
+    summary.skippedBad++
+    continue
+  }
+  const accommodations = (col(row, 'accommodations') ?? '').trim() || null
+  const addonHoursRaw = (col(row, 'addonHours') ?? '').trim()
+  const addonHours = addonHoursRaw && !isNaN(Number(addonHoursRaw)) && Number(addonHoursRaw) > 0 ? Number(addonHoursRaw) : null
+  const addonAmountRaw = (col(row, 'addonAmount') ?? '').replace(/[$,]/g, '').trim()
+  const addonAmount = addonAmountRaw && !isNaN(Number(addonAmountRaw)) ? Number(addonAmountRaw) : null
+  const sheetNote = (col(row, 'notes') ?? '').trim()
 
   const isWaitlist = mapping.waitlist ? truthy(col(row, 'waitlist')) : false
   const isPaid = !isWaitlist && (allPaid ? true : allPending ? false : mapping.paid ? truthy(col(row, 'paid')) : false)
@@ -267,11 +353,23 @@ for (const row of dataRows) {
   const registeredAtRaw = col(row, 'registeredAt')
   const registeredAt = registeredAtRaw && !isNaN(Date.parse(registeredAtRaw)) ? new Date(registeredAtRaw).toISOString() : null
   const amountRaw = col(row, 'paidAmount')
-  const amount = amountRaw && !isNaN(Number(amountRaw.replace(/[$,]/g, ''))) ? Number(amountRaw.replace(/[$,]/g, '')) : Number(cls.price)
+  const amount = amountRaw && !isNaN(Number(amountRaw.replace(/[$,]/g, ''))) ? Number(amountRaw.replace(/[$,]/g, '')) : Number(cls?.price ?? 0)
 
+  // Who would this match? (read-only — the same keys the upsert uses)
+  const { data: famHit } = await db.from('families').select('id, parent_first_name, parent_last_name, students ( id, first_name, last_name )').ilike('parent_email', parentEmail.replace(/[%_]/g, '\\$&')).maybeSingle()
+  const stuHit = famHit ? (famHit.students ?? []).find((st) => st.first_name.trim().toLowerCase() === sFirst.trim().toLowerCase() && st.last_name.trim().toLowerCase() === sLast.trim().toLowerCase()) ?? null : null
+  const matchNote = famHit ? `matches family ${famHit.parent_first_name ?? ''} ${famHit.parent_last_name ?? ''}${stuHit ? ` + existing student ${stuHit.first_name}` : ' (new student on it)'}` : 'new family + student'
+  const noteText = outcome === 'enrolled' ? null
+    : `[${new Date().toISOString().slice(0, 10)} import] ${OUTCOME_TEXT[outcome]}${cls ? ` — ${label}` : rowSchool ? ` — ${rowSchool.nickname}` : ''}${amountRaw && !isNaN(Number(amountRaw.replace(/[$,]/g, ''))) ? ` (paid $${Number(amountRaw.replace(/[$,]/g, ''))})` : isPaid && cls ? ` (paid $${amount})` : ''}${registeredAt ? `, registered ${registeredAt.slice(0, 10)}` : ''}.${sheetNote ? ` Sheet note: "${sheetNote}"` : ''}`
   if (dryRun) {
-    console.log(`  DRY: ${sFirst} ${sLast} (${parentEmail}) → ${status}${isPaid ? ` $${amount}` : ''}${registeredAt ? ` @ ${registeredAt.slice(0, 10)}` : ''}${isPaid ? ` — would claim ${claimsPerPaidRow} send keys${silent ? ' + mute' : ''}` : ''}`)
-    if (isPaid) summary.claims += claimsPerPaidRow
+    const what = outcome === 'enrolled'
+      ? `${status}${isPaid ? ` $${amount}` : ''}${isPaid ? ` · claim ${claimsPerPaidRow} keys${silent ? ' + mute' : ''}` : ''}${addonHours ? (addonAmount != null ? ` · add-on ${addonHours}h $${addonAmount} (as paid, source=import)` : ` · add-on ${addonHours}h REFUSED: no amount`) : ''}`
+      : outcome === 'refunded'
+        ? `enrollment Paid → Refunded (muted, ${claimsPerPaidRow} keys claimed) · note`
+        : `NO enrollment · note on the family record`
+    verdicts.push({ row: summary.rows, who: `${sFirst} ${sLast} (${parentEmail}${usingStudentEmail ? ', STUDENT address' : ''})`, outcome, verdict: 'would import', detail: `${what} · ${matchNote}${accommodations ? ' · accommodations set' : ''}` })
+    bump(outcome)
+    if (isPaid && outcome !== 'enrolled' ? false : isPaid) summary.claims += claimsPerPaidRow
     continue
   }
 
@@ -282,17 +380,38 @@ for (const row of dataRows) {
     studentFirst: sFirst,
     studentLast: sLast,
     studentEmail: (col(row, 'studentEmail') ?? '').toLowerCase() || null,
-    schoolId: cls.school_id ?? null,
+    schoolId: rowSchool?.id ?? cls?.school_id ?? null,
     graduatingYear: col(row, 'graduatingYear') || null,
     pronouns: null,
     // PL-419: a school-class import maps the school's timezone onto the
     // family (fill-only-when-null inside the upsert); an open class has no
     // derivable zone at import — stays unknown, never guessed.
-    timezone: cls.school_id ? (school?.timezone ?? null) : null,
+    timezone: rowSchool?.timezone ?? (cls?.school_id ? (school?.timezone ?? null) : null),
   })
   if ('error' in result) {
     console.error(`  FAIL ${parentEmail}: ${result.error}`)
+    verdicts.push({ row: summary.rows, who: rowLabel, outcome, verdict: 'FAILED', detail: result.error })
     summary.skippedBad++
+    continue
+  }
+  // PL-465 D: accommodations → the student's field the intake captures.
+  if (accommodations) await db.from('students').update({ special_needs: accommodations }).eq('id', result.studentId)
+  // PL-465 A: note-only outcomes — family + student + a dated note on the
+  // family's activity trail (rendered on the family profile under Recent
+  // activity — the existing staff-notes surface). NO enrollment.
+  if (noteText && outcome !== 'refunded') {
+    const { data: dup } = await db.from('family_fact_edits').select('id').eq('family_id', result.familyId).eq('summary', noteText).maybeSingle()
+    if (dup) {
+      verdicts.push({ row: summary.rows, who: rowLabel, outcome, verdict: 'skip', detail: `note already on record · ${matchNote}` })
+      summary.skippedExisting++
+      continue
+    }
+    const { error: nErr } = await db.from('family_fact_edits').insert({ family_id: result.familyId, student_id: result.studentId, actor: 'staff:import', summary: noteText })
+    if (nErr) { verdicts.push({ row: summary.rows, who: rowLabel, outcome, verdict: 'FAILED', detail: nErr.message }); summary.skippedBad++; continue }
+    verdicts.push({ row: summary.rows, who: rowLabel, outcome, verdict: 'noted', detail: `${matchNote} · note #${noteHash(noteText)}` })
+    bump(outcome)
+    summary.created++
+    console.log(`  ok (note only): ${rowLabel} — ${outcome}`)
     continue
   }
 
@@ -303,22 +422,29 @@ for (const row of dataRows) {
     .select('id, payment_status')
     .eq('student_id', result.studentId)
     .eq('class_id', cls.id)
-    .in('payment_status', ['Pending', 'Paid', 'Completed', 'Waitlisted'])
+    .in('payment_status', ['Pending', 'Paid', 'Completed', 'Waitlisted', 'Refunded'])
     .maybeSingle()
   if (existing) {
     console.log(`  skip (already ${existing.payment_status}): ${sFirst} ${sLast}`)
+    verdicts.push({ row: summary.rows, who: rowLabel, outcome, verdict: 'skip', detail: `already ${existing.payment_status} on this class · ${matchNote}` })
     summary.skippedExisting++
     continue
   }
+  // PL-465 A refunded: created as Paid then set Refunded through the SAME
+  // transition the roster's "mark Refunded" uses (Paid → Refunded, guarded),
+  // so capacity/waitlist/suppression behave identically. Always muted.
+  const refunded = outcome === 'refunded'
 
   const { data: enr, error: enrErr } = await db
     .from('enrollments')
     .insert([{
       student_id: result.studentId,
-      class_id: cls.id,
-      payment_status: status,
+      class_id: cls.id, // never reached in --records-only (note-only rows continue above)
+      payment_status: refunded ? 'Paid' : status,
       ...(registeredAt ? { enrolled_at: registeredAt } : {}),
-      ...(isPaid
+      ...(accommodations ? { accommodations } : {}),
+      ...(refunded ? { notes: noteText } : {}),
+      ...(isPaid || refunded
         ? {
             paid_at: registeredAt ?? new Date().toISOString(),
             amount_paid: amount,
@@ -330,7 +456,7 @@ for (const row of dataRows) {
       source_recorded_by: recordedBy,
       schedule_snapshot: snapshot,
       // PL-457: sendOnce refuses every send keyed on a muted enrollment.
-      comms_muted: silent,
+      comms_muted: silent || refunded,
     }])
     .select('id')
     .single()
@@ -343,7 +469,7 @@ for (const row of dataRows) {
   // NO emails — claim the whole confirmation flow and every already-due
   // sequence step (cancelled rows ARE the claim; sendOnce suppresses on
   // them, and the comms dashboard shows exactly why nothing went out).
-  if (status === 'Paid') {
+  if (status === 'Paid' || refunded) {
     const claimKeys = [
       `parent_confirmation:${enr.id}`,
       `student_confirmation:${enr.id}`,
@@ -368,10 +494,34 @@ for (const row of dataRows) {
     }
   }
 
+  if (refunded) {
+    const { error: rErr } = await db.from('enrollments').update({ payment_status: 'Refunded' }).eq('id', enr.id).in('payment_status', ['Paid', 'Completed'])
+    if (rErr) console.error(`  refund transition failed for ${rowLabel}: ${rErr.message}`)
+  }
+  // PL-465 C: the paid add-on — hours on the books, no Stripe, no QBO.
+  let addonLine = ''
+  if (addonHours && outcome === 'enrolled') {
+    if (addonAmount == null) {
+      addonLine = ` · add-on ${addonHours}h REFUSED: no amount mapped (an add-on cannot be recorded as paid without what was paid — map addonAmount)`
+    } else {
+      const { error: aErr } = await db.from('enrollment_addons').insert({
+        enrollment_id: enr.id, package_id: null, hours: addonHours, price_paid: addonAmount, source: 'import',
+        stripe_session_id: null, stripe_payment_intent_id: null, purchased_at: registeredAt ?? new Date().toISOString(),
+      })
+      addonLine = aErr ? ` · add-on FAILED: ${aErr.message}` : ` · add-on ${addonHours}h $${addonAmount} recorded (source=import, not in QBO)`
+    }
+  }
   summary.created++
-  summary[status === 'Paid' ? 'paid' : status === 'Waitlisted' ? 'waitlisted' : 'pending']++
-  console.log(`  ok: ${sFirst} ${sLast} (${parentEmail}) → ${status}`)
+  summary[refunded ? 'refunded' : status === 'Paid' ? 'paid' : status === 'Waitlisted' ? 'waitlisted' : 'pending'] = (summary[refunded ? 'refunded' : status === 'Paid' ? 'paid' : status === 'Waitlisted' ? 'waitlisted' : 'pending'] ?? 0) + 1
+  bump(outcome)
+  verdicts.push({ row: summary.rows, who: `${sFirst} ${sLast} (${parentEmail}${usingStudentEmail ? ', STUDENT address' : ''})`, outcome, verdict: refunded ? 'refunded' : 'enrolled', detail: `${refunded ? 'Paid → Refunded' : status}${isPaid ? ` $${amount}` : ''} · ${matchNote}${addonLine}${accommodations ? ' · accommodations set' : ''}` })
+  console.log(`  ok: ${sFirst} ${sLast} (${parentEmail}) → ${refunded ? 'Refunded' : status}${addonLine}`)
 }
+
+// PL-465 E: the verdict table + totals per outcome.
+console.log('\nRow | who | outcome | verdict | detail')
+for (const v of verdicts) console.log(`${String(v.row).padStart(3)} | ${v.who} | ${v.outcome} | ${v.verdict} | ${v.detail}`)
+console.log('Totals: ' + Object.entries(totals).map(([k, n]) => `${k}=${n}`).join(' · ') + (summary.skippedBad ? ` · refused=${summary.skippedBad}` : '') + (summary.skippedExisting ? ` · already-on-record=${summary.skippedExisting}` : ''))
 
 console.log(`\nDone. ${JSON.stringify(summary)}`)
 if (silent) console.log(`SILENT: all ${SEQUENCE.length} sequence steps claimed per Paid row (${summary.claims} claim rows ${dryRun ? 'would be ' : ''}written) — these enrollments are comms-muted; the portal will send their families nothing.`)

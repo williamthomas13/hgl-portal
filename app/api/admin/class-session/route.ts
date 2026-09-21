@@ -133,6 +133,8 @@ export async function POST(req: Request) {
       const pStatus = await sendOnce({
         dedupeKey: `su_bulk_p:${e.id}:${bulkHash}`,
         emailType: 'schedule_update',
+        enrollmentId: e.id,
+        classId: bundle.id,
         templateKey: 'SU_SCHEDULE_UPDATE',
         to: [ctx.parentEmail],
         subject: parent.subject,
@@ -147,6 +149,8 @@ export async function POST(req: Request) {
         const sStatus = await sendOnce({
           dedupeKey: `su_bulk_s:${e.id}:${bulkHash}`,
           emailType: 'schedule_update',
+          enrollmentId: e.id,
+          classId: bundle.id,
           templateKey: 'SU_SCHEDULE_UPDATE',
           to: [ctx.studentEmail],
           subject: student.subject,
@@ -299,6 +303,8 @@ export async function POST(req: Request) {
     const pStatus = await sendOnce({
       dedupeKey: `su_edit_p:${e.id}:${session.id}:${hash}`,
       emailType: 'schedule_update',
+      enrollmentId: e.id,
+      classId: bundle.id,
       templateKey: 'SU_SCHEDULE_UPDATE',
       to: [ctx.parentEmail],
       subject: parent.subject,
@@ -313,6 +319,8 @@ export async function POST(req: Request) {
       const sStatus = await sendOnce({
         dedupeKey: `su_edit_s:${e.id}:${session.id}:${hash}`,
         emailType: 'schedule_update',
+        enrollmentId: e.id,
+        classId: bundle.id,
         templateKey: 'SU_SCHEDULE_UPDATE',
         to: [ctx.studentEmail],
         subject: student.subject,

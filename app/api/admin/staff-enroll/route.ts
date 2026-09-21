@@ -123,10 +123,12 @@ async function create(caller: { email: string }, body: any) {
   const classId = String(body.classId ?? '').trim()
   const parentFirst = String(body.parentFirst ?? '').trim()
   const parentLast = String(body.parentLast ?? '').trim()
-  const parentEmail = String(body.parentEmail ?? '').trim().toLowerCase()
   const studentFirst = String(body.studentFirst ?? '').trim()
   const studentLast = String(body.studentLast ?? '').trim()
   const studentEmail = String(body.studentEmail ?? '').trim().toLowerCase() || null
+  // PL-464 A: no parent email known → the family is keyed on the student's
+  // address (ONE column, one identity path); the profile shows the marker.
+  const parentEmail = String(body.parentEmail ?? '').trim().toLowerCase() || studentEmail || ''
   if (!classId || !parentFirst || !parentLast || !parentEmail || !studentFirst || !studentLast) {
     return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
   }

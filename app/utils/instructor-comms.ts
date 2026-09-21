@@ -9,8 +9,13 @@ import { createHash } from 'crypto'
 import { createGcalEvent, deleteGcalEvent, loadGcalConnection, patchGcalEvent } from './gcal'
 
 // PL-78/PL-79: instructors stop being out of the loop. Every send and every
-// calendar event here is gated on instructors.comms_enabled — the explicit
-// per-instructor switch that reproduces the batch-11 safety gate (the doc
+// calendar event here is gated on the instructor's pref_class_digests
+// preference ('off' = nothing; the old instructors.comms_enabled column was
+// DROPPED in PL-327) AND on the class being one the portal actually runs —
+// PL-463 instructorQuietReason(): a cancelled class, a class whose last
+// session has passed, a records-only class (every paid enrollment is a
+// comms-muted cutover import), or a class already running with no portal
+// enrollments at all gets NO instructor send and NO calendar write (the doc
 // assumed no emails were on file; login emails exist, so the switch is the
 // real opt-in, and flipping it on is the one-time idempotent backfill
 // moment). Everything is dedupe-keyed, so the hourly cron re-running is the
@@ -34,7 +39,24 @@ export type ClassInstructor = {
  *  preferences — or null when digests are OFF (which also stops the class
  *  calendar events, the same coupling the old comms_enabled toggle had).
  *  Callers gate finer sends on the returned prefs. */
+/** PL-463: why the portal must stay QUIET toward this class's instructor —
+ *  null = a live, portal-run class. Derived from the bundle, no column:
+ *  once-per-class sends carry only a dedupe key (the purge proved it — the
+ *  hourly sweep re-welcomed MIS two weeks into its run the moment the send
+ *  log was empty), so the guard has to be a state, not a memory. */
+export function instructorQuietReason(bundle: ClassBundle, today: string = localDate(bundle.timezone)): string | null {
+  if (bundle.status === 'cancelled') return 'class cancelled'
+  if (bundle.lastSession && today > bundle.lastSession) return 'class ended (last session has passed)'
+  const paid = bundle.enrollments.filter((e) => e.payment_status === 'Paid' || e.payment_status === 'Completed')
+  if (paid.length > 0 && paid.every((e) => e.commsMuted)) return 'records-only class (every paid enrollment is a comms-muted import)'
+  if (paid.length === 0 && bundle.firstSession && today >= bundle.firstSession) return 'class already running with no portal enrollments (a records-only class before its import lands)'
+  return null
+}
+
 export async function loadClassInstructor(bundle: ClassBundle): Promise<ClassInstructor | null> {
+  // PL-463: every instructor send funnels through here — quiet classes get
+  // no instructor object, so nothing downstream can send.
+  if (instructorQuietReason(bundle)) return null
   if (!bundle.instructorId) return null
   const { data } = await supabase
     .from('instructors')
@@ -435,6 +457,7 @@ export async function sendMinEnrollmentDecisionNote(
   decision: 'run_anyway' | 'extend',
   opts: { newDeadline?: string | null; decidedAt?: string } = {}
 ): Promise<'sent' | 'duplicate' | 'failed' | 'suppressed' | 'skipped'> {
+  if (instructorQuietReason(bundle)) return 'skipped' // PL-463
   if (!bundle.instructorId) return 'skipped'
   const { data } = await supabase
     .from('instructors')
@@ -513,6 +536,10 @@ export async function sendMinEnrollmentDecisionNote(
 // ---------------------------------------------------------------------------
 
 export async function syncInstructorClassCalendar(bundle: ClassBundle): Promise<void> {
+  // PL-463: a quiet class gets NO calendar write of any kind — not a create,
+  // not a patch, and not the reassignment DELETE either (a running class the
+  // portal doesn't drive keeps whatever its instructor already has).
+  if (instructorQuietReason(bundle)) return
   const conn = await loadGcalConnection()
   if (!conn?.key || conn.status !== 'connected') return
   const instructor = bundle.status === 'cancelled' ? null : await loadClassInstructor(bundle)
