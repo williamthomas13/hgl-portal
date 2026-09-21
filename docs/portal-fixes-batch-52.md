@@ -1,12 +1,12 @@
-# Portal fixes — batch 52 (CLOSED for hand-off Sep 21, 2026 — Scarlett's public-page walkthrough, 8 items, PL-478…485)
+# Portal fixes — batch 52 (CLOSED for hand-off Sep 21, 2026 — Scarlett's public-page walkthrough, 10 items, PL-478…487)
 
 **Standing rules:** all prior, incl. the PL-460 CTA rule.
 
-(Opened + closed Sep 21, 2026 while Code was still finishing batch 51. Next PL: PL-486. **This file is UNTRACKED — Claude did not commit because Code's tree was dirty; Code: commit it as-is as your first step, before any edits.**)
+(Opened + closed Sep 21, 2026 while Code was still finishing batch 51. Next PL: PL-488. **This file is UNTRACKED — Claude did not commit because Code's tree was dirty; Code: commit it as-is as your first step, before any edits.**)
 
 **ORDER: finish + close batch 51 FIRST (the DNS flip waits on PL-471 / 470 / 472 / 474).** Then this batch. Several items here touch surfaces batch 51 just built — PL-470's in-progress page, PL-472's copy, PL-473/477's embeds: apply these changes ON TOP of them, don't fork. Within this batch: PL-485 + PL-480 + PL-482 (small copy/state fixes) → PL-484 → PL-479 → PL-483 → PL-481 → PL-478 (largest). Scarlett's walkthrough verdict otherwise: /login fine, pipeline fine, pages look good.
 
-**Standing note until Oct 16 (Scarlett asked for this to be recorded):** Claude pre-cancelled six `T5_TIMECARD_READY` emails on prod on Sep 21 — cancelled `email_sends` rows with dedupe keys `t5_timecard:{tutor}:2026-09-16` (period Sep 16–30, email due ~Oct 1) and `t5_timecard:{tutor}:2026-10-01` (period Oct 1–15, email due ~Oct 16) for **Gwen De Silva `60ca44b9…`, Kevin Marren `d43e5756…`, Rebecca Baumher `1f50c13f…`** — because their records-only classes (SLS / MIS / Leone XIII / ASF) would otherwise generate class-hours timecard emails. **Side effect:** if tutoring is tested in the portal with any of those three tutors before Oct 16, their "timecard ready" email for those two periods will NOT send (the timecard itself is still built and visible in admin). To restore: delete those six cancelled rows (or test with a different tutor). PL-471 (batch 51) replaces this stop-gap; once it's on prod and verified, Claude removes the six rows.
+**Timecard stop-gap RETIRED Sep 21 (evening):** batch 51 verified by Claude on prod — `project-sends.mjs` shows 0 projected actions for the next 30 days with all four records-only classes named quiet — so Claude REMOVED the six pre-claimed `t5_timecard` rows (Gwen / Kevin / Rebecca × 2026-09-16, 2026-10-01; snapshot in `scripts/.tmp-removed-t5-preclaims-2026-09-21.json`). Tutoring can be tested with any tutor; timecard emails behave normally.
 
 ## PL-478 — Public pages get the main site's header + footer, so nobody is stranded (Scarlett, walkthrough Sep 21)
 "Should there be a top menu that mimics the main site so that they're not stranded?" Yes. Every PUBLIC portal page (`/classes`, `/{code}`, `/c/{slug}`, `/{code}/register` + the register flow, `/team` + bios, `/inquire`, `/partner`, `/compass`, the closed / in-progress / no-upcoming-class states, waitlist/survey/unsubscribe public pages) renders a shared site header and footer that mirror highergroundlearning.com:
@@ -71,4 +71,10 @@ Class/code pages and their state cards show the school's logo; when a school has
 
 ## PL-485 — CTA wording pass (Scarlett, walkthrough Sep 21)
 "Talk to us — free consultation" → **"Schedule a free consultation"** everywhere it appears on public pages (class closed / in-progress / no-upcoming cards, class page footer CTA, /team) — EXCEPT the /classes page button, which Scarlett set to **"Talk to us"** (PL-479). One shared constant; list the sites changed.
+
+## Addendum after the batch-51 verification (Claude, Sep 21 evening)
+- **Numbering:** the batch-51 close proposes a timecard `void` status "as a PL-478 candidate" — PL-478 is taken (public header). It is **PL-486** below.
+- **PL-486 — Timecards can be voided.** No void/delete transition exists, so the three Sep 1–15 class-hours cards (Gwen 6h, Kevin 7.25h, Rebecca 6h) + Billy's 6h MIS-placeholder card sit `open` forever and would read as payable hours in any payroll view. Add `void` (admin-only, reason required, excluded from totals/exports/approval queues, never re-created or re-announced by the sweep, visible in history) and void those four with reason "records-only class — paid outside the portal".
+- **PL-487 — Scripts tolerate a failed temp-dir cleanup.** `project-sends.mjs`, `import-class-registrations.mjs` (and any sibling using `rmSync` on a `.tmp-*` build dir) crash with EPERM at the END of an otherwise successful run inside Claude's sandboxed shell (it cannot delete files). Wrap the cleanup in try/catch + a one-line warning, and build into a fresh `mkdtemp` dir each run instead of `rmSync`-ing a fixed path at the start (that start-of-run delete is what blocked the importer outright). Exit code must reflect the real work, not the cleanup.
+- **For Scarlett (not Code):** review-send the two new drafts `IQ_INQUIRY_ACK` + `PT_PARTNER_ACK`; supply the Compass welcome content; decide required fields per inquiry embed; eight stale MIS session events remain on Billy's Google calendar (hand sweep); the International Classes calendar stays ungated (it is unconfigured — no veto needed until someone sets `intl_classes_calendar_id`).
 
