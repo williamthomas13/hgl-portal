@@ -64,7 +64,7 @@ export default async function ClassesBrowsePage({
     .select(
       `id, slug, class_type, status, price, capacity, delivery_mode, default_location, timezone,
        display_cities, registration_close_date, start_date, course_key, school_id,
-       schools ( name, nickname, city, timezone, logo_url ),
+       schools ( name, nickname, city, timezone, logo_url, evergreen_code ),
        sessions ( session_date, start_time, end_time ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )
@@ -87,6 +87,10 @@ export default async function ClassesBrowsePage({
     })
     const taken = spotsTakenRaw((c.enrollments as Slot[]) ?? [])
     const seatsLeft = c.capacity != null ? Math.max(0, Number(c.capacity) - taken) : null
+    // PL-476: a city label that is REALLY a city — school city / display
+    // cities / a postal address — or nothing. The timezone's city is never
+    // presented as the school's (Leone XIII read "Rome"; it is in Milan).
+    const honestCity = (school?.city ?? '').trim() || (c.display_cities ? city : null) || null
     return {
       id: c.id,
       slug: c.slug,
@@ -94,9 +98,11 @@ export default async function ClassesBrowsePage({
       courseKey: c.course_key ?? null,
       label: school ? `${school.name} ${c.class_type} Class` : String(c.class_type),
       school,
+      schoolCode: school?.evergreen_code ?? null,
       online: c.delivery_mode === 'online',
-      city,
+      city: honestCity ?? (school ? null : city),
       firstSession,
+      lastSession,
       registerable: Boolean(close) && todayInZone <= close,
       past: todayInZone > String(lastSession ?? '').slice(0, 10),
       full: seatsLeft != null && seatsLeft <= 0,
@@ -115,9 +121,24 @@ export default async function ClassesBrowsePage({
   const upcoming = rowsWithHrefs
     .filter((c) => c.registerable && !c.past)
     .sort((a, b) => String(a.firstSession).localeCompare(String(b.firstSession)))
-  const past = rowsWithHrefs
-    .filter((c) => c.past || !c.registerable)
-    .sort((a, b) => String(b.firstSession).localeCompare(String(a.firstSession)))
+  // PL-470: registration closed, sessions still ahead — under way.
+  const inProgress = rowsWithHrefs
+    .filter((c) => !c.registerable && !c.past)
+    .sort((a, b) => String(a.firstSession).localeCompare(String(b.firstSession)))
+  // PL-476: "Recent classes" = ENDED classes that actually ran (the query is
+  // status='open' — cancelled cohorts never enter), newest first, one line
+  // per class: school name · city · month/year, linking to the school's code
+  // page (the PL-472 interest state). Records-only and backfilled classes
+  // count — they are real history. The city is the SCHOOL's own city (or the
+  // class's display cities); never the timezone's city dressed up as one.
+  const RECENT_CAP = 12
+  const recentAll = rowsWithHrefs
+    .filter((c) => c.past)
+    .sort((a, b) => String(b.lastSession).localeCompare(String(a.lastSession)))
+  const recent = recentAll.slice(0, RECENT_CAP)
+  const moreSchools = new Set(recentAll.slice(RECENT_CAP).map((c) => c.school?.name ?? c.label)).size
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const monthYear = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1] ?? ''} ${iso.slice(0, 4)}`
     .slice(0, 6)
 
   const cities = [...new Set(upcoming.map((c) => c.city).filter(Boolean))].sort()
@@ -222,17 +243,41 @@ export default async function ClassesBrowsePage({
           </div>
         )}
 
-        {past.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-lg font-bold text-hgl-slate mb-3">Recent classes</h2>
-            <ul className="space-y-1 text-sm text-gray-500">
-              {past.map((c) => (
+        {inProgress.length > 0 && (
+          <div className="mt-12" data-testid="in-progress-classes">
+            <h2 className="text-lg font-bold text-hgl-slate mb-3">In progress</h2>
+            <ul className="space-y-1 text-sm text-gray-600">
+              {inProgress.map((c) => (
                 <li key={c.id}>
-                  {c.label}
-                  {c.city ? ` — ${c.city}` : ''}
+                  <a href={c.pageHref} className="text-hgl-blue underline">{c.label}</a>
+                  {c.city ? ` — ${c.city}` : ''} · under way, registration closed
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {recent.length > 0 && (
+          <div className="mt-12" data-testid="recent-classes">
+            <h2 className="text-lg font-bold text-hgl-slate mb-3">Recent classes</h2>
+            <ul className="space-y-1 text-sm text-gray-500">
+              {recent.map((c) => {
+                const line = `${c.school?.name ?? c.label}${c.city ? ` · ${c.city}` : ''} · ${monthYear(String(c.lastSession))}`
+                return (
+                  <li key={c.id}>
+                    {c.schoolCode ? (
+                      <a href={`/${c.schoolCode}`} className="hover:text-hgl-blue underline">{line}</a>
+                    ) : (
+                      line
+                    )}
+                    {c.school ? ` — ${c.school.nickname} ${String(c.label).replace(`${c.school.name} `, '').replace(' Class', '')}` : ''}
+                  </li>
+                )
+              })}
+            </ul>
+            {moreSchools > 0 && (
+              <p className="mt-2 text-sm text-gray-400">and {moreSchools} more school{moreSchools === 1 ? '' : 's'}</p>
+            )}
           </div>
         )}
 

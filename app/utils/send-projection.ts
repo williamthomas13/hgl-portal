@@ -140,7 +140,8 @@ export async function projectSends(opts: { hours: number; now?: Date; classId?: 
     const today = localDate(tz, now)
     const days = localDaysIn(tz, now, to)
     // Cancelled / 30-day-dead: the sweep `continue`s past the class entirely.
-    if (b.status === 'cancelled' || today > addDaysISO(b.lastSession, 30)) continue
+    if (b.status === 'cancelled') { report.quiet.push({ classId: b.id, classLabel: label(b), reason: 'class cancelled' }); continue }
+    if (today > addDaysISO(b.lastSession, 30)) { report.quiet.push({ classId: b.id, classLabel: label(b), reason: 'class ended more than 30 days ago (the sweep skips it entirely)' }); continue }
 
     // ---- family: the Feature-A projector, same rows the Upcoming tab lists
     const tier = classTutoringTier({ school_id: b.schoolId, delivery_mode: b.deliveryMode })
