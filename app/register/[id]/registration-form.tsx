@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import SessionCalendar from '../../components/SessionCalendar'
 import { ClassNotFound, PublicNoticeCard } from '../../components/PublicNotice'
 import InterestCapture from '../../components/InterestCapture'
+import { CLASS_FULL_HEADING, CLASS_FULL_NOTE } from '../../utils/class-full-copy'
 import { bySessionStart, formatDateOnly, publicTimeCityLabel } from '../../utils/dates'
 import { renderSiteMarkdown } from '../../utils/site-md'
 
@@ -30,7 +31,7 @@ type ClassDetails = {
   /** PL-353: an online class's own city list for time labels. */
   display_cities?: string | null
   delivery_mode?: string | null
-  schools: { name: string; nickname: string; timezone: string | null; city?: string | null } | null
+  schools: { name: string; nickname: string; timezone: string | null; city?: string | null; logo_url?: string | null } | null
   sessions: SessionRow[] | null
   isFull: boolean
   /** Cancelled classes render as full with no waitlist (PHASE4_SPEC §12). */
@@ -41,6 +42,8 @@ type ClassDetails = {
   /** PL-293: the class's marketing page (Squarespace). */
   /** PL-384: the class's own page (permanent code URL when it resolves). */
   page_path?: string | null
+  /** PL-480: the one full-class wording (waitlist-note block). */
+  waitlist_note?: { heading: string; body: string } | null
   /** PL-279: the emailed link's auto-applied cohort discount. */
   followOnDiscount?: { amount: number; code: string; endDate: string } | null
   /** PL-279: plain-English note when the link's discount no longer applies. */
@@ -97,7 +100,7 @@ function hoursWord(n: number) {
 // PL-384: the form itself takes idOrSlug as a prop so the evergreen
 // /{code}/register route can serve THE SAME registration form in place —
 // the /register/{id} page below stays the direct address.
-export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
+export function RegistrationForm({ idOrSlug, header = null, compactHeader = null }: { idOrSlug: string; header?: React.ReactNode; compactHeader?: React.ReactNode }) {
 
   const [notFound, setNotFound] = useState(false)
   // PL-60: an expired resume-payment link redirects here with ?expired=1 —
@@ -410,9 +413,9 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
   // site — deliberately not a cancellation notice (PHASE4_SPEC §12).
   if (classDetails.cancelled) {
     return (
-      <PublicNoticeCard title="This class is full">
-        The {classLabel} class is not accepting new registrations. Upcoming classes are listed
-        on our main site.
+      <PublicNoticeCard header={header} title="This class is full" schoolLogo={classDetails.schools?.logo_url ?? null} schoolName={classDetails.schools?.name ?? null}>
+        The {classLabel} class is not accepting new registrations.{' '}
+        <a href="/classes" className="text-hgl-blue underline font-semibold">View our upcoming classes.</a>
         {/* PL-54b: demand capture — hear first when the next one opens */}
         <InterestCapture classId={classDetails.id} schoolNickname={schoolLabel} classType={classDetails.class_type} />
       </PublicNoticeCard>
@@ -423,9 +426,23 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
   // registration_close_date overrides per class (e.g. allow joining
   // through session 3).
   const registrationClose = classDetails.registration_close_date ?? firstSession
+  const daysPastClose = Math.round((Date.parse(today) - Date.parse(String(registrationClose).slice(0, 10))) / 86_400_000)
+  const fullNote = classDetails.waitlist_note ?? { heading: CLASS_FULL_HEADING, body: CLASS_FULL_NOTE }
+  // PL-480 state ③: FULL and the deadline passed within a week — this must not
+  // read like "you missed it": HGL's additional-section wording + the interest
+  // capture (the waitlist API refuses joins after the close date — 410 — so
+  // the join form is gone; the interest list is the honest door).
+  if (today > registrationClose && classDetails.isFull && !classDetails.cancelled && daysPastClose <= 7) {
+    return (
+      <PublicNoticeCard header={header} title={fullNote.heading} schoolLogo={classDetails.schools?.logo_url ?? null} schoolName={classDetails.schools?.name ?? null}>
+        <span data-testid="state-full-closed">{fullNote.body}</span>
+        <InterestCapture classId={classDetails.id} schoolNickname={schoolLabel} classType={classDetails.class_type} />
+      </PublicNoticeCard>
+    )
+  }
   if (today > registrationClose) {
     return (
-      <PublicNoticeCard title="Registration for this class has closed">
+      <PublicNoticeCard header={header} title="Registration for this class has closed" schoolLogo={classDetails.schools?.logo_url ?? null} schoolName={classDetails.schools?.name ?? null}>
         Registration for the {classLabel} class is no longer open.{' '}
         {/* PL-470: while the class is under way, the class page (schedule, venue,
             calendar) is the useful place — link back to it. */}
@@ -434,7 +451,7 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
             See the class page — schedule, venue and calendar →
           </a>
         ) : (
-          'Upcoming classes are listed on our main site.'
+          <a href="/classes" className="text-hgl-blue underline font-semibold">View our upcoming classes.</a>
         )}
         {/* PL-54b: demand capture — hear first when the next one opens */}
         <InterestCapture classId={classDetails.id} schoolNickname={schoolLabel} classType={classDetails.class_type} />
@@ -732,7 +749,9 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
 
   if (waitlistPosition !== null) {
     return (
-      <div className="min-h-screen bg-gray-50 p-10">
+      <div className="min-h-screen bg-gray-50">
+        {header}
+        <div className="p-10">
         <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
           <h1 className="text-2xl font-bold text-hgl-slate mb-4">You&apos;re on the waitlist</h1>
           <p className="text-gray-700">
@@ -741,12 +760,16 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
             confirmation. If a spot opens, you&apos;ll get a payment link with 48 hours to claim it.
           </p>
         </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-10">
+    <div className="min-h-screen bg-gray-50">
+      {/* PL-478: full site header on step 1; the add-on / checkout-focus step keeps logo-only + Back. */}
+      {viewPage === 'addons' ? compactHeader : header}
+      <div className="p-6 sm:p-10">
       <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue">
         <h1 className="text-2xl font-bold text-hgl-slate mb-4">
           {isFull ? 'Join the Waitlist' : 'Registration'}
@@ -762,8 +785,9 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
         {classHeader}
         {isFull && (
           <>
-            <p className="mb-2 text-sm bg-yellow-50 text-yellow-800 rounded p-3">
-              This class is currently full. Join the waitlist (no payment now) and we&apos;ll email
+            {/* PL-480 state ②: HGL's additional-section wording (ONE source) above the waitlist join. */}
+            <p className="mb-2 text-sm bg-yellow-50 text-yellow-800 rounded p-3" data-testid="state-full-open">
+              <strong>{fullNote.heading}.</strong> {fullNote.body} Join the waitlist below (no payment now) and we&apos;ll email
               you a payment link if a spot opens — first come, first served.
             </p>
             {/* PL-54b: the lighter option — hear about the NEXT course instead */}
@@ -945,6 +969,7 @@ export function RegistrationForm({ idOrSlug }: { idOrSlug: string }) {
             {message}
           </div>
         )}
+      </div>
       </div>
     </div>
   )

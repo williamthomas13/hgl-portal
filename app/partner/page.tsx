@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import { publicSkin } from '../components/public-skin'
 import PublicEmbedForm from '../components/PublicEmbedForm'
 import { loadContactInfo } from '../utils/tutoring-emails'
+import SiteHeader from '../components/SiteHeader'
+import SiteFooter from '../components/SiteFooter'
 
 // PL-477: the school-partnership inquiry (today: the /examzen "Get started
 // with Higher Ground" form). Lands as a lead of kind 'school' — its own lane
@@ -16,7 +18,9 @@ export default async function PartnerPage({ searchParams }: { searchParams: Prom
   const { source } = await searchParams
   const contact = await loadContactInfo()
   return (
-    <div className={`min-h-screen bg-gray-50 py-10 px-4 ${publicSkin}`}>
+    <div className={`min-h-screen bg-gray-50  ${publicSkin}`}>
+      <SiteHeader />
+      <div className="py-10 px-4">
       <div className="max-w-xl mx-auto space-y-6">
         <div className="bg-white rounded-lg shadow-md border-t-4 border-hgl-blue p-8" data-testid="partner-form">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -32,6 +36,8 @@ export default async function PartnerPage({ searchParams }: { searchParams: Prom
           A family looking for tutoring or a class? <a href="/inquire?source=portal:/partner" className="text-hgl-blue underline">Use the inquiry form instead →</a>
         </p>
       </div>
+      </div>
+      <SiteFooter />
     </div>
   )
 }

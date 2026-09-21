@@ -1,4 +1,5 @@
 import { verifyUnsubscribeToken, suppressEmail } from '../../utils/campaigns'
+import SiteHeader from '../../components/SiteHeader'
 
 // PL-201: the visible unsubscribe page — tokenized, no login, GET-safe (the
 // PL-125 lesson: prefetchers follow GETs, so the opt-out itself is a POST via
@@ -27,7 +28,9 @@ export default async function UnsubscribePage({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <SiteHeader />
+      <div className="flex-1 flex items-center justify-center p-6">
       <div className="bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center">
         {!email ? (
           <>
@@ -64,6 +67,7 @@ export default async function UnsubscribePage({
             </form>
           </>
         )}
+      </div>
       </div>
     </div>
   )

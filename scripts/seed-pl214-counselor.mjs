@@ -10,6 +10,18 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+import { mkdtempSync } from 'node:fs'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -23,8 +35,9 @@ for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
 // --- 1) CS_CLASS_CONFIRMED from the seed file ------------------------------
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-seed-pl214')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-seed-pl214-'))
 execSync(
   `npx tsc app/utils/comms-template-seed.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node`,
   { stdio: 'inherit' }
@@ -136,4 +149,4 @@ if (cdv.body_markdown.includes('See live counts and scores')) {
   console.log(`published CD_COUNSELOR_DIGEST v${nextNumber} (live=${cd.live}) — only change: the portal line`)
 }
 
-rmSync(out, { recursive: true, force: true })
+safeRm(out)

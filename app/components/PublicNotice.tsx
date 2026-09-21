@@ -4,22 +4,32 @@
 // card offers the main site as the way out.
 
 import { publicSkin } from './public-skin'
+import BrandLockup from './BrandLockup'
 
 export const MAIN_SITE = 'https://www.highergroundlearning.com'
 
 export function PublicNoticeCard({
   title,
   children,
+  schoolLogo = null,
+  schoolName = null,
+  header = null,
 }: {
   title: string
   children: React.ReactNode
+  /** PL-483: the school's logo for the HGL × school lockup on the card header. */
+  schoolLogo?: string | null
+  schoolName?: string | null
+  /** PL-478: the site header, passed in as a node (this card renders inside client components). */
+  header?: React.ReactNode
 }) {
   return (
-    <div className={`min-h-screen bg-gray-50 flex items-center justify-center p-10 ${publicSkin}`}>
-      <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
-        {/* PL-415: logo on the notice card — explicit dims, no layout shift. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/collateral/hgl-logo-color.png" alt="Higher Ground Learning" width={71} height={40} className="h-10 w-auto mx-auto mb-4" />
+    <div className={`min-h-screen bg-gray-50 flex flex-col ${publicSkin}`}>
+      {header}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
+      <div className="max-w-xl w-full mx-auto bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
+        {/* PL-415/483: the brand lockup on the notice card — explicit dims, no layout shift. */}
+        <BrandLockup schoolLogo={schoolLogo} schoolName={schoolName} className="justify-center mb-4" />
         <h1 className="text-2xl font-bold text-hgl-slate mb-4">{title}</h1>
         <p className="text-gray-600 mb-6">{children}</p>
         <a
@@ -28,6 +38,7 @@ export function PublicNoticeCard({
         >
           Back to Higher Ground Learning
         </a>
+      </div>
       </div>
     </div>
   )

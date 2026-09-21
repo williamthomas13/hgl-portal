@@ -10,6 +10,18 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+import { mkdtempSync } from 'node:fs'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -22,8 +34,9 @@ const env = Object.fromEntries(
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 delete process.env.RESEND_API_KEY // no emails, ever, from this harness
 
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-regress-covnote')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-regress-covnote-'))
 execSync(
   `npx tsc app/utils/coverage.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`,
   { stdio: 'inherit' }
@@ -154,7 +167,7 @@ try {
   for (const id of cleanup.families) await db.from('families').delete().eq('id', id)
   for (const id of cleanup.instructors) await db.from('instructors').delete().eq('id', id)
   for (const id of cleanup.subjects) await db.from('subjects').delete().eq('id', id)
-  rmSync(out, { recursive: true, force: true })
+  safeRm(out)
   console.log('cleanup done')
 }
 process.exit(failures === 0 ? 0 : 1)

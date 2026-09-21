@@ -16,6 +16,17 @@ import { execSync } from 'node:child_process'
 import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 let failures = 0
 const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`)
@@ -125,7 +136,7 @@ try {
   }
   check(`scanned ${alerts} staff alerts`, alerts > 40)
 } finally {
-  rmSync(build, { recursive: true, force: true })
+  safeRm(build)
 }
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)

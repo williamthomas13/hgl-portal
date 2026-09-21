@@ -1,4 +1,5 @@
 import { PublicNoticeCard } from '../components/PublicNotice'
+import SiteHeader from '../components/SiteHeader'
 
 // PL-70b: the friendly landing for tokenized GET links that fail — humans hit
 // invalid links all the time (truncated URLs, forwarded emails), and raw JSON
@@ -13,7 +14,7 @@ export default async function LinkHelpPage({
   const { reason } = await searchParams
   if (reason === 'offer-expired') {
     return (
-      <PublicNoticeCard title="This offer has ended">
+      <PublicNoticeCard header={<SiteHeader />} title="This offer has ended">
         The spot we offered has been passed to the next family in line — offers hold for 48 hours
         so nobody loses class days waiting. You&apos;re still on our list, and if another spot
         opens you&apos;ll hear from us right away. Questions? Just reply to any of our emails.
@@ -25,7 +26,7 @@ export default async function LinkHelpPage({
   // happened and hands them a person, never a bare error.
   if (reason === 'expired') {
     return (
-      <PublicNoticeCard title="This link has aged out">
+      <PublicNoticeCard header={<SiteHeader />} title="This link has aged out">
         Links in our emails stay active for a few months and then retire themselves, so an old
         message can&apos;t be used later by someone it was forwarded to. Nothing is wrong with
         your account. Reply to any of our emails and we&apos;ll send you a fresh link right
@@ -35,14 +36,14 @@ export default async function LinkHelpPage({
   }
   if (reason === 'addon-ended') {
     return (
-      <PublicNoticeCard title="That offer has ended">
+      <PublicNoticeCard header={<SiteHeader />} title="That offer has ended">
         The discounted pre-class tutoring offer closes when class starts. 1-on-1 tutoring is still
         very much available — just reply to any of our emails and we&apos;ll set it up together.
       </PublicNoticeCard>
     )
   }
   return (
-    <PublicNoticeCard title="That link didn't work">
+    <PublicNoticeCard header={<SiteHeader />} title="That link didn't work">
       The link looks incomplete or out of date — email apps sometimes trim long links, and
       forwarded emails can break them. Try the button in the original email again, or simply
       reply to any of our emails and a real human will take care of it for you.

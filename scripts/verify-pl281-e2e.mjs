@@ -12,11 +12,22 @@
 //      restore the tutor's mapping to null.
 // RESEND_API_KEY is deleted in-process (send-light harness) so the
 // fail-loud alert path can't email anyone during the test.
-import { readFileSync, rmSync } from 'node:fs'
+import { readFileSync, rmSync , mkdtempSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -29,8 +40,9 @@ const env = Object.fromEntries(
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 delete process.env.RESEND_API_KEY // send-light: alerts no-op, rows still fail loud
 
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-verify-pl281')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-verify-pl281-'))
 execSync(
   `npx tsc app/utils/qbo-sync.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node`,
   { stdio: 'inherit' }
@@ -142,6 +154,6 @@ const { data: leftover } = await db.from('timecards').select('id').in('period_st
 check('cleanup: QA cards gone', (leftover ?? []).length === 0)
 check('cleanup: Billy mapping restored', true)
 
-rmSync(out, { recursive: true, force: true })
+safeRm(out)
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail > 0 ? 1 : 0)

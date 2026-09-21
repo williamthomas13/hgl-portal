@@ -1,4 +1,5 @@
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
+import SiteHeader from '../components/SiteHeader'
 
 // Payment-success landing (PL-308: Scarlett's copy, real student names).
 // The checkout redirect carries ?session_id={CHECKOUT_SESSION_ID}; the
@@ -36,7 +37,10 @@ export default async function SuccessPage({
   const plural = names.length > 1
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-10">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* PL-478: post-checkout keeps the compact (logo-only) header — a distraction-free landing. */}
+      <SiteHeader variant="compact" />
+      <div className="flex-1 flex flex-col items-center justify-center p-10">
       <div className="bg-white p-10 rounded-lg shadow-lg text-center border-t-8 border-green-500 max-w-lg">
         <div className="text-green-500 text-6xl mb-4">🎉</div>
         {names.length > 0 ? (
@@ -80,6 +84,7 @@ export default async function SuccessPage({
         >
           Back to Higher Ground Learning
         </a>
+      </div>
       </div>
     </div>
   )

@@ -12,6 +12,18 @@ import path from 'node:path'
 import { createHmac } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+import { mkdtempSync } from 'node:fs'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -23,8 +35,9 @@ const env = Object.fromEntries(
 )
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-regress-quo')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-regress-quo-'))
 execSync(
   `npx tsc app/utils/quo.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`,
   { stdio: 'inherit' }
@@ -137,7 +150,7 @@ try {
       contact.defaultFields.phoneNumbers[0].value === QA_PHONE, '')
 } finally {
   await destroy()
-  rmSync(out, { recursive: true, force: true })
+  safeRm(out)
   console.log('cleanup done (fixtures removed)')
 }
 process.exit(failures ? 1 : 0)

@@ -7,9 +7,22 @@ import { execSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { rmSync } from 'node:fs'
 import path from 'node:path'
+import { mkdtempSync } from 'node:fs'
 
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-alert-cats')
-rmSync(out, { recursive: true, force: true })
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
+
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-alert-cats-'))
 execSync(
   `npx tsc app/utils/comms.ts app/utils/alert-categories.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node`,
   { stdio: 'inherit' }
@@ -30,5 +43,5 @@ const catKeys = new Set(ALERT_CATEGORIES.map((c) => c.key))
 const badCats = Object.entries(TEMPLATE_ALERT_CATEGORY).filter(([, c]) => !catKeys.has(c))
 check('every mapped category exists', badCats.length === 0, badCats.map(([k]) => k).join(', '))
 
-rmSync(out, { recursive: true, force: true })
+safeRm(out)
 process.exit(fail ? 1 : 0)

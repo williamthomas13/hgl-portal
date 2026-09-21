@@ -2403,6 +2403,33 @@ In the meantime, feel free to reply to this email with anything you'd like us to
 
 {contactBlock}`,
   },
+  // PL-484: the interest-list confirmation — copy APPROVED by Scarlett Sep 21
+  // (she cut "One click, no questions." from the P.S.). Seeded as a DRAFT for
+  // the usual review send → ramp; the class-interest API renders it
+  // LIVE-ONLY (nothing sends while draft). One per address per school per
+  // 30 days (dedupe), never to a suppressed address.
+  {
+    template_key: 'CI_INTEREST_CONFIRM',
+    display_name: "CI — You're on the list (interest-list confirmation)",
+    sequence_number: null,
+    audience: 'parent',
+    from_identity: 'info',
+    category: 'transactional',
+    subject: "You're on the list for the next {schoolNickname} {classType} class",
+    footer_note: null,
+    preheader: "We'll email you the moment registration opens",
+    body_markdown: `Hi {parentFirstName},
+
+Thanks for your interest — you're on the list. As soon as registration opens for the next {classType} class at {schoolName}, we'll email you at this address so {studentFirstNameOrYourStudent} can grab a spot before it fills.
+
+In the meantime, if you'd like a head start, 1-on-1 tutoring is available any time:
+
+[button:Schedule a free consultation]({inquireLink})
+
+{contactBlock}
+
+P.S. Signed up by mistake? [Take me off this list]({interestUnsubscribeLink}).`,
+  },
 ]
 
 /** PL-454: the billing-category keys with their verdict, derived from the

@@ -23,6 +23,17 @@ import { readFileSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
     .split('\n').filter((l) => l.includes('=') && !l.startsWith('#')).map((l) => {
@@ -268,7 +279,7 @@ try {
   check('PL-471 D control: family sequence rows project for the live class', projLive.rows.some((r) => r.audience === 'family'), `${projLive.rows.filter((r) => r.audience === 'family').length} family rows`)
 } finally {
   await cleanup()
-  rmSync(tmp, { recursive: true, force: true })
+  safeRm(tmp)
   console.log('\ncleaned up QA rows.')
 }
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`)

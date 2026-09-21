@@ -46,7 +46,7 @@
 //   "waitlist": null, "parentName": null, "studentName": null }
 // (parentName/studentName: REFUSED since PL-466 — map explicit first/last columns.)
 
-import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync, existsSync , mkdtempSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHash } from 'node:crypto'
@@ -248,8 +248,9 @@ const snapshot = recordsOnly ? null : {
 }
 
 // ---- compile THE one family/student path + sequence helpers ----------------
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-import-class')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-import-class-'))
 execSync(
   `npx tsc app/utils/registration.ts app/utils/lifecycle.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node --jsx react-jsx`,
   { stdio: 'inherit' }

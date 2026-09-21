@@ -3,6 +3,7 @@ import { verifySurveyToken } from '../../utils/survey'
 import { loadContactInfo } from '../../utils/tutoring-emails'
 import { PublicNoticeCard } from '../../components/PublicNotice'
 import SurveyForm from './survey-form'
+import SiteHeader from '../../components/SiteHeader'
 
 // PL-219 v1.5: the survey page — one form, two entrances.
 // Context is NEVER asked: the token identifies the class (and, on the email
@@ -23,7 +24,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ token: 
 
   if (info === 'expired') {
     return (
-      <PublicNoticeCard title="This survey link has aged out">
+      <PublicNoticeCard header={<SiteHeader />} title="This survey link has aged out">
         The class wrapped up a while back. If you&apos;d still like to share feedback, just email{' '}
         {contact.email} — we read everything.
       </PublicNoticeCard>
@@ -31,7 +32,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ token: 
   }
   if (!info) {
     return (
-      <PublicNoticeCard title="We couldn't open that link">
+      <PublicNoticeCard header={<SiteHeader />} title="We couldn't open that link">
         It may have been trimmed by your email app. Email {contact.email} and we&apos;ll take your
         feedback directly.
       </PublicNoticeCard>
@@ -51,7 +52,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ token: 
       .maybeSingle()
     if (!enr) {
       return (
-        <PublicNoticeCard title="We couldn't open that link">
+        <PublicNoticeCard header={<SiteHeader />} title="We couldn't open that link">
           Email {contact.email} and we&apos;ll take your feedback directly.
         </PublicNoticeCard>
       )
@@ -68,7 +69,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ token: 
     .maybeSingle()
   if (!cls) {
     return (
-      <PublicNoticeCard title="We couldn't find that class">
+      <PublicNoticeCard header={<SiteHeader />} title="We couldn't find that class">
         Email {contact.email} and we&apos;ll sort it out.
       </PublicNoticeCard>
     )

@@ -54,6 +54,8 @@ type Lead = {
   interest_tag?: string | null
   /** PL-477: the partnership form's own facts. */
   partner?: Record<string, string | null> | null
+  /** PL-482: how they want us to get in touch (whatsapp | call | text | email). */
+  connect_pref?: string | null
   school_id?: string | null
   /** PL-336: the WON ending — set by the sweep (or a manual status pick). */
   converted_at: string | null
@@ -96,6 +98,9 @@ const SOURCE_LABELS: Record<string, string> = {
   call: 'Phone call',
   other: 'Other',
 }
+
+// PL-482: the contact preference, plain English.
+const CONNECT_LABELS: Record<string, string> = { whatsapp: 'WhatsApp', call: 'phone call', text: 'text', email: 'email' }
 
 const INTEREST_LABELS: Record<string, string> = {
   test_prep: 'Test prep',
@@ -1730,7 +1735,8 @@ export default function LeadsAdmin() {
                                 {INTEREST_LABELS[lead.interest] ?? lead.interest}
                                 {lead.interest_tag ? ` · ${lead.interest_tag}` : ''}
                                 {lead.subjects && lead.subjects !== lead.interest_tag ? ` · ${lead.subjects}` : ''}
-                                {lead.source_detail ? ` · via ${lead.source_detail}` : ''} · added {fmtDay(lead.created_at)}
+                                {lead.source_detail ? ` · via ${lead.source_detail}` : ''}
+                                {lead.connect_pref ? ` · wants us to get in touch via ${CONNECT_LABELS[lead.connect_pref] ?? lead.connect_pref}` : ''} · added {fmtDay(lead.created_at)}
                               </span>
                               {lead.assigned_to && (
                                 <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5" title={lead.assigned_to}>

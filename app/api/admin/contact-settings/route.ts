@@ -4,6 +4,7 @@ import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { sessionRole } from '../../../utils/staff-gate'
 import { loadContactInfo } from '../../../utils/tutoring-emails'
 import { FROM, PERSONAL_FROM, clearFromIdentityCache } from '../../../utils/email'
+import { DEFAULT_FOOTER_NAV, DEFAULT_SITE_NAV, loadSiteNav, parseNav } from '../../../utils/site-nav'
 
 // PL-50: the tutoring point-of-contact (name/email/phone in app_settings).
 // ADMIN-ONLY both ways — who the contact person is is an ownership decision,
@@ -24,6 +25,8 @@ export async function GET() {
   return NextResponse.json({
     contact: await loadContactInfo(),
     limits: await loadSendLimits(),
+    // PL-478: the editable public menu (defaults when unset).
+    siteNav: await loadSiteNav(),
     identities: {
       info: { value: map.email_from_info ?? FROM, overridden: Boolean(map.email_from_info) },
       personal: {
@@ -53,6 +56,8 @@ export async function POST(req: Request) {
     value?: string
     dailyBrake?: string | number
     monthlyQuota?: string | number
+    header?: unknown
+    footer?: unknown
   }
   try {
     body = await req.json()
@@ -65,6 +70,20 @@ export async function POST(req: Request) {
   // brand-new domain still needs Resend verification first).
   // PL-469: the sending limits — a campaign brake (NOT a Resend limit) and
   // the plan's monthly quota. Blank clears. Recorded with who changed it.
+  if (body.action === 'set_site_nav') {
+    // PL-478: the public header/footer lists — validated (label + a
+    // site-relative or absolute http(s) URL), stored as JSON.
+    const header = parseNav(body.header, DEFAULT_SITE_NAV)
+    const footer = parseNav(body.footer, DEFAULT_FOOTER_NAV)
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('app_settings').upsert([
+      { key: 'site_nav', value: JSON.stringify(header), updated_by: caller.email, updated_at: now },
+      { key: 'site_footer_nav', value: JSON.stringify(footer), updated_by: caller.email, updated_at: now },
+    ])
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, siteNav: { header, footer } })
+  }
+
   if (body.action === 'set_send_limits') {
     const parse = (v: unknown, label: string): number | null | 'bad' => {
       const t = String(v ?? '').trim()

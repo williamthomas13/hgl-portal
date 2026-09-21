@@ -80,6 +80,7 @@ export default async function EvergreenCodePage({
         <EvergreenCapture
           schoolId={res.kind === 'school' ? res.schoolId : null}
           classType={res.classType}
+          schoolLabel={res.label}
           // PL-472 (Scarlett, Sep 21): the copy lives HERE (not a seeded block) —
           // one sentence, then the email field directly under it.
           heading={

@@ -1,10 +1,13 @@
+import Link from 'next/link'
 import type { Metadata } from 'next'
 import { supabaseAdmin as supabase } from '../utils/supabase-admin'
 import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { plainTextFromMarkdown, renderSiteMarkdown } from '../utils/site-md'
-import { CONSULT_HREF } from '../components/ClassStateCard'
+import { CONSULT_CTA } from '../components/ClassStateCard'
 import { publicSiteOrigin } from '../utils/base-url'
 import { publicSkin } from '../components/public-skin'
+import SiteHeader from '../components/SiteHeader'
+import SiteFooter from '../components/SiteFooter'
 
 // PL-358: the public team page — GENERATED from instructor profiles (the
 // one instructors table; show_on_team + team_order decide who and in what
@@ -38,6 +41,14 @@ function initials(name: string): string {
 }
 
 export default async function TeamPage() {
+  // PL-481: the editable hero slot — photo (uploaded through the site-content
+  // image route, never hot-linked) + the visible tagline. The sentence "the
+  // instructors and staff behind Higher Ground Learning" stays in the meta
+  // description / OpenGraph / JSON-LD only (what search engines and AI
+  // assistants read); the page shows the short tagline.
+  const { data: heroBlock } = await supabase.from('site_content_blocks').select('heading, body_markdown, image').eq('key', 'team-hero').maybeSingle()
+  const teamPhoto = parseClassPageImage(heroBlock?.image)
+  const tagline = (heroBlock?.body_markdown ?? '').trim() || 'Where know-how meets dynamism'
   const { data } = await supabase
     .from('instructors')
     .select('id, name, public_name, credential, bio, headshot, team_order')
@@ -79,13 +90,24 @@ export default async function TeamPage() {
   return (
     <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <SiteHeader current="team" />
       <section className="bg-hgl-slate">
         <div className="max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white">
-          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">Our team</h1>
-          <p className="mt-2 text-white/90">
-            Where know-how meets dynamism — the instructors and staff behind Higher Ground
-            Learning.
-          </p>
+          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">{heroBlock?.heading?.trim() || 'Our team'}</h1>
+          <p className="mt-2 text-white/90" data-testid="team-tagline">{tagline}</p>
+          {/* PL-481: the team photo sits BELOW the heading (no text over it,
+              so nothing to measure — the PL-453 contrast question does not
+              arise); explicit dimensions, no layout shift. */}
+          {teamPhoto && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              {...imageAttrs(teamPhoto)}
+              sizes="(min-width: 896px) 856px, 100vw"
+              className="mt-6 w-full h-auto rounded-lg shadow-md"
+              decoding="async"
+              data-testid="team-photo"
+            />
+          )}
         </div>
       </section>
 
@@ -148,20 +170,16 @@ export default async function TeamPage() {
         )}
 
         <div className="mt-10 text-center">
-          <a
-            href={CONSULT_HREF}
+          <Link
+            href="/inquire?source=team"
             className="inline-block bg-hgl-blue text-white font-bold py-3 px-8 rounded-md hover:opacity-90 transition"
           >
-            Work with us — free consultation
-          </a>
+            {CONSULT_CTA}
+          </Link>
         </div>
 
-        <footer className="text-center text-sm text-gray-400 mt-10 pb-6">
-          <a href="https://www.highergroundlearning.com" className="underline hover:text-gray-600">
-            Higher Ground Learning
-          </a>
-        </footer>
       </div>
+      <SiteFooter />
     </div>
   )
 }

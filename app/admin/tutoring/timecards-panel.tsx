@@ -24,7 +24,7 @@ type Row = {
   tutor_id: string
   period_start: string
   period_end: string
-  status: 'open' | 'tutor_confirmed' | 'approved' | 'exported'
+  status: 'open' | 'tutor_confirmed' | 'approved' | 'exported' | 'void'
   total_hours: number
   tutor_confirmed_at: string | null
   approved_by: string | null
@@ -33,6 +33,7 @@ type Row = {
 }
 
 const STATUS_STYLES: Record<Row['status'], string> = {
+  void: 'bg-gray-200 text-gray-500 line-through',
   open: 'bg-amber-100 text-amber-800',
   tutor_confirmed: 'bg-blue-100 text-blue-700',
   approved: 'bg-green-100 text-green-700',
@@ -68,6 +69,13 @@ export default function TimecardsPanel() {
   const staffName = useStaffName() // PL-395: name ?? email, ONE resolver
   const [rows, setRows] = useState<Row[]>([])
   const [busy, setBusy] = useState(false)
+  // PL-486: void is admin-only — the leads API's GET already answers the caller's role.
+  const [role, setRole] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/admin/leads').then((r) => (r.ok ? r.json() : null)).then((j) => setRole(j?.role ?? null)).catch(() => setRole(null))
+  }, [])
+  const [voidingId, setVoidingId] = useState<string | null>(null)
+  const [voidReason, setVoidReason] = useState('')
   const [message, setMessage] = useState('')
   // PL-104: per-card expansions — payroll handoff summary (hours by pay-type
   // title, copyable) and quick-verify (the period's schedule next to the
@@ -450,6 +458,34 @@ export default function TimecardsPanel() {
                           disabled={busy}
                           onConfirm={() => call({ action: 'approve', ids: [r.id] }, 'Approved.')}
                         />
+                      )}
+                      {/* PL-486: void — admin-only, reason required, inline (no native dialogs). */}
+                      {(r.status === 'open' || r.status === 'tutor_confirmed') && role === 'admin' && (
+                        voidingId === r.id ? (
+                          <span className="inline-flex items-center gap-1">
+                            <input
+                              value={voidReason}
+                              onChange={(e) => setVoidReason(e.target.value)}
+                              placeholder="Reason (required)"
+                              className="border border-gray-300 rounded p-1 text-xs w-48"
+                              data-testid="void-reason"
+                            />
+                            <button
+                              type="button"
+                              disabled={busy || !voidReason.trim()}
+                              onClick={() => { call({ action: 'void', ids: [r.id], reason: voidReason.trim() }, 'Voided.'); setVoidingId(null); setVoidReason('') }}
+                              className="text-xs font-bold text-white bg-red-700 rounded px-2 py-1 disabled:opacity-40"
+                              data-testid="void-confirm"
+                            >
+                              Void
+                            </button>
+                            <button type="button" onClick={() => setVoidingId(null)} className="text-xs text-gray-500 underline">cancel</button>
+                          </span>
+                        ) : (
+                          <button type="button" onClick={() => setVoidingId(r.id)} className="text-red-700 underline text-xs" data-testid={`void-${r.id}`}>
+                            void
+                          </button>
+                        )
                       )}
                       {(r.status === 'approved' || r.status === 'exported') && (
                         <ConfirmAction

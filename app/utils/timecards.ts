@@ -220,7 +220,7 @@ export async function recomputeTimecard(timecardId: string): Promise<number | nu
     .eq('id', timecardId)
     .maybeSingle()
   if (!tc) return null
-  if (tc.status === 'approved' || tc.status === 'exported') return Number(tc.total_hours)
+  if (tc.status === 'approved' || tc.status === 'exported' || tc.status === 'void') return Number(tc.total_hours)
   const period = { start: tc.period_start, end: tc.period_end }
   const sessions = await payableSessions(tc.tutor_id, period)
   const ids = sessions.map((s) => s.id)
@@ -314,6 +314,8 @@ export async function sweepTimecards(now: Date = new Date()): Promise<TimecardSw
         .eq('period_start', p.start)
         .maybeSingle()
 
+      // PL-486: voided cards are final — no re-create, no recompute, no T5.
+      if (existing?.status === 'void') continue
       let timecardId = existing?.id
       if (!existing) {
         const { data: inserted, error } = await supabase

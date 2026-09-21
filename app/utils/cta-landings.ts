@@ -106,6 +106,9 @@ export const LINK_LANDINGS: Record<string, LinkLanding> = {
   surveyLink: { route: '/survey/{token}', file: 'app/survey/[token]/page.tsx', invalidBranch: 'PublicNoticeCard' },
   coverageRespondLink: { route: '/portal?view=tutor#portal-coverage', file: 'app/portal/tutor-view.tsx', invalidBranch: 'portal-coverage' },
   instructorViewLink: { route: '/portal?view=instructor&class={id}', file: 'app/portal/instructor-view.tsx', invalidBranch: 'FocusParam' },
+  // PL-484
+  inquireLink: { route: '/inquire?source=email', file: 'app/inquire/page.tsx' },
+  interestUnsubscribeLink: { route: '/interest/unsubscribe?e=&t=', file: 'app/interest/unsubscribe/page.tsx', invalidBranch: "That link didn't work" },
 }
 
 /** PL-470: the public class page's STATE call-to-actions (closed / in-progress /

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { preferredClassPath } from '../../../utils/evergreen'
+import { CLASS_FULL_HEADING, CLASS_FULL_NOTE } from '../../../utils/class-full-copy'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
 import { validateFollowOnDiscount } from '../../../utils/follow-on'
 import { classTutoringTier } from '../../../utils/tutoring-tier'
@@ -35,7 +36,7 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     .select(
       `id, slug, status, class_type, price, capacity,
        start_date, default_location, venue, registration_close_date, school_id, delivery_mode,
-       timezone, display_cities, promo_code, promo_amount, course_key, schools ( name, nickname, timezone, city ),
+       timezone, display_cities, promo_code, promo_amount, course_key, schools ( name, nickname, timezone, city, logo_url ),
        sessions ( id, session_date, start_time, end_time, location ),
        enrollments ( payment_status, waitlist_offer_expires_at )`
     )
@@ -142,9 +143,22 @@ export async function GET(request: Request, ctx: RouteContext<'/api/class-info/[
     }
   }
 
+  // PL-480: HGL's long-standing "class is full" wording is ONE source — the
+  // waitlist-note site block (Settings → Class pages); the code constant is
+  // the fallback. The register page's full states and the class page's
+  // banner both read it.
+  let waitlistNote = { heading: CLASS_FULL_HEADING, body: CLASS_FULL_NOTE }
+  try {
+    const { data: note } = await supabase.from('site_content_blocks').select('heading, body_markdown').eq('key', 'waitlist-note').maybeSingle()
+    if (note?.body_markdown) waitlistNote = { heading: note.heading || CLASS_FULL_HEADING, body: note.body_markdown }
+  } catch {
+    /* fallback constant */
+  }
+
   return NextResponse.json({
     ...publicClass,
     page_path: pagePath,
+    waitlist_note: waitlistNote,
     cancelled,
     isFull: cancelled || spotsTakenRaw(enrollments ?? []) >= capacity,
     packages: pkgs ?? [],

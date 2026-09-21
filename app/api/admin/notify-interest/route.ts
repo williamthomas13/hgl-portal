@@ -71,9 +71,10 @@ export async function POST(req: Request) {
   // (their school_id is null on both sides of the old key).
   let waitingQuery = supabase
     .from('class_interest')
-    .select('id, email, parent_name')
+    .select('id, email, parent_name, parent_first_name')
     .eq('class_type', cls.class_type)
     .is('notified_at', null)
+    .is('unsubscribed_at', null) // PL-484: "take me off this list" is honoured here
   waitingQuery = cls.school_id
     ? waitingQuery.eq('school_id', cls.school_id)
     : waitingQuery.is('school_id', null)
@@ -85,7 +86,8 @@ export async function POST(req: Request) {
   const contact = await loadContactInfo()
   let notified = 0
   for (const row of waiting) {
-    const firstName = (row.parent_name ?? '').trim().split(/\s+/)[0] || 'there'
+    // PL-484: the split first name wins; the legacy whole-name split is the fallback.
+    const firstName = (row.parent_first_name ?? '').trim() || (row.parent_name ?? '').trim().split(/\s+/)[0] || 'there'
     const stub = { parentFirstName: firstName, parentEmail: row.email, schoolNickname, classType: cls.class_type }
     const email = await renderRegistered(
       'NW_NEXT_CLASS_OPEN',

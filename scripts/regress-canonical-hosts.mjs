@@ -16,6 +16,17 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
+
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
     .split('\n').filter((l) => l.includes('=') && !l.startsWith('#')).map((l) => {
@@ -36,7 +47,7 @@ let PORTAL_ONLY_PATH_PREFIXES, canonicalPortalHost, publicSiteOrigin, SHORT_PUBL
 try {
   execSync(`npx tsc app/utils/base-url.ts --outDir ${JSON.stringify(build)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node`, { stdio: 'inherit' })
   ;({ PORTAL_ONLY_PATH_PREFIXES, canonicalPortalHost, publicSiteOrigin, SHORT_PUBLIC_HOSTS } = createRequire(import.meta.url)(path.join(build, 'base-url.js')))
-} finally { rmSync(build, { recursive: true, force: true }) }
+} finally { safeRm(build) }
 const proxy = read('proxy.ts')
 const matcher = [...proxy.matchAll(/'(\/[^']*)'/g)].map((m) => m[1]).filter((p) => /^\/(?!\.)/.test(p))
 for (const prefix of PORTAL_ONLY_PATH_PREFIXES) {

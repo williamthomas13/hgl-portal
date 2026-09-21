@@ -84,6 +84,18 @@ try {
     check(`${name} offers the enrolled sign-in, the add-to-calendar link, the consult door and the interest capture`, /data-testid="enrolled-signin"/.test(ipHtml) && /\/calendar/.test(ipHtml) && /\/inquire\?source=class-page/.test(ipHtml) && /data-testid="state-interest-capture"/.test(ipHtml))
     check(`${name} JSON-LD states closed registration`, /schema\.org\/SoldOut/.test(ipHtml) && /EventScheduled/.test(ipHtml))
   }
+  // PL-479/478: /classes renders the fixture as an in-progress CARD (school
+  // tile, state) and every public page carries the shared header + footer.
+  const clRes = await fetch(`${base}/classes`)
+  const clHtml = await clRes.text().catch(() => '')
+  check('/classes renders school cards (in-progress fixture as a card with a tile)', /data-testid="class-card"[^>]*data-state="in-progress"/.test(clHtml) && /data-testid="school-tile(-monogram)?"/.test(clHtml))
+  check('/classes carries the new intro line + the "Talk to us" button', /Live test-prep classes at partner schools around the world, online, and at our HQ in Salt Lake City, USA\./.test(clHtml) && /data-testid="classes-talk-to-us"/.test(clHtml))
+  for (const [name, path] of [['/classes', '/classes'], ['/{code} in progress', '/qasmoke'], ['/team', '/team'], ['/inquire', '/inquire']]) {
+    const h = path === '/classes' ? clHtml : await (await fetch(`${base}${path}`)).text().catch(() => '')
+    check(`${name} renders the site header + footer (PL-478)`, /data-testid="site-header"/.test(h) && /data-testid="site-footer"/.test(h))
+  }
+  const embedHtml = await (await fetch(`${base}/embed/upcoming-classes.js`)).text().catch(() => '')
+  check('/embed/upcoming-classes.js never carries the site header', !/site-header/.test(embedHtml))
   const regRes = await fetch(`${base}/qasmoke/register`)
   const regHtml = await regRes.text().catch(() => '')
   check('/{code}/register while closed still serves the registration route (closed notice is client-rendered)', regRes.status === 200 && !/No upcoming class/.test(regHtml))

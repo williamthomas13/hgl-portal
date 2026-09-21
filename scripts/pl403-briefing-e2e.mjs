@@ -9,6 +9,18 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+import { mkdtempSync } from 'node:fs'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const root = process.cwd()
 const env = Object.fromEntries(
@@ -23,8 +35,9 @@ const env = Object.fromEntries(
 )
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 
-const out = path.join(root, 'scripts', '.tmp-build-pl403')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(root, 'scripts', '.tmp-build-pl403-'))
 execSync(
   `npx tsc app/utils/instructor-comms.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`,
   { stdio: 'inherit' }
@@ -124,6 +137,6 @@ try {
     console.log('fixture cleaned up')
   }
 }
-rmSync(out, { recursive: true, force: true })
+safeRm(out)
 console.log(ok ? '\nPL-403 E2E: ALL PASS' : '\nPL-403 E2E: FAILURES')
 process.exit(ok ? 0 : 1)

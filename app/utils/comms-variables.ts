@@ -18,7 +18,7 @@ import { formatDateFull, contextZonedDeadline, contextTimeCityLabel, staffTimeCi
 import { availabilityDiff } from './availability-diff'
 import { zonedToUtc } from './tutoring'
 import type { ResolvedVars } from './comms-md'
-import { PRODUCTION_ORIGIN } from './base-url'
+import { PRODUCTION_ORIGIN, emailBaseUrl } from './base-url'
 
 // Feature A4 variable registry (docs/COMMS_ATTENDANCE_PARENT_SPEC.md §A4):
 // the ONLY variables template bodies may use. Pronoun-conditional copy is
@@ -79,6 +79,12 @@ export function sessionScheduleMarkdown(c: EnrollmentEmailContext): string {
 }
 
 export type ExtraVars = {
+  /** PL-484 (CI_INTEREST_CONFIRM): "{studentFirst}" or "your student". */
+  studentFirstNameOrYourStudent?: string
+  /** PL-484: the consultation link with source context. */
+  inquireLink?: string
+  /** PL-484: the interest list's own tokenized unsubscribe. */
+  interestUnsubscribeLink?: string
   /** T1R (PL-461): the family's request text, escaped. */
   requestQuote?: string
   /** T1R: the staff reply as its own paragraph; '' = omitted. */
@@ -1261,6 +1267,18 @@ export const VARIABLES: Record<string, VariableDef> = {
       ${detail('Notes', c.notes)}</p>`
     },
   },
+  studentFirstNameOrYourStudent: {
+    description: "CI: the student's first name when the sign-up gave one, else \"your student\"",
+    resolve: (_c, _a, e) => e.studentFirstNameOrYourStudent ?? 'your student',
+  },
+  inquireLink: {
+    description: 'CI: the free-consultation page (/inquire) with the email named as the source',
+    resolve: (_c, _a, e) => e.inquireLink ?? `${emailBaseUrl()}/inquire?source=email`,
+  },
+  interestUnsubscribeLink: {
+    description: 'CI: "take me off this list" — the interest list\'s own unsubscribe (not the Compass one)',
+    resolve: (_c, _a, e) => e.interestUnsubscribeLink ?? `${emailBaseUrl()}/interest/unsubscribe`,
+  },
   requestQuote: {
     description: "T1R: the family's change-request text, verbatim (escaped)",
     resolve: (_c, _a, e) => e.requestQuote ?? '(their request)',
@@ -1477,6 +1495,9 @@ const SAMPLE_COVERAGE_NOTE_BLOCK = coverageNoteHtml(SAMPLE_COVERAGE_NOTE_PROSE)
 // highest-stakes email in the set.
 export const SAMPLE_EXTRA: ExtraVars = rehostSamples({
   // T1R (PL-461)
+  studentFirstNameOrYourStudent: 'Ana',
+  inquireLink: `${PRODUCTION_ORIGIN}/inquire?source=email`,
+  interestUnsubscribeLink: `${PRODUCTION_ORIGIN}/interest/unsubscribe?e=sample-parent%40example.com&t=sample`,
   requestQuote: "Can't do Oct 27 at original time. Needs to be 5:00 am",
   staffNoteBlock: '<p>5:00 AM works for Billy — moved. Everything else stays as it was.</p>',
   changeSummaryBlock: '<ul style="margin:0;padding-left:20px;color:#334155"><li style="margin:2px 0">Tuesday, Oct 27 — moved from 11:00 AM to 5:00 AM</li></ul>',

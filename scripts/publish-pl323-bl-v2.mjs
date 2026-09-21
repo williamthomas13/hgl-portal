@@ -10,6 +10,18 @@ import { execSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { createClient } from '@supabase/supabase-js'
+import { mkdtempSync } from 'node:fs'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -21,8 +33,9 @@ const env = Object.fromEntries(
 )
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-bl-v2')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-bl-v2-'))
 execSync(
   `npx tsc app/utils/comms-template-seed.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node`,
   { stdio: 'inherit' }
@@ -77,5 +90,5 @@ await db
   .from('email_templates')
   .update({ active_version_id: inserted.id, updated_at: new Date().toISOString() })
   .eq('template_key', 'BL_BLOCK_CONFIRM')
-rmSync(out, { recursive: true, force: true })
+safeRm(out)
 console.log(`published BL_BLOCK_CONFIRM v${next} (live=${t.live}) — Scarlett's PL-323 copy`)

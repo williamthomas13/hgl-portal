@@ -1,6 +1,9 @@
 import { renderSiteMarkdown } from '../utils/site-md'
 import { publicSkin } from './public-skin'
 import InterestCapture from './InterestCapture'
+import BrandLockup from './BrandLockup'
+import SiteHeader from './SiteHeader'
+import SiteFooter from './SiteFooter'
 
 // PL-348: the honest full-page state card for the public class pages —
 // printed collateral and hgl.co shortlinks must NEVER land on a 404, so
@@ -8,6 +11,11 @@ import InterestCapture from './InterestCapture'
 // Shared by /c/{slug} and the PL-349 shortlink fallthrough.
 
 export const CONSULT_HREF = '/inquire?src=class-page'
+/** PL-485 (Scarlett, Sep 21): THE consultation call-to-action wording on every
+ *  public page — closed / in-progress / no-upcoming cards, the class page
+ *  footer, /team. The one exception is the /classes button ("Talk to us",
+ *  PL-479), which deliberately does not use this constant. */
+export const CONSULT_CTA = 'Schedule a free consultation'
 
 /** PL-470: the consultation door carries its context — school + class
  *  pre-filled on /inquire (PL-473 reads source / interest / school). */
@@ -24,6 +32,8 @@ export function ClassStateCard({
   showConsult = true,
   consultHref = CONSULT_HREF,
   interest = null,
+  schoolLogo = null,
+  schoolName = null,
 }: {
   title: string
   /** Markdown (site-md flavor) — state copy may come from site_content_blocks. */
@@ -36,14 +46,17 @@ export function ClassStateCard({
    *  that school), so a visitor who missed this class can ask to hear about
    *  the next one without leaving the page. */
   interest?: { classId: string; schoolNickname: string; classType: string } | null
+  /** PL-483: the school's logo for the HGL × school lockup. */
+  schoolLogo?: string | null
+  schoolName?: string | null
 }) {
   return (
-    <div className={`min-h-screen bg-gray-50 flex items-center justify-center p-6 sm:p-10 ${publicSkin}`}>
+    <div className={`min-h-screen bg-gray-50 flex flex-col ${publicSkin}`}>
+      <SiteHeader />
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
       <div className="max-w-xl w-full bg-white p-8 rounded-lg shadow-md border-t-4 border-hgl-blue text-center">
-        {/* PL-415: the logo on the honest-state/capture chrome (PL-375's
-            treatment) — explicit dimensions, no layout shift. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/collateral/hgl-logo-color.png" alt="Higher Ground Learning" width={71} height={40} className="h-10 w-auto mx-auto mb-4" />
+        {/* PL-415/483: the brand lockup on the honest-state chrome — explicit dimensions, no layout shift. */}
+        <BrandLockup schoolLogo={schoolLogo} schoolName={schoolName} className="justify-center mb-4" />
         <h1 className="text-2xl font-bold text-hgl-slate mb-4">{title}</h1>
         <div
           className="text-gray-600 mb-6 text-left space-y-3"
@@ -60,7 +73,7 @@ export function ClassStateCard({
               href={consultHref}
               className="public-cta inline-block bg-hgl-blue text-white font-bold py-3 px-6 rounded-md hover:opacity-90 transition"
             >
-              Talk to us — free consultation
+              {CONSULT_CTA}
             </a>
           )}
           <a
@@ -71,6 +84,8 @@ export function ClassStateCard({
           </a>
         </div>
       </div>
+      </div>
+      <SiteFooter />
     </div>
   )
 }

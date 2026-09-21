@@ -8,6 +8,7 @@ import {
   publicTimeCityLabel,
 } from '../../utils/dates'
 import { preferredClassPath } from '../../utils/evergreen'
+import { usableAccent } from '../../utils/collateral'
 
 // PL-385: the Squarespace homepage's "Upcoming classes" strip, portal-fed.
 // The sqsp page pastes ONE code block (documented in the cutover checklist)
@@ -100,11 +101,48 @@ export async function GET(request: Request) {
     )
   }
 
+  // PL-479 (APPROVED by Scarlett Sep 21): when NOTHING is open, the strip
+  // shows up to 4 recent-class school tiles (ended classes that ran, newest
+  // first — records-only and backfilled count) + "See all classes →" instead
+  // of only the interest line ("a better look than emptiness").
+  let recentTiles = ''
+  if (cards.length === 0) {
+    // (?preview=empty shows THIS state with the real recent classes.)
+    const { data: ended } = await supabase
+          .from('classes')
+          .select('id, class_type, start_date, schools ( name, city, logo_url, accent_color, evergreen_code ), sessions ( session_date )')
+          .eq('status', 'open')
+          .not('school_id', 'is', null)
+    const seen = new Set<string>()
+    const tiles: { name: string; city: string | null; logo: string | null; accent: string | null; code: string | null; last: string }[] = []
+    for (const c of ((ended as any[]) ?? [])) {
+      const school = one<any>(c.schools)
+      const days = ((c.sessions ?? []) as { session_date: string }[]).map((s) => s.session_date).sort()
+      const last = days[days.length - 1] ?? c.start_date
+      if (!school || !last || String(last) >= new Date().toISOString().slice(0, 10)) continue
+      if (seen.has(school.name)) continue
+      seen.add(school.name)
+      tiles.push({ name: school.name, city: school.city ?? null, logo: school.logo_url ?? null, accent: school.accent_color ?? null, code: school.evergreen_code ?? null, last: String(last) })
+    }
+    tiles.sort((a, b) => b.last.localeCompare(a.last))
+    const monogram = (n: string) => n.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w) && !/^(of|the|and|de|del|di|la|le|du)$/i.test(w)).map((w) => w[0].toUpperCase()).slice(0, 3).join('') || 'HGL'
+    recentTiles = tiles.slice(0, 4).map((t) => {
+      const tile = t.logo
+        ? `<span style="display:inline-flex;align-items:center;justify-content:center;height:56px;width:88px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:6px"><img src="${esc(t.logo)}" alt="${esc(t.name)} logo" style="max-height:100%;max-width:100%;object-fit:contain"/></span>`
+        : `<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;height:56px;width:88px;border-radius:8px;background:${esc(usableAccent(t.accent))};color:#fff;font-weight:800;letter-spacing:.04em">${esc(monogram(t.name))}</span>`
+      const href = t.code ? `${base}/${t.code}` : `${base}/classes`
+      return `<a href="${esc(href)}" style="display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:#334155;min-width:110px">${tile}<span style="font-size:12px;text-align:center;line-height:1.3">${esc(t.name)}${t.city ? `<br><span style="color:#94a3b8">${esc(t.city)}</span>` : ''}</span></a>`
+    }).join('')
+  }
   const inner =
     cards.length > 0
       ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">${cards.join('')}</div>`
-      : `<p style="font-family:inherit;font-size:15px;color:#475569;margin:0">No class is open for registration right now — ` +
-        `<a href="${base}/classes" style="color:#00AEEE;font-weight:700">join the interest list</a> and we'll tell you the moment the next one opens.</p>`
+      : recentTiles
+        ? `<p style="font-family:inherit;font-size:15px;color:#475569;margin:0 0 12px">No class is open for registration right now — recent classes:</p>` +
+          `<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">${recentTiles}</div>` +
+          `<p style="font-family:inherit;font-size:14px;margin:12px 0 0"><a href="${base}/classes" style="color:#00AEEE;font-weight:700">See all classes →</a></p>`
+        : `<p style="font-family:inherit;font-size:15px;color:#475569;margin:0">No class is open for registration right now — ` +
+          `<a href="${base}/classes" style="color:#00AEEE;font-weight:700">join the interest list</a> and we'll tell you the moment the next one opens.</p>`
 
   const js = `(function(){
   var el = document.getElementById('hgl-upcoming-classes');

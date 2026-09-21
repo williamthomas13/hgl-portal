@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
+import { subscribeCompass } from '../../utils/compass'
 import { FORM_CORS_HEADERS } from '../../utils/embed-forms'
 import { EMAIL_RE, ipThrottled, str } from '../../utils/public-forms'
 
@@ -34,31 +34,10 @@ export async function POST(req: Request) {
   const gradYear = str(body.gradYear, 10)
   const src = str(body.source, 100) ?? 'compass'
 
-  const [{ data: fam }, { data: lead }, { data: supp }] = await Promise.all([
-    supabase.from('families').select('id').ilike('parent_email', email.replace(/[%_]/g, '\\$&')).limit(1).maybeSingle(),
-    supabase.from('leads').select('id').ilike('contact_email', email.replace(/[%_]/g, '\\$&')).limit(1).maybeSingle(),
-    supabase.from('marketing_suppressions').select('email').eq('email', email).maybeSingle(),
-  ])
-  const now = new Date().toISOString()
-  const resubscribed = Boolean(supp)
-  if (resubscribed) await supabase.from('marketing_suppressions').delete().eq('email', email)
-  const { error } = await supabase.from('marketing_subscribers').upsert(
-    {
-      email,
-      first_name: firstName,
-      role,
-      grad_year: gradYear,
-      source: resubscribed ? 'compass-resubscribed' : src.startsWith('sqsp') || src.startsWith('embed') ? `embed:${src.replace(/^(sqsp|embed):/, '')}` : 'compass',
-      consented_at: now,
-      original_opt_in_at: now,
-      family_id: fam?.id ?? null,
-      lead_id: fam ? null : (lead?.id ?? null),
-      updated_at: now,
-    },
-    { onConflict: 'email', ignoreDuplicates: false }
-  )
-  if (error) {
-    console.error('compass upsert failed:', error.message)
+  // ONE path (PL-484 reuses it from the interest-list opt-in).
+  const res = await subscribeCompass({ email, firstName, role, gradYear, source: src })
+  if (!res.ok) {
+    console.error('compass upsert failed:', res.error)
     return json({ error: 'That did not save — try again?' }, 500)
   }
   return json({ ok: true })

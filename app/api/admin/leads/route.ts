@@ -55,6 +55,12 @@ const LEAD_FIELDS = [
   'kind',
   'source_detail',
   'interest_tag',
+  // PL-482: split names + the contact preference.
+  'contact_first_name',
+  'contact_last_name',
+  'student_first_name',
+  'student_last_name',
+  'connect_pref',
 ] as const
 
 type Body =
@@ -327,7 +333,7 @@ export async function POST(req: Request) {
       if (!body.id) return NextResponse.json({ error: 'Missing lead id.' }, { status: 400 })
       const { data: lead } = await supabase
         .from('leads')
-        .select('id, contact_name, contact_email, student_name, student_grade, family_id, student_id')
+        .select('id, contact_name, contact_first_name, contact_last_name, contact_email, student_name, student_first_name, student_last_name, student_grade, family_id, student_id')
         .eq('id', body.id)
         .maybeSingle()
       if (!lead) return NextResponse.json({ error: 'Unknown lead.' }, { status: 404 })
@@ -339,7 +345,11 @@ export async function POST(req: Request) {
       }
 
       const email = lead.contact_email.trim().toLowerCase()
-      const [parentFirst, ...parentRest] = (lead.contact_name ?? '').trim().split(/\s+/)
+      // PL-482: the split columns win — no splitting logic (PL-466); the
+      // whitespace split is only the fallback for pre-PL-482 rows.
+      const legacyParent = (lead.contact_name ?? '').trim().split(/\s+/)
+      const parentFirst = lead.contact_first_name?.trim() || legacyParent[0]
+      const parentRest = lead.contact_first_name?.trim() ? [lead.contact_last_name?.trim() ?? ''].filter(Boolean) : legacyParent.slice(1)
       const { data: existingFamily } = await supabase
         .from('families')
         .select('id')
@@ -365,7 +375,9 @@ export async function POST(req: Request) {
         familyId = created.id
       }
 
-      const [studentFirst, ...studentRest] = lead.student_name.trim().split(/\s+/)
+      const legacyStudent = lead.student_name.trim().split(/\s+/)
+      const studentFirst = lead.student_first_name?.trim() || legacyStudent[0]
+      const studentRest = lead.student_first_name?.trim() ? [lead.student_last_name?.trim() ?? ''].filter(Boolean) : legacyStudent.slice(1)
       const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
       const { data: familyStudents } = await supabase
         .from('students')

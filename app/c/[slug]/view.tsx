@@ -19,8 +19,11 @@ import { DEFAULT_TIMEZONE } from '../../utils/lifecycle'
 import { parseFaqItems, plainTextFromMarkdown, renderSiteMarkdown } from '../../utils/site-md'
 import { emailBaseUrl, publicSiteOrigin } from '../../utils/base-url'
 import { examFamilyFor, SCHOOL_BASED_REG_TEXT } from '../../utils/exam-family'
-import { ClassStateCard, consultHrefFor } from '../../components/ClassStateCard'
+import { CONSULT_CTA, ClassStateCard, consultHrefFor } from '../../components/ClassStateCard'
 import InterestCapture from '../../components/InterestCapture'
+import BrandLockup from '../../components/BrandLockup'
+import SiteHeader from '../../components/SiteHeader'
+import SiteFooter from '../../components/SiteFooter'
 import ClassPageAnalytics from './analytics'
 import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
 import { publicSkin, PAGE_HERO } from '../../components/public-skin'
@@ -446,6 +449,8 @@ export async function ClassPageView({
         body={`The ${heroTitleFor(cls)} scheduled here was cancelled. If you'd like help planning your student's test prep — or want to hear when the next class opens — we'd love to talk.`}
         consultHref={consultHref}
         interest={interest}
+        schoolLogo={school?.logo_url ?? null}
+        schoolName={school?.name ?? null}
       />
     )
   }
@@ -456,6 +461,8 @@ export async function ClassPageView({
         body={`Registration for the ${heroTitleFor(cls)} closed on ${formatDateFull(String(registrationClose).slice(0, 10))}. If you missed it, talk to us — 1-on-1 tutoring is always available, and we can let you know when the next class opens.`}
         consultHref={consultHref}
         interest={interest}
+        schoolLogo={school?.logo_url ?? null}
+        schoolName={school?.name ?? null}
       />
     )
   }
@@ -742,6 +749,8 @@ export async function ClassPageView({
       {/* PL-350: first-party section/click counting (DNT-respecting; the
           fine-print block discloses it). Samples never count. */}
       {!isSample && <ClassPageAnalytics classId={cls.id} viaCode={opts.mode === 'code' ? opts.code : undefined} />}
+      {/* PL-478: the shared site header on every public class page. */}
+      <SiteHeader current="classes" />
       {isSample && (
         <div className="bg-amber-400 text-amber-950 text-center text-sm font-bold px-4 py-2">
           SAMPLE PAGE — layout preview with made-up class facts (dates, price, room). No class
@@ -775,22 +784,10 @@ export async function ClassPageView({
             on /classes) — this is the last passing value. */}
         <div aria-hidden className="absolute inset-0 bg-hgl-slate/70" />
         <div className="relative max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white">
-          {school?.logo_url ? (
-            <div className="inline-block bg-white rounded-lg p-2 mb-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={school.logo_url} alt={`${school.name} logo`} className="h-14 w-auto" />
-            </div>
-          ) : (
-            /* PL-375: no-school classes carry the Higher Ground logo in the
-               same slot — the white mark reads over the hero scrim; same
-               size/placement so both page variants are one design. */
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src="/collateral/hgl-logo-white.png"
-              alt="Higher Ground Learning logo"
-              className="h-16 w-auto mb-4"
-            />
-          )}
+          {/* PL-483: the deliberate lockup — HGL mark · divider · school logo
+              (white mark over the scrim); HGL-only when the school has none;
+              at 375px the site header carries HGL so only the school shows. */}
+          <BrandLockup schoolLogo={school?.logo_url ?? null} schoolName={school?.name ?? null} tone="white" size="lg" className="mb-4" />
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">{heroTitleFor(cls)}</h1>
           <p className="mt-2 text-white/90">
             {/* PL-468 (via PL-470): the hero names venue · room, not the bare room. */}
@@ -1167,7 +1164,7 @@ export async function ClassPageView({
               href={consultHref}
               className="public-cta inline-block bg-gray-100 text-hgl-slate font-bold py-3 px-6 rounded-md hover:bg-gray-200 transition"
             >
-              Talk to us — free consultation
+              {CONSULT_CTA}
             </a>
             {interest && (
               <div className="max-w-md mx-auto" data-testid="state-interest-capture">
@@ -1207,16 +1204,13 @@ export async function ClassPageView({
           </section>
         )}
 
-        <footer className="text-center text-sm text-gray-400 pb-6">
-          <a href="https://www.highergroundlearning.com" className="underline hover:text-gray-600">
-            Higher Ground Learning
-          </a>
-          {' · '}
+        <p className="text-center text-sm text-gray-400 pb-2">
           <a href={consultHref} className="underline hover:text-gray-600">
-            Questions? Talk to us
+            {CONSULT_CTA}
           </a>
-        </footer>
+        </p>
       </div>
+      <SiteFooter />
     </div>
   )
 }

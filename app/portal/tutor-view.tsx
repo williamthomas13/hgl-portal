@@ -64,6 +64,7 @@ export default async function TutorView({
       .from('timecards')
       .select('id, period_start, period_end, status, total_hours, tutor_confirmed_at')
       .eq('tutor_id', tutor.id)
+      .neq('status', 'void') // PL-486: a voided card is not the tutor's to confirm
       .order('period_start', { ascending: false })
       .limit(6),
     // PL-132: the class/workshop sessions this instructor teaches. They were

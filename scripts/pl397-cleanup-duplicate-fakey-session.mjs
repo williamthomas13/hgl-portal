@@ -11,6 +11,18 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+import { mkdtempSync } from 'node:fs'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const root = process.cwd()
 const env = Object.fromEntries(
@@ -21,8 +33,9 @@ const env = Object.fromEntries(
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 delete process.env.RESEND_API_KEY
 
-const out = path.join(root, 'scripts', '.tmp-build-dupclean')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(root, 'scripts', '.tmp-build-dupclean-'))
 execSync(
   `npx tsc app/utils/gcal.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node`,
   { stdio: 'inherit' }
@@ -53,4 +66,4 @@ if (doomed.gcal_event_id && conn?.key && conn.status === 'connected' && tutor?.e
 const { error } = await db.from('tutoring_sessions').delete().eq('id', DOOMED)
 if (error) { console.error('row delete failed:', error.message); process.exit(1) }
 console.log('duplicate session row deleted:', DOOMED, '— kept', KEEP)
-rmSync(out, { recursive: true, force: true })
+safeRm(out)

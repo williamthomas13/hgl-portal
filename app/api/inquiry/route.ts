@@ -38,7 +38,11 @@ export async function POST(req: Request) {
   if (str(body.company)) return json({ ok: true })
   if (ipThrottled(req)) return json({ error: 'Too many requests — please try again in a few minutes.' }, 429)
 
-  const parentName = str(body.parentName, 200)
+  // PL-482: names arrive split (first* + last*); the legacy single field is
+  // still accepted from old callers and lands as the display name only.
+  const parentFirst = str(body.parentFirst, 100)
+  const parentLast = str(body.parentLast, 100)
+  const parentName = parentFirst ? `${parentFirst}${parentLast ? ` ${parentLast}` : ''}` : str(body.parentName, 200)
   const parentEmail = str(body.parentEmail, 200)?.toLowerCase() ?? null
   const parentPhone = composePhone(body.parentPhoneCountry, body.parentPhone)
   if (!parentName || !parentEmail) {
@@ -51,10 +55,14 @@ export async function POST(req: Request) {
   // friendly OK and no second pipeline row.
   if (await recentDuplicate('leads', 'contact_email', parentEmail)) return json({ ok: true, duplicate: true })
 
-  const studentName = str(body.studentName, 200)
+  const studentFirst = str(body.studentFirst, 100)
+  const studentLast = str(body.studentLast, 100)
+  const studentName = studentFirst ? `${studentFirst}${studentLast ? ` ${studentLast}` : ''}` : str(body.studentName, 200)
   const studentSchool = str(body.studentSchool, 200)
   const subject = str(body.subject, 300)
-  const connectPref = str(body.connectPref, 40)
+  const connectPrefRaw = (str(body.connectPref, 40) ?? '').toLowerCase()
+  const connectPref = /whats/.test(connectPrefRaw) ? 'whatsapp' : /call|phone/.test(connectPrefRaw) ? 'call' : /text|sms/.test(connectPrefRaw) ? 'text' : /mail/.test(connectPrefRaw) ? 'email' : null
+  const connectPhrase = connectPref === 'whatsapp' ? 'WhatsApp' : connectPref === 'call' ? 'phone call' : connectPref === 'text' ? 'text' : connectPref === 'email' ? 'email' : null
   const other = str(body.other, 2000)
   const src = str(body.source, 100) ?? str(body.src, 100) ?? 'website form'
   const interestTag = str(body.interestTag, 100) ?? (subject && /^(SAT|ACT|AP\/IB|University applications|GRE\/GMAT|Academic support|School partnership)$/.test(subject) ? subject : null)
@@ -85,9 +93,14 @@ export async function POST(req: Request) {
       source_detail: src,
       interest_tag: interestTag,
       contact_name: parentName,
+      contact_first_name: parentFirst,
+      contact_last_name: parentLast,
       contact_email: parentEmail,
       contact_phone: parentPhone,
+      connect_pref: connectPref,
       student_name: studentName,
+      student_first_name: studentFirst,
+      student_last_name: studentLast,
       student_school: studentSchool,
       interest,
       subjects: subject,
@@ -106,7 +119,7 @@ export async function POST(req: Request) {
     adminEmail: ADMIN_EMAIL,
     subject: isSchool ? `New school-partnership inquiry — ${studentSchool ?? parentName}` : `New inquiry — ${studentName ?? parentName}`,
     body: `<p><strong>${parentName}</strong> (${parentEmail}${parentPhone ? `, ${parentPhone}` : ''})
-      asked about ${subject ?? 'tutoring'}${studentName ? ` for <strong>${studentName}</strong>` : ''}${studentSchool ? ` (${studentSchool})` : ''}.</p>
+      asked about ${subject ?? 'tutoring'}${studentName ? ` for <strong>${studentName}</strong>` : ''}${studentSchool ? ` (${studentSchool})` : ''}${connectPhrase ? ` and wants us to get in touch via <strong>${connectPhrase}</strong>` : ''}.</p>
       <p style="font-size:13px;color:#64748b">Came in via <strong>${src}</strong>${interestTag ? ` · interest: <strong>${interestTag}</strong>` : ''}.</p>
       <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/leads?lead=${lead.id}${isSchool ? '&kind=school' : ''}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the lead record</a>
       — ${isSchool ? "they're in the Schools lane of prospective students." : "they're at the top of the prospective-students pipeline."}</p>`,

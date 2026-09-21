@@ -31,10 +31,14 @@ export default function InquiryForm({
   school?: string | null
 }) {
   const [f, setF] = useState({
-    parentName: '',
+    // PL-482: names arrive SPLIT (PL-466: both surnames live in the last-name
+    // field — no splitting logic anywhere downstream).
+    parentFirst: '',
+    parentLast: '',
     parentEmail: '',
     parentPhone: '',
-    studentName: '',
+    studentFirst: '',
+    studentLast: '',
     studentSchool: school ?? '',
     subject: interest ?? '',
     connectPref: '',
@@ -73,7 +77,8 @@ export default function InquiryForm({
   if (done) {
     return (
       <div className="p-4 rounded bg-green-50 border border-green-200 text-green-800 text-sm">
-        <strong>Got it — thank you!</strong> We&apos;ll be in touch soon, usually the same day.
+        {/* PL-482: JSX eats the inline-boundary space — {' '} keeps it. */}
+        <strong>Got it — thank you!</strong>{' '}We&apos;ll be in touch soon, usually the same day.
       </div>
     )
   }
@@ -81,8 +86,11 @@ export default function InquiryForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Your name" required>
-          <input className={inputCls} required value={f.parentName} onChange={(e) => set('parentName')(e.target.value)} />
+        <Field label="First name" required>
+          <input className={inputCls} required autoComplete="given-name" value={f.parentFirst} onChange={(e) => set('parentFirst')(e.target.value)} />
+        </Field>
+        <Field label="Last name" required>
+          <input className={inputCls} required autoComplete="family-name" value={f.parentLast} onChange={(e) => set('parentLast')(e.target.value)} />
         </Field>
         <Field label="Email" required>
           <input className={inputCls} type="email" required value={f.parentEmail} onChange={(e) => set('parentEmail')(e.target.value)} />
@@ -99,8 +107,11 @@ export default function InquiryForm({
             <option value="whatsapp">WhatsApp</option>
           </select>
         </Field>
-        <Field label="Student's name">
-          <input className={inputCls} value={f.studentName} onChange={(e) => set('studentName')(e.target.value)} />
+        <Field label="Student first name">
+          <input className={inputCls} value={f.studentFirst} onChange={(e) => set('studentFirst')(e.target.value)} />
+        </Field>
+        <Field label="Student last name">
+          <input className={inputCls} value={f.studentLast} onChange={(e) => set('studentLast')(e.target.value)} />
         </Field>
         <Field label="Student's school">
           <input className={inputCls} value={f.studentSchool} onChange={(e) => set('studentSchool')(e.target.value)} />

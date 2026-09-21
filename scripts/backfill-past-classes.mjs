@@ -11,7 +11,7 @@
 // never guessed here):
 //   [{ "school": { "nickname": "ISM", "name": "International School of Milan",
 //                  "city": "Milan", "timezone": "Europe/Rome", "code": "ism" },
-//      "classType": "SAT Prep", "mode": "online" | "in_person",
+//      "classType": "SAT Prep", "mode": "online" | "in_person", "logo": "path/to/logo.png" (optional),
 //      "price": 749, "capacity": 20, "minEnrollment": 5,
 //      "sessions": [{ "date": "2026-06-08", "start": "18:30", "end": "20:30" }, …] }, …]
 //
@@ -32,6 +32,17 @@ import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createClient } from '@supabase/supabase-js'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -81,7 +92,7 @@ for (const [i, r] of rows.entries()) {
 if (problems.length) { console.error('REFUSED — fix the JSON first:\n  ' + problems.join('\n  ')); process.exit(1) }
 
 // --- plan ---------------------------------------------------------------------
-const { data: schools } = await db.from('schools').select('id, nickname, name, city, timezone, evergreen_code')
+const { data: schools } = await db.from('schools').select('id, nickname, name, city, timezone, evergreen_code, logo_url')
 const { data: existingClasses } = await db.from('classes').select('id, school_id, class_type, slug, status, sessions ( session_date )')
 const { data: codeClash } = await db.from('course_meta').select('course_key, evergreen_code')
 const { data: legacy } = await db.from('legacy_redirects').select('code')
@@ -127,7 +138,7 @@ for (const it of plan) {
 const tmp = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-backfill-'))
 let classQuietReason, projectSends
 try {
-  execSync(`npx tsc app/utils/class-quiet.ts app/utils/send-projection.ts --outDir ${JSON.stringify(tmp)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`, { stdio: 'pipe' })
+  execSync(`npx tsc app/utils/class-quiet.ts app/utils/send-projection.ts app/utils/logo-process.ts --outDir ${JSON.stringify(tmp)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --jsx react-jsx --moduleResolution node`, { stdio: 'pipe' })
   const req = createRequire(import.meta.url)
   ;({ classQuietReason } = req(path.join(tmp, 'class-quiet.js')))
   ;({ projectSends } = req(path.join(tmp, 'send-projection.js')))
@@ -136,9 +147,9 @@ console.log('\nPL-471 quiet verdict per planned class (the class rule, evaluated
 for (const it of plan) {
   const reason = classQuietReason({ status: 'open', timezone: it.r.school.timezone, firstSession: it.first, lastSession: it.last, enrollments: [] })
   console.log(`  ${it.r.school.nickname} ${it.r.classType}: ${reason ?? 'NOT QUIET — refusing'}`)
-  if (!reason) { console.error('A planned class is not quiet — aborting.'); rmSync(tmp, { recursive: true, force: true }); process.exit(1) }
+  if (!reason) { console.error('A planned class is not quiet — aborting.'); safeRm(tmp); process.exit(1) }
 }
-if (dryRun) { rmSync(tmp, { recursive: true, force: true }); console.log('\nDry run — nothing written.'); process.exit(0) }
+if (dryRun) { safeRm(tmp); console.log('\nDry run — nothing written.'); process.exit(0) }
 
 // --- apply --------------------------------------------------------------------
 const created = []
@@ -148,7 +159,7 @@ for (const it of plan) {
   const s = it.r.school
   let school = it.school ?? schoolsMade.get(s.nickname.toLowerCase()) ?? null
   if (!school) {
-    const { data, error } = await db.from('schools').insert([{ name: s.name, nickname: s.nickname, city: s.city ?? null, timezone: s.timezone, evergreen_code: s.code, collateral_language: 'en' }]).select('id, nickname, evergreen_code').single()
+    const { data, error } = await db.from('schools').insert([{ name: s.name, nickname: s.nickname, city: s.city ?? null, timezone: s.timezone, evergreen_code: s.code, collateral_language: 'en' }]).select('id, nickname, evergreen_code, logo_url').single()
     if (error) { console.error(`FAIL school ${s.nickname}: ${error.message}`); continue }
     school = data; schoolsMade.set(s.nickname.toLowerCase(), data); console.log(`created school ${s.nickname} (${s.code}) — no contact, no digests, nobody emailed`)
   } else {
@@ -156,6 +167,29 @@ for (const it of plan) {
     if (!school.evergreen_code) patch.evergreen_code = s.code
     if (!school.city && s.city) patch.city = s.city
     if (Object.keys(patch).length) await db.from('schools').update(patch).eq('id', school.id)
+  }
+  // PL-479: optional `logo` (a local file path Claude supplies) → the SAME
+  // processing + storage path as the school-logo route (background flood
+  // fill + trim via processLogo, `school-assets/{schoolId}/logo-{ts}.png`);
+  // only when the school has no logo yet. Schools without one get the
+  // monogram tile on /classes.
+  if (s.logo && !school.logo_url) {
+    try {
+      const { processLogo, looksLikeImage } = req(path.join(tmp, 'logo-process.js'))
+      const original = readFileSync(s.logo)
+      if (!looksLikeImage(original)) throw new Error('not an image')
+      const png = await processLogo(original)
+      if (!png) throw new Error('empty after background removal')
+      const key = `${school.id}/logo-${Date.now()}.png`
+      const { error: upErr } = await db.storage.from('school-assets').upload(key, png, { contentType: 'image/png', cacheControl: '3600', upsert: true })
+      if (upErr) throw upErr
+      const { data: pub } = db.storage.from('school-assets').getPublicUrl(key)
+      await db.from('schools').update({ logo_url: pub.publicUrl }).eq('id', school.id)
+      school.logo_url = pub.publicUrl
+      console.log(`  logo uploaded for ${s.nickname}`)
+    } catch (e) {
+      console.warn(`  logo for ${s.nickname} NOT uploaded (${e?.message ?? e}) — the school gets the monogram tile; re-run with a fixed file`)
+    }
   }
   const sorted = [...it.r.sessions].sort((a, b) => a.date.localeCompare(b.date))
   const newClass = {
@@ -198,6 +232,6 @@ for (const c of created) {
   projected += rep.rows.length
   console.log(`  ${c.label}: ${rep.rows.length} projected send(s)/write(s) — ${rep.quiet.find((q) => q.classId === c.id)?.reason ?? 'not marked quiet'}`)
 }
-rmSync(tmp, { recursive: true, force: true })
+safeRm(tmp)
 console.log(`\nDone — ${created.length} class(es) created; projector total: ${projected} (expected 0).`)
 process.exit(projected === 0 ? 0 : 2)

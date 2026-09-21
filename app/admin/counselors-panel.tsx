@@ -259,6 +259,19 @@ export default function CounselorsPanel({
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [editingSchool, setEditingSchool] = useState<string | null>(null)
+  // PL-484: the interest list, grouped per school (staff RLS read).
+  const [interestRows, setInterestRows] = useState<InterestRow[]>([])
+  useEffect(() => {
+    fetch('/api/admin/interest')
+      .then((r) => (r.ok ? r.json() : { rows: [] }))
+      .then((j) => setInterestRows(j.rows ?? []))
+      .catch(() => setInterestRows([]))
+  }, [])
+  const interestBySchool = new Map<string, InterestRow[]>()
+  for (const r of interestRows) {
+    const k = r.schoolId ?? 'none'
+    interestBySchool.set(k, [...(interestBySchool.get(k) ?? []), r])
+  }
   const [addingAt, setAddingAt] = useState<string | null>(null)
   const [addingSchool, setAddingSchool] = useState(false)
   // PL-242: names are doors — ?school={id} lands with the card in view.
@@ -532,6 +545,10 @@ export default function CounselorsPanel({
                 </button>
               </div>
 
+              {/* PL-484: who is waiting for this school's next class — count,
+                  list, CSV export. Not leads: they never enter the pipeline. */}
+              <InterestListCard schoolId={school.id} rows={interestBySchool.get(school.id) ?? []} />
+
               {editingSchool === school.id && (
                 <div className="mt-3">
                   <SchoolEditor
@@ -677,6 +694,34 @@ export default function CounselorsPanel({
 /** PL-467: add a school with NO contact — the same insert the class wizard
  *  does, minus the contact requirement. The card then shows the existing
  *  "No active contact" state until one is added there. */
+
+// PL-484: per-school interest list on the school card.
+type InterestRow = { id: string; email: string; firstName: string; lastName: string; studentFirst: string; classType: string; source: string; compass: boolean; signedUp: string; notifiedAt: string | null; unsubscribedAt: string | null; schoolId?: string | null }
+function InterestListCard({ schoolId, rows }: { schoolId: string; rows: InterestRow[] }) {
+  const [open, setOpen] = useState(false)
+  const waiting = rows.filter((r) => !r.notifiedAt && !r.unsubscribedAt)
+  if (rows.length === 0) return null
+  return (
+    <div className="mt-3 text-sm" data-testid="interest-list-card">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="text-hgl-blue underline">
+        Interest list: {waiting.length} waiting{rows.length !== waiting.length ? ` (${rows.length} total)` : ''} {open ? '▾' : '▸'}
+      </button>
+      {' · '}
+      <a href={`/api/admin/interest?school=${schoolId}&format=csv`} className="text-xs text-gray-500 underline" data-testid="interest-export">export CSV</a>
+      {open && (
+        <ul className="mt-2 space-y-1 text-xs text-gray-700">
+          {rows.map((r) => (
+            <li key={r.id}>
+              {r.firstName} {r.lastName} · {r.email}{r.studentFirst ? ` · student ${r.studentFirst}` : ''} · {r.classType} · {new Date(r.signedUp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {r.compass ? ' · Compass' : ''}{r.notifiedAt ? ' · notified' : ''}{r.unsubscribedAt ? ' · unsubscribed' : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function AddSchoolForm({ onDone, onCancel }: { onDone: (message: string) => void; onCancel: () => void }) {
   const [name, setName] = useState('')
   const [nickname, setNickname] = useState('')

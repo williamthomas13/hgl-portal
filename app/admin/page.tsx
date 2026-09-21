@@ -18,6 +18,7 @@ import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-pane
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
 import GcalPanel from './tutoring/gcal-panel'
 import ContactSettingsPanel from './contact-settings-panel'
+import SiteNavPanel from './site-nav-panel'
 import TeamAccessPanel from './team-access-panel'
 import NotificationsPanel from './notifications-panel'
 import { SystemHealthSettingsPanel } from './system-health-card'
@@ -3468,6 +3469,8 @@ export default function AdminDashboard() {
         {/* PL-50: renders only for admins (the API 403s managers). */}
         <div className={activeSection === 'settings' ? '' : 'hidden'}>
         {simManager ? <SimManagerHidden what="Contact settings" /> : <ContactSettingsPanel />}
+        {/* PL-478: the public site menu (header + footer) — admin-only like the rest of Settings. */}
+        <div className="mt-6">{simManager ? <SimManagerHidden what="Public site menu" /> : <SiteNavPanel />}</div>
         </div>
 
         {/* PL-213: Team access — admin-only (same self-gating pattern). */}

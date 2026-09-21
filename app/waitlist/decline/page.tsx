@@ -3,6 +3,7 @@ import { checkDeclineToken } from '../../utils/lifecycle'
 import { loadContactInfo } from '../../utils/tutoring-emails'
 import { PublicNoticeCard } from '../../components/PublicNotice'
 import DeclineConfirm from './decline-confirm'
+import SiteHeader from '../../components/SiteHeader'
 
 // PL-72: the W2 decline link lands HERE — a confirm page, never an action.
 // Mail scanners follow GET links, so the release itself is a JS-executed
@@ -23,7 +24,7 @@ export default async function DeclinePage({
   const tokenState = enrollmentId && token ? checkDeclineToken(enrollmentId, token) : 'invalid'
   if (tokenState === 'expired') {
     return (
-      <PublicNoticeCard title="This link has aged out">
+      <PublicNoticeCard header={<SiteHeader />} title="This link has aged out">
         Links in our emails retire themselves after a few months, so an old message can&apos;t be
         used later by someone it was forwarded to. Nothing is wrong with your account — reply to
         any of our emails and we&apos;ll send you a fresh one right away.
@@ -32,7 +33,7 @@ export default async function DeclinePage({
   }
   if (!enrollmentId || !token || tokenState !== 'ok') {
     return (
-      <PublicNoticeCard title="That link didn't work">
+      <PublicNoticeCard header={<SiteHeader />} title="That link didn't work">
         The link looks incomplete or out of date. Try the button in the email again, or reply to
         the email and we&apos;ll take care of it — {contact.email} or {contact.phone}.
       </PublicNoticeCard>
@@ -58,7 +59,7 @@ export default async function DeclinePage({
 
   if (!enrollment) {
     return (
-      <PublicNoticeCard title="That link didn't work">
+      <PublicNoticeCard header={<SiteHeader />} title="That link didn't work">
         We couldn&apos;t find this waitlist spot. Reply to any of our emails and we&apos;ll sort
         it out for you.
       </PublicNoticeCard>
@@ -66,7 +67,7 @@ export default async function DeclinePage({
   }
   if (enrollment.waitlist_declined_at) {
     return (
-      <PublicNoticeCard title="All set — the spot was released">
+      <PublicNoticeCard header={<SiteHeader />} title="All set — the spot was released">
         You already let us know, and the spot passed to the next family. You&apos;re still on our
         list: the moment a new {classLabel} course opens, you&apos;ll be the first to hear.
         Nothing to do on your end.
@@ -75,7 +76,7 @@ export default async function DeclinePage({
   }
   if (enrollment.payment_status === 'Paid' || enrollment.payment_status === 'Completed') {
     return (
-      <PublicNoticeCard title={`${studentFirst} is registered!`}>
+      <PublicNoticeCard header={<SiteHeader />} title={`${studentFirst} is registered!`}>
         This spot was already claimed and paid — {studentFirst} is in the {classLabel} class.
         If your plans have changed, just reply to any of our emails and we&apos;ll help.
       </PublicNoticeCard>
@@ -83,7 +84,7 @@ export default async function DeclinePage({
   }
   if (enrollment.payment_status !== 'Waitlisted' || !enrollment.waitlist_offer_sent_at) {
     return (
-      <PublicNoticeCard title="This offer has ended">
+      <PublicNoticeCard header={<SiteHeader />} title="This offer has ended">
         The offer window closed and the spot moved on. You&apos;re still on our interest list —
         when a future {classLabel} course opens, you&apos;ll hear from us first.
       </PublicNoticeCard>

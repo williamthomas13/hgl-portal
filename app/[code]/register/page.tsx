@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { permanentRedirect } from 'next/navigation'
 import EvergreenCapture from '../../components/EvergreenCapture'
 import { publicSkin } from '../../components/public-skin'
+import SiteHeader from '../../components/SiteHeader'
 import { RegistrationForm } from '../../register/[id]/registration-form'
 import { bumpCodeVisit, resolveEvergreen, wildcardForward } from '../../utils/evergreen'
 
@@ -30,6 +31,7 @@ export default async function EvergreenRegisterPage({
       <EvergreenCapture
         schoolId={schoolId}
         classType={classType}
+        schoolLabel={heading.replace(/^No upcoming (class at )?/, '').replace(/ (class )?right now.*$/, '')}
         heading={heading}
         sub="Add your email to the interest list to be contacted when registration opens for the next course."
       />
@@ -46,7 +48,11 @@ export default async function EvergreenRegisterPage({
     if (res.classSlug)
       return (
         <div className={publicSkin}>
-          <RegistrationForm idOrSlug={res.classSlug} />
+          <RegistrationForm
+            idOrSlug={res.classSlug}
+            header={<SiteHeader />}
+            compactHeader={<SiteHeader variant="compact" backHref={`/${code}`} />}
+          />
         </div>
       )
     // PL-472: same sentence as the code page.

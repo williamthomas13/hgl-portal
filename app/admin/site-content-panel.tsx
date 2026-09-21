@@ -196,7 +196,8 @@ const SECTION_LABELS: Record<string, string> = {
 
 // PL-367: shared sections in the order the /c page renders them; 'pitch' is
 // flow-only and lives in its own last group.
-const SECTION_ORDER = ['included', 'instructors', 'faq', 'closing', 'fine-print', 'states']
+// PL-481: 'team' = the /team page's hero slot (photo + tagline).
+const SECTION_ORDER = ['included', 'instructors', 'faq', 'closing', 'fine-print', 'states', 'team']
 
 // PL-369: conditional blocks say WHEN they show — the walkthrough must read
 // honestly. Conditions live in the /c renderer (facts from the class

@@ -7,6 +7,18 @@ import { readFileSync, rmSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { mkdtempSync } from 'node:fs'
+
+// PL-487: cleanup must never decide the exit code — a sandboxed shell cannot
+// delete files (EPERM at the END of an otherwise successful run); warn and go on.
+function safeRm(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn(`note: could not remove temp dir ${dir} (${e?.code ?? e}) — harmless, delete it by hand`)
+  }
+}
+
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
@@ -18,8 +30,9 @@ const env = Object.fromEntries(
 )
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v
 
-const out = path.join(process.cwd(), 'scripts', '.tmp-build-verify-pl391')
-rmSync(out, { recursive: true, force: true })
+// PL-487: a FRESH temp dir each run — never an rmSync of a fixed path at the
+// start (a sandboxed shell cannot delete, which blocked the run outright).
+const out = mkdtempSync(path.join(process.cwd(), 'scripts', '.tmp-build-verify-pl391-'))
 execSync(
   `npx tsc app/utils/comms-db-render.ts app/utils/email.ts --outDir ${JSON.stringify(out)} --module commonjs --target es2022 --skipLibCheck --esModuleInterop --moduleResolution node --jsx react-jsx`,
   { stdio: 'inherit' }
@@ -98,5 +111,5 @@ check('test send → billy+pl391-vfaq-deepdive@', !error, error?.message)
 if (data?.id) console.log('  resend id', data.id)
 
 console.log(`\n${pass} passed, ${fail} failed`)
-rmSync(out, { recursive: true, force: true })
+safeRm(out)
 process.exit(fail ? 1 : 0)

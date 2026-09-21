@@ -16,6 +16,7 @@ type Body =
   | { action: 'mark_exported'; ids: string[] }
   | { action: 'reopen'; ids: string[] }
   | { action: 'push_qbo'; ids: string[] }
+  | { action: 'void'; ids: string[]; reason: string }
 
 export async function POST(req: Request) {
   const caller = await sessionRole('staff')
@@ -113,6 +114,30 @@ export async function POST(req: Request) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       for (const row of data ?? []) await recomputeTimecard(row.id)
       return NextResponse.json({ ok: true, updated: data?.length ?? 0 })
+    }
+
+    if (body.action === 'void') {
+      // PL-486: the one deliberate delete-shaped transition — ADMIN only, a
+      // reason required, only cards nobody approved yet. A voided card keeps
+      // its history row (visible, struck through) but is excluded from
+      // totals / exports / the approval queue, its sessions are un-stamped,
+      // and the sweep never re-creates or re-announces it.
+      if (caller.role !== 'admin') return NextResponse.json({ error: 'Only an admin can void a timecard.' }, { status: 403 })
+      const reason = String(body.reason ?? '').trim()
+      if (!reason) return NextResponse.json({ error: 'A reason is required to void a timecard.' }, { status: 400 })
+      const { data, error } = await supabase
+        .from('timecards')
+        .update({ status: 'void', void_reason: reason, voided_by: caller.email, voided_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .in('id', body.ids)
+        .in('status', ['open', 'tutor_confirmed'])
+        .select('id')
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      const ids = (data ?? []).map((r) => r.id)
+      if (ids.length > 0) {
+        await supabase.from('sessions').update({ timecard_id: null }).in('timecard_id', ids)
+        await supabase.from('tutoring_sessions').update({ timecard_id: null }).in('timecard_id', ids)
+      }
+      return NextResponse.json({ ok: true, updated: ids.length, skipped: body.ids.length - ids.length })
     }
 
     if (body.action === 'push_qbo') {
