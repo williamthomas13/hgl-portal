@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '../../utils/supabase-admin'
 import { sendAdminAlert, sendOnce } from '../../utils/email'
 import { ADMIN_EMAIL } from '../../utils/lifecycle'
-import { FORM_CORS_HEADERS } from '../../utils/embed-forms'
+import { FORM_CORS_HEADERS, channelNeeds, normalizeConnectPref } from '../../utils/embed-forms'
 import { renderDbEmail } from '../../utils/comms-db-render'
 import { tutoringStubContext } from '../../utils/comms-registered'
 import { contactBlockHtml, loadContactInfo } from '../../utils/tutoring-emails'
@@ -39,13 +39,21 @@ export async function POST(req: Request) {
   // partial lead through; the error names every missing field. (The honeypot
   // check runs after, so a probe with the honeypot set proves the rule
   // without creating a row.)
+  // PL-494 (Scarlett, Sep 22): Email / Phone are required BY THE CHOSEN
+  // CHANNEL (call · text · WhatsApp → Phone; email → Email; nothing chosen →
+  // both, and the error names the channel) — channelNeeds() is the one rule
+  // the page and the embed run too.
+  const connectPref = normalizeConnectPref(body.connectPref)
+  const needs = channelNeeds(connectPref)
   const REQUIRED: [string, string][] = [
-    ['parentFirst', 'First name'], ['parentLast', 'Last name'], ['parentEmail', 'Email'], ['parentPhone', 'Phone'],
-    ['connectPref', 'How you prefer to connect'], ['studentFirst', 'Student first name'], ['studentLast', 'Student last name'],
+    ['parentFirst', 'First name'], ['parentLast', 'Last name'], ['connectPref', 'How you prefer to connect'],
+    ...(needs.email ? [['parentEmail', 'Email'] as [string, string]] : []),
+    ...(needs.phone ? [['parentPhone', 'Phone'] as [string, string]] : []),
+    ['studentFirst', 'Student first name'], ['studentLast', 'Student last name'],
     ['studentSchool', "Student's school"], ['subject', 'What you would like help with'],
   ]
   // Legacy single-name callers: contact_name / studentName count for the split pair.
-  const has = (k: string) => Boolean(str(body[k], 300)) || (k === 'parentFirst' && Boolean(str(body.parentName, 200))) || (k === 'parentLast' && Boolean(str(body.parentName, 200))) || (k === 'studentFirst' && Boolean(str(body.studentName, 200))) || (k === 'studentLast' && Boolean(str(body.studentName, 200)))
+  const has = (k: string) => (k === 'connectPref' ? connectPref != null : Boolean(str(body[k], 300))) || (k === 'parentFirst' && Boolean(str(body.parentName, 200))) || (k === 'parentLast' && Boolean(str(body.parentName, 200))) || (k === 'studentFirst' && Boolean(str(body.studentName, 200))) || (k === 'studentLast' && Boolean(str(body.studentName, 200)))
   const missing = REQUIRED.filter(([k]) => !has(k)).map(([, label]) => label)
   if (missing.length) return json({ error: `Please fill in: ${missing.join(', ')}.`, missing }, 400)
   // Honeypot: real parents never fill the invisible field.
@@ -59,23 +67,23 @@ export async function POST(req: Request) {
   const parentName = parentFirst ? `${parentFirst}${parentLast ? ` ${parentLast}` : ''}` : str(body.parentName, 200)
   const parentEmail = str(body.parentEmail, 200)?.toLowerCase() ?? null
   const parentPhone = composePhone(body.parentPhoneCountry, body.parentPhone)
-  if (!parentName || !parentEmail) {
-    return json({ error: 'Please give us your name and email so we can reply.' }, 400)
+  if (!parentName) {
+    return json({ error: 'Please give us your name so we can reply.' }, 400)
   }
-  if (!EMAIL_RE.test(parentEmail)) {
+  // PL-494: the email is optional for phone-channel leads — validated only
+  // when given; the pipeline row carries a null contact_email then.
+  if (parentEmail && !EMAIL_RE.test(parentEmail)) {
     return json({ error: 'That email address does not look right.' }, 400)
   }
   // Per-email throttle: a double-submit or replay inside 10 minutes gets a
   // friendly OK and no second pipeline row.
-  if (await recentDuplicate('leads', 'contact_email', parentEmail)) return json({ ok: true, duplicate: true })
+  if (parentEmail && (await recentDuplicate('leads', 'contact_email', parentEmail))) return json({ ok: true, duplicate: true })
 
   const studentFirst = str(body.studentFirst, 100)
   const studentLast = str(body.studentLast, 100)
   const studentName = studentFirst ? `${studentFirst}${studentLast ? ` ${studentLast}` : ''}` : str(body.studentName, 200)
   const studentSchool = str(body.studentSchool, 200)
   const subject = str(body.subject, 300)
-  const connectPrefRaw = (str(body.connectPref, 40) ?? '').toLowerCase()
-  const connectPref = /whats/.test(connectPrefRaw) ? 'whatsapp' : /call|phone/.test(connectPrefRaw) ? 'call' : /text|sms/.test(connectPrefRaw) ? 'text' : /mail/.test(connectPrefRaw) ? 'email' : null
   const connectPhrase = connectPref === 'whatsapp' ? 'WhatsApp' : connectPref === 'call' ? 'phone call' : connectPref === 'text' ? 'text' : connectPref === 'email' ? 'email' : null
   const other = str(body.other, 2000)
   const src = str(body.source, 100) ?? str(body.src, 100) ?? 'website form'
@@ -132,7 +140,7 @@ export async function POST(req: Request) {
     dedupeKey: `web_inquiry:${lead.id}`,
     adminEmail: ADMIN_EMAIL,
     subject: isSchool ? `New school-partnership inquiry — ${studentSchool ?? parentName}` : `New inquiry — ${studentName ?? parentName}`,
-    body: `<p><strong>${parentName}</strong> (${parentEmail}${parentPhone ? `, ${parentPhone}` : ''})
+    body: `<p><strong>${parentName}</strong> (${[parentEmail, parentPhone].filter(Boolean).join(', ')})
       asked about ${subject ?? 'tutoring'}${studentName ? ` for <strong>${studentName}</strong>` : ''}${studentSchool ? ` (${studentSchool})` : ''}${connectPhrase ? ` and wants us to get in touch via <strong>${connectPhrase}</strong>` : ''}.</p>
       <p style="font-size:13px;color:#64748b">Came in via <strong>${src}</strong>${interestTag ? ` · interest: <strong>${interestTag}</strong>` : ''}.</p>
       <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin/leads?lead=${lead.id}${isSchool ? '&kind=school' : ''}" style="display:inline-block;background:#00AEEE;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the lead record</a>
@@ -140,6 +148,8 @@ export async function POST(req: Request) {
   }).catch((e) => console.error('inquiry alert failed (row stands):', e))
 
   // IQ_INQUIRY_ACK: the auto-reply — LIVE-ONLY (a draft renders null → nothing sends).
+  // PL-494: no email given (a phone-channel lead) → no auto-reply; staff reply by phone.
+  if (!parentEmail) return json({ ok: true })
   try {
     const contact = await loadContactInfo()
     const ctx = tutoringStubContext({ parentFirstName: parentName.split(' ')[0], parentEmail: parentEmail, studentFirstName: '', studentLastName: '' })

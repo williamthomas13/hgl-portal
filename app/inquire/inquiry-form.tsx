@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { INTEREST_OPTIONS } from '../utils/embed-forms'
+import { INTEREST_OPTIONS, channelNeeds, normalizeConnectPref } from '../utils/embed-forms'
 
 // PL-38 client form: a superset of the six Squarespace variants, kept short —
 // cold inquiries answer in under a minute; the full intake comes later.
@@ -54,9 +54,14 @@ export default function InquiryForm({
 
   // PL-488: every field required except "Anything else" — the honest error
   // names EVERY missing field (a browser's native check stops at the first).
+  // PL-494: Email / Phone are required by the chosen channel (channelNeeds —
+  // the same rule the API and the embed run); the * markers follow it live.
+  const needs = channelNeeds(normalizeConnectPref(f.connectPref))
   const REQUIRED: [keyof typeof f, string][] = [
-    ['parentFirst', 'First name'], ['parentLast', 'Last name'], ['parentEmail', 'Email'], ['parentPhone', 'Phone'],
-    ['connectPref', 'How you prefer to connect'], ['studentFirst', 'Student first name'], ['studentLast', 'Student last name'],
+    ['parentFirst', 'First name'], ['parentLast', 'Last name'], ['connectPref', 'How you prefer to connect'],
+    ...(needs.email ? [['parentEmail', 'Email'] as [keyof typeof f, string]] : []),
+    ...(needs.phone ? [['parentPhone', 'Phone'] as [keyof typeof f, string]] : []),
+    ['studentFirst', 'Student first name'], ['studentLast', 'Student last name'],
     ['studentSchool', "Student's school"], ['subject', 'What you would like help with'],
   ]
   async function submit(e: React.FormEvent) {
@@ -105,20 +110,23 @@ export default function InquiryForm({
         <Field label="Last name" required>
           <input className={inputCls} required autoComplete="family-name" value={f.parentLast} onChange={(e) => set('parentLast')(e.target.value)} />
         </Field>
-        <Field label="Email" required>
-          <input className={inputCls} type="email" required value={f.parentEmail} onChange={(e) => set('parentEmail')(e.target.value)} />
+        {/* PL-494: the channel question comes first — it decides which of Email / Phone is required. */}
+        <div className="sm:col-span-2">
+          <Field label="How do you prefer to connect?" required>
+            <select className={`${inputCls} bg-white`} required value={f.connectPref} onChange={(e) => set('connectPref')(e.target.value)} data-testid="inquiry-connect-pref">
+              <option value="">Pick one…</option>
+              <option value="call">Phone call</option>
+              <option value="text">Text</option>
+              <option value="email">Email</option>
+              <option value="whatsapp">WhatsApp</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Email" required={needs.email}>
+          <input className={inputCls} type="email" required={needs.email} value={f.parentEmail} onChange={(e) => set('parentEmail')(e.target.value)} data-testid="inquiry-email" />
         </Field>
-        <Field label="Phone" required>
-          <input className={inputCls} type="tel" required value={f.parentPhone} onChange={(e) => set('parentPhone')(e.target.value)} />
-        </Field>
-        <Field label="How do you prefer to connect?" required>
-          <select className={`${inputCls} bg-white`} required value={f.connectPref} onChange={(e) => set('connectPref')(e.target.value)}>
-            <option value="">Pick one…</option>
-            <option value="call">Phone call</option>
-            <option value="text">Text</option>
-            <option value="email">Email</option>
-            <option value="whatsapp">WhatsApp</option>
-          </select>
+        <Field label="Phone" required={needs.phone}>
+          <input className={inputCls} type="tel" required={needs.phone} value={f.parentPhone} onChange={(e) => set('parentPhone')(e.target.value)} data-testid="inquiry-phone" />
         </Field>
         <Field label="Student first name" required>
           <input className={inputCls} required value={f.studentFirst} onChange={(e) => set('studentFirst')(e.target.value)} />
@@ -126,9 +134,12 @@ export default function InquiryForm({
         <Field label="Student last name" required>
           <input className={inputCls} required value={f.studentLast} onChange={(e) => set('studentLast')(e.target.value)} />
         </Field>
-        <Field label="Student's school" required>
-          <input className={inputCls} required placeholder="Homeschooled or graduated? Just say so" value={f.studentSchool} onChange={(e) => set('studentSchool')(e.target.value)} />
-        </Field>
+        <div className="sm:col-span-2">
+          {/* PL-494: no helper placeholder (it was unreadable in the field). */}
+          <Field label="Student's school" required>
+            <input className={inputCls} required value={f.studentSchool} onChange={(e) => set('studentSchool')(e.target.value)} />
+          </Field>
+        </div>
       </div>
       <Field label="What would you like help with?" required>
         {/* PL-488: the same pick-one list the embed uses (+ free text via "Other"). */}

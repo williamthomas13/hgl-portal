@@ -10,9 +10,26 @@
 // throttle. Works at 375px (every field is width:100%).
 
 export type EmbedField =
-  | { name: string; label: string; type: 'text' | 'email' | 'tel' | 'textarea'; required?: boolean; placeholder?: string }
+  | { name: string; label: string; type: 'text' | 'email' | 'tel' | 'textarea'; required?: boolean; requiredBy?: 'channel'; placeholder?: string }
   | { name: string; label: string; type: 'select'; required?: boolean; options: string[]; placeholder?: string }
-  | { name: string; label: string; type: 'phone'; required?: boolean }
+  | { name: string; label: string; type: 'phone'; required?: boolean; requiredBy?: 'channel' }
+
+// PL-494 (Scarlett, Sep 22): the channel rule — ONE place for the /inquire
+// page, every embed and /api/inquiry. The chosen way to connect decides
+// which of Email / Phone is required: call · text · WhatsApp → Phone,
+// email → Email. Nothing chosen yet → both read as required (and the error
+// names the channel). Whatever is typed in the optional one is still saved.
+export type ConnectPref = 'call' | 'text' | 'whatsapp' | 'email'
+export function normalizeConnectPref(raw: unknown): ConnectPref | null {
+  const v = String(raw ?? '').toLowerCase()
+  if (!v) return null
+  return /whats/.test(v) ? 'whatsapp' : /call|phone/.test(v) ? 'call' : /text|sms/.test(v) ? 'text' : /mail/.test(v) ? 'email' : null
+}
+export function channelNeeds(pref: ConnectPref | null): { email: boolean; phone: boolean } {
+  if (pref === 'email') return { email: true, phone: false }
+  if (pref) return { email: false, phone: true }
+  return { email: true, phone: true }
+}
 
 export type EmbedSpec = {
   /** The mount element id the snippet creates. */
@@ -63,6 +80,10 @@ export function embedScript(spec: EmbedSpec, base: string): string {
   var source = el.getAttribute('data-source') || ('sqsp:' + location.pathname);
   var interest = el.getAttribute('data-interest') || '';
   // PL-488: ONE required set everywhere (the spec); the per-page attribute switch is retired — nothing can loosen or change the set.
+  // PL-494: the channel rule is the SAME function the page + API run (serialised here, not re-typed).
+  var normalizeConnectPref = ${normalizeConnectPref.toString()};
+  var channelNeeds = ${channelNeeds.toString()};
+  function isRequired(f, pref){ if (f.required) return true; if (f.requiredBy === 'channel') { var n = channelNeeds(normalizeConnectPref(pref)); return f.type === 'phone' ? n.phone : n.email; } return false; }
   var S = {
     wrap: 'font-family:inherit;color:#334155;max-width:640px;width:100%;box-sizing:border-box',
     h: 'font-size:22px;font-weight:700;margin:0 0 6px;color:#1e293b',
@@ -77,8 +98,8 @@ export function embedScript(spec: EmbedSpec, base: string): string {
   };
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function field(f){
-    var req = !!f.required;
-    var lab = '<label style="' + S.label + '" for="hgl-f-' + f.name + '">' + esc(f.label) + (req ? ' <span style="color:#ef4444">*</span>' : '') + '</label>';
+    var req = isRequired(f, '');
+    var lab = '<label style="' + S.label + '" for="hgl-f-' + f.name + '">' + esc(f.label) + ' <span class="hgl-req" data-for="' + f.name + '" style="color:#ef4444' + (req ? '' : ';display:none') + '">*</span></label>';
     if (f.type === 'textarea') return '<div style="' + S.row + '">' + lab + '<textarea style="' + S.input + ';min-height:90px" id="hgl-f-' + f.name + '" name="' + f.name + '" ' + (req ? 'required' : '') + ' placeholder="' + esc(f.placeholder || '') + '"></textarea></div>';
     if (f.type === 'select') {
       var opts = '<option value="">' + esc(f.placeholder || 'Pick one…') + '</option>' + f.options.map(function(o){ return '<option value="' + esc(o) + '"' + (spec.interestField === f.name && o === interest ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
@@ -97,17 +118,28 @@ export function embedScript(spec: EmbedSpec, base: string): string {
     '<button type="submit" style="' + S.btn + '">' + esc(spec.submitLabel) + '</button>' +
     '<p style="' + S.fine + '">' + esc(spec.finePrint) + ' <a href="' + esc(spec.base + spec.pagePath) + '" style="color:#94a3b8">Open the full form</a></p></form></div>';
   var form = el.querySelector('form'), err = el.querySelector('.hgl-err'), btn = el.querySelector('button');
+  var prefInput = form.querySelector('[name="connectPref"]');
+  function refreshMarkers(){
+    var pref = prefInput ? prefInput.value : '';
+    spec.fields.forEach(function(f){
+      if (f.requiredBy !== 'channel') return;
+      var m = form.querySelector('.hgl-req[data-for="' + f.name + '"]');
+      if (m) m.style.display = isRequired(f, pref) ? '' : 'none';
+    });
+  }
+  if (prefInput) { prefInput.addEventListener('change', refreshMarkers); refreshMarkers(); }
   form.addEventListener('submit', function(ev){
     ev.preventDefault();
     err.style.display = 'none';
     var data = { source: source, interestTag: interest || null, company: '' };
     var missing = [];
+    var pref = prefInput ? prefInput.value : '';
     spec.fields.forEach(function(f){
       var input = form.querySelector('[name="' + f.name + '"]');
       var v = input ? input.value.trim() : '';
       data[f.name] = v;
       if (f.type === 'phone') { var cc = form.querySelector('[name="' + f.name + 'Country"]'); data[f.name + 'Country'] = cc ? cc.value : ''; }
-      if (f.required && !v) missing.push(f.label);
+      if (isRequired(f, pref) && !v) missing.push(f.label);
     });
     var hp = form.querySelector('[name="company"]'); data.company = hp ? hp.value : '';
     if (missing.length) { err.textContent = 'Please fill in: ' + missing.join(', ') + '.'; err.style.display = 'block'; return; }
@@ -146,14 +178,17 @@ export const INQUIRE_SPEC: EmbedSpec = {
   intro: "Tell us a little about what you're looking for and we'll usually be able to reach out the same day. We'll get the rest of the details later when we connect!",
   fields: [
     // PL-488 (Scarlett, Sep 21): every field required EXCEPT "Anything else".
+    // PL-494 (Sep 22): the channel question comes BEFORE Email / Phone and
+    // decides which of the two is required (requiredBy: 'channel'); the
+    // school helper text is gone.
     { name: 'parentFirst', label: 'First name', type: 'text', required: true },
     { name: 'parentLast', label: 'Last name', type: 'text', required: true },
-    { name: 'parentEmail', label: 'Email', type: 'email', required: true },
-    { name: 'parentPhone', label: 'Phone / WhatsApp', type: 'phone', required: true },
     { name: 'connectPref', label: 'How do you prefer to connect?', type: 'select', required: true, options: ['Phone call', 'Text', 'Email', 'WhatsApp'], placeholder: 'Pick one…' },
+    { name: 'parentEmail', label: 'Email', type: 'email', requiredBy: 'channel' },
+    { name: 'parentPhone', label: 'Phone / WhatsApp', type: 'phone', requiredBy: 'channel' },
     { name: 'studentFirst', label: 'Student first name', type: 'text', required: true },
     { name: 'studentLast', label: 'Student last name', type: 'text', required: true },
-    { name: 'studentSchool', label: "Student's school", type: 'text', required: true, placeholder: 'Homeschooled or graduated? Just say so' },
+    { name: 'studentSchool', label: "Student's school", type: 'text', required: true },
     { name: 'subject', label: 'What would you like help with?', type: 'select', required: true, options: INTEREST_OPTIONS, placeholder: 'Pick one…' },
     { name: 'other', label: 'Anything else we should know?', type: 'textarea', placeholder: 'Grade, recent scores, goals, timing — whatever is useful' },
   ],
