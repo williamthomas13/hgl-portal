@@ -5,10 +5,10 @@ import { publicTimeCityLabel, formatDateFull, bySessionStart, effectiveStartDate
 import { preferredClassPath } from '../utils/evergreen'
 import { DEFAULT_TIMEZONE } from '../utils/lifecycle'
 import { imageAttrs } from '../utils/class-page-images'
-import { publicSkin, PAGE_HERO } from '../components/public-skin'
+import { publicSkin, PAGE_HERO, HERO_MIN_H } from '../components/public-skin'
 import SchoolTile from '../components/SchoolTile'
 import RecentMore from '../components/RecentMore'
-import SiteHeader from '../components/SiteHeader'
+import SiteHeader, { HEADER_CLEARANCE } from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
 // PL-479/485: /classes is the ONE public page whose consult button reads
 // "Talk to us" (Scarlett's wording) — every other public CTA uses CONSULT_CTA.
@@ -141,7 +141,8 @@ export default async function ClassesBrowsePage({
   // page (the PL-472 interest state). Records-only and backfilled classes
   // count — they are real history. The city is the SCHOOL's own city (or the
   // class's display cities); never the timezone's city dressed up as one.
-  const RECENT_CAP = 12
+  // PL-497 (Scarlett, Sep 22): 16 before "more" — the 13 backfilled cohorts all show.
+  const RECENT_CAP = 16
   const recentEvery = rowsWithHrefs
     .filter((c) => c.past)
     .sort((a, b) => String(b.lastSession).localeCompare(String(a.lastSession)))
@@ -156,10 +157,11 @@ export default async function ClassesBrowsePage({
   const visible = cityFilter ? upcoming.filter((c) => c.city === cityFilter) : upcoming
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
-      <SiteHeader current="classes" />
+    <div className={`relative min-h-screen bg-gray-50 ${publicSkin}`}>
+      {/* PL-492: the header sits ON the hero (transparent, white text) like the main site's. */}
+      <SiteHeader current="classes" tone="overlay" />
       {/* the PL-374 skin: brand hero + scrim */}
-      <section className="relative overflow-hidden bg-hgl-slate">
+      <section className="relative overflow-hidden bg-hgl-slate" data-testid="page-hero">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           {...imageAttrs(PAGE_HERO)}
@@ -175,10 +177,10 @@ export default async function ClassesBrowsePage({
             (headline 2.94:1 at 375px on the class page; bullets p99 3.48:1
             on /classes) — this is the last passing value. */}
         <div aria-hidden className="absolute inset-0 bg-hgl-slate/70" />
-        <div className="relative max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {/* PL-483 viewport rule: at phone width the site header is the HGL mark. */}
-          <img src="/collateral/hgl-logo-white.png" alt="Higher Ground Learning logo" className="hidden sm:block h-14 w-auto mb-4" />
+        {/* PL-492/495: the overlay header carries the HGL mark on this hero now
+            (the hero's own mark went with it — ONE mark per viewport, PL-483);
+            the content clears the header and shares /team's height. */}
+        <div className={`relative ${HEADER_CLEARANCE} ${HERO_MIN_H} max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white flex flex-col justify-center`}>
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">Classes</h1>
           <p className="mt-2 text-white/90" data-testid="classes-intro">
             Live test-prep classes at partner schools around the world, online, and at our HQ in Salt Lake City, USA.

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { publicSkin } from '../components/public-skin'
 import PublicEmbedForm from '../components/PublicEmbedForm'
-import { loadContactInfo } from '../utils/tutoring-emails'
+import { PUBLIC_CONTACT_EMAIL } from '../utils/public-contact'
 import SiteHeader from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
 
@@ -16,7 +16,6 @@ export const metadata: Metadata = {
 
 export default async function PartnerPage({ searchParams }: { searchParams: Promise<{ source?: string }> }) {
   const { source } = await searchParams
-  const contact = await loadContactInfo()
   return (
     <div className={`min-h-screen bg-gray-50  ${publicSkin}`}>
       <SiteHeader />
@@ -28,7 +27,7 @@ export default async function PartnerPage({ searchParams }: { searchParams: Prom
           <PublicEmbedForm script="/embed/partner.js" mountId="hgl-partner" source={source ?? 'portal:/partner'} interest={null} />
           <noscript>
             <p className="text-sm text-gray-600">
-              This form needs JavaScript — email us at {contact.email} and we will take it from there.
+              This form needs JavaScript — email us at {PUBLIC_CONTACT_EMAIL} and we will take it from there.
             </p>
           </noscript>
         </div>

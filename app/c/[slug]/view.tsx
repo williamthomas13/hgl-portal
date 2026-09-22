@@ -22,7 +22,7 @@ import { examFamilyFor, SCHOOL_BASED_REG_TEXT } from '../../utils/exam-family'
 import { CONSULT_CTA, ClassStateCard, consultHrefFor } from '../../components/ClassStateCard'
 import InterestCapture from '../../components/InterestCapture'
 import BrandLockup from '../../components/BrandLockup'
-import SiteHeader from '../../components/SiteHeader'
+import SiteHeader, { HEADER_CLEARANCE } from '../../components/SiteHeader'
 import SiteFooter from '../../components/SiteFooter'
 import ClassPageAnalytics from './analytics'
 import { imageAttrs, parseClassPageImage, type ClassPageImage } from '../../utils/class-page-images'
@@ -742,15 +742,16 @@ export async function ClassPageView({
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
+    <div className={`relative min-h-screen bg-gray-50 ${publicSkin}`}>
       {!isSample && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       )}
       {/* PL-350: first-party section/click counting (DNT-respecting; the
           fine-print block discloses it). Samples never count. */}
       {!isSample && <ClassPageAnalytics classId={cls.id} viaCode={opts.mode === 'code' ? opts.code : undefined} />}
-      {/* PL-478: the shared site header on every public class page. */}
-      <SiteHeader current="classes" />
+      {/* PL-478: the shared site header on every public class page.
+          PL-492: transparent over the hero (the sample banner keeps the white bar so it stays readable). */}
+      <SiteHeader current="classes" tone={isSample ? 'white' : 'overlay'} />
       {isSample && (
         <div className="bg-amber-400 text-amber-950 text-center text-sm font-bold px-4 py-2">
           SAMPLE PAGE — layout preview with made-up class facts (dates, price, room). No class
@@ -783,11 +784,12 @@ export async function ClassPageView({
             (headline 2.94:1 at 375px on the class page; bullets p99 3.48:1
             on /classes) — this is the last passing value. */}
         <div aria-hidden className="absolute inset-0 bg-hgl-slate/70" />
-        <div className="relative max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white">
+        <div className={`relative ${isSample ? '' : HEADER_CLEARANCE} max-w-3xl mx-auto px-5 py-10 sm:py-14 text-white`}>
           {/* PL-483: the deliberate lockup — HGL mark · divider · school logo
-              (white mark over the scrim); HGL-only when the school has none;
-              at 375px the site header carries HGL so only the school shows. */}
-          <BrandLockup schoolLogo={school?.logo_url ?? null} schoolName={school?.name ?? null} tone="white" size="lg" className="mb-4" />
+              (white mark over the scrim); HGL-only when the school has none.
+              PL-492: the overlay header now carries the HGL mark ON this hero
+              at every width, so the lockup shows the school's logo only. */}
+          <BrandLockup schoolLogo={school?.logo_url ?? null} schoolName={school?.name ?? null} tone="white" size="lg" className="mb-4" hglMark={isSample} />
           <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">{heroTitleFor(cls)}</h1>
           <p className="mt-2 text-white/90">
             {/* PL-468 (via PL-470): the hero names venue · room, not the bare room. */}

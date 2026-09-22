@@ -5,8 +5,8 @@ import { imageAttrs, parseClassPageImage } from '../utils/class-page-images'
 import { plainTextFromMarkdown, renderSiteMarkdown } from '../utils/site-md'
 import { CONSULT_CTA } from '../components/ClassStateCard'
 import { publicSiteOrigin } from '../utils/base-url'
-import { publicSkin } from '../components/public-skin'
-import SiteHeader from '../components/SiteHeader'
+import { publicSkin, PAGE_HERO, HERO_MIN_H } from '../components/public-skin'
+import SiteHeader, { HEADER_CLEARANCE } from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
 
 // PL-358: the public team page — GENERATED from instructor profiles (the
@@ -88,77 +88,82 @@ export default async function TeamPage() {
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
+    <div className={`relative min-h-screen bg-gray-50 ${publicSkin}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <SiteHeader current="team" />
-      <section className="bg-hgl-slate">
-        <div className="max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white">
-          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">{heroBlock?.heading?.trim() || 'Our team'}</h1>
-          <p className="mt-2 text-white/90" data-testid="team-tagline">{tagline}</p>
-          {/* PL-481: the team photo sits BELOW the heading (no text over it,
-              so nothing to measure — the PL-453 contrast question does not
-              arise); explicit dimensions, no layout shift. */}
-          {teamPhoto && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              {...imageAttrs(teamPhoto)}
-              sizes="(min-width: 896px) 856px, 100vw"
-              className="mt-6 w-full h-auto rounded-lg shadow-md"
-              decoding="async"
-              data-testid="team-photo"
-            />
-          )}
+      {/* PL-492: the header sits ON the hero (transparent, white text) like the main site's. */}
+      <SiteHeader current="team" tone="overlay" />
+      {/* PL-495 (Scarlett, Sep 22): the team photo is the hero — full-bleed
+          behind the heading exactly as PAGE_HERO is on /classes (same scrim,
+          same height rule), heading + tagline centred over it in the display
+          face. PL-481's editable slot + alt text are unchanged; with no photo
+          uploaded the brand hero stands in. Text sits over the image now, so
+          the PL-453 contrast measurement applies here too (the smoke gate). */}
+      <section className="relative overflow-hidden bg-hgl-slate" data-testid="team-hero">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          {...imageAttrs(teamPhoto ?? PAGE_HERO)}
+          sizes="100vw"
+          className="absolute inset-0 h-full w-full object-cover"
+          decoding="async"
+          data-testid="team-photo"
+        />
+        <div aria-hidden className="absolute inset-0 bg-hgl-slate/70" />
+        <div className={`relative ${HEADER_CLEARANCE} ${HERO_MIN_H} max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white text-center flex flex-col items-center justify-center`}>
+          <h1 className="text-3xl sm:text-5xl font-bold leading-tight">{heroBlock?.heading?.trim() || 'Our team'}</h1>
+          <p className="mt-3 text-xl sm:text-2xl text-white/95 [font-family:var(--font-heading-serif),Georgia,serif]" data-testid="team-tagline">{tagline}</p>
         </div>
       </section>
 
-      <div className="max-w-4xl mx-auto px-5 py-10">
+      <div className="max-w-5xl mx-auto px-5 py-10 sm:py-14">
         {people.length === 0 ? (
           <p className="text-gray-600 italic">
             Team profiles are being set up — check back soon.
           </p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          /* PL-495: the main site's grid — square portraits filling the
+             column (3-up from lg, 2 at tablet, 1 on a phone), square corners,
+             name / role / bio centred beneath. A non-square upload is cropped
+             centre by object-cover; every tile keeps the same aspect. */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12" data-testid="team-grid">
             {people.map((p) => {
               const shot = parseClassPageImage(p.headshot)
               return (
-                <div key={p.id} className="bg-white rounded-lg shadow-sm p-5 flex flex-col">
-                  <div className="flex items-center gap-4">
-                    {shot ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        {...imageAttrs(shot)}
-                        sizes="112px"
-                        loading="lazy"
-                        decoding="async"
-                        className="w-28 h-28 rounded-full object-cover shrink-0 border border-gray-200"
-                      />
-                    ) : (
-                      // Honest degrade: no photo = an initials circle, never
-                      // a broken frame.
-                      <div
-                        aria-hidden
-                        className="w-28 h-28 rounded-full bg-hgl-slate/10 text-hgl-slate flex items-center justify-center text-2xl font-bold shrink-0"
-                      >
-                        {initials(p.name)}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <h2 className="text-lg font-bold text-hgl-slate">{p.name}</h2>
-                      {p.credential && (
-                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mt-0.5">
-                          {p.credential}
-                        </p>
-                      )}
+                <div key={p.id} className="flex flex-col items-center text-center" data-testid="team-member">
+                  {shot ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      {...imageAttrs(shot)}
+                      sizes="(min-width: 1024px) 300px, (min-width: 640px) 45vw, 100vw"
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full aspect-square object-cover bg-gray-100"
+                      data-testid="team-portrait"
+                    />
+                  ) : (
+                    // Honest degrade: no photo = an initials tile of the same
+                    // shape, never a broken frame.
+                    <div
+                      aria-hidden
+                      className="w-full aspect-square bg-hgl-slate/10 text-hgl-slate flex items-center justify-center text-5xl font-bold"
+                      data-testid="team-portrait-placeholder"
+                    >
+                      {initials(p.name)}
                     </div>
-                  </div>
+                  )}
+                  <h2 className="mt-4 text-xl font-semibold text-black">{p.name}</h2>
+                  {p.credential && (
+                    <p className="text-xs uppercase tracking-[0.12em] text-gray-500 mt-1">
+                      {p.credential}
+                    </p>
+                  )}
                   {p.bio && (
-                    <details className="group mt-3">
+                    <details className="group mt-3 w-full">
                       <summary className="cursor-pointer text-sm text-hgl-blue font-semibold list-none">
                         <span className="group-open:hidden">About {String(p.name).split(' ')[0]} →</span>
                         <span className="hidden group-open:inline">Show less</span>
                       </summary>
                       <div
-                        className="mt-2 text-sm space-y-2 [&_p]:text-gray-600"
+                        className="mt-2 text-sm space-y-2 [&_p]:text-gray-600 text-center"
                         dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(p.bio) }}
                       />
                     </details>

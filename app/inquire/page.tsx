@@ -1,4 +1,6 @@
 import { loadContactInfo } from '../utils/tutoring-emails'
+import { PUBLIC_CONTACT_EMAIL } from '../utils/public-contact'
+import { publicSkin } from '../components/public-skin'
 import InquiryForm from './inquiry-form'
 import SiteHeader from '../components/SiteHeader'
 import SiteFooter from '../components/SiteFooter'
@@ -25,7 +27,7 @@ export default async function InquirePage({
   const contact = await loadContactInfo()
 
   return (
-    <div className="min-h-screen bg-gray-50 ">
+    <div className={`min-h-screen bg-gray-50 ${publicSkin}`}>
       <SiteHeader />
       <div className="py-10 px-4">
       <div className="max-w-xl mx-auto space-y-6">
@@ -40,9 +42,10 @@ export default async function InquirePage({
           <InquiryForm src={source} interest={interest} school={school} />
         </div>
         <div className="bg-white rounded-lg shadow-sm p-5 text-sm text-gray-600">
+          {/* PL-493: the PUBLIC address (info@), never the tutoring contact's inbox. */}
           Rather just talk to a person? Email{' '}
-          <a href={`mailto:${contact.email}`} className="text-hgl-blue underline">
-            {contact.email}
+          <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} className="text-hgl-blue underline" data-testid="inquire-email">
+            {PUBLIC_CONTACT_EMAIL}
           </a>{' '}
           or give us a call at <strong>{contact.phone}</strong>
           {' — '}we&apos;re happy to take it from there.

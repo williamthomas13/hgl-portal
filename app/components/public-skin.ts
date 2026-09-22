@@ -30,6 +30,10 @@ export const montserrat = Montserrat({
  *  variables + the .public-skin scope. */
 export const publicSkin = `${pontano.className} ${sourceSerif.variable} ${montserrat.variable} public-skin`
 
+/** PL-495: /team and /classes heroes share ONE height rule (the overlay
+ *  header's clearance rides on top of it — see HEADER_CLEARANCE). */
+export const HERO_MIN_H = 'min-h-[300px] sm:min-h-[380px] lg:min-h-[460px]'
+
 export const PAGE_HERO: ClassPageImage = {
   path: 'hero/hgl-hq-2500w.webp',
   alt: 'The Higher Ground Learning space in downtown Salt Lake City — mountain mural, foosball table, and mezzanine',
