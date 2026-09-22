@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { sessionRole } from '../../../utils/staff-gate'
 import { supabaseAdmin as supabase } from '../../../utils/supabase-admin'
+import { classEnded, resolveClass } from '../../../utils/evergreen'
 
 // PL-378 → PL-384: THE link registry — one evergreen code per school/course
 // (the class-shortcode layer folded in; codes serve pages in place) plus the
@@ -59,9 +60,12 @@ export async function GET() {
       .select('course_key, display_name, evergreen_code, evergreen_pin_class_id')
       .order('course_key'),
     supabase.from('legacy_redirects').select('code, destination, note, updated_at').order('code'),
+    // PL-496: "open" is a registration status, not a lifecycle one — the
+    // sessions ride along so classEnded() can drop the 13 backfilled cohorts
+    // (status open, last session long past) from the candidates list.
     supabase
       .from('classes')
-      .select('id, slug, class_type, status, school_id, course_key, created_at, start_date')
+      .select('id, slug, class_type, status, school_id, course_key, created_at, start_date, timezone, schools ( timezone ), sessions ( session_date )')
       .eq('status', 'open')
       .not('slug', 'is', null)
       .order('created_at', { ascending: false }),
@@ -91,35 +95,39 @@ export async function GET() {
       last14: rows.filter((r) => r.day >= cutoff).reduce((a, r) => a + Number(r.clicks), 0),
     }
   }
-  const open = (openClasses as any[]) ?? []
-  const servingFor = (filter: (c: any) => boolean, pinId: string | null) => {
-    const pinned = pinId ? open.find((c) => c.id === pinId) ?? null : null
-    const auto = open.filter(filter)[0] ?? null
-    const serving = pinned ?? auto
-    return serving
+  // PL-496 (Scarlett, Sep 22): ONE resolver. "Now showing" comes from the
+  // SAME resolveClass() the public /{code} route serves through (pin wins
+  // while open AND not ended, else newest open not-ended, else nothing) —
+  // this route used to read classes.status alone, so the 13 backfilled
+  // ended classes showed as "now showing AISJ SAT (starts Jan 16)" while
+  // hgl.co/aisj correctly served the interest page.
+  const open = ((openClasses as any[]) ?? []).filter((c) => !classEnded(c))
+  const servingFor = async (filter: { school_id?: string; course_key?: string }, pinId: string | null) => {
+    const { cls, pinned } = await resolveClass(filter, pinId)
+    return cls
       ? {
-          classId: serving.id,
+          classId: cls.id,
           // PL-436: two cohorts of the same type must read apart — the label
           // carries the start date ("SAT Prep (starts Oct 13)").
-          label: `${serving.class_type} (starts ${new Date(serving.start_date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })})`,
-          pinned: Boolean(pinned),
+          label: `${cls.class_type} (starts ${new Date(cls.start_date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })})`,
+          pinned,
         }
       : null
   }
   return NextResponse.json({
-    schools: ((schools as any[]) ?? []).map((sc) => ({
+    schools: await Promise.all(((schools as any[]) ?? []).map(async (sc) => ({
       ...sc,
-      serving: sc.evergreen_code ? servingFor((c) => c.school_id === sc.id, sc.evergreen_pin_class_id) : null,
+      serving: sc.evergreen_code ? await servingFor({ school_id: sc.id }, sc.evergreen_pin_class_id) : null,
       candidates: open.filter((c) => c.school_id === sc.id).map((c) => ({ id: c.id, label: c.class_type })),
       clicks: clicksFor(sc.evergreen_code),
-    })),
+    }))),
     // PL-447: the Course section derives from EVERY course key with a
     // no-school class (the schools-list pattern) — a course_meta row is NOT
     // required to appear; the code-save upsert mints it on first save, so a
     // brand-new course shows an empty code box with zero round-trips.
     // Display name = course_meta → newest class's type → prettified key
     // (the evergreen.ts resolution). Existing rows untouched.
-    courses: (() => {
+    courses: await (async () => {
       const metaByKey = new Map(((courses as any[]) ?? []).map((cm) => [cm.course_key, cm]))
       const newestTypeByKey = new Map<string, string>()
       for (const c of (courseClasses as any[]) ?? []) {
@@ -128,7 +136,7 @@ export async function GET() {
       const prettify = (key: string) =>
         key.split('-').map((w: string) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
       const allKeys = [...new Set([...metaByKey.keys(), ...newestTypeByKey.keys()])].sort()
-      return allKeys.map((key) => {
+      return Promise.all(allKeys.map(async (key) => {
         const cm = metaByKey.get(key) ?? {
           course_key: key,
           display_name: null,
@@ -139,14 +147,14 @@ export async function GET() {
           ...cm,
           display_name: cm.display_name ?? newestTypeByKey.get(key) ?? prettify(key),
           serving: cm.evergreen_code
-            ? servingFor((c) => !c.school_id && c.course_key === key, cm.evergreen_pin_class_id)
+            ? await servingFor({ course_key: key }, cm.evergreen_pin_class_id)
             : null,
           candidates: open
             .filter((c) => !c.school_id && c.course_key === key)
             .map((c) => ({ id: c.id, label: c.class_type })),
           clicks: clicksFor(cm.evergreen_code),
         }
-      })
+      }))
     })(),
     legacy: legacy ?? [],
   })
@@ -208,11 +216,23 @@ export async function POST(req: Request) {
     const classId = typeof body?.classId === 'string' && body.classId ? body.classId : null
     if (!id) return NextResponse.json({ error: 'Missing id.' }, { status: 400 })
     if (classId) {
-      const { data: cls } = await supabase.from('classes').select('id, status').eq('id', classId).maybeSingle()
+      const { data: cls } = await supabase
+        .from('classes')
+        .select('id, status, start_date, timezone, schools ( timezone ), sessions ( session_date )')
+        .eq('id', classId)
+        .maybeSingle()
       if (!cls) return NextResponse.json({ error: 'That class no longer exists.' }, { status: 400 })
       if (cls.status !== 'open') {
         return NextResponse.json(
           { error: 'Only an open class can be pinned — a closed pin would just fall back to auto anyway.' },
+          { status: 400 }
+        )
+      }
+      // PL-496: an ended class can't be pinned — the public route ignores an
+      // ended pin (falls through to the interest page), so the pin would lie.
+      if (classEnded(cls as any)) {
+        return NextResponse.json(
+          { error: 'That class has already finished — its code serves the interest page now, so pinning it would change nothing.' },
           { status: 400 }
         )
       }

@@ -33,19 +33,27 @@ export type EvergreenResolution =
     }
   | { kind: 'unknown' }
 
-/** Pin wins while its class is OPEN with a slug; otherwise newest open. */
-async function resolveClass(
+export type ServingClass = { id: string; slug: string; class_type: string; start_date: string | null }
+
+/** Pin wins while its class is OPEN with a slug; otherwise newest open.
+ *  PL-496: EXPORTED — the admin link registry ("now showing …", the pin
+ *  validation, the candidates list) resolves through this same function,
+ *  so an ended class can never read as "now showing" in the admin while the
+ *  public code URL has already fallen through to the interest page. */
+export async function resolveClass(
   filter: { school_id?: string; course_key?: string },
   pinClassId: string | null
-): Promise<{ slug: string | null; pinned: boolean }> {
+): Promise<{ slug: string | null; pinned: boolean; cls: ServingClass | null }> {
   if (pinClassId) {
     const { data: pin } = await supabase
       .from('classes')
-      .select('slug, status, start_date, timezone, schools ( timezone ), sessions ( session_date )')
+      .select('id, slug, class_type, status, start_date, timezone, schools ( timezone ), sessions ( session_date )')
       .eq('id', pinClassId)
       .maybeSingle()
-    if (pin?.status === 'open' && pin.slug && !classEnded(pin as any)) return { slug: pin.slug, pinned: true }
-    // Closed/deleted pin → fall through to auto-resolution (never a dead link).
+    if (pin?.status === 'open' && pin.slug && !classEnded(pin as any)) {
+      return { slug: pin.slug, pinned: true, cls: { id: pin.id, slug: pin.slug, class_type: pin.class_type, start_date: pin.start_date } }
+    }
+    // Closed/deleted/ENDED pin → fall through to auto-resolution (never a dead link).
   }
   // PL-470: "open" is a registration status, not a lifecycle one — a class
   // whose last session has passed is HISTORY, and its code must fall through
@@ -55,7 +63,7 @@ async function resolveClass(
   // in-progress page.
   let q = supabase
     .from('classes')
-    .select('slug, created_at, start_date, timezone, schools ( timezone ), sessions ( session_date )')
+    .select('id, slug, class_type, created_at, start_date, timezone, schools ( timezone ), sessions ( session_date )')
     .eq('status', 'open')
     .not('slug', 'is', null)
     .order('created_at', { ascending: false })
@@ -63,7 +71,11 @@ async function resolveClass(
   if (filter.course_key) q = q.eq('course_key', filter.course_key).is('school_id', null)
   const { data } = await q
   const live = ((data as any[]) ?? []).find((c) => !classEnded(c))
-  return { slug: live?.slug ?? null, pinned: false }
+  return {
+    slug: live?.slug ?? null,
+    pinned: false,
+    cls: live ? { id: live.id, slug: live.slug, class_type: live.class_type, start_date: live.start_date } : null,
+  }
 }
 
 /** PL-470: last session (or start_date) before today in the class's zone. */
