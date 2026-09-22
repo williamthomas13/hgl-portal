@@ -9,8 +9,9 @@ import { emailBaseUrl } from '../../../utils/base-url'
 // stop when it's down — and the Aug 6 outage showed the dashboard's
 // "overdue" card is only useful if someone happens to look at it. This
 // route is CHEAP (two app_settings reads, at most one email) and runs from
-// pg_cron on Supabase — a scheduler independent of both GitHub Actions
-// (which failed) and Vercel (whose Hobby crons are daily-only).
+// pg_cron on Supabase — a scheduler independent of the Vercel cron (PL-475:
+// hourly on Vercel Pro since Sep 22 2026; the GitHub Actions layer that
+// failed on Aug 6 is retired).
 //
 // Fires ON TRANSITION to overdue, not every check while it stays down: the
 // latch key sweep_overdue_alerted_for records which last-finish stamp was
@@ -69,9 +70,10 @@ export async function GET(req: Request) {
       <p>While it's down, nothing sends: reminders, counselor nudges, waitlist offers, billing
       generation, timecard creation — the whole cadence is paused. Nothing is lost — every send
       is deduped and claims are retry-safe, so the next successful run delivers the backlog.</p>
-      <p><strong>To recover:</strong> re-run the sweep manually — GitHub → Actions → "hourly-sweep"
-      → Run workflow (this is exactly what fixed the Aug 6 outage), or ask Code to hit the
-      endpoint. The dashboard's health card shows live status.</p>
+      <p><strong>To recover:</strong> re-run the sweep manually — Vercel → hgl-portal → Settings →
+      Cron Jobs → <code>/api/cron/reminders</code> → Run, or <code>node scripts/run-sweep.mjs</code>
+      from the repo (it sends the bearer secret from .env.local), or ask Code to hit the endpoint.
+      The dashboard's health card shows live status.</p>
       <p style="margin:20px 0"><a href="${emailBaseUrl()}/admin" style="display:inline-block;background:#b91c1c;color:#fff;font-weight:bold;padding:12px 24px;border-radius:6px;text-decoration:none">Open the dashboard health card</a></p>
       <p>You'll get one email per outage (not one per hour); the next successful sweep notes its
       own recovery in the dashboard activity feed.</p>`,

@@ -92,12 +92,12 @@ export async function computeSystemHealth(
     qbo: { pending: qboPendingCount ?? 0, failed: qboFailedCount ?? 0 },
     sweep: {
       lastFinishedAt: finishedAt,
-      // The sweep is HOURLY (GitHub Actions; the daily Vercel cron is only a
-      // backstop) and the hourly assumption is load-bearing — PL-144 catch-up,
-      // failed-send flushing, campaign resumes. GH Actions cron is
-      // best-effort, so allow ~15 minutes of start slack: more than 75
-      // minutes without finishing is a stall, and a stalled sweep stops the
-      // whole email lifecycle silently.
+      // The sweep is HOURLY (pg_cron at :05 is PRIMARY per PL-273; the Vercel
+      // cron at :00 is the second layer since PL-475 / Vercel Pro) and the
+      // hourly assumption is load-bearing — PL-144 catch-up, failed-send
+      // flushing, campaign resumes. Allow ~15 minutes of start slack: more
+      // than 75 minutes without finishing is a stall, and a stalled sweep
+      // stops the whole email lifecycle silently.
       stale: !finishedAt || now.getTime() - new Date(finishedAt).getTime() > 75 * 60_000,
       // Started much later than it finished = the current run is hanging.
       hanging: Boolean(

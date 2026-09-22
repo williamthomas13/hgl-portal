@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // PL-273: schedule the sweep (and its watcher) on Supabase pg_cron — a
 // scheduler independent of GitHub Actions (whose best-effort cron caused the
-// Aug 6 outage) and of Vercel (whose Hobby crons are daily-only).
+// Aug 6 outage; retired at PL-475) and of the Vercel cron (hourly at :00 on
+// Vercel Pro since PL-475, Sep 22 2026 — the second layer; pg_cron at :05
+// stays PRIMARY). Overlapping runs are safe: every send dedupes.
 //
 //   hgl-hourly-sweep : :05 every hour → /api/cron/reminders
 //   hgl-sweep-watch  : :35 every hour → /api/cron/sweep-watch (cheap check;
