@@ -351,8 +351,8 @@ export async function classPageMetadata(
   // internal plumbing — always noindex, canonicalized to its code URL when
   // one exists; the /{code} view is the indexable canonical page.
   const codeForCanonical = opts.mode === 'code' ? (opts.code ?? null) : await evergreenCodeFor(cls)
-  // PL-474: public pages are canonical on the SHORT host (hgl.co) once the
-  // DNS flip is live (PUBLIC_SHORT_ORIGIN) — the portal origin until then.
+  // PL-498: public pages are canonical on the PORTAL host (publicSiteOrigin()
+  // = emailBaseUrl()); hgl.co only ever redirects here.
   const canonicalUrl = codeForCanonical ? `${publicSiteOrigin()}/${codeForCanonical}` : null
   const title = `${heroTitleFor(cls)} — Higher Ground Learning`
   const bullets = String(cls.selling_bullets ?? '')
@@ -673,7 +673,9 @@ export async function ClassPageView({
     '@type': 'Organization',
     '@id': 'https://www.highergroundlearning.com/#org',
     name: 'Higher Ground Learning',
-    url: 'https://www.highergroundlearning.com',
+    // PL-498: url = the canonical portal host; sameAs = the brand domain.
+    url: base,
+    sameAs: ['https://www.highergroundlearning.com'],
   }
   const faqItems = faqBlocks.flatMap((b) => parseFaqItems(sub(b.body_markdown)))
   const jsonLd = {

@@ -101,22 +101,33 @@ export function nonProductionOrigins(html: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// PL-474 — two hosts, one session (Scarlett's decision, Sep 21):
-//   portal.highergroundlearning.com  = signed-in surfaces + every emailed link
-//   hgl.co                           = the short PUBLIC front (/{code},
-//                                      /{code}/register, /classes, /team,
-//                                      /inquire; wildcard → main site)
-// Both hosts serve the SAME deployment. What keeps a session on one host:
-//   * proxy.ts 308s signed-in / auth / tokenized paths from the short host
-//     to the canonical portal host (path + query preserved), so nobody ends
-//     up with a session cookie on hgl.co;
-//   * public routes on the portal host keep working — no redirect the other
-//     way, so no loop;
-//   * canonical / OG / sitemap / JSON-LD / embed "More info" URLs use
-//     publicSiteOrigin() — hgl.co once PUBLIC_SHORT_ORIGIN is set (cutover
-//     day), the portal origin until then (before the DNS flip hgl.co still
-//     forwards to Squarespace, so a hgl.co canonical would be a lie).
+// PL-498 — ONE canonical host (Scarlett's decision, Sep 23; revises PL-474):
+//   portal.highergroundlearning.com  = canonical for EVERYTHING the app
+//                                      serves — signed-in surfaces, emailed
+//                                      links, AND the public pages (/classes,
+//                                      /team, /inquire, /compass, /partner,
+//                                      /{code}, /{code}/register, /c/{slug},
+//                                      the embeds)
+//   hgl.co / www.hgl.co              = a PURE redirector: every path 301/308s
+//                                      to the same path on the portal host
+//                                      (root → the main site; unknown paths
+//                                      end on the main site via the wildcard)
+// Why: hgl.co has no domain history — making it the public home would split
+// the brand across two domains for search engines and LLM entity resolution,
+// and every link that accrued there would have to migrate twice once the
+// marketing site moves to the apex (after the Synap replacement). Printed
+// codes keep working because hgl.co/{code} redirects. What keeps this honest:
+//   * proxy.ts redirects EVERY short-host path (301 public GET, 308 for
+//     portal-only / non-GET); the portal host is never redirected — no loop;
+//   * canonical / OG / sitemap / JSON-LD / llms.txt / embed "More info" URLs
+//     use publicSiteOrigin() = emailBaseUrl() = the portal host;
+//     PUBLIC_SHORT_ORIGIN is RETIRED (never set it — if it is set, it is
+//     ignored and logged once at boot).
 // ---------------------------------------------------------------------------
+
+/** The marketing site (Squarespace) — where the short host's root and every
+ *  path the portal does not own end up. */
+export const MAIN_SITE_ORIGIN = 'https://www.highergroundlearning.com'
 
 /** The canonical portal host (signed-in surfaces). Override with
  *  PORTAL_CANONICAL_HOST; default = PRODUCTION_BASE_URL's host. */
@@ -126,25 +137,26 @@ export function canonicalPortalHost(): string {
   return new URL(PRODUCTION_ORIGIN).host.toLowerCase()
 }
 
-/** The short public hosts the proxy redirects signed-in paths AWAY from. */
+/** The short hosts the proxy redirects EVERY path away from (PL-498). */
 export const SHORT_PUBLIC_HOSTS = (process.env.PUBLIC_SHORT_HOSTS ?? 'hgl.co,www.hgl.co')
   .split(',')
   .map((h) => h.trim().toLowerCase())
   .filter(Boolean)
 
+// PL-498: a stale Vercel env can never resurrect hgl.co canonicals — the
+// retired variable is ignored, and its presence is logged once per process.
+const RETIRED_SHORT_ORIGIN = (process.env.PUBLIC_SHORT_ORIGIN ?? '').trim()
+if (RETIRED_SHORT_ORIGIN) {
+  console.warn(
+    `[base-url] PUBLIC_SHORT_ORIGIN=${RETIRED_SHORT_ORIGIN} is set but was RETIRED by PL-498 — ignored. Public pages are canonical on the portal host (${emailBaseUrl()}). Remove the env var.`
+  )
+}
+
 /** The origin public pages are canonical on (sitemap, <link rel=canonical>,
- *  OG url, JSON-LD, embed links). PUBLIC_SHORT_ORIGIN (https://hgl.co) once
- *  the DNS flip has happened; the email base until then. */
+ *  OG url, JSON-LD, llms.txt, embed links) — the portal host, always
+ *  (PL-498). Kept as its own function so the nine call sites read as what
+ *  they are; it is emailBaseUrl() underneath. */
 export function publicSiteOrigin(): string {
-  const configured = (process.env.PUBLIC_SHORT_ORIGIN ?? '').trim().replace(/\/+$/, '')
-  if (configured) {
-    try {
-      new URL(configured)
-      return configured
-    } catch {
-      /* malformed → fall through */
-    }
-  }
   return emailBaseUrl()
 }
 

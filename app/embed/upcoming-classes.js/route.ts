@@ -37,7 +37,7 @@ const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 export async function GET(request: Request) {
-  // PL-474: "More info" links go to the PUBLIC origin (hgl.co after the flip).
+  // PL-474/498: "More info" links go to the PUBLIC origin = the portal host.
   const base = publicSiteOrigin()
   const previewEmpty = new URL(request.url).searchParams.get('preview') === 'empty'
 

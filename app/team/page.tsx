@@ -70,7 +70,10 @@ export default async function TeamPage() {
         '@type': 'Organization',
         '@id': 'https://www.highergroundlearning.com/#org',
         name: 'Higher Ground Learning',
-        url: 'https://www.highergroundlearning.com',
+        // PL-498: the entity's url is the canonical portal host; sameAs links
+        // it back to the brand domain so resolution never splits.
+        url: publicSiteOrigin(),
+        sameAs: ['https://www.highergroundlearning.com'],
       },
       ...people.map((p) => {
         const shot = parseClassPageImage(p.headshot)
@@ -81,7 +84,7 @@ export default async function TeamPage() {
           ...(shot ? { image: imageAttrs(shot).src } : {}),
           ...(p.bio ? { description: plainTextFromMarkdown(p.bio) } : {}),
           worksFor: { '@id': 'https://www.highergroundlearning.com/#org' },
-          url: `${publicSiteOrigin()}/team`, // PL-474: public origin
+          url: `${publicSiteOrigin()}/team`, // PL-474/498: the portal host
         }
       }),
     ],

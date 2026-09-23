@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // PL-474: the sitemap lists the PUBLIC origin (hgl.co after the flip).
+  // PL-474/498: the sitemap lists the PUBLIC origin = the portal host.
   const base = publicSiteOrigin()
   const entries: MetadataRoute.Sitemap = []
 
