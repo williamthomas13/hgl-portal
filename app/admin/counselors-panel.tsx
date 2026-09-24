@@ -8,6 +8,7 @@ import { escapeLike } from '../utils/like-escape'
 import { fetchErrorLine } from '../utils/fetch-error'
 import { EmailLink, TimezoneSelect, useDeepLinkFocus } from './ui'
 import type { SchoolBranding } from './school-branding-panel'
+import SchoolClasses from './school-classes'
 
 // PL-242: "School contacts" became SCHOOLS — the school is the entity, the
 // contacts are an attribute of it. Each school renders as a card: identity
@@ -548,6 +549,8 @@ export default function CounselorsPanel({
               {/* PL-484: who is waiting for this school's next class — count,
                   list, CSV export. Not leads: they never enter the pipeline. */}
               <InterestListCard schoolId={school.id} rows={interestBySchool.get(school.id) ?? []} />
+              {/* PL-503: every class ever run here — the call-with-the-school view. */}
+              <SchoolClasses schoolId={school.id} />
 
               {editingSchool === school.id && (
                 <div className="mt-3">
