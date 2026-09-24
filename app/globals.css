@@ -13,3 +13,22 @@
   font-family: var(--font-button-sans), Arial, sans-serif;
   letter-spacing: 0.01em;
 }
+/* PL-510 (Scarlett, Sep 24): the site's own display scale, measured on the
+   Squarespace inner pages (/about, /sat) by DOM — page titles 63.08px at
+   1280 → 48.4px at 375, section headings 26.216px → 22.48px, both adonis-web
+   weight 400, line-height 1.23. The clamps land on those exact numbers at
+   the two gate widths and glide between. Card titles are untouched. */
+.public-skin .display-title {
+  font-family: var(--font-heading-serif), Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: clamp(48.4px, 3.4vw + 30px, 63.08px);
+  line-height: 1.23;
+  letter-spacing: normal;
+}
+.public-skin .display-section {
+  font-family: var(--font-heading-serif), Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: clamp(22.48px, 1.2vw + 12px, 26.216px);
+  line-height: 1.23;
+  letter-spacing: normal;
+}

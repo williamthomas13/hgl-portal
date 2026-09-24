@@ -181,7 +181,8 @@ export default async function ClassesBrowsePage({
             (the hero's own mark went with it — ONE mark per viewport, PL-483);
             the content clears the header and shares /team's height. */}
         <div className={`relative ${HEADER_CLEARANCE} ${HERO_MIN_H} max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white flex flex-col justify-center`}>
-          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">Classes</h1>
+          {/* PL-510: the site's page-title scale (63px/400 → 48px on phones). */}
+          <h1 className="display-title" data-testid="page-title">Classes</h1>
           <p className="mt-2 text-white/90" data-testid="classes-intro">
             Live test-prep classes at partner schools around the world, online, and at our HQ in Salt Lake City, USA.
           </p>
@@ -256,7 +257,7 @@ export default async function ClassesBrowsePage({
 
         {inProgress.length > 0 && (
           <div className="mt-12" data-testid="in-progress-classes">
-            <h2 className="text-lg font-bold text-hgl-slate mb-3">In progress</h2>
+            <h2 className="display-section text-hgl-slate mb-4" data-testid="section-heading">In progress</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {inProgress.map((c) => (
                 <a key={c.id} href={c.pageHref} className="bg-white rounded-lg shadow-sm p-5 flex flex-col gap-3 border border-transparent hover:border-hgl-blue transition" data-testid="class-card" data-state="in-progress">
@@ -275,7 +276,7 @@ export default async function ClassesBrowsePage({
 
         {recent.length > 0 && (
           <div className="mt-12" data-testid="recent-classes">
-            <h2 className="text-lg font-bold text-hgl-slate mb-3">Recent classes</h2>
+            <h2 className="display-section text-hgl-slate mb-4" data-testid="section-heading">Recent classes</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {[...recent, ...(recentAll ? recentRest : [])].map((c) => {
                 const inner = (

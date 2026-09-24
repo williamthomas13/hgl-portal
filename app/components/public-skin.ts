@@ -15,9 +15,12 @@ export const pontano = Pontano_Sans({ subsets: ['latin'], weight: ['400', '700']
 // at semibold/bold) and Montserrat (buttons, 600/700). Wired as CSS
 // variables + the .public-skin scope rules in globals.css so every heading
 // and .public-cta on a skinned page rides them without per-site edits.
+// PL-510: the site's display headings are weight 400 (adonis-web 63px page
+// titles / 26px section headings) — 400 joins the loaded weights so the
+// stand-in renders it for real instead of a synthesised face.
 export const sourceSerif = Source_Serif_4({
   subsets: ['latin'],
-  weight: ['600', '700'],
+  weight: ['400', '600', '700'],
   variable: '--font-heading-serif',
 })
 export const montserrat = Montserrat({

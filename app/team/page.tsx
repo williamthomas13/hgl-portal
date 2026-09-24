@@ -112,7 +112,8 @@ export default async function TeamPage() {
         />
         <div aria-hidden className="absolute inset-0 bg-hgl-slate/70" />
         <div className={`relative ${HEADER_CLEARANCE} ${HERO_MIN_H} max-w-4xl mx-auto px-5 py-10 sm:py-14 text-white text-center flex flex-col items-center justify-center`}>
-          <h1 className="text-3xl sm:text-5xl font-bold leading-tight">{heroBlock?.heading?.trim() || 'Our team'}</h1>
+          {/* PL-510: the site's page-title scale (63px/400 → 48px on phones). */}
+          <h1 className="display-title" data-testid="page-title">{heroBlock?.heading?.trim() || 'Our team'}</h1>
           <p className="mt-3 text-xl sm:text-2xl text-white/95 [font-family:var(--font-heading-serif),Georgia,serif]" data-testid="team-tagline">{tagline}</p>
         </div>
       </section>
