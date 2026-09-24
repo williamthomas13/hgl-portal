@@ -29,7 +29,7 @@ const ref = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0]
 const secret = env.CRON_SECRET
 if (!token || !secret) { console.error('need SUPABASE_ACCESS_TOKEN + CRON_SECRET in .env.local'); process.exit(1) }
 
-const BASE = 'https://hgl-portal.vercel.app'
+const BASE = 'https://portal.highergroundlearning.com'
 
 const sql = `
 do $$ begin perform cron.unschedule('hgl-hourly-sweep'); exception when others then null; end $$;
