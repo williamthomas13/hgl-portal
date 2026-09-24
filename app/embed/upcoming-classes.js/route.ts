@@ -29,6 +29,20 @@ import { schoolMonogram } from '../../utils/school-monogram'
 // (measured Sep 24: proxima-nova 17px/500, #00AEEE, 6.8px radius, 20.4px
 // padding, ~62px tall); the headline sits in its section-heading scale
 // (adonis-web 63px/400, centred, 34px below — clamped for phones).
+// PL-509 (Scarlett, Sep 24, after the first live paste — measured on the LIVE
+// homepage with the block in place): the mount is 1279px at 1390 / 1178px at
+// 1280, the four tiles rendered 169px with a 54px logo and floated in the
+// middle. Now the tiles FILL the mount: a 4-column grid with a 32px gap
+// (≈290px each at 1279), a ~160px logo box (object-contain), the school name
+// at the sibling cards' title size (26px adonis-web/400 — the user-items
+// list next door), a 17px meta line; 2 across ≤768px, 1 across ≤420px with
+// ~120px logos; the large-card mode scales the same way (2–3 across the full
+// mount). Breakpoints need media queries, so the strip carries ONE <style>
+// scoped to #hgl-upcoming-classes (still nothing external, nothing global).
+// Vertical rhythm: the embed adds NO padding of its own — the Squarespace
+// section it sits in already carries the site's section padding (91.74px at
+// 1390; the section above uses 45.87px — a Squarespace section setting
+// Scarlett can equalise in the editor, not something the embed should double).
 // The state pick + orderings live in app/utils/embed-order.ts (pure;
 // regress:embed-order runs them). ?preview= renders each state from
 // SYNTHETIC rows (empty · upcoming4 · upcoming2 · upcoming1-current ·
@@ -61,6 +75,20 @@ type Row = EmbedClass & {
 
 const HEADING = 'font-family:adonis-web,\'Source Serif 4\',Georgia,\'Times New Roman\',serif;font-weight:400;font-size:clamp(34px,4.9vw,63px);line-height:1.23;letter-spacing:normal;text-align:center;color:#000;margin:0 0 34px'
 const BUTTON = 'display:inline-block;font-family:proxima-nova,Montserrat,Arial,sans-serif;font-weight:500;font-size:17px;letter-spacing:.85px;line-height:21px;color:#fff;background:#00AEEE;border-radius:6.8px;padding:20.4px;text-decoration:none'
+const TITLE = 'display:block;font-family:adonis-web,\'Source Serif 4\',Georgia,serif;font-weight:400;font-size:26px;line-height:1.23;color:#000'
+const META = 'display:block;font-family:\'Pontano Sans\',Arial,sans-serif;font-weight:400;font-size:17px;line-height:1.5;color:#334155'
+// PL-509: the ONE scoped stylesheet — breakpoints for the grids + logo boxes.
+const STYLE = `<style>
+#hgl-upcoming-classes [data-embed-grid="tiles"]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:32px;align-items:start}
+#hgl-upcoming-classes [data-embed-grid="large"]{display:grid;gap:32px;align-items:stretch}
+#hgl-upcoming-classes [data-embed-grid="large"][data-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+#hgl-upcoming-classes [data-embed-grid="large"][data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+#hgl-upcoming-classes [data-embed-logo]{display:inline-flex;align-items:center;justify-content:center;width:160px;height:160px;max-width:100%;background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:14px;box-sizing:border-box}
+#hgl-upcoming-classes [data-embed-logo] img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
+#hgl-upcoming-classes [data-embed-logo="mono"]{color:#fff;font-weight:800;font-size:34px;letter-spacing:.02em;font-family:'Pontano Sans',Arial,sans-serif;border:0}
+@media (max-width:768px){#hgl-upcoming-classes [data-embed-grid="tiles"],#hgl-upcoming-classes [data-embed-grid="large"][data-count="3"],#hgl-upcoming-classes [data-embed-grid="large"][data-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}#hgl-upcoming-classes [data-embed-logo]{width:120px;height:120px}#hgl-upcoming-classes [data-embed-logo="mono"]{font-size:26px}}
+@media (max-width:420px){#hgl-upcoming-classes [data-embed-grid="tiles"],#hgl-upcoming-classes [data-embed-grid="large"][data-count="3"],#hgl-upcoming-classes [data-embed-grid="large"][data-count="2"]{grid-template-columns:minmax(0,1fr)}}
+</style>`
 
 function facts(c: Row, base: string) {
   const school = c.schools
@@ -75,11 +103,11 @@ function facts(c: Row, base: string) {
   const logo = school?.logo_url || null
   const name = school?.name ?? (online ? 'Live online' : 'Higher Ground Learning')
   const tile = logo
-    ? `<span style="display:inline-flex;align-items:center;justify-content:center;height:72px;max-width:160px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:8px;box-sizing:border-box"><img src="${esc(logo)}" alt="${esc(name)} logo" style="height:100%;width:auto;max-width:144px;object-fit:contain"/></span>`
+    ? `<span data-embed-logo="img"><img src="${esc(logo)}" alt="${esc(name)} logo"/></span>`
     : school
       // PL-508: the logo-less tile reads the school's NICKNAME ("Nido"), never full-name initials.
-      ? `<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;height:72px;min-width:72px;padding:0 10px;box-sizing:border-box;border-radius:8px;background:${esc(usableAccent(school.accent_color))};color:#fff;font-weight:800;font-size:20px;letter-spacing:.02em">${esc(schoolMonogram(school.nickname, name))}</span>`
-      : `<span style="display:inline-flex;align-items:center;justify-content:center;height:72px;max-width:160px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:8px;box-sizing:border-box"><img src="${esc(`${base}/collateral/hgl-logo-color.png`)}" alt="Higher Ground Learning logo" style="height:100%;width:auto;max-width:144px;object-fit:contain"/></span>`
+      ? `<span aria-hidden="true" data-embed-logo="mono" style="background:${esc(usableAccent(school.accent_color))}">${esc(schoolMonogram(school.nickname, name))}</span>`
+      : `<span data-embed-logo="img"><img src="${esc(`${base}/collateral/hgl-logo-color.png`)}" alt="Higher Ground Learning logo"/></span>`
   return { firstSession, lastSession, city: honestCity, online, label, name, tile }
 }
 
@@ -89,11 +117,11 @@ function tileCard(c: Row, base: string, mark: 'upcoming' | null) {
   const sub = first ? formatDateRange(first, f.lastSession ?? first) : ''
   const pill = mark === 'upcoming' ? `<span data-embed-pill="open" style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#166534;background:#dcfce7;border-radius:999px;padding:3px 9px;margin-bottom:6px">Open for registration</span>` : ''
   return (
-    `<a href="${esc(c.href)}" data-embed-card="tile" style="display:flex;flex-direction:column;align-items:center;gap:8px;text-decoration:none;color:#334155;min-width:120px;max-width:200px;text-align:center">` +
+    `<a href="${esc(c.href)}" data-embed-card="tile" style="display:flex;flex-direction:column;align-items:center;gap:12px;text-decoration:none;color:#334155;min-width:0;text-align:center">` +
     pill + f.tile +
-    `<span style="display:block;font-size:14px;font-weight:700;line-height:1.3">${esc(f.name)}</span>` +
-    `<span style="display:block;font-size:12px;color:#64748b;line-height:1.4">${esc(c.class_type)}${f.city ? ` · ${esc(f.city)}` : ''}${sub ? `<br>${esc(sub)}` : ''}</span>` +
-    (mark === 'upcoming' ? `<span style="display:inline-block;margin-top:2px;font-size:13px;font-weight:700;color:#00AEEE">Register →</span>` : '') +
+    `<span style="${TITLE}">${esc(f.name)}</span>` +
+    `<span style="${META}">${esc(c.class_type)}${f.city ? ` · ${esc(f.city)}` : ''}${sub ? `<br>${esc(sub)}` : ''}</span>` +
+    (mark === 'upcoming' ? `<span style="display:inline-block;margin-top:2px;font-family:'Pontano Sans',Arial,sans-serif;font-size:17px;font-weight:700;color:#00AEEE">Register →</span>` : '') +
     `</a>`
   )
 }
@@ -101,10 +129,10 @@ function tileCard(c: Row, base: string, mark: 'upcoming' | null) {
 function largeCard(c: Row, base: string) {
   const f = facts(c, base)
   return (
-    `<div data-embed-card="large" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;text-align:center;min-width:0">` +
-    f.tile.replace('height:72px;max-width:160px', 'height:108px;max-width:240px').replace('max-width:144px', 'max-width:216px').replace('height:72px;min-width:72px', 'height:108px;min-width:108px').replace('font-size:20px', 'font-size:28px') +
-    `<span style="display:block;font-size:20px;font-weight:700;line-height:1.3;color:#1e293b">${esc(f.name)}</span>` +
-    `<span style="display:block;font-size:15px;color:#475569;line-height:1.5">${esc(c.class_type)}${f.city ? ` · ${esc(f.city)}` : ''}${f.firstSession ? `<br>Starts ${esc(formatDateRange(f.firstSession, f.firstSession))}` : ''}</span>` +
+    `<div data-embed-card="large" style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:36px 28px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;text-align:center;min-width:0">` +
+    f.tile +
+    `<span style="${TITLE}">${esc(f.name)}</span>` +
+    `<span style="${META}">${esc(c.class_type)}${f.city ? ` · ${esc(f.city)}` : ''}${f.firstSession ? `<br>Starts ${esc(formatDateRange(f.firstSession, f.firstSession))}` : ''}</span>` +
     `<a href="${esc(c.registerHref)}" style="${BUTTON};padding:14px 24px;font-size:16px">Register</a>` +
     `<a href="${esc(c.href)}" style="font-size:13px;color:#00AEEE;text-decoration:none;font-weight:700">More info →</a>` +
     `</div>`
@@ -112,17 +140,17 @@ function largeCard(c: Row, base: string) {
 }
 
 function render(plan: EmbedPlan<Row>, base: string): string {
-  const h2 = `<h2 data-embed-headline style="${HEADING}">${esc(plan.headline)}</h2>`
-  const cta = `<p style="text-align:center;margin:28px 0 0"><a href="${esc(`${base}/classes`)}" data-embed-cta style="${BUTTON}">See all classes</a></p>`
+  const h2 = STYLE + `<h2 data-embed-headline style="${HEADING}">${esc(plan.headline)}</h2>`
+  const cta = `<p style="text-align:center;margin:48px 0 0"><a href="${esc(`${base}/classes`)}" data-embed-cta style="${BUTTON}">See all classes</a></p>`
   if (plan.mode === 'empty') {
     // TRUE empty — nothing in the database at all. Never on the real site.
     return h2 + `<p style="font-family:inherit;font-size:15px;color:#475569;margin:0;text-align:center">No class is open for registration right now — <a href="${esc(`${base}/classes`)}" style="color:#00AEEE;font-weight:700">join the interest list</a> and we'll tell you the moment the next one opens.</p>`
   }
   if (plan.mode === 'large') {
-    return h2 + `<div data-embed-grid="large" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;max-width:${plan.upcoming.length === 2 ? 720 : 1080}px;margin:0 auto">${plan.upcoming.map((c) => largeCard(c, base)).join('')}</div>` + cta
+    return h2 + `<div data-embed-grid="large" data-count="${plan.upcoming.length}">${plan.upcoming.map((c) => largeCard(c, base)).join('')}</div>` + cta
   }
   const tiles = [...plan.upcoming.map((c) => tileCard(c, base, 'upcoming')), ...plan.others.map((c) => tileCard(c, base, null))]
-  return h2 + `<div data-embed-grid="tiles" style="display:flex;flex-wrap:wrap;justify-content:center;gap:28px;align-items:flex-start">${tiles.join('')}</div>` + cta
+  return h2 + `<div data-embed-grid="tiles">${tiles.join('')}</div>` + cta
 }
 
 // ---- synthetic preview rows (QA only; never touch data) ----------------------
