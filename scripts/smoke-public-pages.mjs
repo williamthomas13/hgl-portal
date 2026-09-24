@@ -262,25 +262,30 @@ try {
   check('embed renders its own <h2> headline for the LIVE state ("Upcoming Classes" with the two open fixtures)', h2Text === 'Upcoming Classes', h2Text)
   check('embed headline sits in the main site\'s heading scale (adonis-web serif, 400, centred, 34px below)', /<h2 data-embed-headline style="font-family:adonis-web[^"]*font-weight:400[^"]*text-align:center[^"]*margin:0 0 34px"/.test(embedInner))
   check('embed "See all classes" is a BUTTON in the main site\'s CTA style (proxima-nova 17px/500, #00AEEE, 6.8px radius, 20.4px padding)', /<a href="[^"]*\/classes" data-embed-cta style="[^"]*font-family:proxima-nova[^"]*font-weight:500;font-size:17px[^"]*background:#00AEEE;border-radius:6\.8px;padding:20\.4px[^"]*">See all classes<\/a>/.test(embedInner))
-  check('embed: 2–3 upcoming alone → large cards with a Register link to /{code}/register or /register/{slug}', /data-embed-grid="large"/.test(embedInner) && (embedInner.match(/data-embed-card="large"/g) ?? []).length >= 2 && /\/(qasmoke\/register|register\/qa-smoke-)/.test(embedInner))
+  check('embed: 2–3 upcoming alone → large cards with a Register link to /{code}/register or /register/{slug}', /<div data-embed-grid="large"/.test(embedInner) && (embedInner.match(/data-embed-card="large"/g) ?? []).length >= 2 && /\/(qasmoke\/register|register\/qa-smoke-)/.test(embedInner))
   check('embed: the old "No class is open … recent classes:" line is gone', !/No class is open for registration right now — recent classes/.test(embedInner))
   for (const [state, headline, mode] of [['upcoming4', 'Upcoming Classes', 'tiles'], ['upcoming2', 'Upcoming Classes', 'large'], ['upcoming1-current', 'Upcoming and Current Classes', 'tiles'], ['current', 'Classes Happening Now', 'tiles'], ['recent', 'Recent Classes', 'tiles'], ['empty', 'Recent Classes', 'empty']]) {
     const js = await (await fetch(`${base}/embed/upcoming-classes.js?preview=${state}`)).text().catch(() => '')
     const inner = JSON.parse(/el\.innerHTML = (".*");/.exec(js)?.[1] ?? '""')
     const h = /<h2 data-embed-headline[^>]*>([^<]*)<\/h2>/.exec(inner)?.[1] ?? ''
-    const gotMode = /data-embed-grid="large"/.test(inner) ? 'large' : /data-embed-grid="tiles"/.test(inner) ? 'tiles' : /join the interest list/.test(inner) ? 'empty' : '?'
+    const gotMode = /<div data-embed-grid="large"/.test(inner) ? 'large' : /<div data-embed-grid="tiles"/.test(inner) ? 'tiles' : /join the interest list/.test(inner) ? 'empty' : '?'
     check(`embed ?preview=${state} → "${headline}" in ${mode} mode (synthetic rows)`, h === headline && gotMode === mode && !/hgl\.co/.test(js), `${h} / ${gotMode}`)
   }
   const pv1 = JSON.parse(/el\.innerHTML = (".*");/.exec(await (await fetch(`${base}/embed/upcoming-classes.js?preview=upcoming1-current`)).text())?.[1] ?? '""')
-  check('embed ?preview=upcoming1-current: the one upcoming tile is first and marked "Open for registration"', /data-embed-grid="tiles"[^>]*>\s*<a [^>]*data-embed-card="tile"[^>]*>\s*<span data-embed-pill="open"/.test(pv1) && (pv1.match(/data-embed-pill="open"/g) ?? []).length === 1 && (pv1.match(/data-embed-card="tile"/g) ?? []).length === 4)
+  check('embed ?preview=upcoming1-current: the one upcoming tile is first and marked "Open for registration"', /<div data-embed-grid="tiles"[^>]*>\s*<a [^>]*data-embed-card="tile"[^>]*>\s*<span data-embed-pill="open"/.test(pv1) && (pv1.match(/data-embed-pill="open"/g) ?? []).length === 1 && (pv1.match(/data-embed-card="tile"/g) ?? []).length === 4)
   const pv2 = JSON.parse(/el\.innerHTML = (".*");/.exec(await (await fetch(`${base}/embed/upcoming-classes.js?preview=upcoming4`)).text())?.[1] ?? '""')
-  check('embed ?preview=upcoming4: the priority school (SAS) leads although it starts later', /data-embed-grid="tiles"[^>]*>\s*<a [^>]*>(?:(?!<\/a>).)*Shanghai American School/.test(pv2), pv2.slice(0, 200))
+  check('embed ?preview=upcoming4: the priority school (SAS) leads although it starts later', /<div data-embed-grid="tiles"[^>]*>\s*<a [^>]*>(?:(?!<\/a>).)*Shanghai American School/.test(pv2), pv2.slice(0, 200))
   // PL-507: the team embed owns its headline + a "Meet the team" button; PL-508: preview tiles carry REAL logos (an <img>, not an initials box).
   const teamJs = await (await fetch(`${base}/embed/team.js`)).text().catch(() => '')
   const teamInner = JSON.parse(/el\.innerHTML = (".*");/.exec(teamJs)?.[1] ?? '""')
   check('team embed renders its own <h2> "Meet our team" in the heading scale', /<h2 data-embed-headline style="font-family:adonis-web[^"]*font-weight:400[^"]*text-align:center[^"]*">Meet our team<\/h2>/.test(teamInner))
-  check('team embed "Meet the team" is a BUTTON in the CTA style → /team', /<a href="[^"]*\/team" data-embed-cta style="[^"]*font-family:proxima-nova[^"]*background:#00AEEE;border-radius:6\.8px;padding:20\.4px[^"]*">Meet the team<\/a>/.test(teamInner))
-  check('team embed shows the seeded leadership four as 82px circles with the /team credential line (William · Eric · Jason · Kelsie)', (teamInner.match(/data-embed-member/g) ?? []).length === 4 && /William Thomas[\s\S]*President[\s\S]*Eric Brown[\s\S]*Executive Director[\s\S]*Jason Topa[\s\S]*Kelsie Rank/.test(teamInner) && (teamInner.match(/width:82px;height:82px;border-radius:50%/g) ?? []).length === 4, String((teamInner.match(/data-embed-member/g) ?? []).length))
+  check('team embed "See more" is a BUTTON in the CTA style → /team (PL-511)', /<a href="[^"]*\/team" data-embed-cta style="[^"]*font-family:proxima-nova[^"]*background:#00AEEE;border-radius:6\.8px;padding:20\.4px[^"]*">See more<\/a>/.test(teamInner))
+  const { data: teamSetting } = await db.from('app_settings').select('value').eq('key', 'embed_team_members').maybeSingle()
+  const teamIds = teamSetting ? JSON.parse(teamSetting.value) : []
+  const { data: teamPeople } = await db.from('instructors').select('id, name, public_name, credential, show_on_team').in('id', teamIds.length ? teamIds : ['00000000-0000-0000-0000-000000000000'])
+  const expected = teamIds.map((id) => (teamPeople ?? []).find((p) => p.id === id)).filter((p) => p && p.show_on_team).map((p) => (p.public_name?.trim() || p.name))
+  const shownNames = [...teamInner.matchAll(/<h2 style="[^"]*">([^<]*)<\/h2>/g)].map((m) => m[1])
+  check(`team embed shows exactly the setting's people, in its order, as 82px circles (${expected.length} today)`, expected.length >= 1 && expected.length <= 12 && JSON.stringify(shownNames) === JSON.stringify(expected) && (teamInner.match(/width:82px;height:82px;border-radius:50%/g) ?? []).length === expected.length && /President|Executive Director|Managing Director|Operations Director|SAT/.test(teamInner), `shown ${shownNames.join(' · ')} / expected ${expected.join(' · ')}`)
   check('team embed never carries hgl.co or the site header', !/hgl\.co/.test(teamJs) && !/site-header/.test(teamJs))
   const teamEmpty = JSON.parse(/el\.innerHTML = (".*");/.exec(await (await fetch(`${base}/embed/team.js?preview=team-empty`)).text())?.[1] ?? '""')
   check('team embed ?preview=team-empty → headline + button only, never a hole', /Meet our team/.test(teamEmpty) && /data-embed-cta/.test(teamEmpty) && !/data-embed-member/.test(teamEmpty))
@@ -414,6 +419,38 @@ if (!chromePath) {
       await desk.goto(`${base}/classes`, { waitUntil: 'networkidle0', timeout: 30_000 })
       const classesH = await desk.evaluate(() => Math.round(document.querySelector('[data-testid="page-hero"]')?.getBoundingClientRect().height ?? 0))
       check('/team and /classes heroes match in height at 1280 (PL-495)', teamH > 0 && Math.abs(teamH - classesH) <= 2, `team ${teamH} classes ${classesH}`)
+      // PL-510: the site's display scale — page titles 63.08px / section headings 26.216px at 1280, 48.4 / 22.48 at 375, weight 400 (measured on /about + /sat).
+      const heads = async (pg) => pg.evaluate(() => { const g = (sel) => { const e = document.querySelector(sel); if (!e) return null; const c = getComputedStyle(e); return { size: Math.round(parseFloat(c.fontSize) * 100) / 100, weight: c.fontWeight, lh: Math.round((parseFloat(c.lineHeight) / parseFloat(c.fontSize)) * 100) / 100 } }; return { title: g('[data-testid="page-title"]'), section: g('[data-testid="section-heading"]') } })
+      await desk.goto(`${base}/classes`, { waitUntil: 'networkidle0', timeout: 30_000 })
+      let hd = await heads(desk)
+      check('/classes at 1280: title 63.08px/400, section headings 26.22px/400, line-height 1.23 (PL-510)', hd.title && Math.abs(hd.title.size - 63.08) < 0.6 && hd.title.weight === '400' && Math.abs(hd.title.lh - 1.23) < 0.02 && hd.section && Math.abs(hd.section.size - 26.22) < 0.6 && hd.section.weight === '400', JSON.stringify(hd))
+      await desk.goto(`${base}/team`, { waitUntil: 'networkidle0', timeout: 30_000 })
+      hd = await heads(desk)
+      check('/team at 1280: title 63.08px/400 (PL-510)', hd.title && Math.abs(hd.title.size - 63.08) < 0.6 && hd.title.weight === '400', JSON.stringify(hd))
+      // PL-509: the strip fills its mount — the QA page sizes its mount like the homepage; 4 tiles per row each ≥ 20% of the mount at 1280, 2 at 768, 1 at 375; large mode 2 across.
+      const stripRows = async (pg, w, state) => { await pg.setViewport({ width: w, height: 900, deviceScaleFactor: 1 }); await pg.goto(`${base}/sqsp-embed-test.html?preview=${state}`, { waitUntil: 'networkidle0', timeout: 30_000 }); await new Promise((r) => setTimeout(r, 400)); return pg.evaluate(() => { const m = document.getElementById('hgl-upcoming-classes').getBoundingClientRect(); const cs = [...document.querySelectorAll('#hgl-upcoming-classes [data-embed-card]')].map((c) => c.getBoundingClientRect()); const firstTop = cs[0]?.top; const row = cs.filter((c) => Math.abs(c.top - firstTop) < 4); const logo = document.querySelector('#hgl-upcoming-classes [data-embed-logo]')?.getBoundingClientRect(); return { mount: Math.round(m.width), perRow: row.length, tile: Math.round(cs[0]?.width ?? 0), pct: Math.round(((cs[0]?.width ?? 0) / m.width) * 100), logo: logo ? Math.round(logo.width) : null } }) }
+      let sr = await stripRows(desk, 1280, 'upcoming4')
+      check('strip at 1280: 4 tiles per row, each ≥ 20% of the mount, ~160px logo (PL-509)', sr.perRow === 4 && sr.pct >= 20 && sr.logo === 160, JSON.stringify(sr))
+      sr = await stripRows(desk, 768, 'upcoming4')
+      check('strip at 768: 2 tiles per row, 120px logo (PL-509)', sr.perRow === 2 && sr.logo === 120, JSON.stringify(sr))
+      sr = await stripRows(desk, 375, 'upcoming4')
+      check('strip at 375: 1 tile per row (PL-509)', sr.perRow === 1 && sr.pct >= 90, JSON.stringify(sr))
+      sr = await stripRows(desk, 1280, 'upcoming2')
+      check('strip large mode at 1280: 2 cards across the full mount (PL-509)', sr.perRow === 2 && sr.pct >= 45, JSON.stringify(sr))
+      // PL-511: the team strip on the QA page — 6 across at 1280 with the setting's twelve (min(6, members)), 163px tiles on a 203px pitch; 2 across at 375.
+      const teamRows = async (pg, w) => { await pg.setViewport({ width: w, height: 900, deviceScaleFactor: 1 }); await pg.goto(`${base}/sqsp-embed-test.html`, { waitUntil: 'networkidle0', timeout: 30_000 }); await new Promise((r) => setTimeout(r, 400)); return pg.evaluate(() => { const ms = [...document.querySelectorAll('#hgl-team [data-embed-member]')].map((m) => m.getBoundingClientRect()); const row = ms.filter((m) => Math.abs(m.top - ms[0]?.top) < 4); return { members: ms.length, perRow: row.length, tile: Math.round(ms[0]?.width ?? 0), pitch: row.length > 1 ? Math.round(row[1].left - row[0].left) : null, rows: [...new Set(ms.map((m) => Math.round(m.top)))].length } }) }
+      let tr = await teamRows(desk, 1280)
+      check(`team strip at 1280: ${Math.min(6, tr.members)} across (6 with twelve), 163px tiles on a 203px pitch (PL-511)`, tr.members >= 1 && tr.perRow === Math.min(6, tr.members) && tr.tile === 163 && (tr.perRow < 2 || tr.pitch === 203), JSON.stringify(tr))
+      tr = await teamRows(desk, 375)
+      check('team strip at 375: 2 across (PL-511)', tr.members >= 1 && tr.perRow === Math.min(2, tr.members), JSON.stringify(tr))
+      // PL-510 at phone width
+      await desk.setViewport({ width: 375, height: 812, deviceScaleFactor: 1 })
+      await desk.goto(`${base}/classes`, { waitUntil: 'networkidle0', timeout: 30_000 })
+      hd = await heads(desk)
+      check('/classes at 375: title 48.4px, section headings 22.48px, weight 400 (PL-510)', hd.title && Math.abs(hd.title.size - 48.4) < 0.6 && hd.section && Math.abs(hd.section.size - 22.48) < 0.6 && hd.title.weight === '400', JSON.stringify(hd))
+      await desk.goto(`${base}/team`, { waitUntil: 'networkidle0', timeout: 30_000 })
+      hd = await heads(desk)
+      check('/team at 375: title 48.4px/400 (PL-510)', hd.title && Math.abs(hd.title.size - 48.4) < 0.6 && hd.title.weight === '400', JSON.stringify(hd))
       await desk.close()
     } finally {
       await cleanupInProgress()

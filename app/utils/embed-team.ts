@@ -7,6 +7,10 @@
 // + button only, never a hole).
 
 export const TEAM_EMBED_CAP = 12
+/** PL-511: the button reads the site's own label. */
+export const TEAM_CTA_LABEL = 'See more'
+/** PL-511: columns per row — 6 across on desktop (the old Squarespace section's twelve as two rows), 4 ≤1024, 3 ≤768, 2 on phones. */
+export const TEAM_COLUMNS = { desktop: 6, tablet: 4, small: 3, phone: 2 } as const
 
 export type TeamMember = {
   id: string

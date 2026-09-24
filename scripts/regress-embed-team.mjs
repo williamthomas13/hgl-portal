@@ -18,7 +18,9 @@ try {
   M = createRequire(import.meta.url)(path.join(build, 'embed-team.js'))
   S = createRequire(import.meta.url)(path.join(build, 'school-monogram.js'))
 } finally { safeRm(build) }
-const { selectTeam, defaultTeamSeed, TEAM_EMBED_CAP } = M
+const { selectTeam, defaultTeamSeed, TEAM_EMBED_CAP, TEAM_CTA_LABEL, TEAM_COLUMNS } = M
+check('PL-511: the button reads the site\'s own label "See more"', TEAM_CTA_LABEL === 'See more')
+check('PL-511: 6 across on desktop, 4 ≤1024, 3 ≤768, 2 on phones', TEAM_COLUMNS.desktop === 6 && TEAM_COLUMNS.tablet === 4 && TEAM_COLUMNS.small === 3 && TEAM_COLUMNS.phone === 2)
 const p = (id, o = {}) => ({ id, name: o.name ?? `Person ${id}`, credential: o.credential ?? null, show_on_team: o.hidden ? false : true, team_order: o.order ?? null })
 const people = [p('billy', { name: 'William Thomas', credential: 'President', order: 0 }), p('eric', { name: 'Eric Brown', credential: 'Executive Director', order: 1 }), p('jason', { name: 'Jason Topa', order: 2 }), p('kelsie', { name: 'Kelsie Rank', order: 3 }), p('gwen', { name: 'Gwen De Silva', credential: 'International SAT', order: 4 }), p('kevin', { name: 'Kevin Marren', order: 5 }), p('ghost', { name: 'Hidden Person', hidden: true, order: 1 }), p('zed', { name: 'Zed Noorder' })]
 const ids = (rows) => rows.map((r) => r.id).join(',')

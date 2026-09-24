@@ -144,7 +144,8 @@ email first (classes).
    twelve hand-placed Squarespace tiles AND the "Meet our team" heading with ONE Code block
    (the embed renders the heading itself, then the people chosen under Settings → Site
    content → "Homepage strip: team members" — the leadership four by default — with the same
-   photos and credential lines as /team, then a "Meet the team" button):
+   photos and credential lines as /team, then a "See more" button → /team; twelve people lay out
+   6 across on desktop):
    ```html
    <div id="hgl-team">
      <noscript><a href="https://portal.highergroundlearning.com/team">Meet the team →</a></noscript>
