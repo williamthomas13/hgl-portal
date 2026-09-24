@@ -117,7 +117,13 @@ export default async function TeamPage() {
         </div>
       </section>
 
-      <div className="max-w-5xl mx-auto px-5 py-10 sm:py-14">
+      {/* PL-500 amendment (Scarlett, Sep 24): spaced like the main site's Team
+          page. Measured there at 1280: a 1096px-wide row of three 244px
+          circles with 182px between them (the circle is ~57% of its column),
+          the name ~26px under the circle at 20px serif, role + bio at 15px.
+          Same numbers here: max-w-[1136px] (1096 + the 20px side gutters), lg:gap-x-[182px], the circle
+          fills its 244px column. Tablet/phone keep proportionate air. */}
+      <div className="max-w-[1136px] mx-auto px-5 py-12 sm:py-16 lg:py-20">
         {people.length === 0 ? (
           <p className="text-gray-600 italic">
             Team profiles are being set up — check back soon.
@@ -130,16 +136,16 @@ export default async function TeamPage() {
              border-radius 50%) — the same box, rounded-full, object-cover
              cropped centre; the initials placeholder is round too. Same
              classes the class page's instructor block already uses. */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12" data-testid="team-grid">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-16 md:gap-x-24 lg:gap-x-[182px] gap-y-16 lg:gap-y-24 justify-items-center" data-testid="team-grid">
             {people.map((p) => {
               const shot = parseClassPageImage(p.headshot)
               return (
-                <div key={p.id} className="flex flex-col items-center text-center" data-testid="team-member">
+                <div key={p.id} className="flex flex-col items-center text-center w-full max-w-[244px] sm:max-w-[260px] lg:max-w-none" data-testid="team-member">
                   {shot ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       {...imageAttrs(shot)}
-                      sizes="(min-width: 1024px) 300px, (min-width: 640px) 45vw, 100vw"
+                      sizes="(min-width: 1024px) 244px, (min-width: 640px) 260px, 244px"
                       loading="lazy"
                       decoding="async"
                       className="w-full aspect-square rounded-full object-cover bg-gray-100"
@@ -156,20 +162,20 @@ export default async function TeamPage() {
                       {initials(p.name)}
                     </div>
                   )}
-                  <h2 className="mt-4 text-xl font-semibold text-black">{p.name}</h2>
+                  <h2 className="mt-6 text-[20px] leading-tight font-semibold text-black">{p.name}</h2>
                   {p.credential && (
-                    <p className="text-xs uppercase tracking-[0.12em] text-gray-500 mt-1">
+                    <p className="text-[15px] leading-relaxed uppercase text-gray-700 mt-2">
                       {p.credential}
                     </p>
                   )}
                   {p.bio && (
                     <details className="group mt-3 w-full">
-                      <summary className="cursor-pointer text-sm text-hgl-blue font-semibold list-none">
+                      <summary className="cursor-pointer text-[15px] text-hgl-blue list-none">
                         <span className="group-open:hidden">About {String(p.name).split(' ')[0]} →</span>
                         <span className="hidden group-open:inline">Show less</span>
                       </summary>
                       <div
-                        className="mt-2 text-sm space-y-2 [&_p]:text-gray-600 text-center"
+                        className="mt-3 text-[15px] leading-relaxed space-y-2 [&_p]:text-gray-700 text-center"
                         dangerouslySetInnerHTML={{ __html: renderSiteMarkdown(p.bio) }}
                       />
                     </details>
