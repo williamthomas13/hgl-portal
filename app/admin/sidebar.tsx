@@ -42,6 +42,8 @@ export const CLASSES_SIDEBAR: SidebarEntry[] = [
   { id: 'contacts', label: 'Schools', href: '/admin?tab=classes&section=contacts' },
   { id: 'branding', label: 'Branding & collateral', href: '/admin?tab=classes&section=branding' },
   { id: 'calendar', label: 'Calendar', href: '/admin/calendar' },
+  // PL-504: the all-time results view.
+  { id: 'results', label: 'Results', href: '/admin/results' },
 ]
 
 export function SidebarNav({
