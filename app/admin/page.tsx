@@ -14,6 +14,7 @@ import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-w
 import CollateralCard, { type CollateralFields } from './collateral-card'
 import SiteContentPanel from './site-content-panel'
 import EmbedPriorityPanel from './embed-priority-panel'
+import EmbedTeamPanel from './embed-team-panel'
 import ShortlinksPanel from './shortlinks-panel'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
@@ -3606,6 +3607,8 @@ export default function AdminDashboard() {
           </CollapsibleSection>
           {/* PL-506: the homepage strip's priority-school order (Scarlett's six by default). */}
           <div className="mt-6">{simManager ? <SimManagerHidden what="Homepage strip priority schools" /> : <EmbedPriorityPanel />}</div>
+          {/* PL-507: the homepage "Meet our team" strip's members (leadership four by default). */}
+          <div className="mt-6">{simManager ? <SimManagerHidden what="Homepage strip team members" /> : <EmbedTeamPanel />}</div>
         </div>
 
           </div>

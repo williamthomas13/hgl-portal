@@ -33,7 +33,8 @@
     "regress:class-groups": "node scripts/regress-class-groups.mjs",
     "regress:school-classes": "node scripts/regress-school-classes.mjs",
     "regress:import-past-scores": "node scripts/regress-import-past-scores.mjs",
-    "regress:embed-order": "node scripts/regress-embed-order.mjs"
+    "regress:embed-order": "node scripts/regress-embed-order.mjs",
+    "regress:embed-team": "node scripts/regress-embed-team.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

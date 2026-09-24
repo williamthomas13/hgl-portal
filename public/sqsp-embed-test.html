@@ -29,6 +29,22 @@
         document.currentScript.parentNode.appendChild(s);
       })();
     </script>
+  </div>
+  <div class="sqs-section">
+    <!-- PL-507: the homepage "Meet our team" section — the embed carries the heading; the block has none of its own.
+         HGL team embed: paste once, never edit again -->
+    <div id="hgl-team">
+      <noscript><a href="/team">Meet the team →</a></noscript>
+    </div>
+    <script>
+      (function () {
+        var p = new URLSearchParams(location.search).get('preview');
+        var s = document.createElement('script');
+        s.src = '/embed/team.js' + (p ? '?preview=' + encodeURIComponent(p) : '');
+        s.defer = true;
+        document.currentScript.parentNode.appendChild(s);
+      })();
+    </script>
     <p class="qa">QA states (synthetic rows, never data):
       <a href="?">live</a>
       <a href="?preview=upcoming4">upcoming4</a>
@@ -37,6 +53,7 @@
       <a href="?preview=current">current</a>
       <a href="?preview=recent">recent</a>
       <a href="?preview=empty">empty</a>
+      · team: <a href="?preview=team-empty">team-empty</a> (the classes strip above renders its own empty state with that value)
     </p>
   </div>
 </body></html>

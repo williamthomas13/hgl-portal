@@ -140,6 +140,20 @@ email first (classes).
    https://hgl-portal.vercel.app/sqsp-embed-test.html (the none-open state:
    /embed/upcoming-classes.js?preview=empty). Script blocked → the noscript "See upcoming
    classes →" link still shows.
+9c. **Homepage "Meet our team" section → the portal team embed (PL-507).** Replace the
+   twelve hand-placed Squarespace tiles AND the "Meet our team" heading with ONE Code block
+   (the embed renders the heading itself, then the people chosen under Settings → Site
+   content → "Homepage strip: team members" — the leadership four by default — with the same
+   photos and credential lines as /team, then a "Meet the team" button):
+   ```html
+   <div id="hgl-team">
+     <noscript><a href="https://portal.highergroundlearning.com/team">Meet the team →</a></noscript>
+   </div>
+   <script src="https://portal.highergroundlearning.com/embed/team.js" defer></script>
+   ```
+   Hiding someone from /team drops them from the homepage automatically. Preview at
+   https://portal.highergroundlearning.com/sqsp-embed-test.html (nobody chosen:
+   `?preview=team-empty` — heading + button, never a hole).
 10. **MailerLite decommission:**
    - Export ALL lists + consent history (keep the archive).
    - Export the UNSUBSCRIBES and land them in portal suppression **before any portal
