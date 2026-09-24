@@ -148,6 +148,8 @@ import { SidebarNav } from './sidebar'
 import CallsPanel from './calls-panel'
 import { summarizeAttendance, type AttendanceRecord } from '../utils/attendance'
 import { CollapsibleSection, DateHint, TimeSelect, to24h, useDeepLinkFocus } from './ui'
+import SchoolTile from '../components/SchoolTile'
+import { CLASS_GROUPS, classDays, groupClasses, type ClassGroupKey, type ClassSort } from '../utils/class-groups'
 import { FamilyCommsRow } from './family-comms'
 import { ChaseStatus } from './school-comms'
 
@@ -273,7 +275,8 @@ type ClassRow = {
   /** PL-442B: the Synap deliberate-skip stamp — reminder shows while set AND
    *  diagnostics are on AND synap_group is still blank; filling clears it. */
   synap_reminder_at: string | null
-  schools: { name: string; nickname: string; timezone: string; city?: string | null } | null
+  /** PL-501: evergreen_code (search) + logo/accent (the 72px tile) ride along. */
+  schools: { name: string; nickname: string; timezone: string; city?: string | null; evergreen_code?: string | null; logo_url?: string | null; accent_color?: string | null } | null
   instructors: { name: string | null; email: string } | null
   enrollments: Enrollment[] | null
   sessions: Session[] | null
@@ -1039,7 +1042,7 @@ export default function AdminDashboard() {
       .select(
         `
         *,
-        schools ( name, nickname, timezone, city ),
+        schools ( name, nickname, timezone, city, evergreen_code, logo_url, accent_color ),
         instructors ( name, email ),
         sessions ( id, session_date, start_time, end_time, location ),
         enrollments (
@@ -1166,10 +1169,10 @@ export default function AdminDashboard() {
   }
 
   async function handleCopyPageLink(c: ClassRow, path: string) {
-    // The vercel-host absolute URL is what actually works pre-DNS (the
-    // display shows the hgl.co form it will become — shortlinks-panel style).
+    // The portal-host absolute URL (the code URL becomes hgl.co/{code} at row 8;
+    // both resolve to the same page).
     await navigator.clipboard.writeText(`${window.location.origin}${path}`)
-    setCopiedClassId(`${c.id}:page`)
+    setCopiedClassId(path.startsWith('/c/') ? `${c.id}:page:permanent` : `${c.id}:page`)
     setTimeout(() => setCopiedClassId(null), 2000)
   }
 
@@ -1676,11 +1679,33 @@ export default function AdminDashboard() {
     return { ...c, lastDay }
   })
   const liveClasses = withEnd.filter((c) => c.status !== 'cancelled' && c.lastDay >= today)
-  const pastClasses = withEnd.filter((c) => c.status === 'cancelled' || c.lastDay < today)
-  const selectedTab =
-    activeTab === '__past' || liveClasses.some((c) => c.id === activeTab)
-      ? activeTab
-      : (liveClasses[0]?.id ?? '__past')
+  // PL-501 (Scarlett, Sep 24): findable at 13+ past classes — five groups
+  // (open · in progress · upcoming · ended · cancelled, counts in the
+  // header), the cold groups collapsed by default and remembered per admin
+  // in localStorage, ONE search box across every group (school nickname /
+  // name / code / slug / type / instructor first name / term), a sort per
+  // group. The rules live in app/utils/class-groups.ts (pure) so the regress
+  // gate runs the same code on 20 synthetic rows. The old per-class tabs and
+  // the single "Past & cancelled" bucket are gone; every card keeps its
+  // actions and gains the 72px school tile (PL-491's).
+  const [classSearch, setClassSearch] = useState('')
+  const [classSort, setClassSort] = useState<Partial<Record<ClassGroupKey, ClassSort>>>({})
+  const [groupOpen, setGroupOpen] = useState<Partial<Record<ClassGroupKey, boolean>>>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? window.localStorage.getItem('hgl-admin-class-groups') : null
+      if (saved) return JSON.parse(saved)
+    } catch { /* private mode / blocked storage — defaults */ }
+    return {}
+  })
+  const isGroupOpen = (key: ClassGroupKey, live: boolean) => groupOpen[key] ?? live
+  const toggleGroup = (key: ClassGroupKey, live: boolean) => {
+    const next = { ...groupOpen, [key]: !isGroupOpen(key, live) }
+    setGroupOpen(next)
+    try { window.localStorage.setItem('hgl-admin-class-groups', JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  const classGroupsView = groupClasses(withEnd, { today, query: classSearch, sort: classSort })
+  // A deep link (?class=) lands on its card whichever group holds it.
+  const deepLinkedGroup = activeTab ? classGroupsView.find((g) => g.rows.some((c) => c.id === activeTab))?.key ?? null : null
 
   // Phase 6 §8: per-enrollment QBO badge — worst status wins (failed >
   // pending > synced); ✓ deep-links to the Sales Receipt. Enrollments with no
@@ -1940,46 +1965,55 @@ export default function AdminDashboard() {
                 rule), the direct form link beside it, so the creator keeps
                 the distinction. Resolution honesty: the code URL shows only
                 when THIS class is what the code serves right now. */}
+            {/* PL-502 (Scarlett, Sep 24): honest labels, no routing change. The
+                CODE (hgl.co/{code}) is the school's evergreen address — it always
+                points at the school's CURRENT class; the SLUG (/c/{slug}) is the
+                one permanent link every class keeps. Code first with a "now
+                showing" pill when this class is what the code serves; for a class
+                the code has moved on from, only the permanent link, and why. */}
             {(() => {
               const facts = classPageFacts(c)
+              const permanent = `${typeof window !== 'undefined' ? window.location.origin : ''}${facts.slugPath}`
               return (
-                <p className="text-sm text-gray-600 mt-2 flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold">Class page:</span>
-                  {facts.code && facts.servesThisClass ? (
-                    <>
+                <div className="text-sm text-gray-600 mt-2 space-y-1" data-testid="class-links">
+                  {facts.code && facts.servesThisClass && (
+                    <p className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold">School code:</span>
                       <a href={`/${facts.code}`} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
                         <span className="text-gray-400">hgl.co/</span>
                         {facts.code}
                       </a>
+                      <span className="inline-block rounded-full bg-green-100 text-green-800 text-[11px] font-bold px-2 py-0.5" data-testid="now-showing-pill">
+                        now showing at hgl.co/{facts.code}
+                      </span>
                       <button
                         onClick={() => handleCopyPageLink(c, `/${facts.code}`)}
                         className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
                       >
                         {copiedClassId === `${c.id}:page` ? 'Copied!' : 'Copy'}
                       </button>
-                      <span className="text-xs text-gray-400">set in Classes → Short links</span>
-                    </>
-                  ) : (
-                    <>
-                      <a href={facts.slugPath} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
-                        <code className="bg-gray-100 rounded px-1.5 py-0.5 text-xs">{facts.slugPath}</code>
-                      </a>
-                      <button
-                        onClick={() => handleCopyPageLink(c, facts.slugPath)}
-                        className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
-                      >
-                        {copiedClassId === `${c.id}:page` ? 'Copied!' : 'Copy'}
-                      </button>
-                      {facts.code && (
-                        <span className="text-xs text-amber-700">
-                          <span className="text-gray-400">hgl.co/</span>
-                          {facts.code} currently points at {facts.servingLabel ?? 'the interest page'} — this
-                          is the direct page link
-                        </span>
-                      )}
-                    </>
+                      <span className="text-xs text-gray-400">the link families and print use — set in Classes → Short links</span>
+                    </p>
                   )}
-                </p>
+                  <p className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold">Permanent link:</span>
+                    <a href={facts.slugPath} target="_blank" rel="noreferrer" className="text-hgl-blue underline">
+                      <code className="bg-gray-100 rounded px-1.5 py-0.5 text-xs" data-testid="permanent-link">{permanent}</code>
+                    </a>
+                    <button
+                      onClick={() => handleCopyPageLink(c, facts.slugPath)}
+                      className="bg-hgl-blue text-white text-xs font-bold px-3 py-1 rounded hover:bg-hgl-blue-hover transition"
+                    >
+                      {copiedClassId === `${c.id}:page:permanent` ? 'Copied!' : 'Copy'}
+                    </button>
+                    {facts.code && !facts.servesThisClass && (
+                      <span className="text-xs text-amber-700" data-testid="code-moved-on">
+                        <span className="text-gray-400">hgl.co/</span>
+                        {facts.code} now shows {facts.servingLabel ? `${c.schools?.nickname ?? ''} ${facts.servingLabel}`.trim() : 'the interest page'} — this class is reachable only here
+                      </span>
+                    )}
+                  </p>
+                </div>
               )
             })()}
             <p className="text-sm text-gray-600 mt-1 flex items-center gap-2 flex-wrap">
@@ -2086,13 +2120,18 @@ export default function AdminDashboard() {
                 )}
                 {/* PL-383: slug edit moves in here (setup, not daily use) — no
                     more native prompt; the warning rides the label. */}
+                {/* PL-502: "Permanent link" — the slug IS the class's one permanent
+                    address; the school code is what families and print use. */}
                 <InlineEditableText
-                  label="Registration URL slug"
+                  label="Permanent link (slug)"
                   value={c.slug}
                   emptyText="not set"
-                  title="Careful: changing the slug breaks any already-shared /register or /c links to the old address — the hgl.co code link is the one to share. Lowercase letters, numbers, dashes."
+                  title="Every class keeps this link (/c/{slug}). Careful: changing it breaks any already-shared /register or /c links to the old address — the hgl.co code link is the one to share. Lowercase letters, numbers, dashes."
                   onSave={(v) => handleSlugSave(c, v)}
                 />
+                <p className="text-xs text-gray-500 -mt-1" data-testid="permanent-link-help">
+                  Every class keeps this link. Families and print use the school code (hgl.co/{'{code}'}), which always points at the school&apos;s current class.
+                </p>
                 {/* PL-383: wizard-only traps now editable — price/capacity/
                     minimum (existing paid registrations keep their price
                     snapshots; capacity feeds spots-left + waitlist math). */}
@@ -3264,44 +3303,87 @@ export default function AdminDashboard() {
           ) : rosters.length === 0 ? (
             <p className="text-gray-500">No classes exist yet.</p>
           ) : (
-            <div>
-              <div className="flex flex-wrap gap-1 border-b border-gray-200 mb-6">
-                {liveClasses.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setActiveTab(c.id)}
-                    className={`px-4 py-2 text-sm font-semibold rounded-t-md border border-b-0 transition ${
-                      selectedTab === c.id
-                        ? 'bg-white border-gray-200 text-hgl-blue -mb-px'
-                        : 'bg-gray-50 border-transparent text-gray-500 hover:text-hgl-slate'
-                    }`}
-                  >
-                    {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setActiveTab('__past')}
-                  className={`px-4 py-2 text-sm font-semibold rounded-t-md border border-b-0 transition ${
-                    selectedTab === '__past'
-                      ? 'bg-white border-gray-200 text-hgl-blue -mb-px'
-                      : 'bg-gray-50 border-transparent text-gray-500 hover:text-hgl-slate'
-                  }`}
-                >
-                  Past &amp; cancelled ({pastClasses.length})
-                </button>
+            <div data-testid="class-groups">
+              <div className="mb-5">
+                <label className="sr-only" htmlFor="class-search">Find a class</label>
+                <input
+                  id="class-search"
+                  type="search"
+                  value={classSearch}
+                  onChange={(e) => setClassSearch(e.target.value)}
+                  placeholder="Find a class — school, code, slug, type, instructor, term (e.g. fall26)"
+                  className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                  data-testid="class-search"
+                />
               </div>
-              {selectedTab === '__past' ? (
-                pastClasses.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No past or cancelled classes.</p>
-                ) : (
-                  <div className="space-y-8">{pastClasses.map((c) => classCard(c))}</div>
-                )
-              ) : (
-                (() => {
-                  const c = liveClasses.find((x) => x.id === selectedTab)
-                  return c ? classCard(c) : <p className="text-gray-500 text-sm">No live classes.</p>
-                })()
-              )}
+              <div className="space-y-4">
+                {classGroupsView.map((g) => {
+                  const open = Boolean(classSearch ? g.rows.length > 0 : isGroupOpen(g.key, g.live)) || deepLinkedGroup === g.key
+                  return (
+                    <section key={g.key} className="border border-gray-200 rounded-lg" data-testid="class-group" data-group={g.key} data-count={g.total} data-open={open}>
+                      <header className="flex items-center justify-between gap-3 px-4 py-2.5 bg-gray-50 rounded-t-lg">
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(g.key, g.live)}
+                          className="flex items-center gap-2 text-sm font-bold text-hgl-slate"
+                          aria-expanded={open}
+                          data-testid="class-group-toggle"
+                        >
+                          <span aria-hidden className={`text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+                          {g.label} ({classSearch ? `${g.rows.length} of ${g.total}` : g.total})
+                        </button>
+                        {open && g.total > 1 && (
+                          <label className="text-xs text-gray-500 flex items-center gap-1">
+                            Sort
+                            <select
+                              value={classSort[g.key] ?? 'newest'}
+                              onChange={(e) => setClassSort({ ...classSort, [g.key]: e.target.value as ClassSort })}
+                              className="border border-gray-300 rounded p-1 text-xs bg-white"
+                              data-testid="class-group-sort"
+                            >
+                              <option value="newest">Start date, newest first</option>
+                              <option value="oldest">Start date, oldest first</option>
+                              <option value="school">A–Z by school</option>
+                            </select>
+                          </label>
+                        )}
+                      </header>
+                      {open && (
+                        <div className="p-4 space-y-8">
+                          {g.rows.length === 0 ? (
+                            <p className="text-gray-500 text-sm">{classSearch ? 'No match in this group.' : 'Nothing here.'}</p>
+                          ) : (
+                            g.rows.map((c) => {
+                              const { first, last } = classDays(c)
+                              return (
+                                <div key={c.id} id={`class-card-${c.id}`} data-testid="class-row" data-class-id={c.id}>
+                                  <div className="flex items-center gap-3 mb-2">
+                                    <SchoolTile
+                                      logoUrl={c.schools?.logo_url ?? (c.school_id ? null : '/collateral/hgl-logo-color.png')}
+                                      name={c.schools?.name ?? (c.delivery_mode === 'online' ? 'Online' : 'Higher Ground Learning')}
+                                      accentColor={c.schools?.accent_color ?? null}
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-hgl-slate">
+                                        {classDisplayLabel({ schoolNickname: c.schools?.nickname ?? null, deliveryMode: c.delivery_mode, shortName: c.fo_short_name, classType: c.class_type })}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        {first ? formatDateAdmin(first) : '—'}{last && last !== first ? ` – ${formatDateAdmin(last)}` : ''}
+                                        {c.instructors?.name ? ` · ${c.instructors.name}` : ''}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {classCard(c)}
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  )
+                })}
+              </div>
             </div>
           )}
         </CollapsibleSection>

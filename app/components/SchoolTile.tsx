@@ -2,7 +2,7 @@
 // embed — the logo contained on a white tile so mixed aspect ratios look
 // deliberate; a graceful MONOGRAM tile in the school's accent color when a
 // logo is missing. Never a broken image.
-import { usableAccent } from '../utils/collateral'
+import { usableAccent } from '../utils/accent'
 
 export function monogram(name: string): string {
   return name

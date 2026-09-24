@@ -75,20 +75,10 @@ function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
-const HGL_BLUE = '#00AEEE'
-
-/** The accent color fills the flyer's burst and CTA circles behind WHITE
- *  text, so a near-white school color (SLS stores #ffffff) renders the text
- *  invisible. Colors too light to carry white text — or unparseable ones —
- *  fall back to HGL blue exactly like an unset color. Exported for PL-348:
- *  the public class page's hero band uses the same safety rule. */
-export function usableAccent(hex: string | null | undefined): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim())
-  if (!m) return HGL_BLUE
-  const n = parseInt(m[1], 16)
-  const luminance = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 0xff) + 0.114 * (n & 0xff)
-  return luminance > 200 ? HGL_BLUE : `#${m[1]}`
-}
+// PL-501: usableAccent moved to the client-safe accent.ts (a client component
+// needed it); re-exported here so every server caller keeps its import.
+import { usableAccent } from './accent'
+export { usableAccent }
 
 /** PL-429: what still blocks this class's collateral being USED — the SAME
  *  facts the CS-welcome gate refuses on (sessions on the calendar, a
