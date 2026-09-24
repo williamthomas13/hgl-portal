@@ -7,6 +7,7 @@ import { usableAccent } from '../../utils/accent'
 import { classGroup } from '../../utils/class-groups'
 import { planEmbed, type EmbedClass, type EmbedPlan } from '../../utils/embed-order'
 import { loadPrioritySchools } from '../../utils/embed-priority'
+import { schoolMonogram } from '../../utils/school-monogram'
 
 // PL-385: the Squarespace homepage's class strip, portal-fed. The sqsp page
 // pastes ONE code block (checklist 9b) and never touches it again — this
@@ -60,7 +61,6 @@ type Row = EmbedClass & {
 
 const HEADING = 'font-family:adonis-web,\'Source Serif 4\',Georgia,\'Times New Roman\',serif;font-weight:400;font-size:clamp(34px,4.9vw,63px);line-height:1.23;letter-spacing:normal;text-align:center;color:#000;margin:0 0 34px'
 const BUTTON = 'display:inline-block;font-family:proxima-nova,Montserrat,Arial,sans-serif;font-weight:500;font-size:17px;letter-spacing:.85px;line-height:21px;color:#fff;background:#00AEEE;border-radius:6.8px;padding:20.4px;text-decoration:none'
-const monogram = (n: string) => n.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w) && !/^(of|the|and|de|del|di|la|le|du)$/i.test(w)).map((w) => w[0].toUpperCase()).slice(0, 3).join('') || 'HGL'
 
 function facts(c: Row, base: string) {
   const school = c.schools
@@ -77,7 +77,8 @@ function facts(c: Row, base: string) {
   const tile = logo
     ? `<span style="display:inline-flex;align-items:center;justify-content:center;height:72px;max-width:160px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:8px;box-sizing:border-box"><img src="${esc(logo)}" alt="${esc(name)} logo" style="height:100%;width:auto;max-width:144px;object-fit:contain"/></span>`
     : school
-      ? `<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;height:72px;width:72px;border-radius:8px;background:${esc(usableAccent(school.accent_color))};color:#fff;font-weight:800;font-size:22px;letter-spacing:.04em">${esc(monogram(name))}</span>`
+      // PL-508: the logo-less tile reads the school's NICKNAME ("Nido"), never full-name initials.
+      ? `<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;height:72px;min-width:72px;padding:0 10px;box-sizing:border-box;border-radius:8px;background:${esc(usableAccent(school.accent_color))};color:#fff;font-weight:800;font-size:20px;letter-spacing:.02em">${esc(schoolMonogram(school.nickname, name))}</span>`
       : `<span style="display:inline-flex;align-items:center;justify-content:center;height:72px;max-width:160px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:8px;box-sizing:border-box"><img src="${esc(`${base}/collateral/hgl-logo-color.png`)}" alt="Higher Ground Learning logo" style="height:100%;width:auto;max-width:144px;object-fit:contain"/></span>`
   return { firstSession, lastSession, city: honestCity, online, label, name, tile }
 }
@@ -101,7 +102,7 @@ function largeCard(c: Row, base: string) {
   const f = facts(c, base)
   return (
     `<div data-embed-card="large" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;text-align:center;min-width:0">` +
-    f.tile.replace('height:72px;max-width:160px', 'height:108px;max-width:240px').replace('max-width:144px', 'max-width:216px').replace('height:72px;width:72px', 'height:108px;width:108px').replace('font-size:22px', 'font-size:32px') +
+    f.tile.replace('height:72px;max-width:160px', 'height:108px;max-width:240px').replace('max-width:144px', 'max-width:216px').replace('height:72px;min-width:72px', 'height:108px;min-width:108px').replace('font-size:20px', 'font-size:28px') +
     `<span style="display:block;font-size:20px;font-weight:700;line-height:1.3;color:#1e293b">${esc(f.name)}</span>` +
     `<span style="display:block;font-size:15px;color:#475569;line-height:1.5">${esc(c.class_type)}${f.city ? ` · ${esc(f.city)}` : ''}${f.firstSession ? `<br>Starts ${esc(formatDateRange(f.firstSession, f.firstSession))}` : ''}</span>` +
     `<a href="${esc(c.registerHref)}" style="${BUTTON};padding:14px 24px;font-size:16px">Register</a>` +
@@ -125,12 +126,15 @@ function render(plan: EmbedPlan<Row>, base: string): string {
 }
 
 // ---- synthetic preview rows (QA only; never touch data) ----------------------
-function synthetic(state: string, today: string): Row[] {
+// PL-508: the synthetic schools borrow the REAL logo_url of the school they
+// are named after (a read of the schools table — never a write), so the QA
+// page looks like the site; everything else stays invented.
+function synthetic(state: string, today: string, logos: Map<string, { logo: string | null; nickname: string | null }>): Row[] {
   const d = (n: number) => { const x = new Date(`${today}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
   const mk = (i: number, o: { name: string; city: string; first: number; close: number; paid?: number; runs?: number }): Row => ({
     id: `preview-${i}`, slug: `preview-${i}`, class_type: 'SAT Prep', status: 'open', school_id: `preview-school-${i}`, course_key: null,
     start_date: d(o.first), registration_close_date: d(o.close), delivery_mode: 'in_person', default_location: null, timezone: 'America/Denver', display_cities: null,
-    schools: { name: o.name, nickname: o.name.split(' ')[0], city: o.city, accent_color: ['#0f4c81', '#7a2048', '#2e7d32', '#b26a00', '#4a148c', '#006064'][i % 6] },
+    schools: { name: o.name, nickname: logos.get(o.name)?.nickname ?? o.name.split(' ')[0], city: o.city, logo_url: logos.get(o.name)?.logo ?? null, accent_color: ['#0f4c81', '#7a2048', '#2e7d32', '#b26a00', '#4a148c', '#006064'][i % 6] },
     sessions: [0, 7, 14].map((n) => ({ session_date: d(o.first + n) })),
     paidCount: o.paid ?? 3, schoolClassCount: o.runs ?? 1, href: '#preview', registerHref: '#preview-register',
   })
@@ -154,7 +158,9 @@ export async function GET(request: Request) {
   let rows: Row[]
   let priority: string[] = []
   if (preview) {
-    rows = synthetic(preview, today)
+    const { data: real } = await supabase.from('schools').select('name, nickname, logo_url')
+    const logos = new Map(((real as { name: string; nickname: string | null; logo_url: string | null }[]) ?? []).map((s) => [s.name, { logo: s.logo_url, nickname: s.nickname }]))
+    rows = synthetic(preview, today, logos)
     priority = ['preview-school-2'] // proves the priority rule in the upcoming previews (SAS first)
   } else {
     const [{ data }, prio] = await Promise.all([

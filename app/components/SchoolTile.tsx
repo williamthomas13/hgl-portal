@@ -3,24 +3,24 @@
 // deliberate; a graceful MONOGRAM tile in the school's accent color when a
 // logo is missing. Never a broken image.
 import { usableAccent } from '../utils/accent'
+import { schoolMonogram } from '../utils/school-monogram'
 
-export function monogram(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter((w) => /^[A-Za-z]/.test(w) && !/^(of|the|and|de|del|di|la|le|du)$/i.test(w))
-    .map((w) => w[0].toUpperCase())
-    .slice(0, 3)
-    .join('')
+/** PL-508: the nickname when the school has one, initials otherwise (ONE rule: school-monogram.ts). */
+export function monogram(name: string, nickname?: string | null): string {
+  return schoolMonogram(nickname, name)
 }
 
 export default function SchoolTile({
   logoUrl,
   name,
+  nickname = null,
   accentColor,
   size = 'md',
 }: {
   logoUrl: string | null | undefined
   name: string
+  /** PL-508: the logo-less tile reads the nickname ("Nido"), never full-name initials. */
+  nickname?: string | null
   accentColor?: string | null
   size?: 'sm' | 'md'
 }) {
@@ -40,11 +40,11 @@ export default function SchoolTile({
   return (
     <span
       aria-hidden
-      className="inline-flex self-start items-center justify-center rounded-md text-white font-extrabold tracking-wide text-2xl h-[72px] w-[72px]"
+      className="inline-flex self-start items-center justify-center rounded-md text-white font-extrabold tracking-wide h-[72px] min-w-[72px] px-2 text-xl"
       style={{ background: usableAccent(accentColor ?? null) }}
       data-testid="school-tile-monogram"
     >
-      {monogram(name) || 'HGL'}
+      {monogram(name, nickname)}
     </span>
   )
 }

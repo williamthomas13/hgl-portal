@@ -229,7 +229,7 @@ export default async function ClassesBrowsePage({
                 data-state="open"
               >
                 {/* PL-479: the school's logo on a white tile (monogram when missing). */}
-                <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} accentColor={c.school?.accent_color} />
+                <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} nickname={c.school?.nickname ?? null} accentColor={c.school?.accent_color} />
                 <div>
                   <h2 className="font-bold text-hgl-slate leading-snug">{c.school?.name ?? 'Higher Ground Learning'}</h2>
                   <p className="text-sm text-hgl-slate">{c.school ? `${c.label.replace(`${c.school.name} `, '').replace(/ Class$/, '')}` : c.label}</p>
@@ -260,7 +260,7 @@ export default async function ClassesBrowsePage({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {inProgress.map((c) => (
                 <a key={c.id} href={c.pageHref} className="bg-white rounded-lg shadow-sm p-5 flex flex-col gap-3 border border-transparent hover:border-hgl-blue transition" data-testid="class-card" data-state="in-progress">
-                  <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} accentColor={c.school?.accent_color} />
+                  <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} nickname={c.school?.nickname ?? null} accentColor={c.school?.accent_color} />
                   <div>
                     <h2 className="font-bold text-hgl-slate leading-snug">{c.school?.name ?? 'Higher Ground Learning'}</h2>
                     <p className="text-sm text-hgl-slate">{c.school ? c.label.replace(`${c.school.name} `, '').replace(/ Class$/, '') : c.label}</p>
@@ -280,7 +280,7 @@ export default async function ClassesBrowsePage({
               {[...recent, ...(recentAll ? recentRest : [])].map((c) => {
                 const inner = (
                   <>
-                    <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} accentColor={c.school?.accent_color} size="sm" />
+                    <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} nickname={c.school?.nickname ?? null} accentColor={c.school?.accent_color} size="sm" />
                     <div>
                       <h2 className="font-bold text-hgl-slate leading-snug">{c.school?.name ?? c.label}</h2>
                       <p className="text-sm text-gray-500 mt-1">{c.city ? `${c.city} · ` : ''}<span data-testid="recent-month">{monthYear(String(c.lastSession))}</span>{c.school ? ` · ${c.label.replace(`${c.school.name} `, '').replace(/ Class$/, '')}` : ''}</p>
@@ -306,7 +306,7 @@ export default async function ClassesBrowsePage({
                 <div id="recent-rest" style={{ display: 'none' }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-5" data-testid="recent-rest">
                   {recentRest.map((c) => (
                     <a key={c.id} href={c.schoolCode ? `/${c.schoolCode}` : c.pageHref} className="bg-white rounded-lg shadow-sm p-4 flex flex-col gap-2 border border-transparent hover:border-hgl-blue transition" data-testid="class-card" data-state="recent">
-                      <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} accentColor={c.school?.accent_color} />
+                      <SchoolTile logoUrl={c.school?.logo_url} name={c.school?.name ?? 'Higher Ground Learning'} nickname={c.school?.nickname ?? null} accentColor={c.school?.accent_color} />
                       <div>
                         <h2 className="font-bold text-hgl-slate leading-snug">{c.school?.name ?? c.label}</h2>
                         <p className="text-sm text-gray-500 mt-1">{c.city ? `${c.city} · ` : ''}<span data-testid="recent-month">{monthYear(String(c.lastSession))}</span>{c.school ? ` · ${c.label.replace(`${c.school.name} `, '').replace(/ Class$/, '')}` : ''}</p>
