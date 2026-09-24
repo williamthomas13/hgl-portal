@@ -369,8 +369,9 @@ if (!chromePath) {
       check('/classes "Tutoring" opens from the keyboard and Escape closes it (PL-492)', kb != null && kb.afterFocus && !kb.afterEscape, JSON.stringify(kb))
       // PL-495: /team portraits + hero.
       await desk.goto(`${base}/team`, { waitUntil: 'networkidle0', timeout: 30_000 })
-      const tiles = await desk.$$eval('[data-testid="team-portrait"], [data-testid="team-portrait-placeholder"]', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)] }))
-      check('/team portraits render as equal squares ≥ 240px at 1280 (PL-495)', tiles.length > 0 && tiles.every(([w, h]) => Math.abs(w - h) <= 1 && w >= 240), `${tiles.length} tiles: ${[...new Set(tiles.map((t) => t.join('x')))].join(', ')}`)
+      const tiles = await desk.$$eval('[data-testid="team-portrait"], [data-testid="team-portrait-placeholder"]', (els) => els.map((e) => { const r = e.getBoundingClientRect(); const c = getComputedStyle(e); return [Math.round(r.width), Math.round(r.height), c.borderRadius, c.objectFit] }))
+      // PL-500: circular — a 50% radius resolves to half the box in px (e.g. 153.5px on a 307px tile).
+      check('/team portraits render as equal CIRCLES ≥ 240px at 1280, object-cover (PL-495/500)', tiles.length > 0 && tiles.every(([w, h, br, fit]) => Math.abs(w - h) <= 1 && w >= 240 && parseFloat(br) >= w / 2 - 1 && (fit === 'cover' || fit === 'normal')), `${tiles.length} tiles: ${[...new Set(tiles.map((t) => `${t[0]}x${t[1]} r=${t[2]}`))].join(', ')}`)
       const heroFit = await desk.evaluate(() => { const s = document.querySelector('[data-testid="team-hero"]'); const i = document.querySelector('[data-testid="team-photo"]'); if (!s || !i) return null; const a = s.getBoundingClientRect(); const b = i.getBoundingClientRect(); return { section: Math.round(a.width), img: Math.round(b.width), h: Math.round(a.height), ih: Math.round(b.height) } })
       check('/team hero photo covers the section\'s full width (PL-495)', heroFit != null && heroFit.img >= heroFit.section && heroFit.ih >= heroFit.h - 1, JSON.stringify(heroFit))
       const teamH = heroFit?.h ?? 0

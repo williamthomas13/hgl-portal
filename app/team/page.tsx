@@ -123,10 +123,13 @@ export default async function TeamPage() {
             Team profiles are being set up — check back soon.
           </p>
         ) : (
-          /* PL-495: the main site's grid — square portraits filling the
-             column (3-up from lg, 2 at tablet, 1 on a phone), square corners,
-             name / role / bio centred beneath. A non-square upload is cropped
-             centre by object-cover; every tile keeps the same aspect. */
+          /* PL-495: the main site's grid — portraits filling the column
+             (3-up from lg, 2 at tablet, 1 on a phone), name / role / bio
+             centred beneath. PL-500 (Scarlett, Sep 24): CIRCULAR, like the
+             main site's Team page (measured: its image wrapper carries
+             border-radius 50%) — the same box, rounded-full, object-cover
+             cropped centre; the initials placeholder is round too. Same
+             classes the class page's instructor block already uses. */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12" data-testid="team-grid">
             {people.map((p) => {
               const shot = parseClassPageImage(p.headshot)
@@ -139,7 +142,7 @@ export default async function TeamPage() {
                       sizes="(min-width: 1024px) 300px, (min-width: 640px) 45vw, 100vw"
                       loading="lazy"
                       decoding="async"
-                      className="w-full aspect-square object-cover bg-gray-100"
+                      className="w-full aspect-square rounded-full object-cover bg-gray-100"
                       data-testid="team-portrait"
                     />
                   ) : (
@@ -147,7 +150,7 @@ export default async function TeamPage() {
                     // shape, never a broken frame.
                     <div
                       aria-hidden
-                      className="w-full aspect-square bg-hgl-slate/10 text-hgl-slate flex items-center justify-center text-5xl font-bold"
+                      className="w-full aspect-square rounded-full bg-hgl-slate/10 text-hgl-slate flex items-center justify-center text-5xl font-bold"
                       data-testid="team-portrait-placeholder"
                     >
                       {initials(p.name)}
