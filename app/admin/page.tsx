@@ -13,6 +13,7 @@ import type { AssignmentConflict } from '../utils/instructor-conflicts'
 import ClassWizard, { type ContactAtSchool, type WizardPrefill } from './class-wizard'
 import CollateralCard, { type CollateralFields } from './collateral-card'
 import SiteContentPanel from './site-content-panel'
+import EmbedPriorityPanel from './embed-priority-panel'
 import ShortlinksPanel from './shortlinks-panel'
 import SchoolBrandingPanel, { type SchoolBranding } from './school-branding-panel'
 import QboPanel, { qboDocLink, type QboStatus } from './qbo-panel'
@@ -3603,6 +3604,8 @@ export default function AdminDashboard() {
           >
             <SiteContentPanel />
           </CollapsibleSection>
+          {/* PL-506: the homepage strip's priority-school order (Scarlett's six by default). */}
+          <div className="mt-6">{simManager ? <SimManagerHidden what="Homepage strip priority schools" /> : <EmbedPriorityPanel />}</div>
         </div>
 
           </div>

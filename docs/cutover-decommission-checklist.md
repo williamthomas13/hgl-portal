@@ -121,9 +121,12 @@ email first (classes).
 
 9. **Squarespace "Classes" nav → the portal's /classes browse page** (PL-378 A) — repoint
    the nav link at cutover; the sqsp classes grid is replaced by the portal page.
-9b. **Homepage "Upcoming classes" strip → the portal embed (PL-385).** Paste this ONCE
+9b. **Homepage "Upcoming classes" strip → the portal embed (PL-385 · PL-506).** Paste this ONCE
    into a Squarespace CODE block where the manual strip lives (then never edit it again —
-   every future change ships portal-side):
+   every future change ships portal-side). **The block carries NO heading of its own (PL-506):
+   the embed renders its headline — "Upcoming Classes" / "Upcoming and Current Classes" /
+   "Upcoming and Recent Classes" / "Classes Happening Now" / "Recent Classes" — by what the
+   portal is showing, so delete the Squarespace "Upcoming Classes" heading above the block.**
    ```html
    <div id="hgl-upcoming-classes">
      <noscript><a href="https://hgl.co/classes">See upcoming classes →</a></noscript>

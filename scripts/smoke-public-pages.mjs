@@ -256,6 +256,27 @@ try {
   check('inquiry embed carries the same rule: 7 fixed required + Email/Phone by channel, channel before them, no school placeholder (PL-494)', !/data-require/.test(embedJs) && (embedJs.match(/"required":true/g) ?? []).length === 7 && (embedJs.match(/"requiredBy":"channel"/g) ?? []).length === 2 && embedJs.indexOf('"name":"connectPref"') < embedJs.indexOf('"name":"parentEmail"') && !/Homeschooled or graduated/.test(embedJs) && /var channelNeeds = function/.test(embedJs))
   const embedHtml = await (await fetch(`${base}/embed/upcoming-classes.js`)).text().catch(() => '')
   check('/embed/upcoming-classes.js never carries the site header', !/site-header/.test(embedHtml))
+  // PL-506: the strip owns its headline + picks its state. With the fixtures live there are ≥2 registerable classes (qa-smoke-open + qa-smoke-full) → "Upcoming Classes" in large-card mode; the CTA is a button.
+  const embedInner = JSON.parse(/el\.innerHTML = (".*");/.exec(embedHtml)?.[1] ?? '""')
+  const h2Text = /<h2 data-embed-headline[^>]*>([^<]*)<\/h2>/.exec(embedInner)?.[1] ?? ''
+  check('embed renders its own <h2> headline for the LIVE state ("Upcoming Classes" with the two open fixtures)', h2Text === 'Upcoming Classes', h2Text)
+  check('embed headline sits in the main site\'s heading scale (adonis-web serif, 400, centred, 34px below)', /<h2 data-embed-headline style="font-family:adonis-web[^"]*font-weight:400[^"]*text-align:center[^"]*margin:0 0 34px"/.test(embedInner))
+  check('embed "See all classes" is a BUTTON in the main site\'s CTA style (proxima-nova 17px/500, #00AEEE, 6.8px radius, 20.4px padding)', /<a href="[^"]*\/classes" data-embed-cta style="[^"]*font-family:proxima-nova[^"]*font-weight:500;font-size:17px[^"]*background:#00AEEE;border-radius:6\.8px;padding:20\.4px[^"]*">See all classes<\/a>/.test(embedInner))
+  check('embed: 2–3 upcoming alone → large cards with a Register link to /{code}/register or /register/{slug}', /data-embed-grid="large"/.test(embedInner) && (embedInner.match(/data-embed-card="large"/g) ?? []).length >= 2 && /\/(qasmoke\/register|register\/qa-smoke-)/.test(embedInner))
+  check('embed: the old "No class is open … recent classes:" line is gone', !/No class is open for registration right now — recent classes/.test(embedInner))
+  for (const [state, headline, mode] of [['upcoming4', 'Upcoming Classes', 'tiles'], ['upcoming2', 'Upcoming Classes', 'large'], ['upcoming1-current', 'Upcoming and Current Classes', 'tiles'], ['current', 'Classes Happening Now', 'tiles'], ['recent', 'Recent Classes', 'tiles'], ['empty', 'Recent Classes', 'empty']]) {
+    const js = await (await fetch(`${base}/embed/upcoming-classes.js?preview=${state}`)).text().catch(() => '')
+    const inner = JSON.parse(/el\.innerHTML = (".*");/.exec(js)?.[1] ?? '""')
+    const h = /<h2 data-embed-headline[^>]*>([^<]*)<\/h2>/.exec(inner)?.[1] ?? ''
+    const gotMode = /data-embed-grid="large"/.test(inner) ? 'large' : /data-embed-grid="tiles"/.test(inner) ? 'tiles' : /join the interest list/.test(inner) ? 'empty' : '?'
+    check(`embed ?preview=${state} → "${headline}" in ${mode} mode (synthetic rows)`, h === headline && gotMode === mode && !/hgl\.co/.test(js), `${h} / ${gotMode}`)
+  }
+  const pv1 = JSON.parse(/el\.innerHTML = (".*");/.exec(await (await fetch(`${base}/embed/upcoming-classes.js?preview=upcoming1-current`)).text())?.[1] ?? '""')
+  check('embed ?preview=upcoming1-current: the one upcoming tile is first and marked "Open for registration"', /data-embed-grid="tiles"[^>]*>\s*<a [^>]*data-embed-card="tile"[^>]*>\s*<span data-embed-pill="open"/.test(pv1) && (pv1.match(/data-embed-pill="open"/g) ?? []).length === 1 && (pv1.match(/data-embed-card="tile"/g) ?? []).length === 4)
+  const pv2 = JSON.parse(/el\.innerHTML = (".*");/.exec(await (await fetch(`${base}/embed/upcoming-classes.js?preview=upcoming4`)).text())?.[1] ?? '""')
+  check('embed ?preview=upcoming4: the priority school (SAS) leads although it starts later', /data-embed-grid="tiles"[^>]*>\s*<a [^>]*>(?:(?!<\/a>).)*Shanghai American School/.test(pv2), pv2.slice(0, 200))
+  const testPage = await (await fetch(`${base}/sqsp-embed-test.html`)).text().catch(() => '')
+  check('sqsp-embed-test.html has no heading of its own and forwards ?preview= to the script', !/<h2>Upcoming Classes<\/h2>/.test(testPage) && !/Other homepage content continues below/.test(testPage) && /get\('preview'\)/.test(testPage) && /preview=upcoming1-current/.test(testPage))
   const regRes = await fetch(`${base}/qasmoke/register`)
   const regHtml = await regRes.text().catch(() => '')
   check('/{code}/register while closed still serves the registration route (closed notice is client-rendered)', regRes.status === 200 && !/No upcoming class/.test(regHtml))
